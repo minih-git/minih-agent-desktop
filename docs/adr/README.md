@@ -405,3 +405,5 @@ Each ADR includes:
 | macos-window-translucency-preference | [Preserve macOS glass with a restart-bound opaque preference](macos-window-translucency-preference.md) | Accepted for implementation |
 | tool-stop-side-effect-boundaries | [A user stop preserves tool side-effect boundaries](tool-stop-side-effect-boundaries.md) | Accepted for implementation (2026-10-23; amends 03-tools-and-permissions §3 and 06-host-rpc-protocol §5) |
 | sidecar-idle-runtime-reclaim | [Reclaim idle agent runtimes in the sidecar](sidecar-idle-runtime-reclaim.md) | Accepted for implementation |
+| browser-execution-presentation-lifecycle | [Browser execution outlives presentation](browser-execution-presentation-lifecycle.md) | Accepted (2026-10-24; amends ADR retained-browser-pages-per-tab) |
+| model-reasoning-effort-override | [Explicit per-model reasoning-effort compatibility](model-reasoning-effort-override.md) | Accepted (2026-10-24; per-model `supportsReasoningEffort` overrides automatic inference) |

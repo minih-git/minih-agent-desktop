@@ -515,7 +515,10 @@ export async function createWindow({
   });
   let windowCloseAccepted = false;
   window.webContents.on("did-start-loading", () => {
-    browserHost.disposeGuest();
+    // A renderer reload detaches presentation only: Main keeps the live pages
+    // so the agent can keep working in the background and the renderer can
+    // restore its missing tabs.
+    browserHost.detachPresentation();
     windowState.notificationViewingSessionId = null;
     if (windowState.mainWindow === window) resetMenuRendererReady(window);
   });

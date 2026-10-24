@@ -1,6 +1,19 @@
 use super::*;
 use std::time::Duration;
 
+fn new_session(state: &crate::state::AppState) -> String {
+    crate::sessions::create_session(
+        &state.db,
+        Some("background fixture".into()),
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+    .id
+}
+
 #[tokio::test]
 async fn retains_output_when_the_process_exits_before_supervision_starts() {
     let dir = tempfile::tempdir().unwrap();
@@ -82,11 +95,12 @@ async fn shutdown_signals_a_task_while_its_output_is_locked() {
 async fn start_notifies_stop_settles_and_shutdown_reaps() {
     let dir = tempfile::tempdir().unwrap();
     let state = tokio::sync::Mutex::new(crate::state::AppState::open(dir.path()).unwrap());
+    let session_id = new_session(&*state.lock().await);
 
     let before_start = change_counter();
     let id = spawn_background_task_detached(
         &state,
-        "session-1",
+        &session_id,
         "sleep 30",
         crate::tools::shell::default_shell_id(),
         dir.path(),
@@ -107,7 +121,7 @@ async fn start_notifies_stop_settles_and_shutdown_reaps() {
         assert_eq!(summaries[0].id, id);
         assert_eq!(summaries[0].state, BackgroundTaskState::Running);
         assert_eq!(summaries[0].command, "sleep 30");
-        assert_eq!(summaries[0].session_id, "session-1");
+        assert_eq!(summaries[0].session_id, session_id);
         assert_eq!(st.background_tasks.running_count(), 1);
     }
 
@@ -158,9 +172,10 @@ async fn start_notifies_stop_settles_and_shutdown_reaps() {
 async fn shutdown_stops_every_running_task() {
     let dir = tempfile::tempdir().unwrap();
     let state = tokio::sync::Mutex::new(crate::state::AppState::open(dir.path()).unwrap());
+    let session_id = new_session(&*state.lock().await);
     spawn_background_task_detached(
         &state,
-        "session-1",
+        &session_id,
         "sleep 30",
         crate::tools::shell::default_shell_id(),
         dir.path(),
@@ -243,4 +258,164 @@ async fn shutdown_rejects_a_new_background_command_before_spawn() {
     .await;
     assert_eq!(result.unwrap_err().0, "TOOL_ABORTED");
     assert!(state.lock().await.background_tasks.tasks.is_empty());
+}
+
+fn running_fixture(id: &str, session_id: &str) -> (BackgroundTask, watch::Receiver<bool>) {
+    let (stop, receiver) = watch::channel(false);
+    (
+        BackgroundTask {
+            id: id.into(),
+            session_id: session_id.into(),
+            command: "fixture".into(),
+            command_shell_id: crate::tools::shell::default_shell_id().into(),
+            started_at: Instant::now(),
+            stop,
+            shared: Arc::new(Mutex::new(TaskShared {
+                state: BackgroundTaskState::Running,
+                exit_code: None,
+                stdout: VecDeque::new(),
+                stderr: VecDeque::new(),
+                stdout_bytes: 0,
+                stderr_bytes: 0,
+                truncated: false,
+            })),
+        },
+        receiver,
+    )
+}
+
+fn marker_command() -> &'static str {
+    if cfg!(windows) {
+        "[IO.File]::WriteAllText('forbidden.marker', 'ran')"
+    } else {
+        "printf ran > forbidden.marker"
+    }
+}
+
+#[tokio::test]
+async fn deleted_session_is_rejected_before_spawn() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = Mutex::new(crate::state::AppState::open(dir.path()).unwrap());
+    let session = {
+        let st = state.lock().await;
+        let id = new_session(&st);
+        crate::sessions::delete_session(&st.db, &id).unwrap();
+        id
+    };
+    let result = spawn_background_task_detached(
+        &state,
+        &session,
+        marker_command(),
+        crate::tools::shell::default_shell_id(),
+        dir.path(),
+        None,
+        &[],
+    )
+    .await;
+    assert!(result.unwrap_err().1.contains("no longer exists"));
+    assert!(!dir.path().join("forbidden.marker").exists());
+    assert_eq!(state.lock().await.background_tasks.running_count(), 0);
+}
+
+#[tokio::test]
+async fn full_session_is_refused_before_spawn_but_another_session_can_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = Mutex::new(crate::state::AppState::open(dir.path()).unwrap());
+    let mut receivers = Vec::new();
+    let (session_a, session_b) = {
+        let mut st = state.lock().await;
+        let a = new_session(&st);
+        let b = new_session(&st);
+        for index in 0..MAX_RUNNING_TASKS_PER_SESSION {
+            let (task, receiver) = running_fixture(&format!("a-{index}"), &a);
+            receivers.push(receiver);
+            st.background_tasks.tasks.insert(task.id.clone(), task);
+        }
+        (a, b)
+    };
+    let refused = spawn_background_task_detached(
+        &state,
+        &session_a,
+        marker_command(),
+        crate::tools::shell::default_shell_id(),
+        dir.path(),
+        None,
+        &[],
+    )
+    .await;
+    assert!(refused.unwrap_err().1.contains("limit 10"));
+    assert!(!dir.path().join("forbidden.marker").exists());
+    let id = spawn_background_task_detached(
+        &state,
+        &session_b,
+        "echo independent",
+        crate::tools::shell::default_shell_id(),
+        dir.path(),
+        None,
+        &[],
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let st = state.lock().await;
+            let result = task_output(&st.background_tasks, &id)
+                .await
+                .unwrap()
+                .unwrap();
+            if result["state"] == "exited" {
+                assert!(result["stdout"].as_str().unwrap().contains("independent"));
+                break;
+            }
+            drop(st);
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn total_limit_is_distinct_and_rejects_before_spawn() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = Mutex::new(crate::state::AppState::open(dir.path()).unwrap());
+    let mut receivers = Vec::new();
+    let session = {
+        let mut st = state.lock().await;
+        let id = new_session(&st);
+        for index in 0..MAX_RUNNING_TASKS_TOTAL {
+            let (task, receiver) =
+                running_fixture(&format!("task-{index}"), &format!("owner-{index}"));
+            receivers.push(receiver);
+            st.background_tasks.tasks.insert(task.id.clone(), task);
+        }
+        id
+    };
+    let refused = spawn_background_task_detached(
+        &state,
+        &session,
+        marker_command(),
+        crate::tools::shell::default_shell_id(),
+        dir.path(),
+        None,
+        &[],
+    )
+    .await;
+    assert!(refused.unwrap_err().1.contains("maximum of 64"));
+    assert!(!dir.path().join("forbidden.marker").exists());
+}
+
+#[tokio::test]
+async fn stop_session_is_idempotent_scoped_and_never_waits_for_output() {
+    let mut registry = BackgroundTaskRegistry::default();
+    let (a, a_stop) = running_fixture("a", "session-a");
+    let (b, b_stop) = running_fixture("b", "session-b");
+    registry.tasks.insert(a.id.clone(), a.clone());
+    registry.tasks.insert(b.id.clone(), b);
+    let _output = a.shared.lock().await;
+    assert_eq!(registry.stop_session_running("session-a"), 1);
+    assert!(*a_stop.borrow());
+    assert!(!*b_stop.borrow());
+    assert_eq!(registry.stop_session_running("session-a"), 0);
+    assert_eq!(registry.running_count_for("session-a"), 1);
 }

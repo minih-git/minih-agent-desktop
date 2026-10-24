@@ -6,6 +6,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
+import { loadStyles } from "./helpers/styles.mjs";
 
 const root = repositoryRoot();
 const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
@@ -18,6 +19,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { ProviderSetupDialog } from "../../apps/desktop/src/components/settings/ProviderSetupDialog";
+import { ModelBindingFields } from "../../apps/desktop/src/components/settings/ModelBindingFields";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 
 const calls = [];
@@ -25,6 +27,7 @@ let createdProvider = null;
 let updatedProvider = null;
 let updateInput = null;
 let savedCallback = false;
+let failNextUpdate = false;
 window.addEventListener("error", (event) => {
   console.error("CUSTOM_PROVIDER_NO_KEY_WINDOW_ERROR", event.error?.stack ?? event.message);
 });
@@ -52,18 +55,22 @@ window.minihAgent = {
         id: "custom:no-auth",
         ...input,
         enabled: true,
-        hasSecret: false,
+        hasSecret: Boolean(input.secretValue),
         createdAt: "2026-10-13T00:00:00.000Z",
         updatedAt: "2026-10-13T00:00:00.000Z",
       };
       return { ok: true, data: { provider: createdProvider } };
     }
     if (channel === "minih-agent-desktop/providers/update") {
+      if (failNextUpdate) {
+        failNextUpdate = false;
+        throw new Error("Host rejected provider update");
+      }
       updateInput = input;
       updatedProvider = {
         ...createdProvider,
         ...input,
-        hasSecret: Boolean(input.secretValue) || createdProvider.hasSecret,
+        hasSecret: input.authKind === "none" ? false : Boolean(input.secretValue) || createdProvider.hasSecret,
       };
       return { ok: true, data: { provider: updatedProvider } };
     }
@@ -101,6 +108,25 @@ const rootNode = createRoot(document.getElementById("root"));
 function mount(element) { flushSync(() => rootNode.render(element)); }
 
 window.customProviderNoApiKeyProbe = async () => {
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  const button = (label) => [...document.querySelectorAll("button")]
+    .find((item) => item.textContent.trim() === label);
+  const keyField = () => document.querySelector('input[type="password"]');
+  const edit = (provider, key) => {
+    updateInput = null;
+    updatedProvider = null;
+    mount(React.createElement(ProviderSetupDialog, {
+      key,
+      provider,
+      onClose: () => mount(null),
+      onSaved: () => {},
+    }));
+  };
+  const saveEdit = async () => {
+    flushSync(() => button("Save provider").click());
+    await waitFor(() => updateInput && updatedProvider, "the provider edit was not saved");
+    return structuredClone(updateInput);
+  };
   mount(React.createElement(ProviderSetupDialog, {
     key: "new-provider",
     provider: null,
@@ -112,90 +138,287 @@ window.customProviderNoApiKeyProbe = async () => {
     "the custom endpoint service was not offered",
   );
   flushSync(() => customTile.click());
-
-  const noApiKeyToggle = await waitFor(
-    () => document.querySelector('[role="switch"][aria-label="No API key required"]'),
-    "the custom endpoint form did not offer its no-key option",
-  );
-  const noApiKeyDefaultsOff = noApiKeyToggle.getAttribute("aria-checked") === "false";
+  check(!document.querySelector('[role="switch"][aria-label="No API key required"]'),
+    "the obsolete no-key switch is still present");
+  check(keyField() && !keyField().disabled, "the optional API-key input is not enabled");
   const nameField = [...document.querySelectorAll("label")]
-    .find((label) => label.textContent.includes("Name"))
-    ?.querySelector("input");
+    .find((label) => label.textContent.includes("Name"))?.querySelector("input");
   const urlField = document.querySelector('input[type="url"]');
-  if (!nameField || !urlField) throw new Error("the custom endpoint identity fields were missing");
+  check(nameField && urlField, "the custom endpoint identity fields were missing");
   setValue(nameField, "No Auth Gateway");
   setValue(urlField, "https://no-auth.example.org/v1");
-
   const discoveryCall = await waitFor(
     () => calls.find((call) => call.channel === "minih-agent-desktop/providers/listModels"
       && call.input.baseUrl === "https://no-auth.example.org/v1"),
     "the custom endpoint was not probed without an API key",
   );
-  const keyField = document.querySelector('input[type="password"]');
-  setValue(keyField, "temporary-api-key");
-  flushSync(() => noApiKeyToggle.click());
-  const keyFieldDisabled = keyField?.disabled === true;
-  const keyFieldCleared = keyField?.value === "";
-
   const modelField = document.querySelector('input[placeholder^="Enter a model ID"]');
-  if (!modelField) throw new Error("the custom model input was missing");
+  check(modelField, "the custom model input was missing");
   setValue(modelField, "no-auth-chat");
-  const addModelButton = [...document.querySelectorAll("button")]
-    .find((button) => button.textContent.trim() === "Add custom model");
-  if (!addModelButton) throw new Error("the custom model add action was missing");
-  flushSync(() => addModelButton.click());
+  flushSync(() => button("Add custom model").click());
   await waitFor(
     () => document.querySelector(".provider-chosen")?.innerText.includes("no-auth-chat"),
     "the model was not added to the custom provider",
   );
-
-  const saveButton = [...document.querySelectorAll("button")]
-    .find((button) => button.textContent.trim() === "Save provider");
-  if (!saveButton) throw new Error("the custom provider save action was missing");
-  flushSync(() => saveButton.click());
+  // A whitespace-only key has the same meaning as an empty key.
+  flushSync(() => setValue(keyField(), "   "));
+  flushSync(() => button("Save provider").click());
   await waitFor(() => savedCallback && createdProvider, "the custom provider was not saved");
-  const savedAsNoAuth = createdProvider.authKind === "none"
-    && !Object.hasOwn(createdProvider, "secretValue")
-    && createdProvider.models?.[0]?.id === "no-auth-chat";
+  const noAuthProvider = structuredClone(createdProvider);
+  check(noAuthProvider.authKind === "none" && !Object.hasOwn(noAuthProvider, "secretValue"),
+    "an empty API key did not automatically save as no-auth");
 
-  let updateSavedCallback = false;
-  mount(React.createElement(ProviderSetupDialog, {
-    key: "edit-provider",
-    provider: createdProvider,
-    onClose: () => mount(null),
-    onSaved: (provider) => {
-      updatedProvider = provider;
-      updateSavedCallback = true;
-    },
-  }));
-  const editNoApiKeyToggle = await waitFor(
-    () => document.querySelector('[role="switch"][aria-label="No API key required"]'),
-    "the saved no-key setting did not reopen",
+  edit(noAuthProvider, "edit-no-auth-unchanged");
+  const unchangedNoAuth = await saveEdit();
+  check(!Object.hasOwn(unchangedNoAuth, "authKind") && !Object.hasOwn(unchangedNoAuth, "secretValue"),
+    "reopening and saving a no-auth provider changed its authentication");
+
+  edit(noAuthProvider, "edit-no-auth-add-key");
+  check(!keyField().disabled, "a no-auth provider cannot accept an API key");
+  flushSync(() => setValue(keyField(), "  saved-api-key  "));
+  const keyedUpdate = await saveEdit();
+  check(keyedUpdate.authKind === "api_key_and_base_url" && keyedUpdate.secretValue === "saved-api-key",
+    "typing a key did not switch the no-auth provider to API-key authentication");
+  createdProvider = structuredClone(updatedProvider);
+  const keyedProvider = structuredClone(createdProvider);
+
+  edit(keyedProvider, "edit-keyed-keep-key");
+  const keepKeyUpdate = await saveEdit();
+  check(!Object.hasOwn(keepKeyUpdate, "authKind") && !Object.hasOwn(keepKeyUpdate, "secretValue"),
+    "an untouched empty input overwrote the saved key");
+
+  edit(keyedProvider, "edit-keyed-clear-and-cancel");
+  check(button("Clear saved API key"), "the saved-key removal action was missing");
+  flushSync(() => button("Clear saved API key").click());
+  check(!updateInput, "clearing a key persisted before Save");
+  check(keyField().value === "" && !keyField().disabled, "clearing a saved key disabled the input");
+  const afterClear = calls.length;
+  const clearProbe = await waitFor(
+    () => calls.slice(afterClear).find((call) => call.channel === "minih-agent-desktop/providers/listModels"
+      && call.input.baseUrl === keyedProvider.baseUrl && call.input.source !== "cache"),
+    "clearing the saved key did not refresh model discovery",
   );
-  const editOpenedAsNoAuth = editNoApiKeyToggle.getAttribute("aria-checked") === "true";
-  flushSync(() => editNoApiKeyToggle.click());
-  const editKeyField = document.querySelector('input[type="password"]');
-  const editKeyEnabled = editKeyField?.disabled === false;
-  setValue(editKeyField, "saved-api-key");
-  const updateButton = [...document.querySelectorAll("button")]
-    .find((button) => button.textContent.trim() === "Save provider");
-  if (!updateButton) throw new Error("the edited custom provider save action was missing");
-  flushSync(() => updateButton.click());
-  await waitFor(() => updateSavedCallback && updateInput, "the custom provider auth update was not saved");
+  check(!Object.hasOwn(clearProbe.input, "providerId") && !Object.hasOwn(clearProbe.input, "apiKey"),
+    "model discovery reused a saved key after it was cleared");
+  mount(null);
+  check(!updateInput, "closing the form after Clear changed the saved key");
+
+  edit(keyedProvider, "edit-keyed-clear-and-replace");
+  flushSync(() => button("Clear saved API key").click());
+  flushSync(() => setValue(keyField(), "replacement-api-key"));
+  const replacementUpdate = await saveEdit();
+  check(replacementUpdate.authKind !== "none" && replacementUpdate.secretValue === "replacement-api-key",
+    "a replacement key was discarded after Clear");
+
+  // A failed save after Clear must surface an error toast and not announce removal.
+  let failedSaveCommitted = false;
+  useAppStore.setState({ toasts: [] });
+  failNextUpdate = true;
+  mount(React.createElement(ProviderSetupDialog, {
+    key: "edit-keyed-clear-save-error",
+    provider: keyedProvider,
+    onClose: () => mount(null),
+    onSaved: () => { failedSaveCommitted = true; },
+  }));
+  flushSync(() => button("Clear saved API key").click());
+  flushSync(() => button("Save provider").click());
+  await waitFor(
+    () => useAppStore.getState().toasts.some((toast) => toast.variant === "error" && toast.message.includes("Host rejected provider update")),
+    "failed save did not surface an actionable error toast",
+  );
+  check(!failedSaveCommitted, "failed save announced completion before Host confirmation");
+
+  edit(keyedProvider, "edit-keyed-clear-and-save");
+  flushSync(() => button("Clear saved API key").click());
+  const clearedUpdate = await saveEdit();
+  check(clearedUpdate.authKind === "none" && !Object.hasOwn(clearedUpdate, "secretValue"),
+    "clearing and saving did not switch to no-auth");
+  check(updatedProvider.hasSecret === false, "the cleared provider is still marked as credentialed");
+
+  const missingKeyProvider = { ...keyedProvider, hasSecret: false };
+  edit(missingKeyProvider, "edit-keyed-missing-key");
+  const missingKeyUpdate = await saveEdit();
+  check(missingKeyUpdate.authKind === "none" && !Object.hasOwn(missingKeyUpdate, "secretValue"),
+    "an existing custom provider without a stored key did not become no-auth");
+
+  mount(React.createElement(ProviderSetupDialog, {
+    key: "new-keyed-provider",
+    provider: null,
+    initialDraft: {
+      name: "Key Gateway",
+      baseUrl: keyedProvider.baseUrl,
+      apiStyle: "chat_completions",
+      models: keyedProvider.models,
+    },
+    onClose: () => mount(null),
+    onSaved: () => {},
+  }));
+  flushSync(() => setValue(keyField(), "new-api-key"));
+  createdProvider = null;
+  flushSync(() => button("Save provider").click());
+  await waitFor(() => createdProvider, "the new keyed provider was not saved");
+  check(createdProvider.authKind === "api_key_and_base_url" && createdProvider.secretValue === "new-api-key",
+    "a new custom provider with an API key did not retain API-key authentication");
+
+  // Named presets (Minih Router) keep AccessKey authentication, editable base URL,
+  // explicit format choices and do not expose custom key clearing or no-auth.
+  const routerProvider = {
+    ...keyedProvider,
+    id: "router:1",
+    name: "Minih Router",
+    vendorKey: "minih-router",
+    baseUrl: "https://router.hmini.org/v1",
+    apiStyle: "chat_completions",
+    authKind: "api_key_and_base_url",
+    hasSecret: true,
+  };
+  createdProvider = structuredClone(routerProvider);
+  edit(routerProvider, "edit-minih-router-blank-key");
+  check(!button("Clear saved API key"), "named Minih Router preset offered custom key removal");
+  check(Boolean(document.querySelector(".provider-setup-relocatable-row input[type='url']")),
+    "Minih Router lost its editable Base URL field");
+  const routerUpdate = await saveEdit();
+  check(!Object.hasOwn(routerUpdate, "authKind") && !Object.hasOwn(routerUpdate, "secretValue"),
+    "blank edit on Minih Router altered its saved AccessKey authentication");
+
+  // Per-model ReasoningEffortSelect follows binding.apiStyle before globalApiStyle.
+  const reasoningTrigger = () => [...document.querySelectorAll(".settings-menu-select-trigger")]
+    .find((item) => item.getAttribute("aria-label") === "Reasoning effort parameter");
+  const baseBinding = {
+    id: "deepseek-v4.1-flash",
+    contextWindow: 64000,
+    maxTokens: 8192,
+    thinkingLevels: ["off", "high"],
+    defaultThinkingLevel: "high",
+  };
+  let latestPatch = null;
+  mount(React.createElement(ModelBindingFields, {
+    binding: { ...baseBinding, apiStyle: "chat_completions" },
+    publishedLevels: ["off", "high"],
+    nativeWebSearchCapable: false,
+    globalApiStyle: "responses",
+    onChange: (patch) => { latestPatch = patch; },
+  }));
+  check(Boolean(reasoningTrigger()) && reasoningTrigger().textContent.trim() === "Auto",
+    "binding.apiStyle=chat_completions did not override globalApiStyle=responses to show reasoning effort");
+  flushSync(() => reasoningTrigger().click());
+  const sendOption = await waitFor(
+    () => [...document.querySelectorAll(".settings-menu-select-option")]
+      .find((item) => item.textContent.trim() === "Send"),
+    "reasoning effort Send option did not open",
+  );
+  flushSync(() => sendOption.click());
+  check(latestPatch?.supportsReasoningEffort === true, "selecting Send did not emit supportsReasoningEffort=true");
+
+  mount(React.createElement(ModelBindingFields, {
+    binding: { ...baseBinding, apiStyle: "responses", supportsReasoningEffort: false },
+    publishedLevels: ["off", "high"],
+    nativeWebSearchCapable: true,
+    globalApiStyle: "chat_completions",
+    onChange: () => {},
+  }));
+  check(!reasoningTrigger(),
+    "binding.apiStyle=responses did not override globalApiStyle=chat_completions to hide reasoning effort");
 
   return {
     discoveryOmittedApiKey: !Object.hasOwn(discoveryCall.input, "apiKey"),
-    noApiKeyDefaultsOff,
-    keyFieldDisabled: keyFieldDisabled,
-    keyFieldCleared: keyFieldCleared,
-    savedAuthKind: savedAsNoAuth ? "none" : createdProvider.authKind,
-    secretValueOmitted: savedAsNoAuth,
-    selectedModel: createdProvider.models?.[0]?.id,
-    editOpenedAsNoAuth,
-    editKeyEnabled,
-    updateAuthKind: updateInput.authKind,
-    updateStoredKey: updateInput.secretValue === "saved-api-key",
+    savedAuthKind: noAuthProvider.authKind,
+    selectedModel: noAuthProvider.models?.[0]?.id,
+    noAuthReopenPreserved: true,
+    typedKeyEnablesAuth: true,
+    blankEditPreservesKey: true,
+    clearDiscoveryOmitsStoredKey: true,
+    cancelledClearPreservesKey: true,
+    clearThenReplaceSavesKey: true,
+    failedSaveObservableAndUncommitted: true,
+    clearThenSaveRemovesKey: true,
+    missingKeyBecomesNoAuth: true,
+    newKeyedProviderPreserved: true,
+    minihRouterAuthAndRelocatablePreserved: true,
+    perModelEffectiveApiStyleReasoningEffort: true,
   };
+};
+
+window.renderScreenshotScene = async (scene) => {
+  const button = (label) => [...document.querySelectorAll("button")]
+    .find((item) => item.textContent.trim() === label);
+  const keyedProvider = {
+    id: "custom:keyed-scene",
+    name: "Custom Gateway",
+    vendorKey: "custom",
+    type: "openai_compatible",
+    protocol: "openai_compatible",
+    baseUrl: "https://gateway.example.org/v1",
+    apiStyle: "chat_completions",
+    authKind: "api_key_and_base_url",
+    hasSecret: true,
+    enabled: true,
+    models: [{
+      id: "deepseek-v4.1-flash",
+      alias: "DeepSeek Fast",
+      contextWindow: 64000,
+      maxTokens: 8192,
+      thinkingLevels: ["off", "low", "medium", "high"],
+      defaultThinkingLevel: "high",
+      supportsReasoningEffort: null,
+    }],
+  };
+  if (scene === "custom-new-optional-key") {
+    mount(React.createElement(ProviderSetupDialog, {
+      key: scene,
+      provider: null,
+      initialService: "custom",
+      onClose: () => {},
+      onSaved: () => {},
+    }));
+  } else if (scene === "custom-edit-saved-key") {
+    mount(React.createElement(ProviderSetupDialog, {
+      key: scene,
+      provider: keyedProvider,
+      onClose: () => {},
+      onSaved: () => {},
+    }));
+  } else if (scene === "custom-edit-cleared-key") {
+    mount(React.createElement(ProviderSetupDialog, {
+      key: scene,
+      provider: keyedProvider,
+      onClose: () => {},
+      onSaved: () => {},
+    }));
+    flushSync(() => button("Clear saved API key")?.click());
+  } else if (scene === "minih-router-relocatable") {
+    mount(React.createElement(ProviderSetupDialog, {
+      key: scene,
+      provider: {
+        ...keyedProvider,
+        id: "router:scene",
+        name: "Minih Router",
+        vendorKey: "minih-router",
+        baseUrl: "https://router.hmini.org/v1",
+      },
+      onClose: () => {},
+      onSaved: () => {},
+    }));
+  } else if (scene === "reasoning-effort-menu-wide" || scene === "reasoning-effort-menu-narrow") {
+    mount(React.createElement(ProviderSetupDialog, {
+      key: scene,
+      provider: keyedProvider,
+      onClose: () => {},
+      onSaved: () => {},
+    }));
+    const advanced = document.querySelector(".provider-chosen-advanced-toggle");
+    if (advanced?.getAttribute("aria-expanded") === "false") {
+      flushSync(() => advanced.click());
+    }
+    await settle();
+    const trigger = [...document.querySelectorAll(".settings-menu-select-trigger")]
+      .find((item) => item.getAttribute("aria-label") === "Reasoning effort parameter");
+    trigger?.scrollIntoView({ block: "center" });
+    await settle();
+    if (trigger) flushSync(() => trigger.click());
+  }
+  await settle();
+  await settle();
 };
 `;
 
@@ -231,13 +454,18 @@ test("a custom endpoint can be saved and selected without an API key", {
       nodePaths: [join(root, "apps/desktop/node_modules")],
     });
     await writeFile(
+      join(temp, "renderer.css"),
+      (await loadStyles()).replace(/@theme(?: inline)?\s*\{/g, ":root {"),
+    );
+    await writeFile(
       join(temp, "index.html"),
-      '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; style-src \'self\' \'unsafe-inline\'"><body><div id="root"></div><script type="module" src="renderer.js"></script>',
+      '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; style-src \'self\' \'unsafe-inline\'"><link rel="stylesheet" href="renderer.css"><title>Custom provider optional key regression</title><body><div id="root"></div><script type="module" src="renderer.js"></script>',
     );
     await writeFile(
       join(temp, "main.cjs"),
       `
 const { app, BrowserWindow } = require("electron");
+const fs = require("node:fs/promises");
 const path = require("node:path");
 app.setPath("userData", path.join(__dirname, "profile"));
 app.whenReady().then(async () => {
@@ -247,6 +475,22 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(path.join(__dirname, "index.html"));
     const result = await win.webContents.executeJavaScript("window.customProviderNoApiKeyProbe()");
+    const screenshotDir = process.env.PI_SCRATCH_DIR;
+    if (screenshotDir) {
+      for (const [scene, width, height] of [
+        ["custom-new-optional-key", 1000, 760],
+        ["custom-edit-saved-key", 1000, 760],
+        ["custom-edit-cleared-key", 1000, 760],
+        ["minih-router-relocatable", 1000, 760],
+        ["reasoning-effort-menu-wide", 1200, 800],
+        ["reasoning-effort-menu-narrow", 850, 600],
+      ]) {
+        win.setContentSize(width, height);
+        await win.webContents.executeJavaScript("window.renderScreenshotScene(" + JSON.stringify(scene) + ")");
+        const image = await win.webContents.capturePage();
+        await fs.writeFile(path.join(screenshotDir, scene + ".png"), image.toPNG());
+      }
+    }
     console.log("CUSTOM_PROVIDER_NO_API_KEY_PROBE " + JSON.stringify(result));
     app.exit(0);
   } catch (error) { console.error(error?.stack ?? error); app.exit(1); }
@@ -281,16 +525,20 @@ app.whenReady().then(async () => {
     assert(line, output.slice(-6000));
     assert.deepEqual(JSON.parse(line.slice("CUSTOM_PROVIDER_NO_API_KEY_PROBE ".length)), {
       discoveryOmittedApiKey: true,
-      noApiKeyDefaultsOff: true,
-      keyFieldDisabled: true,
-      keyFieldCleared: true,
       savedAuthKind: "none",
-      secretValueOmitted: true,
       selectedModel: "no-auth-chat",
-      editOpenedAsNoAuth: true,
-      editKeyEnabled: true,
-      updateAuthKind: "api_key_and_base_url",
-      updateStoredKey: true,
+      noAuthReopenPreserved: true,
+      typedKeyEnablesAuth: true,
+      blankEditPreservesKey: true,
+      clearDiscoveryOmitsStoredKey: true,
+      cancelledClearPreservesKey: true,
+      clearThenReplaceSavesKey: true,
+      failedSaveObservableAndUncommitted: true,
+      clearThenSaveRemovesKey: true,
+      missingKeyBecomesNoAuth: true,
+      newKeyedProviderPreserved: true,
+      minihRouterAuthAndRelocatablePreserved: true,
+      perModelEffectiveApiStyleReasoningEffort: true,
     });
   } finally {
     await rm(temp, { recursive: true, force: true });

@@ -441,6 +441,7 @@ export const AssistantTurn = memo(function AssistantTurn({
             usage={usage}
             responseDurationMs={responseDurationMs}
             responseOutputTokens={responseOutputTokens}
+            responseOutputEstimated={summary.responseOutputEstimated}
             durationLabel={
               // The folded header already states the duration; the footer keeps
               // it only where no header is shown.

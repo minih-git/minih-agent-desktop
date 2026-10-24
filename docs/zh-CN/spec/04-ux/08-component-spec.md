@@ -2065,14 +2065,10 @@ MainChat 底部的输入区域，用于撰写和发送提示。支持多行输�
 使用共享原生 Button，通过点击或 Enter／Space 切换输出并报告 `aria-expanded`。
 输出、停止和忽略仍是独立的同级按钮，不能因冒泡导致二次切换。
 
-**11.3a 会话 TodoDock**
+**11.3a 会话任务 dock**
 
-标题文案不再是按钮；独立的尾部折叠按钮是唯一切换入口，提供本地化展开/收起
-清单名称、相同的 `title`、`aria-expanded` 与 `aria-controls`。展开时箭头向下、
-收起时向上，支持原生 Enter/Space，不让进度/当前步骤文案成为额外焦点。
-紧凑行和现有状态符号不变，本次不加入扫光动画。
+Todo 与后台任务共用同一个按会话划分的 dock，位于 Composer 栈中 Plan/Goal 批准表面上方；任一来源有可见内容时它就会出现，两者都为空时不占布局空间。折叠时页签仍可点达，选中页签即展开；新的运行中任务以徽标提示，不抢占用户已选中的页签。展开/收起由独立的本地化折叠按钮控制，带 `aria-expanded` 与 `aria-controls`；标题摘要文案不是第二个切换入口。保留原生键盘行为、紧凑任务符号与 reduced-motion 支持，不使用扫光动画。后台任务回执只在结算宽限期结束后才可移除，且由状态层强制；移除回执从不停止进程。
 
-- 当活动会话拥有非空的主机清单时，TodoDock 位于 Composer 栈中并显示在 Plan/Goal 批准表面上方；空清单不占布局空间。
 - 收起标题显示完成/活动进度和当前 `in_progress` 内容；全部取消时显示明确的取消状态，不显示误导性的 `0/0 completed`。
 - 展开后列出全部条目，并在自身范围内滚动（`max-height: min(280px, 30dvh)`、`overflow-y: auto`、`overscroll-behavior: contain`）：长清单因此保持可读，既不撑高 Composer 栈，滚到底也不会带动背后的转写；该滚动区仅在展开时可被键盘聚焦。
 - 列表在收起时仍保持挂载，但收起状态只占标题行高度（列表内边距被裁剪，不会在标题下方留白），通过有界的高度/透明度过渡播放展开和收起动画。
@@ -3216,3 +3212,10 @@ renderer background updates. Theme changes reapply vibrancy only to the running
 translucent surface. Startup splash tint, sheen, traffic lights and layout are
 unchanged; Windows/Linux keep their existing surfaces. The applied surface is
 fixed for the running process, independent of later preference saves.
+
+## 选定聊天呈现补充（2026-10-24）
+
+- ConversationTopbar 从会话自身所属的项目与命名偏好解析项目面包屑，而不是无关的当前活动工作区。空聊天使用其所在工作区；临时聊天省略项目面包屑，远程会话的标签仍只作展示。本地非定时会话的标题可通过现有重命名操作就地编辑：Enter/blur 只提交一次，Escape 取消，输入法合成期间由输入法接管按键，空白或未改动的草稿不提交，切换会话会丢弃编辑器。保留标题长度限制、本地化失败反馈、共享控件以及 Minih 副注。
+- 普通发送与转向使用按草稿键提供的唯一恢复令牌。只有最新一次提交能在被拒绝后恢复其文本与附件快照；结算该请求不会让更早的待处理请求重新获得所有权。用户编辑、更新的已接受提交以及其他会话的草稿永不被覆盖。已接受的输入历史与命令分发保持不变。
+- 每轮 token 胶囊把已归一化的父回合用量投影为输入、输出、缓存读取与缓存写入；推理已包含在输出中，不再重复计入。它不加入子代理开销、不改变计费，也不替代最新请求的上下文检查器。保留模型/时长/步骤/工具元数据，以及没有用量记录的历史。精确计数可在 hover/focus 时于受主聊天区约束、优先向上的浮层中查看，并保持安全的指针移动路径与生命周期清理。
+- 转写边缘发丝线与紧凑的时长/工具计数仅为视觉适配。保留 Minih 的 standard/detailed/compact、叙述预览、可见步骤计数、思考偏好、问题反馈、密度所需的独立 Bash 行、搜索揭示以及用户自主的披露选择。缺失的历史耗时保持缺失，不伪造成零秒。

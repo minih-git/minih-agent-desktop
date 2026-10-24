@@ -20,10 +20,12 @@ export const PROVIDER_SYNC_SKIP_REASONS = ["import_incomplete", "remote_changed"
 const AUTH_KINDS = new Set(["api_key", "api_key_and_base_url", "bearer", "azure_api_key", "none"]);
 const PROTOCOLS = new Set(["openai", "anthropic", "google", "openai_compatible", "custom_http"]);
 const API_STYLES = new Set(["auto", "chat_completions", "responses", "anthropic_messages", "google_generative_ai", "opencode_go", "pi_messages"]);
+/** Wire styles a model may pin; `auto` is a provider-level choice, not a model pin. */
+const MODEL_API_STYLES = new Set(["chat_completions", "responses", "anthropic_messages", "google_generative_ai", "opencode_go", "pi_messages"]);
 const EXCLUDED_VENDORS = new Set(["claude-cli", "codex", "openai-codex", "github-copilot", "google-antigravity", "google-gemini-cli", "ollama", "lmstudio", "lm-studio", "local"]);
 const RESERVED_HEADERS = new Set(["authorization", "proxy-authorization", "x-api-key", "api-key", "x-goog-api-key", "cookie", "set-cookie", "host", "content-type", "content-length", "connection", "transfer-encoding", "te", "trailer", "upgrade", "keep-alive", "chatgpt-account-id", "x-opencode-session"]);
 const INPUT_FIELDS = ["name", "vendorKey", "type", "protocol", "baseUrl", "authKind", "models", "defaultModelId", "secretValue", "apiStyle", "headers", "supportsReasoning", "supportedThinkingLevels", "contextWindow", "maxOutputTokens", "temperature"];
-const MODEL_FIELDS = ["id", "alias", "contextWindow", "contextWindowSource", "maxTokens", "maxTokensSource", "thinkingLevels", "defaultThinkingLevel", "thinkingProtocol", "supportsImages", "supportsDocuments", "availableForSubagents", "nativeWebSearch"];
+const MODEL_FIELDS = ["id", "alias", "contextWindow", "contextWindowSource", "maxTokens", "maxTokensSource", "thinkingLevels", "defaultThinkingLevel", "thinkingProtocol", "supportsReasoningEffort", "supportsImages", "supportsDocuments", "availableForSubagents", "nativeWebSearch", "apiStyle"];
 
 function invalid(): never {
   // Never include input values, unknown field names, parser diagnostics or causes.
@@ -82,7 +84,8 @@ function validateModel(value: unknown): ModelBinding {
   const thinking = value.defaultThinkingLevel;
   if (thinking !== null && thinking !== "omit" && !(typeof thinking === "string" && (value.thinkingLevels as string[]).includes(thinking))) invalid();
   if (value.thinkingProtocol !== undefined && value.thinkingProtocol !== "legacy" && value.thinkingProtocol !== "adaptive") invalid();
-  for (const key of ["supportsImages", "supportsDocuments"] as const) {
+  if (value.apiStyle !== undefined && (typeof value.apiStyle !== "string" || !MODEL_API_STYLES.has(value.apiStyle))) invalid();
+  for (const key of ["supportsReasoningEffort", "supportsImages", "supportsDocuments"] as const) {
     if (value[key] !== undefined && value[key] !== null && typeof value[key] !== "boolean") invalid();
   }
   for (const key of ["availableForSubagents", "nativeWebSearch"] as const) {

@@ -481,6 +481,7 @@ export const IPC = {
     browserSetVisible: "minih-agent-desktop/browser/setVisible",
     browserOpenExternal: "minih-agent-desktop/browser/openExternal",
     browserGetState: "minih-agent-desktop/browser/getState",
+    browserGetPages: "minih-agent-desktop/browser/getPages",
     fsList: "minih-agent-desktop/fs/list",
     fsRead: "minih-agent-desktop/fs/read",
     fsReadImageDataUrl: "minih-agent-desktop/fs/readImageDataUrl",

@@ -93,6 +93,7 @@ Tables (canonical DDL in [04-data-storage](04-data-storage.md) §4.3–4.4, §4.
           "contextWindowSource": { "enum": ["catalog", "user"] },
           "maxTokens": { "type": "integer", "minimum": 0 },
           "maxTokensSource": { "enum": ["catalog", "user"] },
+          "supportsReasoningEffort": { "type": ["boolean", "null"] },
           "thinkingLevels": {
             "type": "array",
             "items": { "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"] },
@@ -146,6 +147,24 @@ without a source marker preserve their stored limit, including the generic
 an explicit user choice.
 The resolution rule is specified in
 [13-model-catalog-and-selection](13-model-catalog-and-selection.md) §9.1.
+
+`models[].supportsReasoningEffort` is optional and tri-state: absent or `null`
+keeps automatic endpoint/model compatibility; `true` explicitly permits the
+Chat Completions `reasoning_effort` parameter; `false` omits it. Apply an explicit
+binding after inferred compatibility, only for the effective Chat Completions
+adapter (including its aliases), not Responses or Anthropic. This is independent
+of the model's thinking-level capability. Preserve `false` and `null` through
+normalization, copy, persistence and config sync. Existing records without the
+field remain readable, with no SQL schema change. Older strict importers may
+reject an export containing the additive field; do not silently discard it.
+
+Custom endpoints derive auth from the effective key: a new blank/whitespace key
+saves `authKind: "none"`; a supplied trimmed key selects API-key auth. Blank
+editing keeps the saved key. Clear saved key stages removal until Save and
+immediately excludes that key from discovery; cancel changes nothing. A replacement
+key overrides the staged removal. Failed Save retains an actionable error. Named
+presets, including Minih Router, keep their authentication, address and protocol
+rules. See [model selection](13-model-catalog-and-selection.md).
 
 `compatibility.supportsReasoning` and
 `compatibility.supportedThinkingLevels` remain readable for stored-record and

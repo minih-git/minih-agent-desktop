@@ -10551,3 +10551,74 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **关联规格**：IPC §12b／13／13c、组件 §11、交互 §1。
 - **限制**：macOS 隔离候选验证，不代表 Windows／Linux、远程深层搜索、
   已安装用户应用、发布或部署验收。
+
+## 选定上游场景（2026-10-24）
+
+以下场景记录 2026-10-24 选定上游改动（I/II 节）的用户可见语义。实际开发验证结果
+见 `docs/project/upstream-import-2026-10-24.md`；本页不代表发布、真实账号或跨平台验收。
+
+### E2E-COMPOSER-latest-submit-draft-restore
+
+- **前提：** 隔离 Desktop 配置与 stub AgentHost；两个会话，其中一个发送会被拒绝。
+- **步骤：** 在会话 A 输入文本与附件并发送至被拒绝，先编辑草稿再发送一次，然后让第一个请求结算；切到会话 B 输入草稿后切回；分别覆盖普通发送与转向。
+- **预期：** 只有最新一次提交能恢复其文本与附件快照，结算旧请求不会把恢复权还给更早的待处理请求；用户编辑、其他会话草稿和更新的已接受提交都不被覆盖；已接受历史、附件顺序、斜杠/模式命令、副注、会话创建与待审批行为保持不变。
+- **规格：** [交互模式](../04-ux/09-interaction-patterns.md)、[组件规范](../04-ux/08-component-spec.md)。
+- **状态：** 定向开发验证见来源记录；未进行发布验收。
+
+### E2E-BACKGROUND-tasks-admission-and-shared-dock
+
+- **前提：** 隔离 Host 与 stub 长驻命令；同一项目下两个会话。
+- **步骤：** 在会话 A 启动 10 个后台命令后启动第 11 个，再在其他会话继续启动至全局 64 个；折叠/展开时切换 Todo 与后台页签、新增运行中任务、尝试移除运行中或仍在结算的回执；删除单个会话、批量删除会话、移除项目，再归档会话并切换对话。
+- **预期：** 每会话 10 个与全局 64 个上限以不同错误分别报告，被拒绝的准入不执行任何命令（会话不存在或 Host 正在退出时同样在启动前拒绝）。页签在折叠时仍可点达、选中即展开，新运行任务只加徽标而不抢占选中页签；运行中或结算中的回执不能在状态层被移除，移除从不停止进程。删除/批量删除/移除项目只向被删会话的任务发信号，清理立即返回、终态通知随后到达；归档与切换会话不停止进程；界面不出现扫光动画。
+- **规格：** [工具与权限](../03-runtime/03-tools-and-permissions.md)、[Host RPC](../03-runtime/06-host-rpc-protocol.md)、[组件规范](../04-ux/08-component-spec.md)。
+- **状态：** 定向开发验证见来源记录；未进行发布验收。
+
+### E2E-LIVE-VOICE-gemini-close-without-reason
+
+- **前提：** 离线 socket fixture 驱动生产 Gemini adapter；不使用真实账号或麦克风。
+- **步骤：** 建立通话后让 socket 发出不带 reason 缓冲区的关闭事件，重复一次传输错误，再取消并关闭 adapter。
+- **预期：** 关闭事件按既有分类失败处理并走正常清理，不抛 TypeError；缺失 reason 按空详情解码；单次失败抑制、取消与诊断保密性不变。
+- **规格：** [实时语音](../03-runtime/live-voice.md)。
+- **状态：** 定向开发验证见来源记录；未进行发布验收。
+
+### E2E-PROVIDER-reasoning-effort-tri-state
+
+- **前提：** 本地 stub Chat Completions 与 Responses endpoint；一个自定义提供商，其中一个模型以按模型的 `apiStyle` 覆盖提供商全局格式。
+- **步骤：** 将绑定分别设为自动、发送、不发送并保存；复制为草稿后保存；同步到另一配置并读取；用每种状态发起模型请求；检查控件只对生效的 Chat Completions 格式出现。
+- **预期：** 自动/缺省保持端点与模型兼容性推断，发送显式允许 `reasoning_effort`，不发送省略该参数；显式值在推断之后生效且只作用于生效的 Chat Completions adapter（按模型格式优先于全局），Responses/Anthropic 格式不变。保存、复制与同步都保留三态：`false` 不丢失，`null` 不被固定成布尔值；开关不虚构思考等级。
+- **规格：** [Agent 运行时](../03-runtime/02-agent-runtime.md)、[提供商配置 schema](../03-runtime/12-provider-config-schema.md)、[模型目录及选择](../03-runtime/13-model-catalog-and-selection.md)、[设置信息架构](../04-ux/06-settings-ia.md)。
+- **状态：** 定向开发验证见来源记录；未进行发布验收。
+
+### E2E-PROVIDER-custom-endpoint-optional-key
+
+- **前提：** 本地无认证 stub 端点、一个已保存密钥的自定义提供商行，以及命名预设（含 Minih Router）fixture。
+- **步骤：** 用空白/仅空白密钥新建自定义端点并保存；编辑已有密钥行时保持空白并保存；清除已存密钥后检查发现请求再保存；重开后取消编辑；输入替代密钥覆盖暂存删除；制造一次保存失败。
+- **预期：** 新建空白密钥保存为 `authKind: "none"` 且不带 secret；编辑留空保留已存密钥与认证；清除只在本地暂存，保存前的发现不再复用旧密钥，保存后应用匿名认证；取消不改动已存密钥，替代密钥优先；保存失败保留可操作错误，且不在 Host 确认前宣告移除成功；Minih Router 等命名预设置信要求与显式协议选择不变。
+- **规格：** [提供商配置 schema](../03-runtime/12-provider-config-schema.md)、[模型目录及选择](../03-runtime/13-model-catalog-and-selection.md)。
+- **状态：** 定向开发验证见来源记录；未进行发布验收。
+
+### E2E-BROWSER-background-execution-and-reload-restore
+
+- **前提：** 真实 Electron/Main 与本地页面 fixture；两个会话各带浏览器资源标签；不访问外网。
+- **步骤：** 在会话 A 隐藏面板时导航；关闭 A 已连接的页面后继续执行浏览器操作，再显式导航或预览；重载渲染器并检查会话 B 已选中其他标签时的恢复；投递过期恢复回复；探测 URL/文件根与权限校验。
+- **预期：** Main 先创建并加载该会话自己的页面，再通知展示层；隐藏会话不抢焦点也不重开面板。`browser/getPages({sessionId})` 只返回该会话的 `BrowserState[]`，恢复不替换用户选择并丢弃过期回复。已连接页面关闭后操作失败，直到显式导航/预览重连，绝不回退到其他标签或可见页；未带作用域的 UI 调用仍以可见页为边界；URL/文件根、分区、权限与 CDP 规则不变。
+- **规格：** [IPC 协议](../03-runtime/01-ipc-protocol.md)、[组件规范](../04-ux/08-component-spec.md)、[交互模式](../04-ux/09-interaction-patterns.md)。
+- **状态：** 定向开发验证见来源记录；macOS 非前台全屏截图阶段受环境限制。
+
+### E2E-CHAT-topbar-rename-and-usage-capsule
+
+- **前提：** 会话分别属于非活动项目、空聊天、临时聊天与远程会话；父回合带已归一化用量，另有不含用量的历史回合。
+- **步骤：** 用现有重命名操作就地编辑本地标题：Enter、blur、Escape、输入法合成、空白与未改动草稿，以及编辑中切换会话。父回合完成后 hover/focus token 胶囊，向上打开后滚动、调整窗口、切换会话并卸载。
+- **预期：** 面包屑来自会话自身的项目与命名偏好；空聊天用其工作区、临时聊天省略、远程标签只作展示。Enter/blur 只提交一次，Escape 取消，输入法合成期间按键归输入法，空白/未改动不提交，切换会话丢弃编辑器，并保留标题长度限制与本地化失败反馈。胶囊把已归一化的父回合用量投影为输入、输出、缓存读取与缓存写入，推理已含在输出中不重复计入，不加入子代理开销；浮层优先向上且受主聊天区约束，在滚动/缩放/切换/卸载时正确关闭或重定位；无用量历史保留原有回退而非假零。
+- **规格：** [组件规范](../04-ux/08-component-spec.md)、[交互模式](../04-ux/09-interaction-patterns.md)。
+- **状态：** 定向开发验证见来源记录；未进行发布验收。
+
+### E2E-CHAT-turn-header-visual-adaptation
+
+- **前提：** 同一回合覆盖 standard/detailed/compact、两种 `showThinking` 状态，以及含与不含历史耗时的数据。
+- **步骤：** 渲染运行中与已完成回合，检查转录边缘发丝线、紧凑时长/工具计数、叙述预览、独立 Bash 行、搜索揭示与用户披露选择；对缺失耗时的历史回合重复。
+- **预期：** 仅视觉适配：三种密度、`showThinking` 行为、叙述预览、可见步骤计数、问题反馈、密度所需的独立 Bash 行、搜索揭示与用户自主披露均保持不变；不引入上游显示模式系统；缺失历史耗时保持缺失，不伪造成 0 秒。
+- **规格：** [组件规范](../04-ux/08-component-spec.md)、ADR turn-process-and-thinking-display。
+- **状态：** 定向开发验证见来源记录；未进行发布验收。
+
+**实现侧定向入口（本文档不声明其运行结果）：** `apps/desktop/test/composer-submit-race.test.mjs`、`background-tasks-dock-state.test.mjs`、`background-tasks-row-toggle.test.mjs`、`browser-tab-restore.test.mjs`、`browser-background-session.test.mjs`、`topbar-title-inline-rename.test.mjs`、`turn-usage-capsule.test.mjs`、`turn-process-header.test.mjs`、`turn-process-header-style.test.mjs`、`packages/agent-runtime/src/provider-reasoning-effort.test.ts` 与 `scripts/e2e/browser-background-session.ts`。

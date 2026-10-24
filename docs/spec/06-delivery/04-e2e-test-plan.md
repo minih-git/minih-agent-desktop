@@ -1306,7 +1306,24 @@ identify the platform validation still needed.
 #### E2E-005: Add a provider and save API key
 
 - **Preconditions**: App running; no provider configured; the models.dev snapshot ships with the build.
-- **Steps**: 1) Open Settings → Model configuration and choose Add provider. 2) Confirm the searchable service chooser opens. Filter and select a built-in API-key service or **Custom endpoint**; the selection must open its matching form, never the plugin-only “selected service unavailable” state. Confirm the form has no stepper or Next/Back buttons. For **Custom endpoint**, Name and Base URL appear on one row with no helper paragraph under the URL (placeholder only), API Key and API format appear side by side on the next row (not behind Advanced), and a focused field plus its 2px accent ring stays fully inside the dialog, including on a window narrower than 1040px. The custom form's **No API key required** switch starts off; enabling it clears and disables the key field. 3) Enter a name and a base URL for a service that publishes a `/models` route, then paste an API key. Confirm the models section fills with the models THAT SERVICE returned without requiring a key for discovery; confirm a model the deployment does not host is absent. Also exercise the no-auth path with a custom endpoint: leave the key empty, enable **No API key required**, select a discovered model, and save. 4) Type in the filter box and confirm the list narrows client-side with no network request per keystroke. 5) Confirm each row shows the models.dev-derived context/output for models the catalog knows, that its compact text tracks the published value instead of a coarser rounded one (a 1,050,000 window reads `1.05M`, never `1.1M`), and that a model with no catalog match still lists with generic defaults. 6) Select two models with the checkboxes. 7) Expand Advanced on one chosen row, override its limits and toggle thinking chips; confirm each numeric field has a five-chip preset ladder for common values, clicking a chip writes the value, hand editing remains possible, and a non-preset value leaves the ladder unselected. Set max output to 8,192 while its context window still follows the catalog. On a model whose published image input is enabled, toggle image input off and then back on before saving, so the explicit choice equals the current catalog value. Confirm the label and optional hint sit above one compact grouped control and do not force the options onto a second row at normal dialog width; confirm all seven canonical levels are available, that published levels start selected for a known reasoning model, and that a non-reasoning or unknown row shows the same chips unselected with the manual-override hint; enable one level on that row and confirm the other row is unaffected. 8) Open the form-level Advanced and confirm the API format is present but pre-derived. 9) Add a free-form model ID the service did not return; confirm it is added with 128,000 / 8,192 / no-thinking defaults, then enable a thinking level if the endpoint supports it; confirm re-adding the same ID in different letter case is rejected as already added. 10) Save.
+- **Steps**: 1) Open Settings → Model configuration → Add provider. Filter the
+  service chooser and select a built-in API-key service or Custom endpoint; the
+  matching single-page form opens, without wizard controls or an unavailable-plugin
+  state. 2) Check Name/Base URL, side-by-side API Key/API format, and a complete
+  focus ring at normal and narrow widths. Custom endpoints have an optional key,
+  not a no-auth switch. 3) Probe a fixture `/models` service with a typed key and
+  without one; select only returned models, never catalog substitutes. Save the
+  blank-key custom path anonymously. 4) Filter client-side with no per-keystroke
+  request. 5) Check exact compact catalog limits (`1.05M`, not `1.1M`) and generic
+  defaults for unknown models. 6) Select two models, expand Advanced, exercise the
+  five context/output presets and manual values, pin output to 8,192 independently
+  of catalog context, and toggle image input off/back on. 7) Check all seven
+  thinking levels, published defaults, and explicit unknown-model overrides without
+  changing the other row. For effective Chat Completions, save/reopen Auto/Send/
+  Do not send for reasoning effort; exercise per-model protocol overrides.
+  8) Confirm form-level API format behavior. 9) Add an unknown model with generic
+  128,000/8,192/no-thinking defaults, enable a supported manual level and reject
+  case-insensitive duplicates. 10) Save and reopen the independent overrides.
 - **Expected**: The service is asked first and models.dev only enriches the answer and seeds known-model defaults. The no-auth custom path saves `authKind: "none"`, omits `secretValue`, and makes the configured provider available anywhere an enabled no-auth provider is selectable; named cloud preset behavior stays unchanged. Newly fetched or checked model rows stay collapsed until the user opens Advanced, so every selected model ID remains visible in the right pane after a multi-select. The settings picker always offers the seven canonical thinking levels, and the Composer later renders the explicit levels saved in the same model binding; an empty or `off`-only binding resolves to `off`. Discovery is debounced ~600 ms, does not mark loading until that window elapses, and a slow reply from an earlier keystroke never replaces a newer list; named add-path discovery waits for an API key, while an unsaved custom provider is probed with the typed base URL (and key, if any) before it exists. Preset ladders cover common context/output limits while preserving hand-edited values. The explicitly selected 8,192 output remains pinned independently of the catalog-sourced context window, and the image-input choice remains explicitly enabled after it is toggled back to the published value; neither is reinterpreted as "follow catalog" on save/reopen. Later catalog corrections change only values whose own source is `catalog`. Limit text renders through one shared compact formatter, so neighbouring published windows stay distinguishable (`1M` / `1.05M` / `1.1M`) and a compact limit never reads above its published value. Custom endpoint keeps API format beside the key and omits Base URL helper copy; named endpoints do not show format. Point the same custom form at an unreachable or unauthorized URL and confirm one classified sentence reaches the app toast while the left pane keeps its single “no list” label (not a raw JSON/HTML dump and not a second “no models” empty state); with cached rows from a later edit the same reason is toasted while the rows stay. Point a second provider at a base URL with no `/models` route and confirm the left pane keeps its single “no list” label with no catalog rows standing in for the service, the reason stays the one toast sentence, and the provider still saves with a hand-added model. The provider appears as a row with its host, model count and secret badge; the key is stored securely (not in plaintext config); `models` contains both bindings and `models[0]` remains the provider default.
 - **Specs linked**: `03-runtime/11-provider-model-system.md`, `03-runtime/12-provider-config-schema.md`, `03-runtime/13-model-catalog-and-selection.md`, `03-runtime/14-secrets-storage.md`, `04-ux/06-settings-ia.md`
 - **Acceptance**: B (multi-model provider configuration, save key)
@@ -1316,8 +1333,17 @@ identify the platform validation still needed.
 #### E2E-PROVIDER-custom-endpoint-no-api-key: Configure a custom service without credentials
 
 - **Preconditions**: Isolated settings profile and a local OpenAI-compatible fixture that lists a model without credentials; no live or paid provider.
-- **Steps**: 1) Open Settings → Model configuration → Add provider → Custom endpoint. 2) Enter a name and the fixture URL; check **No API key required**. 3) Confirm model discovery succeeds without a key, select the returned model, and save. 4) Confirm the provider and model are offered by chat/default-model and subagent selectors. 5) Edit an API-key provider, select **No API key required**, save, and inspect the provider's stored auth kind and credential state. 6) Send a request through the no-auth provider fixture.
-- **Expected**: The custom form remains in API-key mode by default. The explicit no-key selection saves `authKind: "none"` without `secretValue`; editing to this mode removes the provider's existing API key. The enabled provider with `hasSecret: false` remains selectable for chat, defaults, subagents, and image generation where its model supports that operation. Runtime requests contain no API-key or Authorization credentials.
+- **Steps**: Create a custom fixture endpoint with empty/whitespace key, discover
+  and save a model, then reopen. Edit a keyed row with blank input and save. Reopen,
+  Clear saved key and inspect anonymous discovery before saving. Cancel once, then
+  repeat and save; also replace the staged removal with a new key. Force one Save
+  failure and check its error. Repeat the named Minih Router path.
+- **Expected**: New blank-key custom rows infer `authKind: "none"` with no secret;
+  blank edits retain the key. Clear is staged until Save and excludes the old key
+  from discovery immediately. Cancel changes nothing; a replacement restores key
+  auth, and failed Save never announces removal. Named presets retain auth/address/
+  protocol rules. No-auth providers remain selectable, and requests contain no
+  API-key/Authorization credential. There is no separate no-auth switch.
 - **Automation**: `pnpm test:e2e:provider-api-style` renders the production setup form in English and Simplified Chinese with a stubbed model-discovery/API boundary and verifies create/update payloads and chat/default/subagent selector eligibility. `pnpm --filter @minih-agent/agent-runtime test -- provider-binding.test.ts` verifies request headers; `apps/desktop/test/image-generation-default.test.mjs` covers no-auth image-model availability; `cargo test -p host-core --locked switching_provider_to_no_auth_clears_its_api_key` verifies Host persistence and secret removal.
 - **Specs linked**: `03-runtime/11-provider-model-system.md`, `03-runtime/12-provider-config-schema.md`, `03-runtime/13-model-catalog-and-selection.md`, `04-ux/06-settings-ia.md`.
 - **Acceptance**: B (model configuration), F (provider persistence), Security.
@@ -20383,3 +20409,52 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   end-to-end reading-position pass stays manual with
   `scripts/e2e-transcript-reading-position.mjs`.
 
+
+## Selected upstream lifecycle scenarios (2026-10-24)
+
+### E2E-COMPOSER-latest-submit-draft-restore
+Submit ordinary/steering requests with controlled acceptance order. A newer success
+followed by an older rejection, or reuse of a cleared restoration slot, never
+revives an old draft. User edits, attachments and another session remain intact.
+Coverage: `composer-submit-race.test.mjs` invokes the production submit hook.
+
+### E2E-BACKGROUND-tasks-admission-and-shared-dock
+Fill one session's ten slots, reject its next command before any marker side effect,
+and admit another session. Distinguish the 64-total ceiling. Delete one session,
+batch-delete and remove a project: only those owners' actual children stop and
+reap; unrelated tasks survive. Turn abort/archive/switch preserve registered tasks.
+Output remains bounded and final bytes retained; explicit Stop and Host exit reap.
+Coverage: Rust background registry tests and `scripts/e2e-background-tasks-host.mjs`.
+
+### E2E-TASKS-shared-dock-preserves-user-tab
+Exercise Todo/tasks tabs while collapsed, selection expansion, badge arrival without
+tab theft, session changes and remote/draft exclusion. Dismiss running/settling
+tasks through the state action and confirm rejection. Output/Stop remain independent.
+
+### E2E-PROVIDER-reasoning-effort-tri-state
+Save/copy/sync true/false/null/absent with per-model protocol overrides. Inspect
+actual fixture Chat Completions bodies: explicit bool wins after inference;
+Responses/Anthropic and non-reasoning models do not gain invented parameters.
+Old records read normally; invalid types fail and older strict importers may reject.
+
+### E2E-BROWSER-background-execution-and-reload-restore
+With A hidden and B visible, navigate/preview and execute A's page without changing
+B or reopening the panel. Reload presentation, restore missing tabs from session-
+filtered getPages and reject stale replies without selection theft. Close A's
+connected tab while a sibling exists: execution fails until explicit reconnect.
+Exercise parked-page pointer/capture failure/timeout cleanup and final disposal;
+file roots, URL/CDP permissions and local/remote boundaries remain enforced.
+
+### E2E-CHAT-topbar-rename-and-usage-capsule / E2E-CHAT-turn-header-visual-adaptation
+Rename local titles with Enter/blur/Escape/IME and session switch; verify actual
+session project crumbs, title limits and errors. Inspect parent usage buckets and
+upward popover at narrow sizes using focus/pointer. Switch all Minih densities,
+thinking, fold/search/disclosure states and confirm narration, Bash, issue markers
+and existing metadata remain. Missing usage/timing never becomes fake zero.
+
+### E2E-LIVE-VOICE-gemini-close-without-reason
+Emit a socket close with no Buffer reason in an offline adapter fixture. It must
+report one classified failure, complete teardown and throw no TypeError.
+
+These scenarios describe acceptance; actual executed results are recorded in
+`docs/project/upstream-import-2026-10-24.md`, not inferred from this plan.

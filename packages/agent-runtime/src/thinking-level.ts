@@ -36,6 +36,8 @@ export type ModelConfig = {
   reasoning: boolean;
   reasoningOptions?: ModelReasoningOption[];
   thinkingProtocol?: ThinkingProtocol;
+  /** Explicit saved binding override, separate from adapter compatibility. */
+  supportsReasoningEffort?: boolean | null;
   supportedThinkingLevels?: readonly ThinkingLevel[];
   thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
   toolCall?: boolean;

@@ -249,6 +249,7 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
                     thinking_levels: vec!["high".into(), "medium".into()],
                     default_thinking_level: Some("medium".into()),
                     thinking_protocol: Some("adaptive".into()),
+                    supports_reasoning_effort: Some(false),
                     supports_images: Some(true),
                     supports_documents: None,
                     available_for_subagents: Some(true),
@@ -265,6 +266,7 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
                     thinking_levels: vec![],
                     default_thinking_level: None,
                     thinking_protocol: None,
+                    supports_reasoning_effort: None,
                     supports_images: None,
                     supports_documents: Some(false),
                     available_for_subagents: None,
@@ -322,6 +324,12 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
     assert!(config["models"][1].get("supportsImages").is_none());
     assert_eq!(provider.models[0].supports_images, Some(true));
     assert_eq!(provider.models[1].supports_documents, Some(false));
+    // The reasoning-effort answer is tri-state: a saved false survives, and
+    // "follow compatibility" stays absent instead of becoming a pinned boolean.
+    assert_eq!(config["models"][0]["supportsReasoningEffort"], false);
+    assert!(config["models"][1].get("supportsReasoningEffort").is_none());
+    assert_eq!(provider.models[0].supports_reasoning_effort, Some(false));
+    assert_eq!(provider.models[1].supports_reasoning_effort, None);
 
     let legacy = create_provider(
         &db,
@@ -375,6 +383,7 @@ fn binding_with_alias(id: &str, alias: Option<&str>) -> ModelBinding {
         thinking_levels: Vec::new(),
         default_thinking_level: None,
         thinking_protocol: None,
+        supports_reasoning_effort: None,
         supports_images: None,
         supports_documents: None,
         available_for_subagents: None,
@@ -443,10 +452,12 @@ fn normalize_model_bindings_preserves_known_thinking_protocols_only() {
     let normalized = normalize_model_bindings(&[
         ModelBinding {
             thinking_protocol: Some("adaptive".into()),
+            supports_reasoning_effort: None,
             ..binding_with_alias("adaptive-model", None)
         },
         ModelBinding {
             thinking_protocol: Some("unsupported".into()),
+            supports_reasoning_effort: None,
             ..binding_with_alias("legacy-model", None)
         },
     ]);
@@ -1600,6 +1611,7 @@ fn binding_with_limits(id: &str, context_window: u32, max_tokens: u32) -> ModelB
         thinking_levels: Vec::new(),
         default_thinking_level: None,
         thinking_protocol: None,
+        supports_reasoning_effort: None,
         supports_images: None,
         supports_documents: None,
         available_for_subagents: None,
@@ -2022,4 +2034,100 @@ fn sync_payloads_keep_only_storable_headers() {
     // holding it behaves the same before and after this runs.
     let raw = BTreeMap::from([("x-cjk".to_string(), "星".to_string())]);
     assert!(storable_headers(&raw).is_empty());
+}
+
+#[test]
+fn reasoning_effort_override_survives_provider_create_update_and_read() {
+    let (_dir, db, secrets) = test_context();
+    let binding = json!({
+        "id": "deepseek-v4.1-flash",
+        "contextWindow": 128_000,
+        "maxTokens": 8_192,
+        "contextWindowSource": "user",
+        "maxTokensSource": "catalog",
+        "thinkingLevels": ["off", "high"],
+        "supportsReasoningEffort": true
+    });
+    let input: ProviderCreateInput = serde_json::from_value(json!({
+        "name": "Reasoning gateway",
+        "baseUrl": "https://gateway.example/v1",
+        "authKind": "none",
+        "apiStyle": "chat_completions",
+        "models": [binding]
+    }))
+    .unwrap();
+    let provider = create_provider(&db, &secrets, input).unwrap();
+    assert_eq!(provider.models[0].supports_reasoning_effort, Some(true));
+    // The new switch does not disturb the independently stored limit provenance.
+    assert_eq!(
+        provider.models[0].context_window_source.as_deref(),
+        Some("user")
+    );
+    assert_eq!(
+        provider.models[0].max_tokens_source.as_deref(),
+        Some("catalog")
+    );
+    let provider_id = provider.id.clone();
+    for value in [json!(false), serde_json::Value::Null, json!(true)] {
+        let mut model = binding.clone();
+        model["supportsReasoningEffort"] = value.clone();
+        let input: ProviderUpdateInput = serde_json::from_value(json!({
+            "id": provider_id,
+            "models": [model]
+        }))
+        .unwrap();
+        update_provider(&db, &secrets, input).unwrap();
+        let loaded = get_provider(&db, &secrets, &provider_id).unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(&loaded).unwrap()["models"][0]["supportsReasoningEffort"],
+            value
+        );
+    }
+}
+
+#[test]
+fn reasoning_effort_override_reads_legacy_configs_without_pinning_null() {
+    let raw = r#"{"models":[
+        {"id":"legacy","contextWindow":64000,"maxTokens":4096,"thinkingLevels":["off"]},
+        {"id":"null","contextWindow":64000,"maxTokens":4096,"thinkingLevels":["off"],"supportsReasoningEffort":null},
+        {"id":"off","contextWindow":64000,"maxTokens":4096,"thinkingLevels":["off"],"supportsReasoningEffort":false},
+        {"id":"on","contextWindow":64000,"maxTokens":4096,"thinkingLevels":["off"],"supportsReasoningEffort":true}
+    ]}"#;
+    let bindings = config_model_bindings(raw, None, "provider-under-test");
+    assert_eq!(bindings.len(), 4);
+    assert_eq!(bindings[0].supports_reasoning_effort, None);
+    assert_eq!(bindings[1].supports_reasoning_effort, None);
+    assert_eq!(bindings[2].supports_reasoning_effort, Some(false));
+    assert_eq!(bindings[3].supports_reasoning_effort, Some(true));
+
+    let saved = config_with_model_bindings("{}", &bindings).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert!(value["models"][0].get("supportsReasoningEffort").is_none());
+    assert!(value["models"][1].get("supportsReasoningEffort").is_none());
+    assert_eq!(value["models"][2]["supportsReasoningEffort"], false);
+    assert_eq!(value["models"][3]["supportsReasoningEffort"], true);
+
+    let legacy =
+        config_model_bindings(r#"{"modelId":"legacy-model"}"#, None, "provider-under-test");
+    assert_eq!(legacy[0].supports_reasoning_effort, None);
+}
+
+#[test]
+fn reasoning_effort_override_rejects_non_boolean_input() {
+    for value in [json!("true"), json!(1), json!({})] {
+        let parsed = serde_json::from_value::<ProviderCreateInput>(json!({
+            "name": "Custom gateway",
+            "models": [{"id": "model", "supportsReasoningEffort": value}]
+        }));
+        assert!(parsed.is_err());
+    }
+    // A stored entry with the wrong type costs only itself, never its sibling.
+    let raw = r#"{"models":[
+        {"id":"bad","supportsReasoningEffort":"true"},
+        {"id":"good","contextWindow":64000,"maxTokens":4096,"thinkingLevels":["off"]}
+    ]}"#;
+    let bindings = config_model_bindings(raw, None, "provider-under-test");
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].id, "good");
+    assert_eq!(bindings[0].supports_reasoning_effort, None);
 }

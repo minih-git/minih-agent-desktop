@@ -252,6 +252,17 @@ describe("binding attachment capability overrides", () => {
     expect(config.maxTokens).toBe(32_000);
     expect(config.supportedThinkingLevels).toEqual(["off", "medium"]);
   });
+
+  it("projects the saved tri-state reasoning-effort answer without inventing one", () => {
+    for (const value of [true, false, null] as const) {
+      expect(modelConfigWithBinding(knownModel(), {
+        ...baseBinding,
+        supportsReasoningEffort: value,
+      }).supportsReasoningEffort).toBe(value);
+    }
+    expect(modelConfigWithBinding(knownModel(), baseBinding).supportsReasoningEffort)
+      .toBeUndefined();
+  });
 });
 
 describe("unmatched model effective thinking policy", () => {

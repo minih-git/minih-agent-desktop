@@ -678,7 +678,7 @@ export function ModelSelectionPanes({
                       imageModelSelected={imageModelSelected}
                       onImageModelChange={onImageModelChange}
                       apiStyleOptions={modelApiStyleOptions}
-                      globalApiStyle={globalApiStyle}
+                      globalApiStyle={globalApiStyle ?? apiStyle}
                       onChange={(patch) => updateBinding(binding.id, patch)}
                     />
                   </div>

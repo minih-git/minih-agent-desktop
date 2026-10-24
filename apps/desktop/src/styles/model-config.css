@@ -271,12 +271,6 @@
   min-width: 0;
 }
 
-.provider-setup-no-api-key-option {
-  display: grid;
-  gap: 4px;
-  margin-top: 2px;
-}
-
 .provider-service-anchor {
   width: 100%;
   min-width: 0;
@@ -1164,6 +1158,14 @@
   align-items: center;
   justify-self: end;
   gap: 12px;
+}
+
+.provider-chosen-reasoning-effort {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .provider-chosen-thinking-default,

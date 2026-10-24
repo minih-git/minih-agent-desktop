@@ -90,6 +90,7 @@
           "contextWindowSource": { "enum": ["catalog", "user"] },
           "maxTokens": { "type": "integer", "minimum": 0 },
           "maxTokensSource": { "enum": ["catalog", "user"] },
+          "supportsReasoningEffort": { "type": ["boolean", "null"] },
           "thinkingLevels": {
             "type": "array",
             "items": { "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"] },
@@ -144,6 +145,19 @@ JSON、根节点非对象、`models` 非数组，或任一条目不可读，都�
 host-core 只保留 `catalog` / `user`，丢弃其他值。没有来源标记的旧记录会保留已存限额，
 包括通用的 128,000 / 8,192，因为旧值无法表明它是通用种子还是用户显式选择。解析规则见
 [13-model-catalog-and-selection](13-model-catalog-and-selection.md) §9.1。
+
+`models[].supportsReasoningEffort` 可选且为三态：缺省或 `null` 保持端点/模型自动兼容性判断；
+`true` 显式允许 Chat Completions 的 `reasoning_effort` 参数；`false` 省略该参数。显式绑定
+在推断出的兼容性之后生效，且只作用于生效的 Chat Completions adapter（含其别名），不影响
+Responses 或 Anthropic。它与模型的思考等级能力相互独立。规范化、复制、持久化和配置同步
+都必须保留 `false` 与 `null`。缺少该字段的既有记录仍可读取，无需 SQL schema 变更。较旧的
+严格导入器可能拒绝包含该新增字段的导出；不要静默丢弃它。
+
+自定义端点由生效密钥推导认证：新建行留空或只含空白时保存 `authKind: "none"`；提供修剪后的
+密钥则选择 API-key 认证。编辑时留空保留已存密钥。清除已存密钥只在保存前暂存删除，并立即
+把该密钥从发现流程中排除；取消不改动任何内容；替代密钥优先于暂存删除。保存失败保留可操作
+的错误。命名预设（含 Minih Router）保留各自的认证、地址与协议规则。见
+[模型选择](13-model-catalog-and-selection.md)。
 
 `supportsImages` 与 `supportsDocuments` 缺省或为 `null` 时跟随已发布能力，直到用户
 主动更改复选框。用户一旦选择，显式布尔值就会固定保存；即使当前值与目录相同，之后的

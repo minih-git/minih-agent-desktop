@@ -4,9 +4,8 @@ import i18n from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { en } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
-import { BackgroundTasksBar } from "../../apps/desktop/src/components/BackgroundTasksBar";
 import { Composer } from "../../apps/desktop/src/components/Composer";
-import { TodoDock } from "../../apps/desktop/src/components/TodoDock";
+import { TaskDock } from "../../apps/desktop/src/components/TaskDock";
 import { AskToolCard } from "../../apps/desktop/src/components/AskToolCard";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import type { BackgroundTaskOutput, BackgroundTaskSummary } from "../../apps/desktop/src/lib/api";
@@ -81,7 +80,7 @@ function sessionSummary(id: string) {
   };
 }
 
-/** Mount the production Composer so the bar is reached through its real owner. */
+/** Mount the production Composer so the container is reached through its real owner. */
 async function mountComposer(sessionId: string | null) {
   flushSync(() => root?.unmount());
   pending.clear();
@@ -102,7 +101,7 @@ async function mountComposer(sessionId: string | null) {
   root = createRoot(document.getElementById("root")!);
   flushSync(() => root!.render(<I18nextProvider i18n={i18n}><Composer /></I18nextProvider>));
   await until(
-    () => document.querySelectorAll(".background-task").length ===
+    () => document.querySelectorAll(".task-row").length ===
       (sessionId ? sessionTasksOf(sessionId).length : 0),
     "session tasks did not render",
   );
@@ -111,7 +110,7 @@ async function mountComposer(sessionId: string | null) {
 const sessionTasksOf = (sessionId: string) =>
   tasks.filter((task) => task.sessionId === sessionId);
 /** Session each rendered row belongs to, read from the fixture's command text. */
-const barSessions = () => [...document.querySelectorAll<HTMLElement>(".background-task-command")]
+const barSessions = () => [...document.querySelectorAll<HTMLElement>(".task-command")]
   .map((command) => /--session=([a-z]+)/.exec(command.textContent ?? "")?.[1] ?? "");
 
 async function mount(count = 10) {
@@ -142,8 +141,7 @@ async function mount(count = 10) {
     <I18nextProvider i18n={i18n}>
       <div className="composer-dock composer-dock-docked">
         <div className="composer-stack">
-          <TodoDock sessionId="fixture" />
-          <BackgroundTasksBar sessionId="fixture" />
+          <TaskDock sessionId="fixture" />
           <AskToolCard request={{
             sessionId: "fixture", requestId: "fixture-ask", toolCallId: "fixture-ask",
             questions: [{ question: "Keep the background commands running?", options: ["Continue", "Stop"] }],
@@ -153,16 +151,22 @@ async function mount(count = 10) {
       </div>
     </I18nextProvider>,
   ));
-  await until(() => document.querySelectorAll(".background-task").length === count, "tasks did not render");
+  await until(() => document.querySelectorAll(".task-row").length === count, "tasks did not render");
 }
 
 function row(index: number) {
-  const element = document.querySelectorAll<HTMLElement>(".background-task")[index];
+  const element = document.querySelectorAll<HTMLElement>(".task-row")[index];
   assert(element, `task ${index} must be reachable`);
   return element;
 }
 
 function click(index: number, label = "Output") {
+  if (label === "Output") {
+    const main = row(index).querySelector<HTMLButtonElement>(".task-main");
+    assert(main, "task-main control is missing");
+    flushSync(() => main.click());
+    return;
+  }
   const button = [...row(index).querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => (button.getAttribute("aria-label") ?? button.textContent)?.trim() === label);
   assert(button, `${label} control is missing`);
@@ -170,7 +174,25 @@ function click(index: number, label = "Output") {
 }
 
 async function probe() {
-  await i18n.init({ lng: "en", resources: { en: { translation: en } } });
+  const translation = {
+    ...en,
+    backgroundTasks: {
+      ...en.backgroundTasks,
+      headerCount: "{{count}} background tasks",
+      removeFailed: "Could not remove this task.",
+    },
+    taskDock: {
+      title: "Todo and background tasks",
+      tabTodo: "Todo",
+      tabTasks: "Background tasks",
+      newTasks: "{{count}} new tasks",
+      runningCount: "{{count}} running",
+      expand: "Expand {{label}}",
+      collapse: "Collapse {{label}}",
+      ...(en as { taskDock?: Record<string, string> }).taskDock,
+    },
+  };
+  await i18n.init({ lng: "en", resources: { en: { translation } } });
   const results: { name: string; ok: boolean; error?: string }[] = [];
   let responsiveness: { samples: number; eventLoopDelayP95Ms: number; eventLoopDelayMaxMs: number; outputReads: number } | undefined;
   const unhandled: string[] = [];
@@ -184,48 +206,78 @@ async function probe() {
     catch (error) { results.push({ name, ok: false, error: String(error) }); }
   };
 
-  await check("ten tasks scroll without displacing Todo, Ask, or input", async () => {
+  await check("ten tasks scroll inside the shared dock without displacing Ask or input", async () => {
     await mount();
-    const bar = document.querySelector<HTMLElement>(".background-tasks-bar")!;
-    const box = bar.getBoundingClientRect();
+    const dock = document.querySelector<HTMLElement>(".dock")!;
+    const panel = [...document.querySelectorAll<HTMLElement>(".dock-panel")].find((node) => !node.hidden)!;
+    const box = panel.getBoundingClientRect();
     assert(box.height >= 40, `task list must be visible (${box.height}px)`);
     assert(box.height <= 220, `task list is unbounded (${box.height}px)`);
-    assert(bar.scrollHeight > bar.clientHeight, "overflowing rows need an internal scrollport");
-    assert(getComputedStyle(bar).overflowY === "auto", "task list must be scrollable");
-    const todo = document.querySelector(".todo-dock")!.getBoundingClientRect();
+    assert(panel.scrollHeight > panel.clientHeight, "overflowing rows need an internal scrollport");
+    assert(getComputedStyle(panel).overflowY === "auto", "task list must be scrollable");
+    const dockBox = dock.getBoundingClientRect();
     const ask = document.querySelector(".asktool-card")!.getBoundingClientRect();
     const input = document.querySelector("textarea")!.getBoundingClientRect();
-    assert(todo.top >= 0 && todo.bottom <= box.top + 1, "Todo must remain above the task list");
-    assert(box.bottom <= ask.top + 1 && ask.bottom <= input.top + 1, "Ask must remain above the input");
+    assert(dockBox.top >= 0 && dockBox.bottom <= ask.top + 1, "dock must remain above Ask");
+    assert(ask.bottom <= input.top + 1, "Ask must remain above the input");
     assert(input.bottom <= innerHeight && input.width > 100, "input must remain usable");
     row(9).scrollIntoView({ block: "nearest" });
     click(9);
-    await until(() => !!document.querySelector(".background-task-output")?.textContent?.includes("task-9"), "last task output is unreachable");
+    await until(() => !!document.querySelector(".task-output")?.textContent?.includes("task-9"), "last task output is unreachable");
+  });
+
+  await check("collapsed tabs remain reachable, expand on click, and badge new tasks without stealing the tab", async () => {
+    await mount(1);
+    const todoTab = () => document.querySelectorAll<HTMLButtonElement>(".dock-tab")[0]!;
+    const tasksTab = () => document.querySelectorAll<HTMLButtonElement>(".dock-tab")[1]!;
+    const toggle = () => document.querySelector<HTMLButtonElement>(".dock-toggle")!;
+    assert(tasksTab().getAttribute("aria-selected") === "true", "running work selects tasks tab initially");
+    flushSync(() => todoTab().click());
+    await until(() => todoTab().getAttribute("aria-selected") === "true", "Todo tab must select");
+    // New running task arrives while the user is on the Todo tab: must badge, not steal tab.
+    tasks = [
+      ...tasks,
+      { id: "task-new", sessionId: "fixture", command: "npm run watch", commandShellId: "bash", state: "running", elapsedMs: 500 },
+    ];
+    for (const listener of listeners) listener();
+    await until(() => document.querySelector(".dock-tab-badge")?.textContent === "1", "new task must raise badge on tasks tab");
+    assert(todoTab().getAttribute("aria-selected") === "true", "new task must not steal the user's Todo tab");
+    // Collapse the dock: tabs stay reachable in the header.
+    flushSync(() => toggle().click());
+    await until(() => toggle().getAttribute("aria-expanded") === "false", "dock toggle must collapse panels");
+    // Clicking the tasks tab while collapsed expands the dock and clears the badge.
+    flushSync(() => tasksTab().click());
+    await until(
+      () => toggle().getAttribute("aria-expanded") === "true" &&
+        tasksTab().getAttribute("aria-selected") === "true" &&
+        !document.querySelector(".dock-tab-badge"),
+      "clicking collapsed tasks tab must expand dock and clear badge",
+    );
   });
 
   await check("row lead pointer and native keyboard toggle output without swallowing actions", async () => {
     await mount();
-    const main = row(0).querySelector<HTMLButtonElement>(".background-task-main");
+    const main = row(0).querySelector<HTMLButtonElement>(".task-main");
     assert(main?.tagName === "BUTTON", "the row lead must be a native button");
-    flushSync(() => row(0).querySelector<HTMLElement>(".background-task-command")!.click());
+    flushSync(() => row(0).querySelector<HTMLElement>(".task-command")!.click());
     await until(() => main.getAttribute("aria-expanded") === "true", "command click did not open output");
     click(0);
-    await until(() => main.getAttribute("aria-expanded") === "false", "Output must close once without bubbling");
+    await until(() => main.getAttribute("aria-expanded") === "false", "row lead click must close once without bubbling");
     main.focus();
     console.log("BACKGROUND_NATIVE_KEY Return");
     await until(() => main.getAttribute("aria-expanded") === "true", "native Enter did not open output");
     console.log("BACKGROUND_NATIVE_KEY Space");
     await until(() => main.getAttribute("aria-expanded") === "false", "native Space did not close output");
-    flushSync(() => row(0).querySelector<HTMLElement>(".background-task-state")!.click());
+    flushSync(() => row(0).querySelector<HTMLElement>(".task-state")!.click());
     await until(() => main.getAttribute("aria-expanded") === "true", "state click did not open output");
-    const taskRow = main.closest<HTMLElement>(".background-task")!;
+    const taskRow = main.closest<HTMLElement>(".task-row")!;
     click(0, "Stop");
     await until(() => taskRow.dataset.state === "stopped", "Stop must keep its own action");
     assert(main.getAttribute("aria-expanded") === "true", "Stop must not toggle output");
     const dismiss = [...taskRow.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Dismiss");
     assert(dismiss, "Dismiss must remain available on the stopped task");
     flushSync(() => dismiss.click());
-    await until(() => document.querySelectorAll(".background-task").length === 9, "Dismiss must remove only its own row");
+    await until(() => document.querySelectorAll(".task-row").length === 9, "Dismiss must remove only its own row");
   });
 
   await check("only the selected log refreshes and remains bounded", async () => {
@@ -254,7 +306,7 @@ async function probe() {
     assert(document.querySelector("pre")?.textContent?.includes("task-1"), "late first response erased the current output");
   });
 
-  await check("the bar follows the open conversation and never stops another session's task", async () => {
+  await check("the container follows the open conversation and never stops another session's task", async () => {
     await mount(0);
     tasks = [
       { id: "task-a", sessionId: "session-a", command: "npm run dev -- --session=a",
@@ -272,7 +324,7 @@ async function probe() {
       `session-b must show only its own task: ${JSON.stringify(barSessions())}`);
     assert(stoppedIds.length === 0, `switching conversations must not stop anything: ${stoppedIds}`);
     flushSync(() => useAppStore.setState({ activeSessionId: null }));
-    await until(() => document.querySelectorAll(".background-task").length === 0,
+    await until(() => document.querySelectorAll(".task-row").length === 0,
       "a draft composer has no conversation to scope tasks to");
     flushSync(() => useAppStore.setState({ activeSessionId: "session-a" }));
     await until(() => JSON.stringify(barSessions()) === JSON.stringify(["a"]),

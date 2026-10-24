@@ -1841,3 +1841,18 @@ This does not prevent state changes — it makes them instant.
     the expanded sidebar yields at the threshold and returns when the panel
     closes, and divider cancellation restores the prior panel width
     (ADR 0033 / ADR 0151 / ADR 0238)
+
+## Selected lifecycle amendments (2026-10-24)
+
+Ordinary send and steering use a unique per-draft-key restoration token. Only
+the latest submission may restore rejected text and attachment snapshots; settling
+that request never revives older ownership. User edits, newer accepted submissions
+and other sessions' drafts stay intact. Accepted history, commands, smart Stop
+and side notes keep their existing behavior.
+
+Browser navigation/preview creates and loads Main-owned session/tab pages before
+notifying presentation. Hidden panels and renderer reload do not stop execution
+or reopen the panel. Session-filtered page restoration discards stale replies and
+preserves selection. Explicitly closing a connected page makes operations fail
+until explicit navigate/preview reconnects it; no visible-page substitution.
+See [IPC contract](../03-runtime/01-ipc-protocol.md#browser-d100-d333).

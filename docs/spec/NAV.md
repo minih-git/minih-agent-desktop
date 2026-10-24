@@ -49,6 +49,7 @@
 - [22-config-sync.md](03-runtime/22-config-sync.md)
 - [23-project-archive.md](03-runtime/23-project-archive.md)
 - [svg-attachment-input.md](03-runtime/svg-attachment-input.md)
+- [Selected upstream import: 2026-10-24 (provenance and validation)](../project/upstream-import-2026-10-24.md)
 
 ## 4. UX
 - [README.md](04-ux/README.md)

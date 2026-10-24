@@ -28,6 +28,7 @@ import {
 } from "../../lib/model-limit-presets";
 import { HelpIcon, Input, Tooltip, TooltipButton, cx } from "../ui";
 import { IconHelp } from "../icons";
+import { ReasoningEffortSelect } from "./ReasoningEffortSelect";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
 
 type ModelTokenLimit = "contextWindow" | "maxTokens";
@@ -95,6 +96,7 @@ export function ModelBindingFields({
   const publishedImages = info ? modelMatchesFilter(info, "vision") : false;
   const publishedDocuments = info ? modelMatchesFilter(info, "pdf") : false;
 
+  const effectiveApiStyle = binding.apiStyle || globalApiStyle;
   return (
     <div className="provider-chosen-row-body-fields">
       <label className="provider-chosen-field">
@@ -330,6 +332,14 @@ export function ModelBindingFields({
           })}
         </div>
       </div>
+      {!effectiveApiStyle ||
+      effectiveApiStyle === "chat_completions" ||
+      effectiveApiStyle === "opencode_go" ? (
+        <ReasoningEffortSelect
+          value={binding.supportsReasoningEffort}
+          onChange={(supportsReasoningEffort) => onChange({ supportsReasoningEffort })}
+        />
+      ) : null}
       <div className="provider-chosen-capabilities">
         <span className="provider-chosen-thinking-label">
           {t("settings.modelCapabilities")}

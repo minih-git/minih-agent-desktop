@@ -48,6 +48,8 @@ Live DTO 与 IPC 合同位于 `packages/shared`。纯 wire 解析和 PCM 数学�
 
 ## 验证与限制
 
+Gemini 的 socket 关闭事件不带 reason 缓冲区时，仍按既有分类失败与正常清理路径处理，不抛出 TypeError：缺失的 reason 按空详情解码，保留单次失败抑制、取消和诊断保密性。该 adapter 回归测试使用离线 socket fixture，不涉及真实 Provider 账号或麦克风。
+
 自动化覆盖 PCM 编码/重采样、Provider 消息解析、owner 检查、prepare/connect/mute/end、请求取消、活动绑定写保护、字幕上限、只拒绝 delegation 的行为，以及与 Dictation 的互斥。桌面 UI 测试和定向 Electron 进程测试在适用时覆盖用户路径。fixture 通过不能证明真实 Provider 访问权限或账号资格。
 
 Codex endpoint、模型和音色细节依据所引用的 Piwin 快照，不承诺公共 API 稳定性。Gemini 与 OpenAI Realtime 需要兼容模型、账号和 endpoint。真实账号调用、麦克风权限提示和硬件播放须与自动化 fixture 结果分开报告；它们可能产生 Provider 用量，并需要用户明确授权。

@@ -1699,6 +1699,9 @@ export const api = {
     invoke(IPC.invoke.browserOpenExternal, url ? { url } : {}),
   browserGetState: () =>
     invoke<BrowserState | null>(IPC.invoke.browserGetState),
+  /** Page metadata Main kept for this session, used to restore lost tabs. */
+  browserGetPages: (sessionId: string) =>
+    invoke<BrowserState[]>(IPC.invoke.browserGetPages, { sessionId }),
   fsList: (path?: string, sessionId?: string) =>
     invoke<{ entries: FsEntry[] }>(IPC.invoke.fsList, { path: path ?? "", ...(sessionId ? { sessionId } : {}) }),
   fsRead: (path: string, mimeType?: string, sessionId?: string) =>

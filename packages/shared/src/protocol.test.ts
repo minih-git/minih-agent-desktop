@@ -30,6 +30,12 @@ import {
   type ToolsOutputParams,
 } from "./index.js";
 
+describe("Browser recovery IPC", () => {
+  it("admits the additive session-owned page metadata channel", () => {
+    expect(IPC.invoke.browserGetPages).toBe("minih-agent-desktop/browser/getPages");
+    expect(IPC_WHITELIST.has(IPC.invoke.browserGetPages)).toBe(true);
+  });
+});
 describe("Plan protocol contracts", () => {
   it("uses protocol v11/schema v16 and exposes the plan, schedule, and shell channels", () => {
     expect(PROTOCOL_VERSION).toBe(12);

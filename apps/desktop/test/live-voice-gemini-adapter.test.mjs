@@ -93,3 +93,17 @@ test("Gemini keeps one transport failure and releases listeners on cancellation"
   assert.equal(socket.listenerCount("close"), 0);
   assert.equal(socket.listenerCount("error"), 0);
 });
+
+test("Gemini close without a reason is classified once and still releases listeners", { timeout: 20_000 }, async (t) => {
+  const { adapter, socket, events } = await fixture(t, (socket) => socket.emit("message", Buffer.from('{"setupComplete":{}}')));
+  await adapter.connect();
+  assert.doesNotThrow(() => socket.emit("close", 1006));
+  socket.emit("error", new Error("secondary failure"));
+  const failures = events.filter((event) => event.kind === "error");
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].code, "LIVE_NETWORK_ERROR");
+  assert.equal(failures[0].reason, "Gemini Live socket closed (1006): ");
+  await adapter.close("user-ended");
+  assert.equal(socket.listenerCount("close"), 0);
+  assert.equal(socket.listenerCount("error"), 0);
+});

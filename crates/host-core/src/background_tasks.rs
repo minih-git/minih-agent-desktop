@@ -23,9 +23,10 @@ use tokio::sync::{watch, Mutex};
 /// Keep the last 256KB per stream. A server that logs fast for hours must not
 /// grow host memory; a caller that needs earlier output re-runs the command.
 const RING_MAX_BYTES: usize = 256 * 1024;
-/// Upper bound on concurrently running background tasks. Each holds a process
-/// tree and two pipe readers; a runaway loop spawning servers must fail fast.
-pub(crate) const MAX_RUNNING_TASKS: usize = 32;
+/// Per-session admission limit; a busy conversation must not consume every slot.
+pub(crate) const MAX_RUNNING_TASKS_PER_SESSION: usize = 10;
+/// Process-wide resource ceiling, reported separately from the session limit.
+pub(crate) const MAX_RUNNING_TASKS_TOTAL: usize = 64;
 /// Bounded set of finished tasks kept so the UI can show what just exited.
 const FINISHED_TASK_HISTORY: usize = 16;
 
@@ -149,6 +150,25 @@ impl BackgroundTaskRegistry {
             .count()
     }
 
+    pub fn running_count_for(&self, session_id: &str) -> usize {
+        self.tasks
+            .values()
+            .filter(|task| task.session_id == session_id && Self::is_running(task))
+            .count()
+    }
+
+    /// Signal without taking output locks; supervisors retain kill/drain/reap ownership.
+    pub fn stop_session_running(&self, session_id: &str) -> usize {
+        self.tasks
+            .values()
+            .filter(|task| task.session_id == session_id && Self::is_running(task))
+            .filter(|task| {
+                let stopping = *task.stop.borrow();
+                !stopping && task.stop.send(true).is_ok()
+            })
+            .count()
+    }
+
     pub fn summaries(&self) -> Vec<BackgroundTaskSummary> {
         let mut list: Vec<BackgroundTaskSummary> = self
             .tasks
@@ -198,11 +218,30 @@ pub(crate) async fn spawn_background_task_detached(
     if st.shutting_down {
         return Err(("TOOL_ABORTED".into(), "host is shutting down".into()));
     }
-    if st.background_tasks.running_count() >= MAX_RUNNING_TASKS {
+    if !crate::sessions::session_exists(&st.db, session_id)
+        .map_err(|error| ("INTERNAL".to_string(), error.to_string()))?
+    {
+        return Err((
+            "TOOL_FAILED".into(),
+            "cannot start a background task for a session that no longer exists".into(),
+        ));
+    }
+    let running_here = st.background_tasks.running_count_for(session_id);
+    if running_here >= MAX_RUNNING_TASKS_PER_SESSION {
         return Err((
             "TOOL_FAILED".into(),
             format!(
-                "too many background tasks are running (limit {MAX_RUNNING_TASKS}); stop one first"
+                "this session already runs {running_here} background tasks \
+                 (limit {MAX_RUNNING_TASKS_PER_SESSION}); stop one first"
+            ),
+        ));
+    }
+    if st.background_tasks.running_count() >= MAX_RUNNING_TASKS_TOTAL {
+        return Err((
+            "TOOL_FAILED".into(),
+            format!(
+                "the host is already running its maximum of {MAX_RUNNING_TASKS_TOTAL} background tasks \
+                 across all sessions; stop one first"
             ),
         ));
     }

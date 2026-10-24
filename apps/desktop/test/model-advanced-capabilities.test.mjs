@@ -19,7 +19,11 @@ const bindingEditorSource = await readFile(
   new URL("../src/components/settings/ModelBindingFields.tsx", import.meta.url),
   "utf8",
 );
-const advancedSource = [pickerSource, bindingEditorSource].join("\n");
+const reasoningEffortSource = await readFile(
+  new URL("../src/components/settings/ReasoningEffortSelect.tsx", import.meta.url),
+  "utf8",
+);
+const advancedSource = [pickerSource, bindingEditorSource, reasoningEffortSource].join("\n");
 const imageModelRowSource = await readFile(
   new URL("../src/components/settings/ImageGenerationModelRow.tsx", import.meta.url),
   "utf8",
@@ -294,4 +298,252 @@ test("the offered default and the saved default use one order", () => {
     advancedSource,
     /resolveBindingDefaultThinkingLevel\(\s*binding\.defaultThinkingLevel,\s*sortThinkingLevels\(next\),/,
   );
+});
+
+test("advanced settings expose the Chat Completions reasoning effort override by effective model protocol", () => {
+  assert.match(bindingEditorSource, /const effectiveApiStyle = binding\.apiStyle \|\| globalApiStyle;/);
+  assert.match(pickerSource, /globalApiStyle=\{globalApiStyle \?\? apiStyle\}/);
+  assert.match(
+    bindingEditorSource,
+    /!effectiveApiStyle \|\|\s*effectiveApiStyle === "chat_completions" \|\|\s*effectiveApiStyle === "opencode_go"/,
+  );
+  assert.match(bindingEditorSource, /<ReasoningEffortSelect[\s\S]*?value=\{binding\.supportsReasoningEffort\}/);
+  assert.match(reasoningEffortSource, /settings\.reasoningEffortParameter/);
+  assert.match(reasoningEffortSource, /settings\.reasoningEffortParameterHint/);
+  assert.match(reasoningEffortSource, /settings\.reasoningEffortAuto/);
+  assert.match(reasoningEffortSource, /settings\.reasoningEffortSend/);
+  assert.match(reasoningEffortSource, /settings\.reasoningEffortOmit/);
+  assert.match(styles, /\.provider-chosen-reasoning-effort\s*\{/);
+});
+
+test("rendered ModelBindingFields, ModelSelectionPanes and ProviderConnectionFields follow effective protocol and optional-key contracts", async (t) => {
+  const { fileURLToPath } = await import("node:url");
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { createInstance } = await import("i18next");
+  const { I18nextProvider } = await import("react-i18next");
+  const { createServer } = await import("vite");
+
+  const server = await createServer({
+    root: fileURLToPath(new URL("..", import.meta.url)),
+    configFile: false,
+    logLevel: "silent",
+    server: { middlewareMode: true, hmr: false, ws: false },
+    esbuild: { jsx: "automatic" },
+    appType: "custom",
+    optimizeDeps: { noDiscovery: true, include: [] },
+  });
+  t.after(() => server.close());
+
+  const { ModelBindingFields } = await server.ssrLoadModule(
+    "/src/components/settings/ModelBindingFields.tsx",
+  );
+  const { ModelSelectionPanes, useModelSelection } = await server.ssrLoadModule(
+    "/src/components/settings/ModelSelectionPanes.tsx",
+  );
+  const { ProviderConnectionFields } = await server.ssrLoadModule(
+    "/src/components/settings/ProviderConnectionFields.tsx",
+  );
+  const { PluginProviderKeySetupForm } = await server.ssrLoadModule(
+    "/src/components/settings/PluginProviderKeySetupForm.tsx",
+  );
+
+  const { catalogs, flattenCatalog } = await import("@minih-agent/i18n");
+  const i18n = createInstance();
+  await i18n.init({
+    lng: "en",
+    keySeparator: false,
+    resources: {
+      en: { translation: flattenCatalog(catalogs.en) },
+    },
+  });
+
+  const render = (element) =>
+    renderToStaticMarkup(createElement(I18nextProvider, { i18n }, element));
+
+  const baseBinding = {
+    id: "deepseek-v4.1-flash",
+    alias: "DeepSeek Fast",
+    contextWindow: 64000,
+    contextWindowSource: "catalog",
+    maxTokens: 8192,
+    maxTokensSource: "user",
+    thinkingLevels: ["off", "high"],
+    defaultThinkingLevel: "high",
+    supportsImages: true,
+    supportsDocuments: false,
+    availableForSubagents: true,
+    nativeWebSearch: true,
+  };
+
+  // 1) Chat Completions and opencode_go show ReasoningEffortSelect with tri-state labels.
+  for (const [supportsReasoningEffort, expectedLabel] of [
+    [undefined, "Auto"],
+    [null, "Auto"],
+    [true, "Send"],
+    [false, "Do not send"],
+  ]) {
+    const html = render(
+      createElement(ModelBindingFields, {
+        binding: { ...baseBinding, supportsReasoningEffort },
+        publishedLevels: ["off", "high"],
+        nativeWebSearchCapable: true,
+        globalApiStyle: "chat_completions",
+        onChange: () => {},
+      }),
+    );
+    assert.match(html, /class="provider-chosen-reasoning-effort"/);
+    assert.match(html, new RegExp(`>${expectedLabel}<`));
+    assert.match(html, /value="DeepSeek Fast"/);
+  }
+
+  // 2) Non-Completions global styles hide ReasoningEffortSelect unless binding.apiStyle overrides to chat_completions.
+  for (const nonCompletionsStyle of ["responses", "anthropic_messages", "google_generative_ai"]) {
+    const hiddenByGlobal = render(
+      createElement(ModelBindingFields, {
+        binding: baseBinding,
+        publishedLevels: ["off", "high"],
+        nativeWebSearchCapable: true,
+        globalApiStyle: nonCompletionsStyle,
+        onChange: () => {},
+      }),
+    );
+    assert.doesNotMatch(hiddenByGlobal, /provider-chosen-reasoning-effort/);
+
+    const shownByModelOverride = render(
+      createElement(ModelBindingFields, {
+        binding: { ...baseBinding, apiStyle: "chat_completions", supportsReasoningEffort: true },
+        publishedLevels: ["off", "high"],
+        nativeWebSearchCapable: true,
+        globalApiStyle: nonCompletionsStyle,
+        onChange: () => {},
+      }),
+    );
+    assert.match(shownByModelOverride, /class="provider-chosen-reasoning-effort"/);
+    assert.match(shownByModelOverride, />Send</);
+
+    const hiddenByModelOverride = render(
+      createElement(ModelBindingFields, {
+        binding: { ...baseBinding, apiStyle: nonCompletionsStyle, supportsReasoningEffort: true },
+        publishedLevels: ["off", "high"],
+        nativeWebSearchCapable: true,
+        globalApiStyle: "chat_completions",
+        onChange: () => {},
+      }),
+    );
+    assert.doesNotMatch(hiddenByModelOverride, /provider-chosen-reasoning-effort/);
+  }
+
+  // 3) ModelSelectionPanes forwards apiStyle to ModelBindingFields and preserves supportsReasoningEffort in bindingsToPersist.
+  let persistedSnapshot = [];
+  function PaneHarness({ apiStyle, models }) {
+    const selection = useModelSelection(
+      { status: "ready", models: [], source: "remote" },
+      models,
+      () => {},
+    );
+    persistedSnapshot = selection.bindingsToPersist;
+    return createElement(ModelSelectionPanes, {
+      discovery: { status: "ready", models: [], source: "remote" },
+      selection,
+      listTitle: "Models",
+      apiStyle,
+    });
+  }
+  const paneCompletionsHtml = render(
+    createElement(PaneHarness, {
+      apiStyle: "chat_completions",
+      models: [{ ...baseBinding, supportsReasoningEffort: false }],
+    }),
+  );
+  assert.match(paneCompletionsHtml, /class="provider-chosen-reasoning-effort"/);
+  assert.equal(persistedSnapshot[0]?.supportsReasoningEffort, false);
+
+  const paneResponsesHtml = render(
+    createElement(PaneHarness, {
+      apiStyle: "responses",
+      models: [{ ...baseBinding, supportsReasoningEffort: true }],
+    }),
+  );
+  assert.doesNotMatch(paneResponsesHtml, /class="provider-chosen-reasoning-effort"/);
+  assert.equal(persistedSnapshot[0]?.supportsReasoningEffort, true);
+
+  // 4) ProviderConnectionFields custom optional key vs saved-key Clear vs named Minih Router.
+  const baseConnectionProps = {
+    named: false,
+    custom: true,
+    editing: false,
+    saving: false,
+    serviceLabel: "Custom",
+    serviceBaseUrl: "",
+    onChangeService: () => {},
+    apiKeyRef: { current: null },
+    nameRef: { current: null },
+    apiKey: "",
+    onApiKeyChange: () => {},
+    name: "Gateway",
+    onNameChange: () => {},
+    baseUrl: "http://127.0.0.1:11434/v1",
+    onBaseUrlChange: () => {},
+    commitBaseUrl: () => {},
+    apiStyle: "chat_completions",
+    onApiStyleChange: () => {},
+    accountOnlyApiStyle: false,
+    requiresApiStyleChoice: false,
+  };
+  const customNewHtml = render(createElement(ProviderConnectionFields, baseConnectionProps));
+  assert.doesNotMatch(customNewHtml, /role="switch"/);
+  assert.doesNotMatch(customNewHtml, /Clear saved API key/);
+  assert.match(customNewHtml, /Optional\. Leave blank to send requests without an API key\./);
+
+  const customSavedKeyHtml = render(
+    createElement(ProviderConnectionFields, {
+      ...baseConnectionProps,
+      editing: true,
+      hasSavedApiKey: true,
+      onClearApiKey: () => {},
+    }),
+  );
+  assert.match(customSavedKeyHtml, /Leave blank to keep the saved key\./);
+  assert.match(customSavedKeyHtml, />Clear saved API key</);
+
+  const routerHtml = render(
+    createElement(ProviderConnectionFields, {
+      ...baseConnectionProps,
+      named: true,
+      custom: false,
+      relocatable: true,
+      defaultBaseUrl: "https://router.hmini.org/v1",
+      editing: true,
+      hasSavedApiKey: true,
+      onClearApiKey: () => {},
+    }),
+  );
+  assert.match(routerHtml, />Token<button/);
+  assert.match(routerHtml, /provider-setup-relocatable-row/);
+  assert.doesNotMatch(routerHtml, />Clear saved API key</);
+
+  // 5) PluginProviderKeySetupForm renders cleanly with the updated ProviderConnectionFields contract.
+  const pluginSetupHtml = render(
+    createElement(PluginProviderKeySetupForm, {
+      provider: {
+        id: "plugin:demo:1",
+        name: "Demo Plugin Provider",
+        vendorKey: "custom",
+        type: "openai_compatible",
+        protocol: "openai_compatible",
+        enabled: true,
+        authKind: "api_key_and_base_url",
+        apiStyle: "chat_completions",
+        baseUrl: "https://plugin.example/v1",
+        hasSecret: false,
+        models: [],
+      },
+      pluginName: "Demo Plugin",
+      onClose: () => {},
+      onSaved: () => {},
+    }),
+  );
+  assert.match(pluginSetupHtml, /Demo Plugin Provider/);
+  assert.doesNotMatch(pluginSetupHtml, /role="switch"/);
 });
