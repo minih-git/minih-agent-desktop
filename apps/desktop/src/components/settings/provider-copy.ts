@@ -28,6 +28,7 @@ export function copyProviderConfiguration(provider: ProviderPublic, name: string
     models: provider.models.map((model) => ({
       id: model.id,
       ...(model.alias !== undefined ? { alias: model.alias } : {}),
+      ...(model.apiStyle !== undefined ? { apiStyle: model.apiStyle } : {}),
       contextWindow: model.contextWindow,
       // Provenance travels with the value, so a copied catalog window keeps
       // following models.dev and a copied override stays the user's.
@@ -43,6 +44,8 @@ export function copyProviderConfiguration(provider: ProviderPublic, name: string
       ...(model.thinkingProtocol !== undefined
         ? { thinkingProtocol: model.thinkingProtocol }
         : {}),
+      ...(model.supportsReasoningEffort !== undefined
+        ? { supportsReasoningEffort: model.supportsReasoningEffort } : {}),
       ...(model.supportsImages !== undefined ? { supportsImages: model.supportsImages } : {}),
       ...(model.supportsDocuments !== undefined ? { supportsDocuments: model.supportsDocuments } : {}),
       ...(model.availableForSubagents !== undefined ? { availableForSubagents: model.availableForSubagents } : {}),

@@ -33,7 +33,10 @@ import { useVerifiedChatText } from "../../../hooks/use-verified-chat-text";
 import { isHtmlFilePath } from "../../../lib/chat-links";
 import type { SourcePositionProps } from "../../../lib/markdown-source";
 import type { ToolAction } from "../../../lib/tool-display";
-import { calculateTokenRate } from "../../../lib/context-usage";
+import {
+  calculateTokenRate,
+  turnUsageBreakdown,
+} from "../../../lib/context-usage";
 import { useAppStore } from "../../../stores/app-store";
 import { Markdown, useCopy } from "../../../components/Markdown";
 import {
@@ -62,6 +65,7 @@ import {
   IconX,
 } from "../../../components/icons";
 import { TooltipButton } from "../../../components/ui";
+import { TurnUsageCapsule } from "./TurnUsageCapsule";
 
 /**
  * Legacy message navigation reveals the row it names, at message precision.
@@ -159,6 +163,7 @@ export function MessageMeta({
   usage,
   responseDurationMs,
   responseOutputTokens,
+  responseOutputEstimated,
   durationLabel,
   steps,
   tools,
@@ -167,6 +172,7 @@ export function MessageMeta({
   usage?: MessageUsage;
   responseDurationMs?: number;
   responseOutputTokens?: number;
+  responseOutputEstimated?: boolean;
   /** Preformatted turn duration, so this row keeps no extra module dependency. */
   durationLabel?: string;
   /** Process rows this turn ran, so a folded or flat turn still states its size. */
@@ -178,8 +184,12 @@ export function MessageMeta({
     responseOutputTokens ?? usage?.outputTokens ?? 0,
     responseDurationMs,
   );
+  // Completed turns with usage replace the legacy estimated-throughput chip
+  // with the full turn capsule; only usage-less turns keep the estimate.
+  const showTurnUsage =
+    usage !== undefined && turnUsageBreakdown(usage).totalTokens > 0;
   const showThroughput = !usage && throughput !== undefined;
-  if (!modelId && !showThroughput && !durationLabel && !steps) {
+  if (!modelId && !showThroughput && !showTurnUsage && !durationLabel && !steps) {
     return null;
   }
   return (
@@ -188,6 +198,13 @@ export function MessageMeta({
         <span className="message-meta-chip model" title={modelId}>
           {modelId}
         </span>
+      ) : null}
+      {usage && showTurnUsage ? (
+        <TurnUsageCapsule
+          usage={usage}
+          throughput={throughput}
+          estimated={responseOutputEstimated}
+        />
       ) : null}
       {durationLabel ? (
         <span className="message-meta-chip duration">

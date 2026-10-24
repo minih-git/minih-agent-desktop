@@ -765,13 +765,20 @@ export function createSidecarRuntime({
         content: preview.content,
       };
     }
-    sendToRenderer(IPC.event.browserPreview, {
-      sessionId,
-      path: file,
-    });
+    // The page belongs to Main, so it can load and stay usable while the panel
+    // is hidden; the renderer event only adds the matching tab.
+    try {
+      await browserHost.openTab({ path: file }, sessionId);
+    } catch (error) {
+      return {
+        ok: false,
+        isError: true,
+        content: `BrowserPreview: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
     return {
       ok: true,
-      content: `Requested a new Browser tab for ${raw}. Once loaded, live reload updates the page when the file or sibling assets change.`,
+      content: `Opened a new Browser tab for ${raw}. Its page stays available in the background, and live reload updates it when the file or sibling assets change.`,
     };
   });
   // Plugin skills (D174): the model loads a declared skill document by id.

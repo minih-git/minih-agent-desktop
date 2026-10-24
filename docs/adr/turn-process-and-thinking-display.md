@@ -220,3 +220,19 @@ compact small-group and Thinking defaults, the compact-only 12px grouping, the
 single reviewed-edit row with diff copy, and the centred running marker are
 documented for E2E-CHAT-turn-process-and-thinking-display and the related
 transcript probes; this record does not claim that a new test has run.
+
+## 2026-10-24 visual amendment
+
+Adapt transcript-edge hairlines and compact duration/tool-count metadata without
+adopting the upstream display-mode system. Existing Minih density, narration,
+thinking, issue, Bash, search and user-owned disclosure semantics above remain.
+Missing recorded timing remains absent.
+
+A turn-usage capsule adds the already-normalized parent's input/output/cache-read/
+cache-write composition beside existing model/time/step metadata. Reasoning is
+already in output and delegated spend is not added. Its exact-count popover is
+focus/pointer reachable, above-first and main-pane-constrained, with cleanup on
+scroll/resize/session change/unmount. This does not alter usage storage, billing
+or the latest-request context inspector. The owning component spec and focused
+tests define behavior; actual development results live in the selected-import
+source record, not in this design decision.

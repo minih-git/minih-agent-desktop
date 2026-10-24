@@ -80,9 +80,10 @@ export function createGeminiAdapter(context: LiveAdapterContext): LiveAdapter {
     context.onEvent({ kind: "error", code, reason });
   }
 
-  function onSocketClose(code: number, reason: Buffer): void {
+  function onSocketClose(code: number, reason: Buffer | undefined): void {
     const errorCode = [1002, 1003, 1007, 1008, 1009].includes(code) ? "LIVE_PROTOCOL_ERROR" : "LIVE_NETWORK_ERROR";
-    onSocketFailure(errorCode, `Gemini Live socket closed (${code}): ${reason.toString("utf8")}`);
+    const detail = reason ? reason.toString("utf8") : "";
+    onSocketFailure(errorCode, `Gemini Live socket closed (${code}): ${detail}`);
   }
 
   function onSocketError(error: Error): void {

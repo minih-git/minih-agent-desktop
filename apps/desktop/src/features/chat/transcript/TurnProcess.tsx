@@ -73,6 +73,13 @@ export function TurnProcess({
   const seconds = startedAt === undefined ? 0 : Math.max(
     0, Math.floor(((isActive ? now : (endedAt ?? startedAt)) - startedAt) / 1000),
   );
+  const elapsed = formatToolDuration(seconds);
+  // The header states the segment's outcome and its bounded metadata: status /
+  // recorded duration, direct tool count, and issue feedback. `startedAt` is
+  // absent for history that recorded no timing, and "0s" would be a lie there,
+  // so missing historical timing is omitted rather than fabricated as zero.
+  const hasTiming = startedAt !== undefined && seconds > 0;
+  const toolCount = summary.tools;
   return (
     <section className={`turn-process${disclosure.open ? " open" : ""}${isActive ? " active" : ""}`}>
       <button
@@ -85,25 +92,34 @@ export function TurnProcess({
       >
         <span className="tool-activity-icon" aria-hidden><IconSparkles size={14} /></span>
         <span className={`tool-activity-label${isActive ? " running" : ""}`}>
-          {t(
-            isActive
-              ? thinkingNow
-                ? "chat.thinkingFor"
-                : "chat.processingFor"
-              : // A finished turn states how long it took, which is what the
-                // reader keeps once the steps are folded away.
-                "chat.metaDuration",
-            { time: formatToolDuration(seconds) },
+          {isActive ? (
+            t(thinkingNow ? "chat.thinkingFor" : "chat.processingFor", {
+              time: elapsed,
+            })
+          ) : hasTiming ? (
+            <span className="turn-duration">
+              {t("chat.metaDuration", { time: elapsed })}
+            </span>
+          ) : (
+            t("chat.processingSteps", { count: visibleSteps })
           )}
         </span>
         {isActive ? <span className="activity-marker" aria-hidden /> : null}
-        {summary.issues > 0 ? (
-          <span className="turn-process-error">
-            <IconCircleAlert size={14} aria-hidden />
-            {t("chat.activityFailures", { count: summary.issues })}
-          </span>
+        {toolCount > 0 ? (
+          <>
+            <span className="turn-sep" aria-hidden>·</span>
+            <span className="tool-activity-count">{t("chat.processTools", { count: toolCount })}</span>
+          </>
         ) : null}
-
+        {summary.issues > 0 ? (
+          <>
+            <span className="turn-sep" aria-hidden>·</span>
+            <span className="turn-process-error">
+              <IconCircleAlert size={14} aria-hidden />
+              {t("chat.activityFailures", { count: summary.issues })}
+            </span>
+          </>
+        ) : null}
         <span className="tool-activity-caret" aria-hidden><IconChevronRight size={12} /></span>
       </button>
       {tail ? (

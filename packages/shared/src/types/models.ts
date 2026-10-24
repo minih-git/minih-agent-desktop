@@ -229,6 +229,14 @@ export type ModelBinding = {
   /** Provider request protocol used when thinking is enabled. */
   thinkingProtocol?: ThinkingProtocol;
   /**
+   * Explicit Chat Completions `reasoning_effort` switch. `null` or absent
+   * keeps the endpoint/model compatibility rules; `true` permits the
+   * parameter and `false` omits it. This is a saved user answer, so catalog
+   * compatibility is not an override. Responses and Anthropic thinking are
+   * unaffected.
+   */
+  supportsReasoningEffort?: boolean | null;
+  /**
    * User override for image input. `null` or absent follows the published
    * models.dev capability. Once explicitly selected, either boolean is pinned
    * even when it matches today's catalog value.

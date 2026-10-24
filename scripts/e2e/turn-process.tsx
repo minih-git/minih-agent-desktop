@@ -49,9 +49,17 @@ const run = (id: string, command: string): UiMessage =>
 /** Real mounted React components: disclosure ownership, preference and search. */
 export async function turnProcessProbe() {
   const i18n = createInstance();
+  const translation = {
+    ...en,
+    chat: {
+      ...en.chat,
+      usageTurnAria: "This turn: {{speed}}, {{count}} tokens. Show breakdown.",
+      usageTotal: "Total",
+    },
+  };
   await i18n.init({
     lng: "en",
-    resources: { en: { translation: en } },
+    resources: { en: { translation } },
     interpolation: { escapeValue: false },
   });
   const container = document.createElement("div");
@@ -225,6 +233,40 @@ export async function turnProcessProbe() {
     check(
       visible(row("read")) && completedGroupHeader?.getAttribute("aria-expanded") === "true",
       "opening the process reveals the already-open activity group with its tool rows",
+    );
+    const topHeader = processHeaders()[0] ?? null;
+    const topIcon = topHeader?.querySelector(".tool-activity-icon") ?? null;
+    const nestedIcon = completedGroupHeader?.querySelector(".tool-activity-icon") ?? null;
+    const bashIcon = bash1Row?.querySelector(".tool-row-icon") ?? null;
+    const bashHead = bash1Row?.querySelector<HTMLElement>(".tool-row-head.is-run") ?? null;
+    const leftOf = (element: Element | null | undefined) =>
+      element?.getBoundingClientRect().left;
+    const nearLeft = (left: number | undefined, right: number | undefined) =>
+      typeof left === "number" &&
+      typeof right === "number" &&
+      Math.abs(left - right) < 0.75;
+    check(
+      topHeader !== null &&
+        Math.abs(
+          topHeader.getBoundingClientRect().width -
+            (topHeader.parentElement?.getBoundingClientRect().width ?? 0),
+        ) < 1,
+      "the turn header hairline spans the transcript band",
+    );
+    check(
+      nearLeft(leftOf(topHeader), leftOf(topIcon)) &&
+        nearLeft(leftOf(completedGroupHeader), leftOf(bashHead)),
+      "the turn row starts at the prose edge and nested fills share their gutter",
+    );
+    check(
+      nearLeft(leftOf(topIcon), leftOf(nestedIcon)) &&
+        nearLeft(leftOf(nestedIcon), leftOf(bashIcon)),
+      "turn, group and run icons share one left edge",
+    );
+    check(
+      topHeader?.querySelector(".tool-activity-count")?.textContent ===
+        i18n.t("chat.processTools", { count: 2 }),
+      "the process header displays its direct tool count",
     );
 
     // Standard density folds the finished turn behind one header that states
@@ -589,6 +631,47 @@ export async function turnProcessProbe() {
       "reviewed edit renders as a single open tool-level review row with copy in detailed density",
     );
     setSettings();
+    // Turn usage capsule renders beside model/step/tool metadata and opens its breakdown popover.
+    const usageAnswer = message("usage-answer", "assistant", "Completed with usage.", {
+      status: "complete",
+      modelId: "gpt-5.4",
+      createdAt: "2026-09-17T00:00:04.000Z",
+      responseDurationMs: 2_000,
+      responseOutputTokens: 400,
+      usage: {
+        inputTokens: 1_000,
+        outputTokens: 400,
+        cacheReadTokens: 2_600,
+        reasoningTokens: 100,
+        totalTokens: 99_999,
+      },
+    });
+    render([read, usageAnswer], false, null, "turn-usage-capsule");
+    const capsule = container.querySelector<HTMLButtonElement>(".turn-usage-capsule");
+    check(
+      Boolean(capsule) &&
+        (capsule?.textContent ?? "").includes("4K") &&
+        Boolean(container.querySelector(".message-meta-chip.model")) &&
+        Boolean(container.querySelector(".message-meta-chip.steps")),
+      "completed turn renders the usage capsule beside existing metadata without double-counting reasoning",
+    );
+    click(capsule);
+    check(
+      document.body.querySelector('[role="dialog"].turn-usage-popover') !== null,
+      "clicking the turn usage capsule opens its breakdown dialog",
+    );
+
+    // Missing historical timing is omitted rather than fabricated as 0s.
+    const timelessRead = tool("timeless-read", "Read", {
+      createdAt: "invalid-date",
+      toolResult: "ok",
+    });
+    render([timelessRead, thinkingAnswer], false, null, "timeless-history");
+    check(
+      !(processHeaders()[0]?.textContent ?? "").includes("0s") &&
+        !processHeaders()[0]?.querySelector(".turn-duration"),
+      "missing historical timing stays absent instead of fabricating 0s",
+    );
     // The Settings row is a boolean Show thinking toggle.
     let saved: Partial<AppSettings> | undefined;
     const settings: AppSettings = { ...baseSettings, showThinking: false };

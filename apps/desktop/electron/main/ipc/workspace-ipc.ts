@@ -875,6 +875,14 @@ export function registerWorkspaceIpc({
     return browserHost.getState();
   });
 
+  handle(IPC.invoke.browserGetPages, async (input: { sessionId?: string } = {}) => {
+    // Session-filtered page metadata for renderer recovery. Pages stay in Main;
+    // the renderer only rebuilds the tabs it lost.
+    const sessionId = String(input.sessionId ?? "").trim();
+    if (!sessionId || sessionId.startsWith("remote:")) return [];
+    return browserHost.getPages(sessionId);
+  });
+
   const workspaceRootInfo = async (sessionId?: string): Promise<{
     root: string;
     worktree?: string;

@@ -1447,10 +1447,9 @@ Chrome 和代理 CDP 位于随应用打包的 `pi.browser` 插件中，通过 `p
   关闭仅释放对应标签的页面，不关闭其他标签共享的工具栏。只提供会话 id 时释放该会话的页面。
 - 事件：`browser/event/state {url, title, isLoading, canGoBack, canGoForward, loadError?, sessionId?, tabId?}`
   （同时以 `browser:state` 推送给插件视图）
-- 代理预览事件：`browser/event/preview {sessionId, path?, url?}`。
-  Electron Main 会校验工作区 `path` 位于该会话项目内，在该对话的插件视图可见时
-  加载访客页，并由渲染器在匹配的运行时面板上下文中打开
-  `plugin:pi.browser/browser`（带 `location`）。后台会话的导航不会抢走可见访客页。
+- `browser/getPages({sessionId})` → `BrowserState[]`，只包含该会话的页面。渲染器重载后用它恢复缺失的标签，不打开面板、不替换用户当前选择；会话或恢复代次已过期的回复直接丢弃。
+- 代理预览事件：`browser/event/preview {sessionId, tabId?, path?, url?}`。Main 先校验所属会话与文件根、创建并加载该会话自己的页面，再通知展示层。隐藏会话的导航与预览既不抢焦点，也不重新打开面板。受信的代理执行只作用于本会话已连接的页面，绝不使用其他对话当前可见的页面；该连接被关闭后，后续操作会失败，直到显式导航或预览重新建立连接。未带作用域的 UI 调用仍以可见页为边界。
+- Main 独立于渲染器展示持有按会话/标签的页面，把隐藏表面停放在惰性、不可见、沙箱化的后备宿主中；重新显示时复用同一视图，不会出现第二个可见浏览器窗口。渲染器重载只分离展示，不销毁页面。显式关闭标签或会话、表面释放、窗口销毁和应用退出都会释放各自拥有的页面与资源。指针输入与截图使用页面相对坐标和按页的视口队列，并在成功、失败或超时后恢复限流与边界。URL/文件根、分区、权限和 CDP 规则不变。见[生命周期决策](/adr/browser-execution-presentation-lifecycle)。
 
 ### fs（只读）
 

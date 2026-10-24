@@ -877,6 +877,8 @@ fn permission_parent_param(params: &Value) -> Result<Option<String>, JsonRpcErro
 /// `session.delete` and `projects.remove` so removing a project cleans up
 /// exactly the same side data as deleting one session.
 fn drop_session_side_data(st: &AppState, id: &str) {
+    // Signal only: supervision owns process termination, output drain and reap.
+    st.background_tasks.stop_session_running(id);
     scratch::remove_session_dir(&st.data_dir, id);
     review::remove_session(&st.data_dir, id);
     st.hashline.drop_session(id);

@@ -676,10 +676,11 @@ a usage tab.
     and model IDs. A selection opens the Host-owned API-key form; after saving,
     that provider remains in the service list and leaves the chooser.
   - the add/edit dialog configures connection identity (name, endpoint, API
-    style, and authentication). Custom endpoints default to API-key mode and
-    offer a **No API key required** checkbox; choosing it stores `authKind:
-    "none"` and removes any saved API key when editing. Named service presets
-    continue to use API-key authentication. The dialog shrinks to the overlay
+    style, and authentication). Custom endpoints infer anonymous/API-key auth
+    from the effective key. Blank editing keeps a saved key; Clear saved key
+    stages removal until Save and prevents discovery from reusing it. Cancel
+    changes nothing. Named presets, including Minih Router, retain API-key auth.
+    The dialog shrinks to the overlay
     on a narrow window, and a
     focused credential field keeps its 2px accent ring inside the dialog
     instead of clipping against the scrolling body. It then selects one or
@@ -703,6 +704,9 @@ a usage tab.
     outside settings container dismisses it before the trigger can become
     detached. Search results keep a dedicated no-match state instead of
     reusing the search placeholder.
+  - The effective per-model Chat Completions format offers Auto / Send /
+    Do not send for the optional `reasoning_effort` parameter, independently of
+    thinking-level capability; a per-model format overrides the global format.
   - the context-window field states its provenance: while the number still
     follows the published models.dev limit, a faint hint under the input says so
     (`settings.contextWindowCatalogHint`), and the first edit — the preset

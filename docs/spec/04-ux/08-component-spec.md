@@ -3134,18 +3134,16 @@ a shared native Button that toggles output with pointer or Enter/Space and
 reports `aria-expanded`. Output, Stop and Dismiss remain independent sibling
 controls; their actions never bubble into a second toggle.
 
-### 11.3a Session TodoDock
+### 11.3a Session task dock
 
-The header copy is not a button. A separate trailing disclosure button is the
-only toggle and exposes localized Expand checklist / Collapse checklist labels,
-matching `title`, `aria-expanded`, and `aria-controls`. Its chevron is down while
-expanded and up while collapsed, and native Enter/Space activation works without
-making the progress/current-step copy an additional focus target. The compact
-rows and existing state symbols stay unchanged; this amendment adds no shimmer.
-
-- The Composer stack places TodoDock above Plan/Goal approval surfaces when the
-  active session has a non-empty host-owned checklist. An empty checklist does
-  not reserve layout space.
+Todo and background tasks share one session-scoped dock above Plan/Goal approval
+surfaces. It appears when either source has visible content. Tabs remain reachable
+while collapsed; selecting a tab expands it. New running tasks show a badge rather
+than stealing the selected tab. A separate localized disclosure controls expansion,
+with `aria-expanded` and `aria-controls`; header summary copy is not another toggle.
+Keep native keyboard behavior, the compact task symbols and reduced-motion support;
+there is no shimmer. Background-task receipts can be dismissed only after their
+settling grace period, enforced in the state layer; dismissal never stops a process.
 - The collapsed header separates the completed-task count from the current
   `in_progress` content, truncating only the task title when space is limited.
   A checklist whose items are all cancelled has a clear cancelled label
@@ -4808,3 +4806,27 @@ renderer background updates. Theme changes reapply vibrancy only to the running
 translucent surface. Startup splash tint, sheen, traffic lights and layout are
 unchanged; Windows/Linux keep their existing surfaces. The applied surface is
 fixed for the running process, independent of later preference saves.
+
+## Selected chat presentation amendments (2026-10-24)
+
+- ConversationTopbar resolves its project crumb from the session's project and
+  naming preferences, not an unrelated active workspace. Empty chats use their
+  workspace; temporary chats omit the crumb, and remote labels remain display-only.
+  Local non-scheduled titles rename inline through the existing action: Enter/blur
+  commits once, Escape cancels, IME owns composition keys, blank/unchanged drafts
+  do not submit, and switching sessions discards the editor. Retain title limits,
+  localized errors, shared controls and Minih side notes.
+- Normal send and steering use a unique per-draft-key restoration token. Only the
+  latest submission may restore a rejected text/attachment snapshot; settling it
+  cannot revive older ownership. User edits, newer accepted sends and other
+  sessions are never overwritten. Accepted input history and commands are unchanged.
+- A per-turn token capsule projects normalized parent usage into input, output,
+  cache-read and cache-write; reasoning already belongs to output and is not added
+  twice. It does not add delegated spend, change billing or replace the latest-request
+  context inspector. Preserve model/duration/step/tool metadata and usage-less
+  history. Exact counts are reachable by hover/focus in a main-pane-constrained,
+  preferably upward popover with safe pointer travel and lifecycle cleanup.
+- Transcript-edge hairlines and compact duration/tool counts are visual only.
+  Keep Minih standard/detailed/compact, narration, visible-step counts, thinking
+  preferences, issue indicators, standalone Bash where the density requires it,
+  search reveal and user-owned disclosures. Missing timing stays absent.

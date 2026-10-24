@@ -1938,12 +1938,22 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   tab id is supplied). The shared plugin chrome is not closed with a sibling page.
 - event: `browser/event/state {url, title, isLoading, canGoBack, canGoForward, loadError?, sessionId?, tabId?}`
   (also pushed to plugin views as `browser:state`)
-- agent preview event: `browser/event/preview {sessionId, path?, url?}`.
-  Electron Main validates a workspace `path` inside that session's project,
-  asks the renderer to create a Browser resource tab before navigation, with
-  `location` in the matching
-  runtime panel context. Navigation of a background session does not steal the
-  visible guest.
+- `browser/getPages({sessionId})` → `BrowserState[]`, filtered to that
+  session. Restore missing renderer tabs after reload without opening the panel or
+  replacing selection, and discard replies whose session/restoration generation is stale.
+- agent preview event: `browser/event/preview {sessionId, tabId?, path?, url?}`.
+  Main validates the owning session and file roots, creates/loads its page first,
+  then notifies presentation. Hidden-session navigation and preview do not steal
+  focus or reopen the panel. Trusted agent execution targets its session's connected
+  page, never a different visible page; a closed connection fails until explicit
+  navigate/preview reconnects it. Unscoped UI calls retain their visible-page boundary.
+- Main retains session/tab pages independently of renderer presentation, parking
+  hidden surfaces in a lazy invisible sandboxed backing host. Renderer reload only
+  detaches presentation. Explicit tab/session close, surface disposal, window
+  destruction and shutdown release owned pages and resources. Pointer/capture use
+  page-relative coordinates and a per-page viewport queue with restoration on
+  success/failure/timeout. URL/file-root, partition, permissions and CDP rules stay.
+  See [lifecycle decision](../../adr/browser-execution-presentation-lifecycle.md).
 
 ### fs (read-only)
 

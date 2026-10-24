@@ -955,6 +955,8 @@ ADR 0162 / ADR 0164）均已撤销。
 
 > 完整政策：`11-provider-model-system.md`、`12-provider-config-schema.md`、`13-model-catalog-and-selection.md`。
 
+绑定上可选保存的 `supportsReasoningEffort` 在自动的端点/模型兼容性判断之后生效，且只作用于生效的 Chat Completions adapter。缺省/`null` 保持推断结果，`true` 显式允许 `reasoning_effort` 参数，`false` 省略该参数。目录兼容性不构成显式覆盖。该参数开关不虚构思考能力与等级，也不改变 Responses 与 Anthropic 的格式。保留按模型选择的协议、Minih Router 映射以及 LAN/公网回退。见[决策](../../../adr/model-reasoning-effort-override.md)。
+
 覆盖策略：
 
 1. **由 pi-ai 公开的原生提供商**（OpenAI、Anthropic、Google 以及其他可在 pin 版本上使用的提供商）

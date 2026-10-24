@@ -203,6 +203,12 @@ orchestrator and does not transfer credential or storage ownership.
 
 ## Verification and limits
 
+A Gemini socket close without a reason buffer follows the existing classified
+failure and teardown path without throwing a TypeError. Decode an absent reason
+as empty detail; retain single-failure suppression, cancellation and diagnostic
+confidentiality. The adapter regression uses an offline socket fixture, not a
+real provider account or microphone.
+
 Automated coverage exercises PCM encoding/resampling, provider message
 parsing, owner checks, prepare/connect/mute/end, request cancellation,
 active-binding write protection, transcript bounds, reject-only delegation,

@@ -1672,4 +1672,11 @@ typed cancellation before permission evaluation, so a turn Stop during the
 approval phase cancels the request and starts no process; once a task has been
 registered, turn abort cannot stop its owned process. The request budget bounds
 startup/relay, not the background process lifetime.
+Admission verifies an existing session and the separate 10-per-session / 64-total
+running limits before spawn, including still-settling tasks. `list({})` remains
+global; no session-scoped authorization or result-shape change is introduced.
+Successful `session.delete` (including sidebar batch deletion) and `projects.remove`
+signal only deleted sessions' tasks through the existing side-data cleanup owner.
+Cleanup returns without awaiting process drain/reap; terminal notifications follow
+supervision. Archiving and switching conversations do not stop tasks.
 See [Bash rules](03-tools-and-permissions.md#background-bash-commands).

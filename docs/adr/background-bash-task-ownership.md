@@ -29,11 +29,15 @@ command format changes. Remote background execution is not silently emulated.
 
 ## Consequences
 
-The user must stop long-lived work explicitly; aborting a turn no longer stops
-commands explicitly launched in the background. Limits are 32 running tasks,
+Amended 2026-10-24: limits are 10 running tasks per session and 64 total,
 16 finished entries, 256 KiB per output stream and 12 visible Composer rows.
-Output readers drain the final bytes before settling state. Host restart does
-not restore tasks. Foreground timeout/cancellation behavior stays unchanged.
+Admission checks the session and both limits before spawn under the existing
+lifecycle lock; rejected commands never execute. Successful session/batch deletion
+and project removal signal only deleted sessions' tasks. Cleanup is signal-only;
+supervisors retain tree termination, drain and reap ownership. Archiving, switching
+conversations and aborting a turn leave registered tasks running. The renderer
+uses a shared Todo/task dock and cannot dismiss still-running/settling tasks.
+The global list RPC, foreground semantics and restart-without-replay stay intact.
 
 ## Alternatives
 

@@ -100,7 +100,17 @@ const shared = load(new URL("../src/features/chat/transcript/shared.tsx", import
   "../../../lib/assistant-turns": { messageThinking: () => "" },
   "../../../lib/use-referenced-image-data-url": { useReferencedImageDataUrl: () => undefined },
   "../../../lib/chat-links": { isHtmlFilePath: () => false },
-  "../../../lib/context-usage": { calculateTokenRate: () => 0 },
+  "../../../lib/context-usage": {
+    calculateTokenRate: () => 0,
+    turnUsageBreakdown: () => ({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 0,
+    }),
+  },
+  "./TurnUsageCapsule": { TurnUsageCapsule: () => null },
   "../../../stores/app-store": { useAppStore },
 });
 

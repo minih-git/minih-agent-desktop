@@ -129,6 +129,11 @@ try {
     }
     return (await Promise.all(ids.map((_, index) => exists(join(workspace, `${index}.ready`))))).every(Boolean);
   }, "all ten commands must start");
+  const overLimit = await start(session, turnId, "over-session-limit", "node lifecycle.mjs rejected.pid");
+  assert.equal(overLimit.ok, false);
+  assert.match(overLimit.content.error, /session.*10|10.*session/i);
+  assert.equal(await exists(join(workspace, "rejected.pid")), false,
+    "a rejected command must never execute");
   await Promise.all(ids.map((_, index) =>
     host.call("tools.abort", { sessionId: session.id, toolCallId: `stress-${index}` }),
   ));
@@ -157,6 +162,52 @@ try {
     assert(Buffer.byteLength(output.stderr) <= 256 * 1024);
   }
 
+  // Deletion is scoped and signal-only; another session must keep its child.
+  const survivor = await createSession(host, workspace, "Surviving background owner");
+  await configureSession(host, survivor, "agent", "auto");
+  const survivorTurn = await beginTurn(host, survivor.id);
+  const survivorTask = await start(survivor, survivorTurn, "surviving-owner", "node lifecycle.mjs survivor.pid");
+  assert(survivorTask.ok && survivorTask.content.backgroundTaskId);
+  const survivorPid = await readPid("survivor.pid");
+  await endTurn(host, survivorTurn, "completed");
+  const createOwnedTask = async (path, name) => {
+    const owner = await createSession(host, path, name);
+    await configureSession(host, owner, "agent", "auto");
+    const turn = await beginTurn(host, owner.id);
+    const command = `node ${JSON.stringify(join(workspace, "lifecycle.mjs"))} ${JSON.stringify(join(workspace, `${name}.pid`))}`;
+    const task = await start(owner, turn, name, command);
+    assert(task.ok && task.content.backgroundTaskId, JSON.stringify(task));
+    const pid = await readPid(`${name}.pid`);
+    await endTurn(host, turn, "completed");
+    return { owner, id: task.content.backgroundTaskId, pid };
+  };
+  const assertReaped = async ({ id, pid }) => {
+    await until(async () => (await host.call("backgroundTasks.output", { id })).state === "stopped",
+      "deleting a session must settle its task");
+    await until(() => !alive(pid), "deleting a session must reap its actual child");
+    ownedPids.delete(pid);
+    assert(alive(survivorPid), "another session's task must survive cleanup");
+  };
+  const deleted = await createOwnedTask(workspace, "deleted-session");
+  assert.equal((await host.call("session.delete", { id: deleted.owner.id })).ok, true);
+  await assertReaped(deleted);
+  assert.equal((await host.call("session.delete", { id: deleted.owner.id })).ok, false);
+
+  // Sidebar batch deletion uses the same public session.delete path.
+  const batch = await Promise.all(["batch-a", "batch-b"].map((name) => createOwnedTask(workspace, name)));
+  await Promise.all(batch.map(({ owner }) => host.call("session.delete", { id: owner.id })));
+  await Promise.all(batch.map(assertReaped));
+
+  const removedProject = join(scratch, "removed-project");
+  await mkdir(removedProject);
+  const projectOwners = await Promise.all(["project-a", "project-b"].map((name) => createOwnedTask(removedProject, name)));
+  const removed = await host.call("projects.remove", { path: removedProject });
+  assert.equal(removed.sessionsRemoved, 2);
+  await Promise.all(projectOwners.map(assertReaped));
+  assert.equal((await host.call("backgroundTasks.output", { id: survivorTask.content.backgroundTaskId })).state, "running");
+  await host.call("backgroundTasks.stop", { id: survivorTask.content.backgroundTaskId });
+  await until(() => !alive(survivorPid), "surviving fixture must stop cleanly");
+  ownedPids.delete(survivorPid);
   const lifecycleTurn = await beginTurn(host, session.id);
   const stopped = await start(session, lifecycleTurn, "explicit-stop", "node lifecycle.mjs stopped.pid");
   assert(stopped.ok && stopped.content.backgroundTaskId);
@@ -194,7 +245,9 @@ try {
     rpcMaxMs: Number(rpcDurations.at(-1).toFixed(2)),
     permissionDeniedBeforeSpawn: true, pendingApprovalCancelled: true,
     remoteBackgroundRejected: true, turnAbortSurvived: true, finalOutputRetained: true,
-    explicitStopReapedChild: true, hostExitReapedChild: true,
+    sessionLimitRejectedBeforeSpawn: true, deletedSessionReapedChild: true,
+    batchDeleteReapedChildren: true, projectRemovalReapedChildren: true,
+    unrelatedSessionSurvived: true, explicitStopReapedChild: true, hostExitReapedChild: true,
   };
   await writeFile(join(scratch, "result.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));

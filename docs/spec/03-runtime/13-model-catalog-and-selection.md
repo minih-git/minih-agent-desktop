@@ -24,12 +24,16 @@ entitled to it.
 
 `ProviderSetupDialog` is a single form, not a wizard:
 
-- **Name**, **Base URL** and **API Key** are all on screen at once. An empty key
-  when editing means “keep the stored one”; `secretValue` is only sent when the
-  user typed something. Custom endpoints also offer an explicit **No API key
-  required** switch, defaulting off for new rows. When enabled, the key field is
-  disabled and cleared, and the row saves with `authKind: "none"` and no
-  secret. Named cloud services keep their existing authentication defaults.
+- **Name**, **Base URL** and **API Key** are all on screen at once. Custom endpoints
+  infer authentication from the effective key, without a no-auth switch. A new
+  blank/whitespace key saves anonymously; blank editing retains the saved key.
+  Clear saved key stages removal until Save and excludes the old key from discovery;
+  cancel leaves credentials unchanged, and a replacement key takes precedence.
+  Named services, including Minih Router, retain their authentication defaults.
+- A model's effective Chat Completions format exposes Auto / Send / Do not send
+  for `supportsReasoningEffort`, independently of its enabled thinking levels.
+  Per-model `apiStyle` takes precedence over the provider format. Save, copy and
+  sync preserve all three states; see `12-provider-config-schema.md`.
 - The models section lists what the service returned. `useProviderModels`
   debounces edits by 600 ms, guards against out-of-order replies with a
   monotonic request sequence, and needs no API key so local and no-auth

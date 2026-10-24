@@ -510,19 +510,24 @@ tree. Startup and registry admission are serialized with shutdown; a refused
 startup does not execute its command. Isolated sessions retain `PI_PORT`,
 `PI_PROJECT_ROOT`, and `PI_WORKTREE_ROOT`, along with their worktree cwd.
 
-The Host permits at most 32 running tasks and keeps 16 finished entries. Each
-stdout/stderr ring retains at most 256 KiB, reports truncation, and drains the
-final bytes before recording completion. Tasks are process-local, not SQLite
-records: restarting the Host does not restore or replay commands. Ordinary
-foreground Bash keeps its existing timeout, streaming, cancellation, and result
-semantics. Remote background execution is not part of the current contract;
-requests fail explicitly rather than silently running in the foreground.
+The Host permits at most 10 running tasks per session and 64 in total, with
+distinct admission errors, and keeps 16 finished entries. Session existence, both
+limits and shutdown are checked before spawn under the lifecycle lock. Rejected
+commands have no process side effects. Each stdout/stderr ring retains at most
+256 KiB, reports truncation, and drains final bytes before completion. Tasks are
+process-local, not SQLite records: restarting the Host never replays commands.
+Deleting a session, batch-deleting sessions or removing a project signals only
+the removed sessions' processes without waiting for drain/reap inside the cleanup
+lock. Archiving and switching conversations do not stop tasks. Ordinary foreground
+Bash and explicit rejection of remote background execution are unchanged.
 
-Composer shows at most 12 matching task rows with localized state, Output, and
-Stop controls, and scopes them to the conversation on screen: the registry is
-process-wide, so a bar lists only tasks whose `sessionId` matches its own chat,
-offers Stop only for those, and hides itself on a draft composer. Switching
-conversations changes the listing without stopping either session's processes.
+Composer presents Todo and background tasks in one session-scoped dock. Tabs remain
+reachable while collapsed; choosing a tab expands it. New running tasks raise a
+badge without overriding the selected tab. Task rows retain localized Output and
+Stop controls and match the current `sessionId`; draft and remote composers have
+no local task dock. The registry remains global: filtering is presentation, not
+authorization. Removing a receipt is view-only and cannot hide a running or
+still-settling task. Switching chats never stops processes.
 Only an expanded output preview is polled; stale session/selection responses are
 ignored and failed refreshes remain retryable. Existing finished tasks do not
 reappear on a mount or session switch; tasks observed finishing in the current

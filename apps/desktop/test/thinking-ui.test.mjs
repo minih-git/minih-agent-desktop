@@ -49,7 +49,8 @@ const modelMenuSource = await readFile(
   "utf8",
 );
 // Agent/Plan mode and model selection are owned by the Composer; the
-// conversation top bar only hosts the task title and window actions.
+// conversation top bar only hosts the project crumb, task title, and window
+// actions.
 const topbarSource = await readFile(
   new URL("../src/components/ConversationTopbar.tsx", import.meta.url),
   "utf8",
@@ -135,9 +136,12 @@ test("Composer owns the mode and model controls", () => {
   assert.doesNotMatch(composerModelPickerSource, /composer-menu-back/);
 });
 
-test("conversation topbar keeps the title and actions free of a running indicator", () => {
-  assert.doesNotMatch(topbarSource, /IconFolder|IconChevronRight/);
-  assert.doesNotMatch(topbarSource, /className="ct-project"/);
+test("conversation topbar keeps the crumb and title free of a running indicator", () => {
+  // The left lane is a project crumb plus the task title; neither may grow a
+  // running status, and the title still owns width-based clipping.
+  assert.match(topbarSource, /IconFolder/);
+  assert.match(topbarSource, /className="ct-project"/);
+  assert.doesNotMatch(topbarSource, /IconChevronRight/);
   assert.doesNotMatch(topbarSource, /className="ct-title-chevron"/);
   assert.match(topbarSource, /className="ct-title"/);
   assert.doesNotMatch(topbarSource, /TOPBAR_TITLE_MAX_LENGTH|truncateTopbarTitle/);
@@ -149,7 +153,7 @@ test("conversation topbar keeps the title and actions free of a running indicato
   );
   assert.match(
     stylesSource,
-    /\.conversation-topbar \.ct-title[\s\S]*?font-size: var\(--text-base\)/,
+    /\.conversation-topbar \.ct-title[\s\S]*?font-size: var\(--text-sm-plus\)/,
   );
   assert.doesNotMatch(stylesSource, /\.conversation-topbar \.ct-running(?:-dot)?\b/);
 });

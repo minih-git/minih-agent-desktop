@@ -250,9 +250,10 @@ test("send clears the composer before the round trip and restores a rejected dra
     /if \(!steering && !modelReady\) \{\s*showToast\(t\("errors\.MODEL_NOT_CONFIGURED"\), \{ variant: "error" \}\);\s*return;\s*\}/,
   );
   // Optimistic clear, restore on rejection. The clear must precede the await.
-  const clearAt = submit.indexOf("draft.clearDraftForKey(submittedDraftKey, submittedDraftRevision, submittedDraft);\n    const accepted = steering");
-  assert.ok(clearAt > 0, "draft must be cleared before awaiting sendPrompt");
-  assert.match(submit, /if \(!accepted\) draft\.restoreDraftForKey\(submittedDraftKey, submittedDraft\);/);
+  const clearAt = submit.lastIndexOf("draft.clearDraftForKey(submittedDraftKey, submittedDraftRevision, submittedDraft);");
+  const guardedSendAt = submit.indexOf("await submitWithLatestDraftRestore(");
+  assert.ok(clearAt > 0 && guardedSendAt > clearAt, "draft must be cleared before awaiting sendPrompt");
+  assert.match(submit, /\(\) => draft\.restoreDraftForKey\(submittedDraftKey, submittedDraft\)/);
   assert.doesNotMatch(submit, /if \(accepted\) draft\.clearDraftForKey\(submittedDraftKey, submittedDraftRevision, submittedDraft\);\s*\};/);
   const restore = draftHook.match(
     /const restoreDraftForKey = \(key: string, snapshot: ComposerDraftSnapshot\) => \{[\s\S]*?\n  \};/,
@@ -283,7 +284,7 @@ test("mode slash prefixes send the trailing prompt and retain failed drafts", ()
   );
   assert.match(
     submit,
-    /const submittedDraftRevision = draft\.draftRevision\(submittedDraftKey\);\s*const submittedDraft = draft\.draftSnapshot\(rawText\);[\s\S]*?draft\.clearDraftForKey\(submittedDraftKey, submittedDraftRevision, submittedDraft\);\s*const accepted = steering\s*\?\s*await steerPrompt\(inlineContent, submittedDraft\)\s*:\s*await sendPrompt\(\s*inlineContent,\s*submittedDraft,\s*activeSessionId \?\? undefined,\s*captureAcceptedSession,\s*\);\s*if \(!accepted\) draft\.restoreDraftForKey\(submittedDraftKey, submittedDraft\);/,
+    /const submittedDraftRevision = draft\.draftRevision\(submittedDraftKey\);\s*const submittedDraft = draft\.draftSnapshot\(rawText\);[\s\S]*?draft\.clearDraftForKey\(submittedDraftKey, submittedDraftRevision, submittedDraft\);\s*const accepted = await submitWithLatestDraftRestore\(\s*submittedDraftKey,\s*\(\) => steering\s*\?\s*steerPrompt\(inlineContent, submittedDraft\)\s*:\s*sendPrompt\(\s*inlineContent,\s*submittedDraft,\s*activeSessionId \?\? undefined,\s*captureAcceptedSession,\s*\),\s*\(\) => draft\.restoreDraftForKey\(submittedDraftKey, submittedDraft\)/,
   );
   assert.match(store, /draft\?: ComposerDraftSnapshot/);
   const sendPrompt = queueSlice.slice(

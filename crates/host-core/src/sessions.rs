@@ -1594,6 +1594,15 @@ pub fn session_summary(db: &Database, id: &str) -> Result<Option<SessionSummary>
     Ok(summary)
 }
 
+/// Check admission ownership without loading transcript or worktree metadata.
+pub fn session_exists(db: &Database, id: &str) -> Result<bool> {
+    Ok(db.conn().query_row(
+        "SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?1)",
+        params![id],
+        |row| row.get(0),
+    )?)
+}
+
 /// Load a session detail with an optional renderer-facing message window.
 /// The uncapped default is intentionally retained for the sidecar and for
 /// mutation paths that need the canonical transcript. Renderer callers should

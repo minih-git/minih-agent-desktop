@@ -1511,6 +1511,14 @@ what governs how many sessions one turn may add. See ADR
 
 > Full policy: `11-provider-model-system.md`, `12-provider-config-schema.md`, `13-model-catalog-and-selection.md`.
 
+The optional saved binding `supportsReasoningEffort` is applied after automatic
+endpoint/model compatibility, only to the effective Chat Completions adapter.
+Absent/null preserves inference, true permits `reasoning_effort`, and false omits
+it. Catalog compatibility is not an explicit override. This parameter switch
+does not invent thinking capability or change Responses/Anthropic formats.
+Preserve per-model protocol selection, Minih Router mapping and LAN/public
+fallback. See [decision](../../adr/model-reasoning-effort-override.md).
+
 Coverage strategy:
 
 1. **Native providers** exposed by pi-ai (OpenAI, Anthropic, Google, and others available at pin version)
