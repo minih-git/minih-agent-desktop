@@ -18,7 +18,8 @@ import type { TimelineFailure, TimelineItem } from "../../lib/timeline-types.js"
 import { describeTurnFailure } from "../../lib/turn-failure.js";
 import { ToolRun } from "./ToolRun.js";
 import { MediaViewer, type MediaViewerItem } from "../ui/MediaViewer.js";
-import type { SessionMediaState } from "../../lib/session-media.js";
+import { disposeSessionMedia, type SessionMediaState } from "../../lib/session-media.js";
+import { mediaIdsKey, planMediaThumbnails } from "../../lib/media-thumbnails.js";
 
 export interface ChatTimelineProps {
   items: TimelineItem[];
@@ -38,7 +39,23 @@ type MediaEntry =
   | { kind: "forbidden"; id: string }
   | { kind: "failed"; id: string };
 
-function MediaThumbnails({
+/** Same empty list for every row without media, so its key never changes. */
+const NO_MEDIA_IDS: readonly string[] = [];
+
+function mediaEntryOf(id: string, resolved: MediaViewerItem | SessionMediaState | null): MediaEntry {
+  if (!resolved) return { kind: "deleted", id };
+  if ("kind" in resolved) {
+    return resolved.kind === "ready" ? { kind: "ready", item: resolved.item } : { kind: resolved.kind, id };
+  }
+  return { kind: "ready", item: resolved };
+}
+
+/** Release one entry's transient bytes; a blob URL belongs to the list that made it. */
+function releaseEntry(entry: MediaEntry): void {
+  if (entry.kind === "ready") disposeSessionMedia(entry.item);
+}
+
+export function MediaThumbnails({
   mediaIds,
   resolveMedia,
   onOpenViewer,
@@ -48,52 +65,91 @@ function MediaThumbnails({
   onOpenViewer: (items: MediaViewerItem[], index: number) => void;
 }) {
   const { t } = useTranslation();
-  const [entries, setEntries] = useState<MediaEntry[]>([]);
-  const [loading, setLoading] = useState(false);
+  const ids = mediaIds && mediaIds.length > 0 ? mediaIds : NO_MEDIA_IDS;
+  // The ids, not the array: the row above passes a fresh array of the same ids on
+  // every render, and using the array as the dependency re-downloaded the image
+  // (through `session/mediaRead`) and flashed the skeleton each time.
+  const idsKey = mediaIdsKey(ids);
+  const idsRef = useRef(ids);
+  idsRef.current = ids;
+  const resolveRef = useRef(resolveMedia);
+  resolveRef.current = resolveMedia;
+
+  /**
+   * Resolved entries by id, in a ref rather than in state: a resolution that
+   * lands after the list changed must not overwrite what is on screen, and
+   * unmount has to reach every blob URL this list created.
+   */
+  const entriesRef = useRef(new Map<string, MediaEntry>());
+  const [, setRevision] = useState(0);
+  const bump = () => setRevision((revision) => revision + 1);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!mediaIds || mediaIds.length === 0 || !resolveMedia) {
-      setEntries([]);
-      return;
+    const wanted = idsRef.current;
+    const entries = entriesRef.current;
+    const plan = planMediaThumbnails(wanted, entries.keys());
+    for (const id of plan.release) {
+      const entry = entries.get(id);
+      if (entry) releaseEntry(entry);
+      entries.delete(id);
     }
 
-    setLoading(true);
-    Promise.all(
-      mediaIds.map(async (id): Promise<MediaEntry | null> => {
+    const resolve = resolveRef.current;
+    if (!resolve || plan.resolve.length === 0) {
+      // Everything this list needs is already resolved: nothing to fetch, nothing
+      // to blank. This is the case a re-render used to turn into a reload.
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      plan.resolve.map(async (id): Promise<{ id: string; entry: MediaEntry }> => {
         try {
-          const res = await resolveMedia(id);
-          if (!res) return { kind: "deleted", id };
-          if ("kind" in res) {
-            if (res.kind === "ready") return { kind: "ready", item: res.item };
-            return { kind: res.kind, id };
-          }
-          return { kind: "ready", item: res };
+          return { id, entry: mediaEntryOf(id, await resolve(id)) };
         } catch {
-          return { kind: "failed", id };
+          return { id, entry: { kind: "failed", id } };
         }
       }),
-    ).then((results) => {
-      if (!cancelled) {
-        setEntries(results.filter((r): r is MediaEntry => r !== null));
-        setLoading(false);
+    ).then((resolved) => {
+      for (const { id, entry } of resolved) {
+        // A newer list is in charge, or this id already left it: the bytes this
+        // fetch created belong to nobody, so they are released here rather than
+        // waiting for an unmount that may never come.
+        if (cancelled || !idsRef.current.includes(id)) {
+          releaseEntry(entry);
+          continue;
+        }
+        entriesRef.current.set(id, entry);
       }
+      if (!cancelled) bump();
     });
-
     return () => {
       cancelled = true;
     };
-  }, [mediaIds, resolveMedia]);
+  }, [idsKey]);
 
-  if (loading) {
+  // A session that scrolls past many images would otherwise keep one blob URL per
+  // image alive for as long as the screen stays mounted.
+  useEffect(() => {
+    const entries = entriesRef.current;
+    return () => {
+      for (const entry of entries.values()) releaseEntry(entry);
+      entries.clear();
+    };
+  }, []);
+
+  const entries = ids
+    .map((id) => entriesRef.current.get(id))
+    .filter((entry): entry is MediaEntry => entry !== undefined);
+  if (entries.length === 0) {
+    // A skeleton means "nothing to show yet", not "reloading": once one image of
+    // this row is up, a sibling arriving must not blank the row.
+    if (ids.length === 0 || !resolveMedia) return null;
     return (
       <div className="mt-2 flex gap-1.5">
         <div className="h-24 w-24 animate-pulse rounded-xl bg-[var(--rm-bg-inset)]" />
       </div>
     );
   }
-
-  if (entries.length === 0) return null;
 
   const readyItems = entries.filter((e): e is { kind: "ready"; item: MediaViewerItem } => e.kind === "ready").map((e) => e.item);
   const statusEntries = entries.filter((e) => e.kind !== "ready");
