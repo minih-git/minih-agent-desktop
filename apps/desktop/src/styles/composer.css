@@ -224,6 +224,29 @@
   }
 }
 
+/*
+ * The follow-up suggestion occupies the placeholder slot while the draft is
+ * empty. Unlike the placeholder it is clickable, so it must size to its text
+ * instead of covering the whole input: clicking the empty area keeps the
+ * ordinary focus-and-type behavior.
+ */
+.composer-followup {
+  inset: 0 auto auto 0;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  text-align: left;
+  transition: color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.composer-followup:hover {
+  color: var(--ds-text-primary);
+}
+
 .composer-mode-chip-face {
   display: inline-flex;
   min-width: 0;

@@ -473,6 +473,7 @@ export const IPC = {
     composerPasteFiles: "minih-agent-desktop/composer/pasteFiles",
     clipboardRecordPaste: "minih-agent-desktop/clipboard/recordPaste",
     composerCommands: "minih-agent-desktop/composer/commands",
+    composerFollowUpSuggestion: "minih-agent-desktop/composer/followUpSuggestion",
     workspaceDiff: "minih-agent-desktop/workspace/diff",
     workspaceReviewRollback: "minih-agent-desktop/workspace/review/rollback",
     browserNavigate: "minih-agent-desktop/browser/navigate",

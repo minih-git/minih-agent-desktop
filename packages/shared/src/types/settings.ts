@@ -1,16 +1,16 @@
 /** Shared public types grouped by the owning application domain. */
 import type { CommandShellId } from "../command-shells.js";
 import type { KeybindingOverrides } from "../keyboard-shortcuts.js";
-import type { NetworkProxySettings } from "../network-proxy.js";
 import type { NetworkPolicySettings } from "../network-policy.js";
-import type { ContextCompactionSettings } from "./sessions.js";
+import type { NetworkProxySettings } from "../network-proxy.js";
 import type { Mode } from "./common.js";
-import type { GlobalPermissionMode } from "./permissions.js";
-import type { PluginMarketSource } from "./plugins.js";
-import type { SpeechSettings } from "./speech.js";
-import type { ThinkingLevel } from "./models.js";
-import type { UpdatePreference } from "./platform.js";
 import type { LiveVoiceSettings } from "./live-voice.js";
+import type { ThinkingLevel } from "./models.js";
+import type { GlobalPermissionMode } from "./permissions.js";
+import type { UpdatePreference } from "./platform.js";
+import type { PluginMarketSource } from "./plugins.js";
+import type { ContextCompactionSettings } from "./sessions.js";
+import type { SpeechSettings } from "./speech.js";
 
 export type ThemePreference = "system" | "light" | "dark" | `plugin:${string}`;
 
@@ -100,6 +100,14 @@ export type AppSettings = {
    * deterministic fallback title, so manual renames always win.
    */
   sessionTitle?: SessionTitleSettings;
+  /**
+   * Built-in composer follow-up suggestion. Absent keeps the default
+   * (enabled, the session's own model, no reasoning): after a local session's
+   * turn settles, one short model completion proposes the next prompt the
+   * composer offers as grey ghost text. The text is sent only when the user
+   * explicitly clicks it.
+   */
+  followUpSuggestion?: FollowUpSuggestionSettings;
   /**
    * Model a session the Agent creates through `SessionCreate` runs on. Absent
    * means the Agent may not create sessions: the tool fails with
@@ -310,6 +318,18 @@ export type SessionTitleSettings = {
    */
   modelKey?: string;
   /** Reasoning level for the title completion; absent means `off`. */
+  thinkingLevel?: ThinkingLevel;
+};
+
+export type FollowUpSuggestionSettings = {
+  /** Absent and true enable suggestions. `false` never spends a model call. */
+  enabled?: boolean;
+  /**
+   * Model that proposes follow-up prompts as `providerId/modelId`. Absent or
+   * empty uses the session's own provider/model.
+   */
+  modelKey?: string;
+  /** Reasoning level for the suggestion completion; absent means `off`. */
   thinkingLevel?: ThinkingLevel;
 };
 

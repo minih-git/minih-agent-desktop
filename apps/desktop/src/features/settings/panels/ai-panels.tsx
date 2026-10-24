@@ -4,27 +4,33 @@
  * The four AI pages are separate destinations, not one long page: the model
  * catalog deliberately stays its own category, and voice keeps its own card.
  */
-import { useTranslation } from "react-i18next";
+
 import type { AppSettings, GlobalPermissionMode, ProviderPublic } from "@minih-agent/shared";
+import { useTranslation } from "react-i18next";
 import {
-  ContextUsageDisplayRow,
-  CommandShellRow,
-  LargePasteThresholdRow,
-  LinkOpenTargetRow,
-  SettingsCard,
-  SettingsRow,
-} from "../primitives";
-import { SegmentedControl, SettingsToggle } from "../../../components/ui";
-import { ShowThinkingRow } from "../../../components/settings/ShowThinkingRow";
-import { TranscriptDensityRow } from "../../../components/settings/TranscriptDensityRow";
+  FollowUpSuggestionModelRow,
+  FollowUpSuggestionThinkingRow,
+  FollowUpSuggestionToggleRow,
+} from "../../../components/settings/FollowUpSuggestionRows";
+import { LearnedMemoryCard } from "../../../components/settings/LearnedMemoryCard";
 import {
   SessionTitleModelRow,
   SessionTitleThinkingRow,
   SessionTitleToggleRow,
 } from "../../../components/settings/SessionTitleRows";
-import { LearnedMemoryCard } from "../../../components/settings/LearnedMemoryCard";
 import { SettingsMenuSelect } from "../../../components/settings/SettingsMenuSelect";
+import { ShowThinkingRow } from "../../../components/settings/ShowThinkingRow";
+import { TranscriptDensityRow } from "../../../components/settings/TranscriptDensityRow";
+import { SegmentedControl, SettingsToggle } from "../../../components/ui";
 import { AgentInstructionsSection } from "../agent-sections";
+import {
+  CommandShellRow,
+  ContextUsageDisplayRow,
+  LargePasteThresholdRow,
+  LinkOpenTargetRow,
+  SettingsCard,
+  SettingsRow,
+} from "../primitives";
 
 type SaveSettings = (patch: Partial<AppSettings>) => Promise<void>;
 
@@ -73,6 +79,20 @@ export function ChatExperiencePanel({
           saveSettings={saveSettings}
         />
         <SessionTitleThinkingRow
+          settings={settings}
+          providers={providers}
+          saveSettings={saveSettings}
+        />
+      </SettingsCard>
+
+      <SettingsCard title={t("settings.followUpSuggestionCard")}>
+        <FollowUpSuggestionToggleRow settings={settings} saveSettings={saveSettings} />
+        <FollowUpSuggestionModelRow
+          settings={settings}
+          providers={providers}
+          saveSettings={saveSettings}
+        />
+        <FollowUpSuggestionThinkingRow
           settings={settings}
           providers={providers}
           saveSettings={saveSettings}

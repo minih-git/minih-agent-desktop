@@ -72,6 +72,7 @@ Examples:
 - `minih-agent-desktop/memory/extraction/status`
 - `minih-agent-desktop/session/openScratchPath`
 - `minih-agent-desktop/session/collaboration`
+- `minih-agent-desktop/composer/followUpSuggestion`
 
 ## 3.1 Logical project groups
 
@@ -2400,6 +2401,23 @@ This is an independent, one-shot completion with no session history, tools, or
 attachments. Electron main resolves the provider/model and credentials, so the
 renderer never receives a secret. Empty drafts, slash-command drafts, missing
 models, and provider failures return the common `Result` error envelope.
+
+### composer/followUpSuggestion
+
+```ts
+composer/followUpSuggestion({ sessionId }) -> { text: string | null }
+```
+
+Renderer-driven one-shot completion over the session's settled conversation.
+Electron main reads the last persisted messages from the host, asks the
+configured (or the session's own) model for one follow-up prompt in the user's
+voice and language, and returns the normalized text; `null` means "no
+suggestion" for every skipped or failed case (feature disabled, native/remote
+session, no usable model, in-flight generation for the same session, provider
+failure). The call never throws and never blocks the composer; failures are
+logged and forgotten. The renderer decides when to ask (after a successful
+turn settles with an empty draft) and whether to show the answer; the text is
+sent only when the user explicitly clicks it.
 
 ### speech/getStatus, speech/transcribe, speech/synthesize
 

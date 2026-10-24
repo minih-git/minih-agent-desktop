@@ -1,5 +1,3 @@
-import { useLayoutEffect } from "react";
-import { installComposerDeletionGuard } from "./native-deletion";
 import type {
   ClipboardEvent,
   Dispatch,
@@ -8,11 +6,14 @@ import type {
   RefObject,
   SetStateAction,
 } from "react";
-import { editorSelectionRange, readEditorValue } from "./editor";
-import { ComposerImagePreview } from "./ComposerImagePreview";
+import { useLayoutEffect } from "react";
+import { ComposerFollowUp } from "./ComposerFollowUp";
 import { ComposerImageHover } from "./ComposerImageHoverPreview";
+import { ComposerImagePreview } from "./ComposerImagePreview";
+import { editorSelectionRange, readEditorValue } from "./editor";
 import type { CompletionController } from "./hooks/useComposerCompletions";
 import type { ComposerImagePreviewController } from "./hooks/useComposerImagePreview";
+import { installComposerDeletionGuard } from "./native-deletion";
 
 export type ComposerInputProps = {
   imagePreview?: ComposerImagePreviewController;
@@ -20,6 +21,12 @@ export type ComposerInputProps = {
   value: string;
   placeholderText: string;
   placeholderKey: string;
+  /**
+   * The settled-turn suggestion shown as grey ghost text in the placeholder
+   * slot; present only while the draft is empty. It replaces the rotating
+   * placeholder, so the two never render together.
+   */
+  followUp?: { text: string; onSend: () => void } | null;
   inputBlocked: boolean;
   pasting: boolean;
   enterToSend: boolean;
@@ -52,6 +59,7 @@ export function ComposerInput({
   value,
   placeholderText,
   placeholderKey,
+  followUp,
   inputBlocked,
   pasting,
   enterToSend,
@@ -172,13 +180,21 @@ export function ComposerInput({
           }}
         />
         {value.length === 0 ? (
-          <span
-            key={placeholderKey}
-            className="composer-placeholder"
-            aria-hidden="true"
-          >
-            {placeholderText}
-          </span>
+          followUp ? (
+            <ComposerFollowUp
+              key={`followup-${followUp.text}`}
+              text={followUp.text}
+              onSend={followUp.onSend}
+            />
+          ) : (
+            <span
+              key={placeholderKey}
+              className="composer-placeholder"
+              aria-hidden="true"
+            >
+              {placeholderText}
+            </span>
+          )
         ) : null}
       </div>
     </div>
