@@ -14,6 +14,7 @@
  * id channel.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { register } from "node:module";
 import test from "node:test";
 
@@ -24,6 +25,16 @@ const { ModelsDevCatalog } = await import("../electron/main/models-dev-catalog.t
 const { IPC } = await import("@minih-agent/shared");
 
 const catalogPath = new URL("../resources/models.dev/api.json", import.meta.url).pathname;
+
+/**
+ * The output limit models.dev publishes for this Kilo model. Read from the
+ * bundled snapshot instead of a literal: the release process refreshes
+ * `api.json`, and upstream moved this model from 131072 to 943717 once
+ * already. A stale literal fails the release for a data change the client
+ * is meant to follow.
+ */
+const publishedSnapshot = JSON.parse(readFileSync(catalogPath, "utf8"));
+const publishedOutput = (modelId) => publishedSnapshot.kilo.models[modelId].limit.output;
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -259,7 +270,7 @@ test("a Kilo account keeps published Flash output limits through discovery", asy
   const { result } = await handlersFor(t, row, { data: ids.map((id) => ({ id })) });
   const models = new Map(result.models.map((model) => [model.modelId, model]));
   for (const id of ids) {
-    assert.equal(models.get(id)?.maxTokens, 131_072, id);
+    assert.equal(models.get(id)?.maxTokens, publishedOutput(id), id);
     assert.equal(models.get(id)?.catalogSource, "models.dev", id);
   }
 });
