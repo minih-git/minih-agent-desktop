@@ -1733,6 +1733,36 @@ Both files are capped at 64 KiB, and a whitespace-only file counts as absent.
 Native `SYSTEM.md` / `APPEND_SYSTEM.md` resolution in a native-pi session is
 unaffected: it stays with the upstream loader.
 
+A paired host resolves the same pair for the turns it runs itself
+(`packages/host-runtime/src/launch-resolver.ts`), applying the identical
+project-over-global rule to the files on that machine: the project layer is the
+session's project directory as the host sees it, and the global layer is that
+host user's home. The resolved content travels as `customSystemPrompt` and is
+part of the runtime's reuse match, so changing a file on the host retires its
+runtime exactly as editing one locally does. A desktop session that opens a
+remote workspace still resolves only the desktop's own files: the remote
+project's `.pi/` is not read through that path.
+
+### 7.0.2 Per-model instructions
+
+A model binding may carry its own `systemPrompt`
+(`12-provider-config-schema.md`). Both launch paths forward it: the desktop
+resolver reads the binding of the model the launch lands on
+(`session-launch.ts`), and a paired host's own resolver does the same for the
+models its `providers.create` received, including a prompt that arrived through
+provider sync (`host-runtime/launch-resolver.ts`). Each sends it as
+`modelSystemPrompt`; the runtime composes it as its own paragraph of the
+context section, after `APPEND_SYSTEM.md` and before the project instruction
+chain. A rule scoped to one model therefore reads closer to the request than
+the user's global appendix, while the workspace's own `AGENTS.md` still keeps
+the last word. It never replaces the persona or the operational rules.
+
+The block belongs to the model, not to the provider row: switching to another
+model on the same row drops it, and editing the saved text retires the running
+runtime through the reuse match so the next prompt recomposes. Only the
+session's main model is affected — delegated subagent runs keep the prompt
+their own runtime composes.
+
 The base prompt states collaboration rules explicitly, because omitting them
 is what produced silent sessions: "prefer concise, actionable answers" was the
 only relevant line, and a reasoning model executed it as saying nothing at all.

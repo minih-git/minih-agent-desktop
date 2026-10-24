@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -76,6 +78,80 @@ describe("createHeadlessLaunchResolver", () => {
     expect(launch.sidecarParams.commandShell).toMatchObject({ id: "bash" });
     expect(launch.sidecarParams.infiniteProviderRetry).toBe(false);
     expect(calls.some((call) => call.method === "providers.getSecret")).toBe(true);
+  });
+
+  it("carries the launched model's own system prompt and nothing for a model without one", async () => {
+    const prompt = "Answer as a reviewer: findings first, then evidence.";
+    const prompted: HostProviderRecord = {
+      ...provider,
+      models: [
+        {
+          id: "gpt-prompted",
+          contextWindow: 128_000,
+          maxTokens: 8_192,
+          thinkingLevels: ["off"],
+          defaultThinkingLevel: null,
+          systemPrompt: prompt,
+        },
+        {
+          id: "gpt-plain",
+          contextWindow: 128_000,
+          maxTokens: 8_192,
+          thinkingLevels: ["off"],
+          defaultThinkingLevel: null,
+        },
+      ],
+    };
+    const { host } = hostWith([prompted], { p1: "sk-test" });
+    const resolver = createHeadlessLaunchResolver({ getHost: () => host, dataDir: "/data", log: () => undefined });
+
+    const withPrompt = await resolver.resolve("s1", { providerId: "p1", modelId: "gpt-prompted" }, {});
+    expect(withPrompt.sidecarParams.modelSystemPrompt).toBe(prompt);
+
+    // Switching to a sibling model must not inherit the previous model's rules.
+    const withoutPrompt = await resolver.resolve("s1", { providerId: "p1", modelId: "gpt-plain" }, {});
+    expect("modelSystemPrompt" in withoutPrompt.sidecarParams).toBe(false);
+  });
+
+  it("resolves SYSTEM.md / APPEND_SYSTEM.md on the host that runs the turn", async () => {
+    const home = await mkdtemp(join(tmpdir(), "host-custom-prompt-home-"));
+    const project = await mkdtemp(join(tmpdir(), "host-custom-prompt-project-"));
+    const bare = await mkdtemp(join(tmpdir(), "host-custom-prompt-bare-"));
+    const priorHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      await mkdir(join(project, ".pi"), { recursive: true });
+      await writeFile(join(project, ".pi", "APPEND_SYSTEM.md"), "HOST-MARKER: be terse.\n", "utf8");
+      // A global file exists too, so this measures the project-over-global rule
+      // rather than "only one file happens to exist".
+      await mkdir(join(home, ".pi", "agent"), { recursive: true });
+      await writeFile(join(home, ".pi", "agent", "APPEND_SYSTEM.md"), "GLOBAL-MARKER dropped.\n", "utf8");
+
+      const { host } = hostWith([provider], { p1: "sk-test" });
+      const resolver = createHeadlessLaunchResolver({ getHost: () => host, dataDir: "/data", log: () => undefined });
+
+      const launch = await resolver.resolve(
+        "s1",
+        { providerId: "p1", modelId: "gpt-a", projectPath: project },
+        {},
+      );
+      expect(launch.sidecarParams.customSystemPrompt).toEqual({ append: "HOST-MARKER: be terse." });
+
+      // Both layers existed above; dropping the global one leaves this host
+      // with no files at all — the case that must send no override rather than
+      // an empty one.
+      await rm(join(home, ".pi"), { recursive: true, force: true });
+      const withoutFiles = await resolver.resolve(
+        "s1",
+        { providerId: "p1", modelId: "gpt-a", projectPath: bare },
+        {},
+      );
+      expect("customSystemPrompt" in withoutFiles.sidecarParams).toBe(false);
+    } finally {
+      if (priorHome === undefined) delete process.env.HOME;
+      else process.env.HOME = priorHome;
+      for (const dir of [home, project, bare]) await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("uses only the full wire ID binding for a routed model, retaining its request ID", async () => {

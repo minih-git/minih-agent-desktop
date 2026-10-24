@@ -20,6 +20,7 @@ import {
   capabilitiesFromModelConfig,
   clampThinkingLevel,
   genericModelConfig,
+  loadCustomSystemPrompt,
   loadInstructionChain,
   loadSubagentDefinitions,
   modelConfigWithBinding,
@@ -258,6 +259,12 @@ export function createHeadlessLaunchResolver(options: HeadlessLaunchResolverOpti
     const projectPath =
       typeof session.projectPath === "string" && session.projectPath.trim() ? session.projectPath.trim() : undefined;
     let projectInstructions = await loadInstructionChain(projectPath);
+    // pi-compatible SYSTEM.md / APPEND_SYSTEM.md, resolved on the host that
+    // actually runs the turn: this process reads its own project `.pi/` and its
+    // own user's `~/.pi/agent/`, so a paired host honors the files that exist
+    // there instead of the desktop's. Missing or unreadable files are an
+    // expected state and contribute nothing.
+    const customSystemPrompt = await loadCustomSystemPrompt(projectPath);
     let projectMemory: string | undefined;
     if (projectPath) {
       try {
@@ -381,7 +388,14 @@ export function createHeadlessLaunchResolver(options: HeadlessLaunchResolverOpti
         attachmentsDir: join(dataDir, "attachments"),
         projectPath,
         projectInstructions,
+        ...(customSystemPrompt ? { customSystemPrompt } : {}),
         projectMemory,
+        // The model's own instruction block, the same field the desktop launch
+        // forwards: a paired host runs the model the session picked, so it must
+        // also run with the rules saved for that model.
+        ...(storedModel?.systemPrompt?.trim()
+          ? { modelSystemPrompt: storedModel.systemPrompt }
+          : {}),
         provider: {
           id: provider.id,
           name: provider.name,

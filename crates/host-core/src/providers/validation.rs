@@ -4,6 +4,9 @@ pub(crate) const MAX_HEADERS: usize = 32;
 const MAX_HEADER_KEY_BYTES: usize = 256;
 const MAX_HEADER_VALUE_BYTES: usize = 4096;
 pub(crate) const MAX_MODEL_ALIAS_CHARS: usize = 60;
+/// Per-model instruction block limit. A prompt is configuration, not content:
+/// pasting a whole document here would ride along every request.
+pub(crate) const MAX_MODEL_SYSTEM_PROMPT_CHARS: usize = 8_000;
 const FORBIDDEN_HEADER_KEYS: &[&str] = &[
     "authorization",
     "proxy-authorization",
@@ -176,7 +179,9 @@ pub(crate) fn normalize_thinking_levels(levels: &[String]) -> Vec<String> {
     out
 }
 
-pub(crate) fn validate_model_aliases(bindings: &[ModelBinding]) -> Result<()> {
+/// Per-binding save guard: the fields a user types rather than selects get a
+/// bounded length so a pasted document cannot become provider configuration.
+pub(crate) fn validate_model_bindings(bindings: &[ModelBinding]) -> Result<()> {
     for binding in bindings {
         if let Some(alias) = binding.alias.as_deref() {
             if alias.trim().chars().count() > MAX_MODEL_ALIAS_CHARS {
@@ -184,6 +189,15 @@ pub(crate) fn validate_model_aliases(bindings: &[ModelBinding]) -> Result<()> {
                     "MODEL_ALIAS_TOO_LONG: alias for model \"{}\" exceeds {} characters",
                     binding.id.trim(),
                     MAX_MODEL_ALIAS_CHARS
+                );
+            }
+        }
+        if let Some(prompt) = binding.system_prompt.as_deref() {
+            if prompt.trim().chars().count() > MAX_MODEL_SYSTEM_PROMPT_CHARS {
+                bail!(
+                    "MODEL_SYSTEM_PROMPT_TOO_LONG: system prompt for model \"{}\" exceeds {} characters",
+                    binding.id.trim(),
+                    MAX_MODEL_SYSTEM_PROMPT_CHARS
                 );
             }
         }

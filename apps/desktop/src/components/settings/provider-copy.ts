@@ -28,6 +28,7 @@ export function copyProviderConfiguration(provider: ProviderPublic, name: string
     models: provider.models.map((model) => ({
       id: model.id,
       ...(model.alias !== undefined ? { alias: model.alias } : {}),
+      ...(model.systemPrompt !== undefined ? { systemPrompt: model.systemPrompt } : {}),
       ...(model.apiStyle !== undefined ? { apiStyle: model.apiStyle } : {}),
       contextWindow: model.contextWindow,
       // Provenance travels with the value, so a copied catalog window keeps

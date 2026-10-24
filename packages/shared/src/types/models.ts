@@ -215,6 +215,13 @@ export type ModelBinding = {
   /** Optional display alias. When set it names the model everywhere the UI
    * shows a model label; the id remains the wire identity. */
   alias?: string;
+  /**
+   * Optional instruction block for this model alone. When this model is the
+   * session's main model, the runtime appends it to the composed system prompt
+   * as its own section; switching models switches (or drops) it. Absent or
+   * whitespace-only means no prompt.
+   */
+  systemPrompt?: string;
   contextWindow: number;
   /** Provenance of `contextWindow`. Absent on records written before the
    * marker existed; readers then apply the historical rule documented on
@@ -270,6 +277,12 @@ export type ModelBinding = {
    */
   apiStyle?: string;
 };
+
+/**
+ * Character cap for one model's instruction block. Mirrors
+ * `MAX_MODEL_SYSTEM_PROMPT_CHARS` in host-core, which rejects a longer save.
+ */
+export const MODEL_SYSTEM_PROMPT_MAX_CHARS = 8_000;
 
 export const MODEL_MODALITIES = ["text", "image", "audio", "video", "pdf"] as const;
 export type ModelModality = (typeof MODEL_MODALITIES)[number];

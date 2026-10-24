@@ -135,6 +135,8 @@ type RuntimeParams = {
   /** An isolated session's worktree root, supplied by Electron main (ADR 0329). */
   workspaceRoot?: string;
   customSystemPrompt?: CustomSystemPrompt;
+  /** Instruction block of the resolved model binding (per-model systemPrompt). */
+  modelSystemPrompt?: string;
   projectInstructions?: ProjectInstructions;
   projectMemory?: string;
   /** Bounded learned-memory index loaded by Electron main at launch. */
@@ -249,6 +251,7 @@ async function runtimeFor(
     jevApiKey: params.jevApiKey,
     projectInstructions: params.projectInstructions,
     customSystemPrompt: params.customSystemPrompt,
+    modelSystemPrompt: params.modelSystemPrompt,
     projectMemory: params.projectMemory,
     learnedMemoryRead: params.learnedMemoryRead,
     projectPath: params.projectPath,
@@ -329,6 +332,7 @@ async function runtimeFor(
     remoteWorkspace: params.remoteWorkspace,
     workspaceRoot: params.workspaceRoot,
     customSystemPrompt: params.customSystemPrompt,
+    modelSystemPrompt: params.modelSystemPrompt,
     projectInstructions: params.projectInstructions,
     projectMemory: params.projectMemory,
     learnedMemoryIndex: params.learnedMemoryIndex,

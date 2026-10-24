@@ -339,6 +339,17 @@ export function createSessionLaunchRuntime({
     // pi-compatible SYSTEM.md / APPEND_SYSTEM.md (issue #542): resolved once
     // per launch; a change retires the runtime through the reuse match.
     const customSystemPrompt = await loadCustomSystemPrompt(localInstructionRoot);
+    // The binding's own instruction block: it belongs to the model this launch
+    // resolved to, so a model switch on the same provider row swaps it (or
+    // drops it) instead of keeping the previous model's rules.
+    // `provider` above is the resolved request binding and carries no model
+    // list, so the saved row is what names the model's own instructions.
+    const configuredRow = (providers.providers ?? []).find(
+      (row) => row.id === provider.id,
+    );
+    const modelSystemPrompt = configuredRow
+      ? bindingForModel(configuredRow, modelId)?.systemPrompt
+      : undefined;
     let projectMemory: string | undefined;
     if (projectPath) {
       try {
@@ -681,6 +692,7 @@ export function createSessionLaunchRuntime({
         ...(remoteWorkspace ? { remoteWorkspace } : {}),
         ...(workspaceRoot ? { workspaceRoot } : {}),
         customSystemPrompt,
+        ...(modelSystemPrompt ? { modelSystemPrompt } : {}),
         projectInstructions,
         projectMemory,
         ...(learnedMemoryIndex ? { learnedMemoryIndex } : {}),

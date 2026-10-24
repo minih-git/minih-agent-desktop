@@ -78,6 +78,15 @@ pub(crate) fn normalize_model_bindings(bindings: &[ModelBinding]) -> Vec<ModelBi
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .map(str::to_string),
+                // A model prompt keeps its internal line breaks; only the
+                // outside whitespace goes, so an emptied box and an absent key
+                // stay one state.
+                system_prompt: binding
+                    .system_prompt
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string),
                 context_window_source: normalize_model_limit_source(
                     binding.context_window_source.as_deref(),
                 ),
@@ -115,6 +124,7 @@ fn legacy_model_binding(model_id: Option<String>) -> Vec<ModelBinding> {
             vec![ModelBinding {
                 id: id.trim().to_string(),
                 alias: None,
+                system_prompt: None,
                 context_window_source: None,
                 max_tokens_source: None,
                 context_window: DEFAULT_CONTEXT_WINDOW,
@@ -503,6 +513,7 @@ mod tests {
         ModelBinding {
             id: id.to_string(),
             alias: None,
+            system_prompt: None,
             context_window,
             context_window_source: None,
             max_tokens_source: None,
