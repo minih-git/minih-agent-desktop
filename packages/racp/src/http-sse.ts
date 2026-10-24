@@ -166,12 +166,20 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
     // A caller-provided cursor is where this subscription begins; the running
     // cursor then advances with every durable event the stream delivers.
     if (from) lastCursor = { epoch: from.epoch, sequence: from.sequence };
+    // A new generation supersedes the previous one, so its fetch must not stay
+    // open: a stream left hanging on the server is exactly the slot a phone is
+    // counted for, and nothing there can tell it from a live reader.
+    controller?.abort();
+    controller = null;
     generation += 1;
     const myGeneration = generation;
     closed = false;
     const backoff = options.reconnect ?? { enabled: true };
     while (!closed && generation === myGeneration) {
-      controller = new AbortController();
+      // One controller per attempt: this loop, a superimposed reconnect, and
+      // `close()` all have to name the same object without guessing whose it is.
+      const attempt = new AbortController();
+      controller = attempt;
       // Spec §11.2: the cursor travels in the Last-Event-ID header as
       // "<epoch>:<sequence>", never in the URL.
       const cursorHeader: Record<string, string> = lastCursor
@@ -182,7 +190,7 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
           method: "GET",
           headers: headers({ accept: "text/event-stream", ...cursorHeader }),
           credentials: options.auth.kind === "cookie" ? "include" : "same-origin",
-          signal: controller.signal,
+          signal: attempt.signal,
         });
         if (!response.ok || !response.body) {
           throw new Error(`event stream returned HTTP ${response.status}`);
@@ -225,8 +233,11 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
         const delay = Math.min((backoff.baseDelayMs ?? DEFAULT_BASE_DELAY_MS) * 2 ** (reconnectAttempt - 1), backoff.maxDelayMs ?? DEFAULT_MAX_DELAY_MS);
         await sleep(delay);
       } finally {
-        controller?.abort();
-        controller = null;
+        // Aborting this attempt is always safe — it belongs to this loop. Only
+        // the shared slot needs the ownership check, so a newer loop keeps its
+        // own controller instead of having it cleared from here.
+        attempt.abort();
+        if (controller === attempt) controller = null;
       }
     }
   }

@@ -53,7 +53,17 @@ export type ConnectionIdentity = {
   accountDevice?: boolean;
 };
 
-const MAX_STREAM_CONNECTIONS_PER_DEVICE = 4;
+/**
+ * How many event streams one device may hold at once.
+ *
+ * A resource bound, not a concurrency policy: a phone that was suspended leaves
+ * half-open streams behind that the relay only notices minutes later, and one
+ * that keeps them should still be able to open a new one. Twelve covers a phone
+ * with a couple of zombie streams per open screen while remaining far below the
+ * Host's `maxConnectedClients`. It is shared with `relay()`: both are a socket
+ * per subscription, and a second ceiling would only be a second thing to tune.
+ */
+export const MAX_STREAM_CONNECTIONS_PER_DEVICE = 12;
 const ROUTE_CONTEXT_LIFETIME_MS = 5 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 /** `turn/start` admission deadline (protocol §12). */
@@ -340,7 +350,13 @@ export type LogicalConnectionPoolOptions = {
  */
 export class LogicalConnectionPool {
   private readonly commands = new Map<string, LogicalConnection>();
-  private readonly streams = new Map<string, Set<LogicalConnection>>();
+  /**
+   * Live streams per device, each with the path it subscribes to.
+   *
+   * A `Map` rather than a `Set`: insertion order makes the first key the oldest
+   * stream, and the value lets a re-subscribe find the one it replaces.
+   */
+  private readonly streams = new Map<string, Map<LogicalConnection, string>>();
 
   constructor(private readonly options: LogicalConnectionPoolOptions) {}
 
@@ -380,18 +396,56 @@ export class LogicalConnectionPool {
     return connection;
   }
 
-  /** A dedicated connection for one event stream, bounded per device. */
-  async stream(identity: ConnectionIdentity): Promise<LogicalConnection> {
-    const open = this.streams.get(identity.deviceId) ?? new Set<LogicalConnection>();
-    for (const connection of [...open]) if (connection.isClosed) open.delete(connection);
-    if (open.size >= MAX_STREAM_CONNECTIONS_PER_DEVICE) {
-      throw new GatewayRpcError("RATE_LIMITED", `a device may hold at most ${MAX_STREAM_CONNECTIONS_PER_DEVICE} event streams`, true);
+  /**
+   * A dedicated connection for one event stream, bounded per device.
+   *
+   * The bound is a resource limit, not a verdict on the request: a device that
+   * opens a new stream proves it is online, and the streams it still holds are
+   * usually ones the network already abandoned. A phone that was suspended
+   * cannot send its abort, so the half-open socket keeps counting until the
+   * relay notices minutes later — refusing the new stream in that state is what
+   * leaves a user staring at "reconnecting" until every slot is worn out. The
+   * newest stream therefore wins: a stream of the same session is closed first
+   * (one device needs one subscription per session), then the oldest one, and
+   * only then is the new connection accepted.
+   */
+  async stream(identity: ConnectionIdentity, streamKey: string): Promise<LogicalConnection> {
+    const open = this.streams.get(identity.deviceId) ?? new Map<LogicalConnection, string>();
+    for (const connection of [...open.keys()]) if (connection.isClosed) open.delete(connection);
+
+    for (const [connection, key] of [...open]) {
+      if (key !== streamKey) continue;
+      open.delete(connection);
+      this.supersede(connection, identity, "same subscription", streamKey);
     }
+    while (open.size >= MAX_STREAM_CONNECTIONS_PER_DEVICE) {
+      const oldest = open.keys().next().value;
+      if (!oldest) break;
+      open.delete(oldest);
+      this.supersede(oldest, identity, "oldest stream", streamKey);
+    }
+
     const connection = await this.connect(identity);
-    open.add(connection);
+    open.set(connection, streamKey);
     this.streams.set(identity.deviceId, open);
     connection.onClose(() => open.delete(connection));
     return connection;
+  }
+
+  /**
+   * Close one stream that a newer request replaces.
+   *
+   * The close is what reaches `serveEventStream`'s `finish()`: it unsubscribes,
+   * ends the response, and frees the slot. Logged at info without a credential.
+   */
+  private supersede(connection: LogicalConnection, identity: ConnectionIdentity, reason: string, streamKey: string): void {
+    this.options.log("info", "gateway stream superseded", {
+      clientConnectionId: connection.id,
+      hostId: identity.hostId,
+      reason,
+      streamKey,
+    });
+    connection.close(`superseded by a newer stream from the same device (${reason})`);
   }
 
   /**
@@ -405,8 +459,12 @@ export class LogicalConnectionPool {
   async relay(identity: ConnectionIdentity): Promise<LogicalConnection> {
     const mux = this.options.links.muxFor(identity.hostId);
     if (!mux) throw new GatewayRpcError("AGENT_UNAVAILABLE", "the Host is offline", true);
-    const open = this.streams.get(identity.deviceId) ?? new Set<LogicalConnection>();
-    for (const connection of [...open]) if (connection.isClosed) open.delete(connection);
+    // Relayed WebSocket connections keep the refusal: the client owns that socket
+    // and its own reconnect, and evicting one would drop a live session another
+    // tab is using. The zombie-stream failure this file now handles is the
+    // SSE one, where the subscription is opened by a screen that can disappear.
+    const open = this.streams.get(identity.deviceId) ?? new Map<LogicalConnection, string>();
+    for (const connection of [...open.keys()]) if (connection.isClosed) open.delete(connection);
     if (open.size >= MAX_STREAM_CONNECTIONS_PER_DEVICE) {
       throw new GatewayRpcError("RATE_LIMITED", `a device may hold at most ${MAX_STREAM_CONNECTIONS_PER_DEVICE} relayed connections`, true);
     }
@@ -416,10 +474,11 @@ export class LogicalConnectionPool {
     } catch (error) {
       throw new GatewayRpcError("AGENT_UNAVAILABLE", error instanceof Error ? error.message : "the Host is offline", true);
     }
-    open.add(connection);
+    open.set(connection, `relay:${identity.hostId}`);
     this.streams.set(identity.deviceId, open);
     connection.onClose(() => open.delete(connection));
     return connection;
+
   }
 
   /** Close every logical connection of a revoked device (S9: within 5 seconds). */
@@ -431,7 +490,7 @@ export class LogicalConnectionPool {
       this.commands.delete(key);
       closed += 1;
     }
-    for (const connection of [...(this.streams.get(deviceId) ?? [])]) {
+    for (const connection of [...(this.streams.get(deviceId)?.keys() ?? [])]) {
       connection.close("device revoked");
       closed += 1;
     }
@@ -442,7 +501,7 @@ export class LogicalConnectionPool {
   closeAll(): void {
     for (const connection of [...this.commands.values()]) connection.close("gateway stopping");
     this.commands.clear();
-    for (const connections of this.streams.values()) for (const connection of connections) connection.close("gateway stopping");
+    for (const connections of this.streams.values()) for (const connection of connections.keys()) connection.close("gateway stopping");
     this.streams.clear();
   }
 

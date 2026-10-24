@@ -24,6 +24,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Saving a generated image touches the photo library, and iOS aborts an
+	     app that asks for that without a purpose string (TCC, PhotosAdd). -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Minih Remote saves an image to your photo library only when you tap Save from an image viewer.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
