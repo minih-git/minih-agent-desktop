@@ -1401,8 +1401,15 @@ table under a Host prefix, so a client sets its base URL to
   `access-control-expose-headers: x-trace-id`, so a cross-origin client can read
   the trace id off a failure instead of seeing `null`.
 - Commands share one logical connection per `(device, host)`; each event stream
-  takes its own, and a device holds at most four streams, so a Gateway cannot
-  exhaust the Host's `maxConnectedClients`.
+  takes its own, and a device holds at most twelve streams, so a Gateway cannot
+  exhaust the Host's `maxConnectedClients`. The bound is enforced by
+  supersession rather than refusal: a new stream closes the device's earlier
+  stream of the same subscription, then its oldest stream, and is accepted. A
+  suspended client cannot send its abort, so the streams it left behind look
+  live until the relay times out minutes later; refusing the new one would leave
+  the user reconnecting on a device that is plainly online. A relayed `RACP-WS`
+  connection counts against the same twelve and keeps the refusal: it is the
+  client's own socket, not a subscription opened by a screen.
 
 ### 11.3 gRPC (`RACP-GRPC`, reserved)
 

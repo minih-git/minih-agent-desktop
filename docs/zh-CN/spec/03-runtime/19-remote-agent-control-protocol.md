@@ -437,8 +437,12 @@ typebox 来源生成。
   失败。CORS 安全列表头（`accept` 等）不属于该清单。凡是白名单内的来源，成功与失败的响应
   都带 `access-control-expose-headers: x-trace-id`，跨域客户端才能从失败中读到追踪 id，
   而不是拿到 `null`。
-- 命令按 `(device, host)` 复用一条逻辑连接，每个事件流单独占一条，每设备最多 4 条流，
-  避免占满 Host 的 `maxConnectedClients`。Host link 随 R4 交付（D665，ADR 0331），SSH 隧道拓扑不使用它。
+- 命令按 `(device, host)` 复用一条逻辑连接，每个事件流单独占一条，**每设备最多 12 条流**，
+  避免占满 Host 的 `maxConnectedClients`。该上限用"顶替"而不是"拒绝"来维持：达到上限时，新流先关掉该设备
+  针对同一订阅（同一会话或 host 作用域）的旧流，再关掉它最老的一条流，然后被接受——上限是资源边界，淘汰才是根治。
+  原因是 iOS 把 App 挂起后客户端发不出 abort，它留下的半开连接要等转发链路重传超时（分钟级）才被发现，期间网关仍算
+  这条流在用；此时若拒绝新流，用户就会在一个明明在线的设备上一直"重新连接"。中继的 `RACP-WS` 连接同样计入这 12 条，
+  但仍保持拒绝：那是客户端自己的 socket，而不是屏幕打开的订阅。Host link 随 R4 交付（D665，ADR 0331），SSH 隧道拓扑不使用它。
 浏览器
 无法在 WebSocket/EventSource 上设置请求头，因此非浏览器客户端用
 `Authorization` 头（header profile），浏览器客户端用 HttpOnly cookie + Origin 白名单

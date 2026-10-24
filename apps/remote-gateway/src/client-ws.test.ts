@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 
 import { sendAdminRequest } from "./admin-socket.js";
-import { LogicalConnection, type GatewayLog } from "./router.js";
+import { MAX_STREAM_CONNECTIONS_PER_DEVICE, LogicalConnection, type GatewayLog } from "./router.js";
 
 /**
  * A Host link socket the test drives by hand: it records what the mux sends and
@@ -522,8 +522,8 @@ describe("gateway client WebSocket route", () => {
 
   it("tells a client the truth when it already holds its maximum relays", async () => {
     const stack = await selfHostedStack();
-    // Four is the per-device bound the relay shares with the event streams.
-    for (let index = 0; index < 4; index += 1) {
+    // The per-device bound the relay shares with the event streams.
+    for (let index = 0; index < MAX_STREAM_CONNECTIONS_PER_DEVICE; index += 1) {
       const held = openRelay(stack.gateway, stack.host.hostId, { token: stack.token });
       await relayOpened(held);
       held.send({ jsonrpc: "2.0", id: `h${index}`, method: "connection/initialize", params: INITIALIZE });

@@ -53,7 +53,10 @@ export async function serveEventStream(options: ServeStreamOptions): Promise<voi
   const { request, response, pool, identity, subscription, log } = options;
   // Nothing has been written yet, so a failure here still reaches the client
   // as a JSON error from the caller.
-  const connection = await pool.stream(identity);
+  // The path this stream subscribes to: a re-subscribe of the same session
+  // replaces its own earlier stream instead of being refused beside it.
+  const streamKey = subscription.scope === "session" ? `session:${subscription.sessionId}` : "host";
+  const connection = await pool.stream(identity, streamKey);
   const after: RacpCursor | null = options.lastEventId ? parseSseLastEventId(options.lastEventId) : null;
   let subscriptionId: string | null = null;
   let finished = false;
