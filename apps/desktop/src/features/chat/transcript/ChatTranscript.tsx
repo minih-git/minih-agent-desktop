@@ -59,6 +59,8 @@ type ChatTranscriptProps = {
   onLoadNewer?: () => Promise<void>;
   onReturnToLatest?: () => void;
   navigationLoading?: boolean;
+  /** The session's canonical tail id for reading-bookmark staleness (#A100). */
+  canonicalTailMessageId?: string;
 };
 
 /**
@@ -94,6 +96,7 @@ function TranscriptBody({
   onLoadNewer,
   onReturnToLatest,
   navigationLoading = false,
+  canonicalTailMessageId,
 }: ChatTranscriptProps) {
   const { t } = useTranslation();
   const openTranscriptMenu = useTranscriptMenu();
@@ -157,6 +160,7 @@ function TranscriptBody({
     searchTarget,
     readingWindow,
     onRestoreReading,
+    canonicalTailMessageId,
   });
 
   const specializedActivity = agentActivity;

@@ -4,6 +4,7 @@ import {
   getTranscriptReadingPosition,
   restoreTranscriptReadingPosition,
   sessionReadingState,
+  transcriptReadingPositionIsStale,
   type TranscriptReadingPosition,
 } from "../lib/transcript-reading-position";
 
@@ -15,7 +16,7 @@ export type RestoreTranscriptReading = (
 /** A bounded initial alignment, cancelled by real input/navigation/new turns. */
 export function useTranscriptReadingPosition({
   sessionId, scrollRef, contentRef, pinnedRef, visible, windowSize,
-  contentVersion, onPosition, onRestore, onMissing,
+  contentVersion, tailMessageId, onPosition, onRestore, onMissing,
 }: {
   sessionId: string | undefined;
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -24,12 +25,23 @@ export function useTranscriptReadingPosition({
   visible: boolean;
   windowSize: number;
   contentVersion: unknown;
+  /**
+   * The transcript's last row id, or undefined while it has none. A bookmark
+   * captured before the session grew (its pane was hidden) is stale and must
+   * not pull a reveal back into history (#A100); dropping it here re-pins the
+   * reveal to the newest turn instead.
+   */
+  tailMessageId: string | undefined;
   onPosition: (top: number) => void;
   onRestore?: RestoreTranscriptReading;
   onMissing: () => void;
 }) {
   const [initialPosition] = useState(() => getTranscriptReadingPosition(sessionId));
-  const pendingRef = useRef(initialPosition?.pinned === false ? initialPosition : undefined);
+  const pendingRef = useRef(
+    initialPosition?.pinned === false && !transcriptReadingPositionIsStale(initialPosition, tailMessageId)
+      ? initialPosition
+      : undefined,
+  );
   const requestRef = useRef<AbortController | null>(null);
   const completedRestoreRef = useRef<TranscriptReadingPosition | null>(null);
   const restoreReadyRef = useRef(!onRestore);
@@ -40,15 +52,22 @@ export function useTranscriptReadingPosition({
     if (visible && !wasVisibleRef.current) {
       const bookmark = getTranscriptReadingPosition(sessionId);
       if (bookmark?.pinned === false) {
-        pendingRef.current = bookmark;
-        pinnedRef.current = false;
+        if (transcriptReadingPositionIsStale(bookmark, tailMessageId)) {
+          // The session moved on after the bookmark was taken; a fresh reveal
+          // follows its newest turn like a first visit.
+          pendingRef.current = undefined;
+          pinnedRef.current = true;
+        } else {
+          pendingRef.current = bookmark;
+          pinnedRef.current = false;
+        }
       } else if (!pinnedRef.current) {
         pendingRef.current = bookmark;
       }
       alignmentUntilRef.current = 0;
     }
     wasVisibleRef.current = visible;
-  }, [pinnedRef, sessionId, visible]);
+  }, [pinnedRef, sessionId, tailMessageId, visible]);
   const cancel = useCallback(() => {
     pendingRef.current = undefined;
     requestRef.current?.abort();
@@ -57,9 +76,9 @@ export function useTranscriptReadingPosition({
     const scroller = scrollRef.current;
     const content = contentRef.current;
     if (!sessionId || !visible || !scroller || !content || pendingRef.current) return;
-    const position = captureTranscriptReadingPosition(scroller, content, pinnedRef.current, windowSize);
+    const position = captureTranscriptReadingPosition(scroller, content, pinnedRef.current, windowSize, tailMessageId);
     if (position) sessionReadingState(sessionId).position = position;
-  }, [contentRef, pinnedRef, scrollRef, sessionId, visible, windowSize]);
+  }, [contentRef, pinnedRef, scrollRef, sessionId, tailMessageId, visible, windowSize]);
   const callbacks = useRef({ remember, onMissing });
   callbacks.current = { remember, onMissing };
 
@@ -101,6 +120,15 @@ export function useTranscriptReadingPosition({
     const align = () => {
       const position = pendingRef.current;
       if (!position || !restoreReadyRef.current) return;
+      // The reveal may have started with the retained snapshot while the
+      // durable read was still in flight. Content that arrives afterwards can
+      // move the session's tail past the bookmark (#A100); re-check against
+      // the live tail so a restore never lands in history that has grown over.
+      if (transcriptReadingPositionIsStale(position, tailMessageId)) {
+        cancel();
+        callbacks.current.onMissing();
+        return;
+      }
       if (alignmentUntilRef.current && performance.now() >= alignmentUntilRef.current) {
         cancel();
         callbacks.current.remember();
@@ -124,7 +152,7 @@ export function useTranscriptReadingPosition({
       window.clearTimeout(timer);
       observer?.disconnect();
     };
-  }, [cancel, contentRef, contentVersion, onPosition, onRestore, restoreRevision, scrollRef, visible]);
+  }, [cancel, contentRef, contentVersion, onPosition, onRestore, restoreRevision, scrollRef, tailMessageId, visible]);
 
   // Save laid-out geometry as well as native scrolls (e.g. disclosure changes).
   useLayoutEffect(() => {

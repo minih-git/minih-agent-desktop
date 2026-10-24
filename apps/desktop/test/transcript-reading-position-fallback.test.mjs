@@ -119,7 +119,8 @@ test("a pane with no layout is still refused outright", () => {
 });
 
 test("the reading-position hook waits for history restore before applying fallback while keeping unpinned reveal ownership", () => {
-  assert.match(hookSource, /if \(bookmark\?\.pinned === false\) \{\s*pendingRef\.current = bookmark;\s*pinnedRef\.current = false;/s);
+  assert.match(hookSource, /if \(bookmark\?\.pinned === false\) \{\s*if \(transcriptReadingPositionIsStale\(bookmark, tailMessageId\)\) \{\s*\/\/ The session moved on after the bookmark was taken; a fresh reveal\s*\/\/ follows its newest turn like a first visit\.\s*pendingRef\.current = undefined;\s*pinnedRef\.current = true;/s);
+  assert.match(hookSource, /const pendingRef = useRef\(\s*initialPosition\?\.pinned === false && !transcriptReadingPositionIsStale\(initialPosition, tailMessageId\)\s*\? initialPosition\s*: undefined,/s);
   assert.match(hookSource, /const completedRestoreRef = useRef<TranscriptReadingPosition \| null>\(null\)/);
   assert.match(hookSource, /const restoreReadyRef = useRef\(!onRestore\)/);
   assert.match(hookSource, /restoreReadyRef\.current = false;/);

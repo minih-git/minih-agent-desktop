@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { useTranscriptReadingPosition } from "../../apps/desktop/src/hooks/use-transcript-reading-position";
-import { sessionReadingState, type TranscriptReadingPosition } from "../../apps/desktop/src/lib/transcript-reading-position";
+import { sessionReadingState, getTranscriptReadingPosition, type TranscriptReadingPosition } from "../../apps/desktop/src/lib/transcript-reading-position";
 import "./session-reading-position";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -37,7 +37,7 @@ function Row({ message }: { message: UiMessage }) {
   </div>;
 }
 
-function Pane({ id, visible, running }: { id: string; visible: boolean; running: boolean }) {
+function Pane({ id, visible, running, canonicalTail }: { id: string; visible: boolean; running: boolean; canonicalTail?: string }) {
   const onRestoreReading = useCallback((position: TranscriptReadingPosition, signal: AbortSignal) => {
     if (id === "G") return new Promise<boolean>((resolve) => {
       finishDeferredRestore = resolve;
@@ -49,6 +49,7 @@ function Pane({ id, visible, running }: { id: string; visible: boolean; running:
     sessionId: id, messages, hasMoreBefore: false, isRunning: running,
     askPending: false, approvalPending: false, paneVisible: visible,
     searchTarget: null, readingWindow: false, onRestoreReading,
+    canonicalTailMessageId: canonicalTail ?? messages.at(-1).id,
   });
   const rows = transcriptEntryMessages(scroll.tailEntry
     ? [...scroll.historyEntries, scroll.tailEntry] : scroll.historyEntries);
@@ -77,7 +78,7 @@ function RevealFixture({ visible }: { visible: boolean }) {
   const pinnedRef = useRef(true);
   useTranscriptReadingPosition({
     sessionId: "stale-follow", scrollRef, contentRef, pinnedRef, visible,
-    windowSize: 80, contentVersion: visible,
+    windowSize: 80, contentVersion: visible, tailMessageId: "reveal-row",
     onPosition: () => { restoredPinned = pinnedRef.current; },
     onMissing: () => { throw new Error("the mounted bookmark must exist"); },
   });
@@ -99,10 +100,13 @@ globalThis.transcriptReadingPositionProbe = async () => {
   const root = createRoot(host);
   let panes: RetainedPanes = { retainedSessionIds: [], retainedTranscripts: {} };
   let running = false;
+  // #A100: a canonical tail past the bookmarked one (session grew while hidden).
+  let canonicalTailOverride: string | undefined;
   const select = (id: string) => {
     panes = retainSessionPane(panes, id, messages);
     flushSync(() => root.render(<>{panes.retainedSessionIds.map((held) =>
-      <Pane key={held} id={held} visible={held === id} running={running && held === id} />)}</>));
+      <Pane key={held} id={held} visible={held === id} running={running && held === id}
+        canonicalTail={held === "A" ? canonicalTailOverride : undefined} />)}</>));
   };
   const scroller = (id: string) => host.querySelector(`[data-pane="${id}"]`)!.firstElementChild!
     .firstElementChild as HTMLDivElement;
@@ -110,7 +114,7 @@ globalThis.transcriptReadingPositionProbe = async () => {
   try {
     sessionReadingState("stale-follow").position = undefined;
     flushSync(() => root.render(<RevealFixture visible={false} />));
-    sessionReadingState("stale-follow").position = { pinned: false, messageId: "reveal-row", offset: 24, scrollTop: 476, windowSize: 80 };
+    sessionReadingState("stale-follow").position = { pinned: false, messageId: "reveal-row", offset: 24, scrollTop: 476, windowSize: 80, tailMessageId: "reveal-row" };
     flushSync(() => root.render(<RevealFixture visible />));
     const revealScroller = host.querySelector<HTMLDivElement>("[data-reveal-fixture]")!;
     await until(() => Math.abs(revealScroller.scrollTop - 476) < 2, "bookmark must restore despite stale pinned=true");
@@ -135,6 +139,29 @@ globalThis.transcriptReadingPositionProbe = async () => {
     a.dispatchEvent(new Event("scroll", { bubbles: true }));
     await frame();
     const offset = row.getBoundingClientRect().top - a.getBoundingClientRect().top;
+    // #A100: with the pane hidden, the session runs a new turn (the canonical
+    // tail moves past the bookmarked one). Reopening A must land at the newest
+    // turn - not at m47, and not showing the jump pill.
+    select("B");
+    canonicalTailOverride = "m100";
+    select("A");
+    await until(() => bottom(scroller("A")), "#A100 stale bookmark follows newest turn");
+    assert(!scroller("A").querySelector(".jump-latest-btn"),
+      "#A100 stale bookmark must not surface the jump pill");
+    assert(getTranscriptReadingPosition("A")?.pinned !== false,
+      "#A100 the stale bookmark must not survive as the session bookmark");
+    // Same session, unchanged tail: the mid-history bookmark keeps restoring.
+    sessionReadingState("A").position = {
+      pinned: false, messageId: "m47", offset, scrollTop: 650, windowSize: 80, tailMessageId: "m100",
+    };
+    select("B");
+    select("A");
+    await until(() => {
+      const rowNode = scroller("A").querySelector<HTMLElement>('[data-message-id="m47"]');
+      return Boolean(rowNode) && Math.abs(
+        rowNode!.getBoundingClientRect().top - scroller("A").getBoundingClientRect().top - offset,
+      ) < 2;
+    }, "an up-to-date bookmark still restores its offset");
     select("B"); select("C"); select("D"); select("E");
     assert(!host.querySelector('[data-pane="A"]'), "A must really unmount");
     assert(host.querySelectorAll("[data-pane]").length === 3, "pane retention remains bounded");
@@ -160,7 +187,7 @@ globalThis.transcriptReadingPositionProbe = async () => {
     select("A");
     await until(() => bottom(scroller("A")), "pinned revisit follows latest");
     sessionReadingState("G").position = {
-      pinned: false, messageId: "m10", offset: 24, scrollTop: 650, windowSize: 60,
+      pinned: false, messageId: "m10", offset: 24, scrollTop: 650, windowSize: 60, tailMessageId: "m99",
     };
     select("G");
     await until(() => finishDeferredRestore !== undefined, "historical restore lookup starts");
