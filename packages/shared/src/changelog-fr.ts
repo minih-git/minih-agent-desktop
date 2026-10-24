@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.26.0",
+    date: "2026-10-24",
+    highlights: [
+      "L’application mobile a été repensée autour de trois rubriques principales — Ordinateurs, Chats et un nouveau Studio — avec un seul système visuel Aurora Glass ; l’état de chaque ordinateur et les actions possibles pour une session sont visibles d’un coup d’œil.",
+      "Le travail sur les images passe dans Studio : la liste des conversations du téléphone ne contient plus que des conversations textuelles, et les images générées sont regroupées par jour pour être modifiées, relancées ou supprimées une par une.",
+      "Le canal d’un modèle suit désormais le type de sortie qu’il déclare pouvoir produire : les choix de chat et d’image n’interfèrent plus, et un modèle d’image n’apparaît plus comme un choix de chat défectueux.",
+      "L’en-tête d’une session sur téléphone affiche son modèle, le niveau de réflexion, le mode et l’autorisation, tout en gardant ces informations lisibles sur un écran étroit.",
+      "Les réglages du téléphone sont désormais reliés à l’état réel : inscription aux notifications push, apparence (système, claire, sombre) et modèles par défaut sont opérationnels, les lignes factices ont disparu.",
+      "Les détails du téléphone sont corrigés : l’archive liste aussi les conversations d’images, deux questions en attente conservent des choix distincts, l’application suit le thème du système et la réduction des animations, et le focus reste utilisable au clavier.",
+      "Les réglages du bureau sont regroupés en sept catégories dans une seule feuille inférieure, ce qui raccourcit la navigation.",
+      "Le bureau gagne un plugin de terminal intégré facultatif, et les sessions longues consomment moins de mémoire : les caches du moteur de rendu sont plafonnés, tandis que les environnements d’exécution de sessions inactives et les connexions MCP inactives sont récupérés.",
+    ],
+  },
+  {
     version: "0.25.0",
     date: "2026-10-22",
     highlights: [

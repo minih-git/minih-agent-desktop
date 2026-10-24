@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.26.0",
+    date: "2026-10-24",
+    highlights: [
+      "La app del teléfono se ha rediseñado alrededor de tres secciones principales —Ordenadores, Chats y un nuevo Studio— con un único sistema visual Aurora Glass; el estado de cada ordenador y lo que puede hacer una sesión se ven de un vistazo.",
+      "El trabajo con imágenes pasa a Studio: la lista de conversaciones del teléfono solo contiene conversaciones de texto, y las imágenes generadas se agrupan por día y se pueden editar, reintentar o eliminar de una en una.",
+      "El canal de un modelo ahora sigue el tipo de salida que declara poder generar, así que las selecciones de chat e imagen dejan de interferirse y un modelo de imágenes ya no aparece como una opción de chat rota.",
+      "El encabezado de una sesión del teléfono muestra su modelo, nivel de razonamiento, modo y permisos, y mantiene los cuatro datos legibles en una pantalla estrecha.",
+      "Los ajustes del teléfono ahora están conectados al estado real: registro de push, apariencia (sistema, claro, oscuro) y modelos predeterminados, sin filas de marcador de posición.",
+      "Se corrigen los detalles del teléfono: el archivo también incluye conversaciones de imágenes, dos preguntas pendientes mantienen sus opciones separadas, la aplicación sigue el tema del sistema y la reducción de movimiento, y el foco sigue siendo utilizable con el teclado.",
+      "Los ajustes del escritorio se agrupan en siete categorías dentro de una sola hoja inferior, para que la navegación sea más corta.",
+      "El escritorio incorpora un plugin de terminal integrado opcional, y las sesiones de larga duración consumen menos memoria: las cachés del renderizador tienen límites y se recuperan los tiempos de ejecución de sesiones inactivas y las conexiones MCP inactivas.",
+    ],
+  },
+  {
     version: "0.25.0",
     date: "2026-10-22",
     highlights: [

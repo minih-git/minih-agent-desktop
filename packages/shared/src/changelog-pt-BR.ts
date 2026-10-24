@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.26.0",
+    date: "2026-10-24",
+    highlights: [
+      "O aplicativo do telefone foi redesenhado em torno de três áreas principais — Computadores, Chats e um novo Studio — com um único sistema visual Aurora Glass; o estado de cada computador e o que uma sessão pode fazer ficam visíveis de relance.",
+      "O trabalho com imagens foi para o Studio: a lista de conversas do telefone contém apenas conversas de texto, e as imagens geradas são agrupadas por dia, podendo ser editadas, tentadas novamente ou excluídas uma de cada vez.",
+      "O canal de um modelo agora segue o tipo de saída que ele declara ser capaz de produzir, então as seleções de chat e imagem deixam de interferir entre si e um modelo de imagem não aparece mais como uma opção de chat quebrada.",
+      "O cabeçalho de uma sessão no telefone mostra o modelo, o nível de raciocínio, o modo e a permissão, mantendo tudo legível em uma tela estreita.",
+      "As configurações do telefone agora estão ligadas ao estado real: registro de push, aparência (sistema, clara, escura) e modelos padrão funcionam de verdade, e as linhas de espaço reservado desapareceram.",
+      "Os detalhes do telefone foram corrigidos: o arquivo também lista conversas de imagens, duas perguntas pendentes mantêm escolhas separadas, o app segue o tema do sistema e a redução de movimento, e o foco continua utilizável pelo teclado.",
+      "As configurações do desktop foram reduzidas a sete categorias em um único painel inferior, deixando a navegação mais curta.",
+      "O desktop ganha um plugin de terminal integrado opcional, e sessões de longa duração usam menos memória: os caches do renderizador têm limites, enquanto runtimes de sessões ociosas e conexões MCP ociosas são recuperados.",
+    ],
+  },
+  {
     version: "0.25.0",
     date: "2026-10-22",
     highlights: [

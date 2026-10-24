@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.26.0",
+    date: "2026-10-24",
+    highlights: [
+      "Telefon uygulaması üç ana bölüm etrafında yeniden tasarlandı — Bilgisayarlar, Sohbetler ve yeni Studio — tek bir Aurora Glass görsel sistemiyle; her bilgisayarın durumu ve bir oturumun neler yapabileceği bir bakışta görülebiliyor.",
+      "Görsel işlemleri Studio'ya taşındı: telefonun konuşma listesinde yalnızca metin konuşmaları var; oluşturulan görseller güne göre gruplanıyor ve tek tek düzenlenebiliyor, yeniden denenebiliyor veya silinebiliyor.",
+      "Bir modelin kanalı artık üretebildiğini beyan ettiği çıktı türünü izliyor; böylece sohbet ve görsel seçimleri birbirine karışmıyor, görsel model de bozuk bir sohbet seçeneği olarak görünmüyor.",
+      "Telefon oturumunun başlığında model, düşünme düzeyi, mod ve izin gösteriliyor; bu bilgilerin tamamı dar ekranda da okunabilir kalıyor.",
+      "Telefondaki ayarlar artık gerçek duruma bağlı: push kaydı, görünüm (sistem, açık, koyu) ve varsayılan modeller çalışıyor; yer tutucu satırlar kaldırıldı.",
+      "Telefon ayrıntıları düzeltildi: arşiv artık görsel konuşmaları da listeliyor, bekleyen iki soru seçimlerini birbirinden ayrı tutuyor, uygulama sistem temasını ve azaltılmış hareket ayarını izliyor, klavyeyle odak kullanılabilir kalıyor.",
+      "Masaüstü Ayarları tek bir alt panelde yedi kategori altında toplanıyor, böylece gezinme kısalıyor.",
+      "Masaüstüne isteğe bağlı gömülü bir terminal eklentisi geliyor ve uzun süre çalışan oturumlar daha az bellek tutuyor: renderer önbellekleri sınırlandırılıyor, boşta kalan oturum çalışma zamanları ve boşta kalan MCP bağlantıları geri kazanılıyor.",
+    ],
+  },
+  {
     version: "0.25.0",
     date: "2026-10-22",
     highlights: [
