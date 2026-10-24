@@ -3,8 +3,6 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   MAX_QUOTE_CHARS,
-  insertQuoteIntoDraft,
-  quoteBlock,
   quoteExcerpt,
 } from "../src/lib/chat-quotes.ts";
 
@@ -15,6 +13,9 @@ const [overlay, sink, composer, transcript] = await Promise.all([
   read("../src/components/Composer.tsx"),
   read("../src/features/chat/transcript/ChatTranscript.tsx"),
 ]);
+
+const read2 = (path) => readFile(new URL(path, import.meta.url), "utf8");
+const pasteHook = await read2("../src/features/chat/composer/hooks/useComposerAttachments.ts");
 
 test("a quote normalizes line endings and trims the excerpt", () => {
   assert.equal(quoteExcerpt("  first\r\nsecond  \r\n"), "first\nsecond");
@@ -35,65 +36,39 @@ test("a cut never splits a surrogate pair", () => {
   assert.doesNotMatch(excerpt, /[\uD800-\uDBFF]$/);
 });
 
-test("the excerpt becomes one blockquote, blank lines included", () => {
-  assert.equal(quoteBlock("one\ntwo"), "> one\n> two");
-  assert.equal(quoteBlock("one\n\ntwo"), "> one\n>\n> two");
-});
-
-test("a quote lands in an empty draft unchanged", () => {
-  assert.deepEqual(
-    insertQuoteIntoDraft("", { start: 0, end: 0 }, "> quoted"),
-    { text: "> quoted", caret: 8 },
-  );
-});
-
-test("a quote is separated from what the user already typed", () => {
-  assert.deepEqual(
-    insertQuoteIntoDraft("do this:", { start: 8, end: 8 }, "> quoted"),
-    { text: "do this:\n\n> quoted", caret: 18 },
-  );
-  // One blank line is enough; a second one is not added.
-  assert.deepEqual(
-    insertQuoteIntoDraft("do this:\n\n", { start: 10, end: 10 }, "> quoted"),
-    { text: "do this:\n\n> quoted", caret: 18 },
-  );
-  // A single trailing newline only needs its pair.
-  assert.equal(
-    insertQuoteIntoDraft("do this:\n", { start: 9, end: 9 }, "> quoted").text,
-    "do this:\n\n> quoted",
-  );
-});
-
-test("the caret sits after the quote, before the text that followed it", () => {
-  const result = insertQuoteIntoDraft("before after", { start: 7, end: 7 }, "> quoted");
-  assert.equal(result.text, "before \n\n> quoted\n\nafter");
-  assert.equal(result.text.slice(result.caret), "after");
-});
-
-test("a selection in the draft is replaced by the quote", () => {
-  assert.deepEqual(
-    insertQuoteIntoDraft("keep drop", { start: 5, end: 9 }, "> quoted"),
-    { text: "keep \n\n> quoted", caret: 15 },
-  );
-});
-
-test("the pill writes one draft and never sends", () => {
-  assert.match(overlay, /quoteIntoComposer\(quoteBlock\(excerpt\)\)/);
+test("the pill hands the excerpt to the composer's paste path and never sends", () => {
+  assert.match(overlay, /quoteIntoComposer\(excerpt\)/);
   assert.match(overlay, /quoteExcerpt\(target\.markdown\)/);
   assert.match(overlay, /t\("chat\.quoteSelection"\)/);
   assert.match(overlay, /showToast\(t\("chat\.quoteUnavailable"\)/);
   assert.doesNotMatch(overlay, /sendPrompt\(/);
   assert.doesNotMatch(overlay, /enqueuePrompt\(/);
+  // The chip path is async: the pill waits for the paste round-trip.
+  assert.match(overlay, /await quoteIntoComposer\(excerpt\)/);
 });
 
-test("the composer lends itself to the quote and keeps its chips", () => {
-  assert.match(sink, /registerComposerQuoteSink\(/);
-  assert.match(sink, /insertQuoteIntoDraft\(draft, selection, quote\)/);
-  assert.match(sink, /editorSelectionRange\(element\)/);
-  assert.match(sink, /\[\.\.\.current\.fileReferencesRef\.current\]/);
+test("the sink persists the excerpt through the composer's paste path", () => {
+  // Same channel as a large pasted text, so the result is the same chip.
+  assert.match(sink, /api\.pasteFiles\(sessionId, \[/);
+  assert.match(sink, /mimeType: "text\/plain"/);
+  assert.match(sink, /quoted-text-/);
+  // The chip lands at the editor's caret with the existing references kept.
+  assert.match(sink, /editorSelectionRange\(editor\)/);
+  assert.match(sink, /nextChipToken\(\)/);
+  assert.match(sink, /snapshotReferences\(sourceSessionId \?\? ""\)/);
+  assert.match(sink, /writeComposerDraft\(sessionId,/);
   // A blocked composer reports failure instead of silently dropping the quote.
-  assert.match(sink, /if \(current\.inputBlocked\) return false/);
+  assert.match(sink, /if \(current\.inputBlocked \|\| inFlight\) return false/);
+  // A home draft materializes into a session, and the stale home snapshot is
+  // dropped rather than resurrected on top of the chip.
+  assert.match(sink, /deleteComposerDraft\(HOME_DRAFT_KEY\)/);
+});
+
+test("the composer lends itself to the quote with its paste machinery", () => {
+  // The quote hook receives the same draft controller members the paste path
+  // itself uses, and stays registered for the whole composer's life.
   assert.match(composer, /useComposerQuoteSink\(\{ \.\.\.draft, inputBlocked \}\)/);
+  assert.match(pasteHook, /pasteClipboardFiles = async/);
 });
 
 test("the transcript mounts the overlay for the visible pane only", () => {
@@ -102,4 +77,3 @@ test("the transcript mounts the overlay for the visible pane only", () => {
     /paneVisible && !veilCovering \? \(\s*<SelectionQuoteButton scrollRef=\{scrollRef\} \/>/,
   );
 });
-

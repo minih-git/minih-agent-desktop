@@ -1627,25 +1627,30 @@ storage but compose into one assistant turn until the next user message.
 - Select text inside one message row: one floating pill appears above the
   selection, centered on it, clamped into the scroller's visible band so it
   never covers the docked composer, and it follows the selection while the
-  thread scrolls (ADR 0334 / D674). Its single action puts the selection into
-  the message box as a Markdown blockquote: formulas as TeX through the same
-  reading the clipboard uses, code as a fenced block that keeps its language,
-  tables as one `a | b` line per row, task boxes as `[x]` / `[ ]`, and — when
-  the selection spans them — list items and headings with their markers. A
-  block that is the range's own ancestor contributes only its text (quoting a
+  thread scrolls (ADR 0334 / D674, amended by D681). Its single action puts
+  the selection into the message box as the same attachment chip a large
+  pasted text becomes: the excerpt rides the composer's paste path
+  (`api.pasteFiles` into the session scratch) and lands as one compact chip
+  that expands back to text on click. The chip's content is the selection read
+  back as Markdown source: formulas as TeX through the same reading the
+  clipboard uses, code as a fenced block that keeps its language, tables as
+  one `a | b` line per row, task boxes as `[x]` / `[ ]`, and — when the
+  selection spans them — list items and headings with their markers. A block
+  that is the range's own ancestor contributes only its text (quoting a
   heading's line quotes that line), and a fence keeps the language rail a
   drag over the code leaves as a sibling. The excerpt is capped at 2000
-  characters, separated from the existing draft by one blank line, written at
-  the draft's caret with its chips preserved, and a successful action consumes
-  the selection and focuses the composer. It never sends, and when no composer
-  is taking input it reports that through the toast host and leaves the
-  selection alone. A selection that starts in one row and ends in another, or
-  that lies outside this transcript, floats nothing, and a retained pane that is
-  not on screen renders no pill. A gesture that starts in a tool row, a process
-  disclosure, a run row, or the meta chips floats nothing either, and one that
-  runs from the answer into them quotes the answer alone: those regions are
-  dropped from the excerpt, and a fenced block's body is kept verbatim (blank
-  lines and trailing spaces included).
+  characters, the chip lands at the draft's caret with its chips preserved,
+  and a successful action consumes the selection and focuses the composer. It
+  never sends, and when no composer is taking input it reports that through
+  the toast host and leaves the selection alone; a persistence failure is
+  reported the same way while the selection survives as the clipboard
+  fallback. A selection that starts in one row and ends in another, or that
+  lies outside this transcript, floats nothing, and a retained pane that is
+  not on screen renders no pill. A gesture that starts in a tool row, a
+  process disclosure, a run row, or the meta chips floats nothing either, and
+  one that runs from the answer into them quotes the answer alone: those
+  regions are dropped from the excerpt, and a fenced block's body is kept
+  verbatim (blank lines and trailing spaces included).
 - Assistant fragments emitted before and after tool calls compose into one
   `role="article"` turn. The turn exposes one trailing meta row and one action
   toolbar; Copy joins all contentful fragments in order, while Fork and

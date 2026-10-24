@@ -8384,3 +8384,29 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   directly written absolute path; a relative link keeps its destination. See
   `04-ux/08-component-spec.md`, `05-security/01-security.md`,
   `local-html-page.test.mjs`, and `local-html-page-link.test.mjs`.
+
+## 2026-10-24 — The quote lands as an attachment chip (D681)
+
+- Amends D674 / ADR 0334: the pill's action persists the excerpt through the
+  same paste path a large clipboard text takes (`api.pasteFiles` into the
+  session scratch) and lands as the same attachment chip the composer already
+  renders for it, instead of writing a raw `> ` run into the draft. The
+  composer never rendered draft blockquotes, so the promised "visually
+  distinct" quote did not exist and the quote looked nothing like the paste it
+  was supposed to match; the chip is what both become.
+- Everything else in D674 stands: the overlay and its single action, the
+  selection read back as Markdown source (formulas as TeX, fences keeping
+  language and blank lines, tables one line per row, markers only when the
+  selection spans them, chrome dropped), the 2000-character cap with an
+  ellipsis, the async sink as the only write path, and quoting never sending
+  and writing nothing to the transcript. The chip lands where the caret is,
+  keeps the draft's chips, and a chip click expands the text back for editing.
+- A home draft materializes into a session exactly as a large paste does —
+  that is the paste path's own behavior, not a new quote rule — and a stale
+  home snapshot is dropped rather than resurrected on top of the chip. A
+  persistence failure is reported through the toast host and the selection
+  survives as the clipboard fallback. Renderer-only: no IPC, schema,
+  permission, or Rust change. The i18n keys are unchanged
+  (`chat.quoteSelection`, `chat.quoteUnavailable`).
+- See ADR 0334 (amendment D681), `04-ux/08-component-spec.md` §7.4, and
+  E2E-CHAT-selection-quote-into-composer.

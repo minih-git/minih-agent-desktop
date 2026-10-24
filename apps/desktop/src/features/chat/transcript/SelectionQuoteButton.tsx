@@ -10,15 +10,17 @@
  * it never participates in the transcript's layout or scroll extent. The
  * selection is serialized back to Markdown when the pill appears — the DOM the
  * range points at can change while it is on screen — and the one action only
- * writes the composer's draft: nothing is sent to the conversation being read,
- * no session is created, and nothing is written to its transcript.
+ * hands the excerpt to the composer's paste path, where it lands as the same
+ * attachment chip a large pasted text becomes: nothing is sent to the
+ * conversation being read, no session is created by the pill itself, and
+ * nothing is written to its transcript.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { RefObject } from "react";
 import { Button } from "../../../components/ui";
 import { useAppStore } from "../../../stores/app-store";
-import { quoteBlock, quoteExcerpt } from "../../../lib/chat-quotes";
+import { quoteExcerpt } from "../../../lib/chat-quotes";
 import {
   activeSelectionRange,
   COMPOSER_DOCK_SELECTOR,
@@ -149,19 +151,32 @@ export function SelectionQuoteButton({
 
   if (!target) return null;
 
-  const addToDraft = () => {
+  const addToDraft = async () => {
+    // The excerpt rides the composer's paste path and lands as the same
+    // attachment chip a large clipboard text becomes (D681), so the pill's
+    // result matches what the user sees when they paste the selection
+    // themselves.
     const excerpt = quoteExcerpt(target.markdown);
-    if (excerpt && quoteIntoComposer(quoteBlock(excerpt))) {
-      dismiss();
+    if (!excerpt) {
+      showToast(t("chat.quoteUnavailable"), { variant: "error" });
+      setTarget(null);
+      setPlacement(null);
       return;
     }
-    /*
-      Nothing took the draft. The selection is the user's fallback (they can
-      still copy it), so only the pill goes away — and the toast says why.
-    */
-    showToast(t("chat.quoteUnavailable"), { variant: "error" });
-    setTarget(null);
-    setPlacement(null);
+    try {
+      if (await quoteIntoComposer(excerpt)) {
+        dismiss();
+      } else {
+        showToast(t("chat.quoteUnavailable"), { variant: "error" });
+        setTarget(null);
+        setPlacement(null);
+      }
+    } catch {
+      // The sink already reported the failure through the toast host; the
+      // selection survives so the clipboard fallback stays available.
+      setTarget(null);
+      setPlacement(null);
+    }
   };
 
   return portalToBody(
