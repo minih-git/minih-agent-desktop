@@ -105,12 +105,16 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  // Auto-resize textarea between 1 and 6 lines (approx 32px to 144px)
+  // One line is 40px — a 24px line box plus `py-2` above and below — so the
+  // field is exactly as tall as the 40px send button. The pill aligns its
+  // children to the bottom (`items-end`), and a 32px field therefore left 8px
+  // of empty space above the text and nothing below: the input looked like it
+  // hung low instead of sitting in the middle. Six lines (160px) is the cap.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    const nextHeight = Math.min(Math.max(el.scrollHeight, 32), 144);
+    const nextHeight = Math.min(Math.max(el.scrollHeight, 40), 160);
     el.style.height = `${nextHeight}px`;
   }, [text]);
 
@@ -177,7 +181,7 @@ export function ChatComposer({
       setAttachments([]);
       setRejection(null);
       if (textareaRef.current) {
-        textareaRef.current.style.height = "32px";
+        textareaRef.current.style.height = "40px";
       }
       return;
     }
@@ -299,7 +303,7 @@ export function ChatComposer({
             onDraftChange?.(e.target.value);
           }}
           onKeyDown={handleKeyDown}
-          className="flex-1 resize-none bg-transparent py-1 text-[16px] leading-[24px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none min-h-[32px] max-h-[144px]"
+          className="flex-1 resize-none bg-transparent py-2 text-[16px] leading-[24px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none min-h-[40px] max-h-[160px]"
         />
         <button
           type="submit"
