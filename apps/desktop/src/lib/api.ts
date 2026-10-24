@@ -1741,6 +1741,11 @@ export const api = {
     }),
   composerCommands: () =>
     invoke<{ commands: ComposerCommand[] }>(IPC.invoke.composerCommands),
+  /** One settled-turn follow-up prompt, or null for every skip or failure. */
+  composerFollowUpSuggestion: (sessionId: string) =>
+    invoke<{ text: string | null }>(IPC.invoke.composerFollowUpSuggestion, {
+      sessionId,
+    }),
   setWorkPanelReservation: (width: number) =>
     invoke<{ requested: number; reserved: number }>(
       IPC.invoke.windowSetWorkPanelReservation,

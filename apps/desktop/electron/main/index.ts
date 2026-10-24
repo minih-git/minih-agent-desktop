@@ -72,6 +72,7 @@ import {
   createSessionRetitleGenerator,
   createSessionTitleGenerator,
 } from "./session-title-service";
+import { generateFollowUpSuggestion as generateFollowUpSuggestionImpl } from "./follow-up-suggestion-service";
 import { createSessionChangeNotifier } from "./session-change-notifier";
 import { createMemoryExtractionService } from "./memory/memory-extraction-service";
 import { createEventPersistence } from "./runtime/event-persistence";
@@ -820,6 +821,23 @@ const sessionTitleGenerator = createSessionTitleGenerator({
   },
 });
 
+// Renderer-triggered: the composer asks after a settled local turn, so the
+// display-side gates (empty draft, no pending ask or queue) stay renderer-owned
+// and main stays a stateless one-shot completion with the title generator's
+// guard pattern. Settings are read per request, so a change applies without a
+// restart.
+const generateFollowUpSuggestion = async (sessionId: string) =>
+  generateFollowUpSuggestionImpl(
+    { getHost, resolveRuntimeModel, vendorOAuth, logger },
+    {
+      sessionId,
+      session: {},
+      settings: (await getHost()
+        ?.call("settings.get")
+        .catch(() => null)) as AppSettings | null | undefined,
+    },
+  );
+
 const sidecarRuntime = createSidecarRuntime({
   generateSessionTitle: sessionTitleGenerator.run,
   isSessionTitleRunning: sessionTitleGenerator.isRunning,
@@ -961,6 +979,7 @@ const liveCallService = createLiveCallService({
 function registerIpc() {
   return registerIpcHandlers({
     generateSessionTitle: sessionTitleGenerator.run,
+    generateFollowUpSuggestion,
     announceSessionTitleChanged: (sessionId) => void sessionChangeNotifier.titleChanged(sessionId),
     // The extractor's lifecycle is Main's: a deleted session and a switch that
     // went off both cancel the runs already waiting to start.

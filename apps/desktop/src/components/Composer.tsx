@@ -46,6 +46,7 @@ import {
 import { editorSelectionRange } from "../features/chat/composer/editor";
 import { useComposerAttachments } from "../features/chat/composer/hooks/useComposerAttachments";
 import { useComposerCompletions } from "../features/chat/composer/hooks/useComposerCompletions";
+import { useFollowUpSuggestion } from "../features/chat/composer/hooks/useFollowUpSuggestion";
 import { useComposerDraft } from "../features/chat/composer/hooks/useComposerDraft";
 import { useComposerInputHistory } from "../features/chat/composer/hooks/useComposerInputHistory";
 import { usePluginComposerBridge } from "../features/chat/composer/hooks/usePluginComposerBridge";
@@ -472,6 +473,33 @@ export function Composer({
     return submit(steering);
   };
 
+  // One settled-turn suggestion rendered as ghost text in the placeholder
+  // slot. Local sessions only: native and remote transcripts never ask.
+  const transcriptTail = liveMessages.length
+    ? liveMessages[liveMessages.length - 1]
+    : null;
+  const followUpSuggestion = useFollowUpSuggestion({
+    activeSessionId,
+    isLocalSession: !nativeSession && !remoteSession,
+    featureEnabled: settings?.followUpSuggestion?.enabled !== false,
+    isRunning,
+    hasPendingAsk: Boolean(pendingAsk) || queuedAsks > 0,
+    queuedPromptCount: queuedPrompts.length,
+    draftEmpty: !hasDraftContent,
+    sendBlocked,
+    tail: transcriptTail
+      ? { id: transcriptTail.id, role: transcriptTail.role, status: transcriptTail.status }
+      : null,
+  });
+  // Sending lands the text in the editor first, so the ordinary submit
+  // pipeline (model readiness, send gating, recall history, draft clearing)
+  // applies unchanged, exactly like voice input.
+  const sendFollowUpSuggestion = (text: string) => {
+    followUpSuggestion.consume();
+    applyEditorDraft(text, fileReferencesRef.current, text.length);
+    void submitFromComposer();
+  };
+
   // Keep the legacy listener for already-started or IPC-owned Dictation, but
   // the Composer no longer exposes a Dictation control or overlay.
   useVoiceInput({
@@ -589,6 +617,18 @@ export function Composer({
             value={value}
             placeholderText={placeholderText}
             placeholderKey={`${variant}-${placeholderIndex}-${placeholderText}`}
+            followUp={
+              followUpSuggestion.text
+                ? {
+                    text: followUpSuggestion.text,
+                    onSend: () => {
+                      if (followUpSuggestion.text) {
+                        sendFollowUpSuggestion(followUpSuggestion.text);
+                      }
+                    },
+                  }
+                : null
+            }
             inputBlocked={inputBlocked}
             pasting={pasting}
             enterToSend={enterToSend}

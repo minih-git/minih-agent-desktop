@@ -3029,6 +3029,31 @@ reasoning-level control.
 +----------------------------------------------------------+
 ```
 
+### 11.2a Follow-up suggestion ghost text
+
+After a local session's turn settles successfully, the Composer may show one
+model-generated follow-up prompt rendered in the input box as grey ghost text
+in the placeholder slot. The suggestion replaces the rotating placeholder while
+present, so the two never render together.
+
+- **Presentation**: the same grey placeholder styling; a suggested text is a
+  plain-text button spanning the text start (never the whole input), with a
+  pointer cursor and a quiet hover emphasis signalling clickability. It renders
+  only while the draft is empty; any typed character, attachment, or IME
+  composition start removes it immediately.
+- **Trigger**: requested once per settled turn, only for local sessions, after
+  the last assistant message completes, with no pending ask, no queued prompt,
+  and an empty draft. Stale answers (session switched, turn advanced, draft no
+  longer empty) are discarded on arrival.
+- **Send**: clicking the ghost text submits the suggestion through the
+  Composer's ordinary submit pipeline (model-readiness, send gating, recall
+  history, draft clearing all apply). The suggestion never auto-sends.
+- **Lifecycle**: consumed by sending, by dismissal through typing, or by the
+  next settled turn; a dismissed suggestion does not return for the same turn.
+  The feature is Settings-gated (`followUpSuggestion`, default on) with an
+  optional dedicated model and thinking level; absent settings use the
+  session's own model with reasoning off.
+
 ### 11.3 Layout
 
 - Height: compact one-line shell by default; textarea auto-grows through seven

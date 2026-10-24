@@ -54,6 +54,11 @@ export type RegisterIpcDependencies = {
    */
   generateSessionTitle: (job: SessionTitleJob) => Promise<boolean>;
   /**
+   * Built-in composer follow-up suggestions. `null` for every skip or
+   * failure; the composer IPC turns that into `{ text: null }`.
+   */
+  generateFollowUpSuggestion: (sessionId: string) => Promise<string | null>;
+  /**
    * Drop a session's pending extraction: a deleted session must not leave a
    * debounce timer behind (ADR agent-long-term-memory §4).
    */
@@ -109,6 +114,7 @@ function wrap<T>(fn: () => Promise<T>): Promise<Result<T>> {
 export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
   const {
     generateSessionTitle,
+    generateFollowUpSuggestion,
     cancelMemoryExtraction,
     onLearnedMemorySettingsChanged,
     announceSessionTitleChanged,
@@ -363,6 +369,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     plugins,
     agentExtensions,
     optionalWorkspaceRoot,
+    generateFollowUpSuggestion,
     activeUserSkills,
     disabledBuiltinSkills,
     pluginActiveInProject,

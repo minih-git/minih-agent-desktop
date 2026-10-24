@@ -2415,6 +2415,37 @@ identify the platform validation still needed.
   persistence); store callback race regression is covered by
   `apps/desktop/test/composer-input-history.test.mjs`.
 
+#### E2E-COMPOSER-follow-up-suggestion-click-sends-and-typing-hides
+
+- **Preconditions**: Isolated Electron test profile; the follow-up suggestion
+  generation is served by a stubbed completion so no provider or network
+  credentials are needed. Feature enabled by default settings.
+- **Steps**: 1) Complete one local turn and let the composer settle with an
+  empty draft; the grey suggestion text replaces the rotating placeholder. 2)
+  Click the ghost text; the suggestion is sent as the next user prompt through
+  the ordinary submit path and the ghost disappears. 3) Complete another turn;
+  when the ghost is visible, type one character and confirm it disappears
+  immediately (including on IME composition start) and never returns for that
+  turn, even after clearing the draft. 4) Complete a turn, switch sessions, and
+  confirm the suggestion does not bleed into the other session; return and
+  confirm an unconsumed suggestion can still send. 5) Disable
+  `followUpSuggestion` in Settings and confirm no ghost appears after the next
+  settled turn.
+- **Expected**: One suggestion per settled turn; stale answers that arrive
+  after the session switched, the turn advanced, or the draft gained content
+  are discarded. Click sends via the standard pipeline (model-readiness and
+  send gating apply). Typing, attachments, pending asks, queued prompts, and a
+  running turn all hide it. Disabled settings cost no model call.
+- **Specs linked**: `04-ux/08-component-spec.md` (§11.2a),
+  `03-runtime/01-ipc-protocol.md` (§13c composer/followUpSuggestion)
+- **Acceptance**: C (composer input and session isolation)
+- **Milestone**: M2
+- **Status**: Decision matrix covered by
+  `apps/desktop/test/follow-up-suggestion-client.test.mjs` (pure client rules),
+  `apps/desktop/test/follow-up-suggestion-engine.test.mjs` and
+  `follow-up-suggestion-service.test.mjs` (main-side gates); the full Electron
+  interaction run is pending a dedicated harness.
+
 #### E2E-011d: New task creates an immediate durable empty slot
 
 - **Preconditions**: Provider configured; at least one real session exists so

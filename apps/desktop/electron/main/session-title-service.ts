@@ -105,7 +105,7 @@ function splitModelKey(modelKey: string): { providerId: string; modelId: string 
  * a service the request never named. Only an explicit session identity that
  * equals the requested model keeps the session's own launch.
  */
-function titleLaunchOverrides(
+export function titleLaunchOverrides(
   request: SessionTitleRequest,
   session: SessionTitleJob["session"],
 ): RuntimeModelOverrides {

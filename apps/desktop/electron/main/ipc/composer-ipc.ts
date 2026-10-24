@@ -12,6 +12,12 @@ type ComposerTemplateSource = "user" | "project";
 export type ComposerIpcDependencies = {
   registrar: IpcRegistrar;
   plugins: PluginRuntime;
+  /**
+   * One composer follow-up suggestion for a settled local session, or `null`
+   * for every skip or failure (feature off, native session, no usable model,
+   * provider error, or another generation already running for the session).
+   */
+  generateFollowUpSuggestion: (sessionId: string) => Promise<string | null>;
   userMcp?: Pick<UserMcpRuntime, "listRecords" | "listStatuses" | "toolsForProject">;
   refreshUserMcp?: (root: string | null) => Promise<unknown>;
   agentExtensions: AgentExtensionBridge;
@@ -44,7 +50,7 @@ export function createComposerCommandService({
   disabledBuiltinSkills = async () => [],
   pluginActiveInProject,
   loadComposerTemplatesCached,
-}: Omit<ComposerIpcDependencies, "registrar" | "optionalWorkspaceRoot">): ComposerCommandService {
+}: Omit<ComposerIpcDependencies, "registrar" | "optionalWorkspaceRoot" | "generateFollowUpSuggestion">): ComposerCommandService {
   const loadComposerSkillCommands = async (
     root: string | null,
   ): Promise<ComposerCommand[]> => {
@@ -154,6 +160,7 @@ export function createComposerCommandService({
 export function registerComposerIpc({
   registrar,
   optionalWorkspaceRoot,
+  generateFollowUpSuggestion,
   ...serviceDependencies
 }: ComposerIpcDependencies): ComposerCommandService {
   const service = createComposerCommandService(serviceDependencies);
@@ -161,5 +168,19 @@ export function registerComposerIpc({
     const root = await optionalWorkspaceRoot();
     return { commands: await service.buildComposerCommands(root) };
   });
+  registrar.handleWithEvent(
+    IPC.invoke.composerFollowUpSuggestion,
+    async (event, input: { sessionId?: unknown } = {}) => {
+      registrar.assertMainWindowSender(event);
+      const sessionId =
+        typeof input.sessionId === "string" ? input.sessionId.trim() : "";
+      // The service itself decides skip vs. produce; a missing id is just
+      // "no suggestion" rather than a renderer-visible error.
+      const text = sessionId
+        ? await generateFollowUpSuggestion(sessionId)
+        : null;
+      return { text: text ?? null };
+    },
+  );
   return service;
 }
