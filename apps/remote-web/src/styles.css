@@ -1,116 +1,250 @@
 @import "tailwindcss";
 
 /*
- * Mobile-first base for the H5 and Capacitor client.
- * Design tokens and safe-area utilities per docs/spec/04-ux/13-remote-mobile-client.md §5 & §6.
+ * Mobile-first "Aurora Glass" visual system for the H5 and Capacitor client
+ * (ADR mobile-redesign D4, docs/spec/04-ux/13-remote-mobile-client.md §5 & §6,
+ * visual reference apps/remote-web/design/prototype/redesign.html).
+ *
+ * Dark-first with a complete light theme:
+ * - `:root` carries the dark-first defaults plus theme-invariant accent,
+ *   radius, and motion tokens.
+ * - `@media (prefers-color-scheme: light)` switches `:root` to the light
+ *   palette when the user has not chosen an explicit override.
+ * - `[data-theme="light"]` and `[data-theme="dark"]` on `<html>` follow the
+ *   media rules so an explicit user choice in Settings ▸ Appearance wins.
  */
 
 :root {
-  color-scheme: light dark;
-  --rm-bg-page: #f3f3f3;
-  --rm-bg-surface: #ffffff;
-  --rm-bg-raised: #ffffff;
-  --rm-bg-inset: #ededed;
-  --rm-text-primary: #1a1c1f;
-  --rm-text-secondary: rgba(26, 28, 31, 0.74);
-  --rm-text-muted: #5d5d5d;
-  --rm-text-faint: #afafaf;
-  --rm-separator: rgba(26, 28, 31, 0.08);
-  --rm-accent: #1a1c1f;
+  color-scheme: dark light;
+
+  /* Aurora brand accents and gradient */
+  --rm-accent-1: #7c5cff;
+  --rm-accent-2: #22d3ee;
+  --rm-accent-3: #34d399;
+  --rm-aurora: linear-gradient(135deg, var(--rm-accent-1), var(--rm-accent-2) 55%, var(--rm-accent-3));
+
+  /* Radii (14–20 px primary range + sheet/pill) */
+  --rm-radius-sm: 10px;
+  --rm-radius-md: 14px;
+  --rm-radius-control: 14px;
+  --rm-radius-button: 16px;
+  --rm-radius-lg: 18px;
+  --rm-radius-group: 18px;
+  --rm-radius-xl: 20px;
+  --rm-radius-card: 20px;
+  --rm-radius-sheet: 28px;
+  --rm-radius-pill: 9999px;
+
+  /* Motion curves */
+  --rm-ease-spring: cubic-bezier(0.32, 1.4, 0.5, 1);
+  --rm-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Dark-first surface and text tokens */
+  --rm-bg-page: #0b0c10;
+  --rm-bg-surface: rgba(255, 255, 255, 0.05);
+  --rm-bg-surface-2: rgba(255, 255, 255, 0.08);
+  --rm-bg-solid: #15171e;
+  --rm-bg-raised: #15171e;
+  --rm-bg-inset: rgba(255, 255, 255, 0.08);
+  --rm-code-bg: #0f1117;
+  --rm-glass: rgba(16, 18, 24, 0.55);
+  --rm-glass-strong: rgba(16, 18, 24, 0.88);
+  --rm-navbg: rgba(16, 18, 24, 0.55);
+  --rm-hair: rgba(255, 255, 255, 0.08);
+  --rm-separator: rgba(255, 255, 255, 0.08);
+  --rm-border: rgba(255, 255, 255, 0.08);
+
+  --rm-text-primary: #f4f5f8;
+  --rm-text-secondary: rgba(244, 245, 248, 0.72);
+  --rm-text-muted: #8a8f9c;
+  --rm-text-faint: #555a66;
+
+  --rm-accent: #7c5cff;
   --rm-on-accent: #ffffff;
-  --rm-running: #c2410c;
-  --rm-decision: #7c3aed;
-  --rm-on-decision: #ffffff;
-  --rm-success: #00802f;
-  --rm-error: #d42a26;
-  --rm-link: #1c64c8;
-  --rm-tint: 10%;
-  --rm-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --rm-scrim: rgba(0, 0, 0, 0.28);
-  --rm-navbg: rgba(243, 243, 243, 0.92);
-  --rm-bg-bubble: #ededed;
-  --rm-bubble-border: rgba(26, 28, 31, 0.08);
+  --rm-running: #ffb454;
+  --rm-warn: #ffb454;
+  --rm-decision: #b794ff;
+  --rm-on-decision: #0b0c10;
+  --rm-success: #34d399;
+  --rm-error: #ff6b6b;
+  --rm-link: #22d3ee;
+  --rm-tint: 16%;
+
+  --rm-bubble: linear-gradient(135deg, rgba(124, 92, 255, 0.35), rgba(34, 211, 238, 0.22));
+  --rm-bg-bubble: rgba(124, 92, 255, 0.24);
+  --rm-bubble-border: rgba(255, 255, 255, 0.08);
+  --rm-scrim: rgba(0, 0, 0, 0.55);
+  --rm-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  --rm-aurora-opacity: 0.55;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --rm-bg-page: #f6f7fb;
+    --rm-bg-surface: rgba(255, 255, 255, 0.75);
+    --rm-bg-surface-2: rgba(20, 22, 30, 0.05);
+    --rm-bg-solid: #ffffff;
+    --rm-bg-raised: #ffffff;
+    --rm-bg-inset: rgba(20, 22, 30, 0.05);
+    --rm-code-bg: #f0f2f7;
+    --rm-glass: rgba(246, 247, 251, 0.6);
+    --rm-glass-strong: rgba(246, 247, 251, 0.92);
+    --rm-navbg: rgba(246, 247, 251, 0.6);
+    --rm-hair: rgba(20, 22, 30, 0.08);
+    --rm-separator: rgba(20, 22, 30, 0.08);
+    --rm-border: rgba(20, 22, 30, 0.08);
+
+    --rm-text-primary: #14161e;
+    --rm-text-secondary: rgba(20, 22, 30, 0.72);
+    --rm-text-muted: #6b7080;
+    --rm-text-faint: #a7abb7;
+
+    --rm-accent: #7c5cff;
+    --rm-on-accent: #ffffff;
+    --rm-running: #d97706;
+    --rm-warn: #d97706;
+    --rm-decision: #7c3aed;
+    --rm-on-decision: #ffffff;
+    --rm-success: #059669;
+    --rm-error: #e5484d;
+    --rm-link: #5b3df5;
+    --rm-tint: 14%;
+
+    --rm-bubble: linear-gradient(135deg, rgba(124, 92, 255, 0.18), rgba(34, 211, 238, 0.14));
+    --rm-bg-bubble: rgba(124, 92, 255, 0.14);
+    --rm-bubble-border: rgba(20, 22, 30, 0.08);
+    --rm-scrim: rgba(10, 12, 20, 0.3);
+    --rm-shadow: 0 20px 50px rgba(30, 40, 80, 0.15);
+    --rm-aurora-opacity: 0.35;
+  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --rm-bg-page: #181818;
-    --rm-bg-surface: #212121;
-    --rm-bg-raised: #282828;
-    --rm-bg-inset: #0d0d0d;
-    --rm-text-primary: #ffffff;
-    --rm-text-secondary: rgba(255, 255, 255, 0.7);
-    --rm-text-muted: #9b9b9b;
-    --rm-text-faint: #5d5d5d;
+    color-scheme: dark;
+    --rm-bg-page: #0b0c10;
+    --rm-bg-surface: rgba(255, 255, 255, 0.05);
+    --rm-bg-surface-2: rgba(255, 255, 255, 0.08);
+    --rm-bg-solid: #15171e;
+    --rm-bg-raised: #15171e;
+    --rm-bg-inset: rgba(255, 255, 255, 0.08);
+    --rm-code-bg: #0f1117;
+    --rm-glass: rgba(16, 18, 24, 0.55);
+    --rm-glass-strong: rgba(16, 18, 24, 0.88);
+    --rm-navbg: rgba(16, 18, 24, 0.55);
+    --rm-hair: rgba(255, 255, 255, 0.08);
     --rm-separator: rgba(255, 255, 255, 0.08);
-    --rm-accent: #ffffff;
-    --rm-on-accent: #1a1c1f;
-    --rm-running: #ff8549;
-    --rm-decision: #c27aff;
-    --rm-on-decision: #1a1c1f;
-    --rm-success: #40c977;
-    --rm-error: #ff6764;
-    --rm-link: #63a8f8;
+    --rm-border: rgba(255, 255, 255, 0.08);
+
+    --rm-text-primary: #f4f5f8;
+    --rm-text-secondary: rgba(244, 245, 248, 0.72);
+    --rm-text-muted: #8a8f9c;
+    --rm-text-faint: #555a66;
+
+    --rm-accent: #7c5cff;
+    --rm-on-accent: #ffffff;
+    --rm-running: #ffb454;
+    --rm-warn: #ffb454;
+    --rm-decision: #b794ff;
+    --rm-on-decision: #0b0c10;
+    --rm-success: #34d399;
+    --rm-error: #ff6b6b;
+    --rm-link: #22d3ee;
     --rm-tint: 16%;
-    --rm-shadow: 0 0 0 0 transparent;
-    --rm-scrim: rgba(0, 0, 0, 0.5);
-    --rm-navbg: rgba(24, 24, 24, 0.92);
-    --rm-bg-bubble: #2c2c2c;
-    --rm-bubble-border: rgba(255, 255, 255, 0.14);
+
+    --rm-bubble: linear-gradient(135deg, rgba(124, 92, 255, 0.35), rgba(34, 211, 238, 0.22));
+    --rm-bg-bubble: rgba(124, 92, 255, 0.24);
+    --rm-bubble-border: rgba(255, 255, 255, 0.08);
+    --rm-scrim: rgba(0, 0, 0, 0.55);
+    --rm-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    --rm-aurora-opacity: 0.55;
   }
 }
 
 [data-theme="light"] {
-  --rm-bg-page: #f3f3f3;
-  --rm-bg-surface: #ffffff;
+  color-scheme: light;
+  --rm-bg-page: #f6f7fb;
+  --rm-bg-surface: rgba(255, 255, 255, 0.75);
+  --rm-bg-surface-2: rgba(20, 22, 30, 0.05);
+  --rm-bg-solid: #ffffff;
   --rm-bg-raised: #ffffff;
-  --rm-bg-inset: #ededed;
-  --rm-text-primary: #1a1c1f;
-  --rm-text-secondary: rgba(26, 28, 31, 0.74);
-  --rm-text-muted: #5d5d5d;
-  --rm-text-faint: #afafaf;
-  --rm-separator: rgba(26, 28, 31, 0.08);
-  --rm-accent: #1a1c1f;
+  --rm-bg-inset: rgba(20, 22, 30, 0.05);
+  --rm-code-bg: #f0f2f7;
+  --rm-glass: rgba(246, 247, 251, 0.6);
+  --rm-glass-strong: rgba(246, 247, 251, 0.92);
+  --rm-navbg: rgba(246, 247, 251, 0.6);
+  --rm-hair: rgba(20, 22, 30, 0.08);
+  --rm-separator: rgba(20, 22, 30, 0.08);
+  --rm-border: rgba(20, 22, 30, 0.08);
+
+  --rm-text-primary: #14161e;
+  --rm-text-secondary: rgba(20, 22, 30, 0.72);
+  --rm-text-muted: #6b7080;
+  --rm-text-faint: #a7abb7;
+
+  --rm-accent: #7c5cff;
   --rm-on-accent: #ffffff;
-  --rm-running: #c2410c;
+  --rm-running: #d97706;
+  --rm-warn: #d97706;
   --rm-decision: #7c3aed;
   --rm-on-decision: #ffffff;
-  --rm-success: #00802f;
-  --rm-error: #d42a26;
-  --rm-link: #1c64c8;
-  --rm-tint: 10%;
-  --rm-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --rm-scrim: rgba(0, 0, 0, 0.28);
-  --rm-navbg: rgba(243, 243, 243, 0.92);
-  --rm-bg-bubble: #ededed;
-  --rm-bubble-border: rgba(26, 28, 31, 0.08);
+  --rm-success: #059669;
+  --rm-error: #e5484d;
+  --rm-link: #5b3df5;
+  --rm-tint: 14%;
+
+  --rm-bubble: linear-gradient(135deg, rgba(124, 92, 255, 0.18), rgba(34, 211, 238, 0.14));
+  --rm-bg-bubble: rgba(124, 92, 255, 0.14);
+  --rm-bubble-border: rgba(20, 22, 30, 0.08);
+  --rm-scrim: rgba(10, 12, 20, 0.3);
+  --rm-shadow: 0 20px 50px rgba(30, 40, 80, 0.15);
+  --rm-aurora-opacity: 0.35;
 }
 
 [data-theme="dark"],
 .dark {
-  --rm-bg-page: #181818;
-  --rm-bg-surface: #212121;
-  --rm-bg-raised: #282828;
-  --rm-bg-inset: #0d0d0d;
-  --rm-text-primary: #ffffff;
-  --rm-text-secondary: rgba(255, 255, 255, 0.7);
-  --rm-text-muted: #9b9b9b;
-  --rm-text-faint: #5d5d5d;
+  color-scheme: dark;
+  --rm-bg-page: #0b0c10;
+  --rm-bg-surface: rgba(255, 255, 255, 0.05);
+  --rm-bg-surface-2: rgba(255, 255, 255, 0.08);
+  --rm-bg-solid: #15171e;
+  --rm-bg-raised: #15171e;
+  --rm-bg-inset: rgba(255, 255, 255, 0.08);
+  --rm-code-bg: #0f1117;
+  --rm-glass: rgba(16, 18, 24, 0.55);
+  --rm-glass-strong: rgba(16, 18, 24, 0.88);
+  --rm-navbg: rgba(16, 18, 24, 0.55);
+  --rm-hair: rgba(255, 255, 255, 0.08);
   --rm-separator: rgba(255, 255, 255, 0.08);
-  --rm-accent: #ffffff;
-  --rm-on-accent: #1a1c1f;
-  --rm-running: #ff8549;
-  --rm-decision: #c27aff;
-  --rm-on-decision: #1a1c1f;
-  --rm-success: #40c977;
-  --rm-error: #ff6764;
-  --rm-link: #63a8f8;
+  --rm-border: rgba(255, 255, 255, 0.08);
+
+  --rm-text-primary: #f4f5f8;
+  --rm-text-secondary: rgba(244, 245, 248, 0.72);
+  --rm-text-muted: #8a8f9c;
+  --rm-text-faint: #555a66;
+
+  --rm-accent: #7c5cff;
+  --rm-on-accent: #ffffff;
+  --rm-running: #ffb454;
+  --rm-warn: #ffb454;
+  --rm-decision: #b794ff;
+  --rm-on-decision: #0b0c10;
+  --rm-success: #34d399;
+  --rm-error: #ff6b6b;
+  --rm-link: #22d3ee;
   --rm-tint: 16%;
-  --rm-shadow: 0 0 0 0 transparent;
-  --rm-scrim: rgba(0, 0, 0, 0.5);
-  --rm-navbg: rgba(24, 24, 24, 0.92);
-  --rm-bg-bubble: #2c2c2c;
-  --rm-bubble-border: rgba(255, 255, 255, 0.14);
+
+  --rm-bubble: linear-gradient(135deg, rgba(124, 92, 255, 0.35), rgba(34, 211, 238, 0.22));
+  --rm-bg-bubble: rgba(124, 92, 255, 0.24);
+  --rm-bubble-border: rgba(255, 255, 255, 0.08);
+  --rm-scrim: rgba(0, 0, 0, 0.55);
+  --rm-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  --rm-aurora-opacity: 0.55;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -118,6 +252,7 @@ body {
   margin: 0;
   min-height: 100%;
 }
+
 /*
  * The app frame owns the viewport height and every screen fills its parent
  * (`h-full`), so the shell decides how tall a screen is. App already sizes
@@ -135,6 +270,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
   overscroll-behavior-y: none;
+  transition: background-color 0.35s var(--rm-ease-out), color 0.25s var(--rm-ease-out);
 }
 
 @layer utilities {
@@ -179,14 +315,15 @@ body {
 
   /* Typography role helpers */
   .rm-title-large {
-    font-size: 1.75rem; /* 28px */
-    line-height: 2.125rem; /* 34px */
-    font-weight: 700;
+    font-size: 2rem; /* 32px */
+    line-height: 2.375rem; /* 38px */
+    font-weight: 750;
+    letter-spacing: -0.02em;
   }
   .rm-title {
     font-size: 1.0625rem; /* 17px */
     line-height: 1.375rem; /* 22px */
-    font-weight: 600;
+    font-weight: 650;
   }
   .rm-headline {
     font-size: 1rem; /* 16px */
@@ -227,9 +364,253 @@ body {
   .app-mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
+
+  /* 1. Drifting aurora glow & hero orb */
+  .rm-aurora {
+    position: absolute;
+    inset: -20% -20% auto;
+    height: 420px;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(50px);
+    opacity: var(--rm-aurora-opacity, 0.55);
+  }
+  .rm-aurora-blob {
+    position: absolute;
+    border-radius: 50%;
+    animation: rm-aurora-drift 20s ease-in-out infinite alternate;
+  }
+  .rm-orb {
+    background: var(--rm-aurora);
+    color: #ffffff;
+    box-shadow: 0 20px 60px rgba(124, 92, 255, 0.5);
+    animation: rm-float 6s ease-in-out infinite;
+  }
+
+  /* 3. Sliding tab-bar / segmented indicator */
+  .rm-tabbar-indicator {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: 6px;
+    border-radius: 18px;
+    background: var(--rm-bg-surface-2);
+    transition: transform 0.5s var(--rm-ease-spring);
+  }
+  .rm-tabbar-indicator::after {
+    content: "";
+    position: absolute;
+    left: 30%;
+    right: 30%;
+    bottom: -1px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--rm-aurora);
+  }
+  .rm-seg-slider {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    border-radius: 9px;
+    background: var(--rm-bg-solid);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: transform 0.45s var(--rm-ease-spring);
+  }
+
+  /* 4. Streaming caret glow & text shimmer */
+  .rm-caret {
+    display: inline-block;
+    width: 9px;
+    height: 18px;
+    margin-left: 2px;
+    vertical-align: -3px;
+    border-radius: 2px;
+    background: var(--rm-aurora);
+    box-shadow: 0 0 12px var(--rm-accent-2), 0 0 24px var(--rm-accent-1);
+    animation: rm-caret-blink 1s steps(2) infinite;
+  }
+  .rm-text-shimmer {
+    background: linear-gradient(90deg, var(--rm-accent-2), var(--rm-accent-1), var(--rm-accent-3), var(--rm-accent-2));
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: rm-text-shimmer 2.4s linear infinite;
+    font-weight: 650;
+  }
+
+  /* 5. Send -> stop morph */
+  .rm-send-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--rm-aurora);
+    color: #ffffff;
+    display: grid;
+    place-items: center;
+    flex: none;
+    position: relative;
+    overflow: hidden;
+    transition: border-radius 0.35s var(--rm-ease-spring), transform 0.15s var(--rm-ease-out), background 0.25s var(--rm-ease-out);
+  }
+  .rm-send-btn:active {
+    transform: scale(0.9);
+  }
+  .rm-send-btn .rm-send-go,
+  .rm-send-btn .rm-send-stop {
+    transition: opacity 0.2s var(--rm-ease-out), transform 0.3s var(--rm-ease-spring);
+  }
+  .rm-send-btn .rm-send-stop {
+    position: absolute;
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  .rm-send-btn[data-streaming="true"],
+  .rm-send-btn.is-streaming {
+    border-radius: 13px;
+    background: var(--rm-text-primary);
+    color: var(--rm-bg-page);
+  }
+  .rm-send-btn[data-streaming="true"] .rm-send-go,
+  .rm-send-btn.is-streaming .rm-send-go {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  .rm-send-btn[data-streaming="true"] .rm-send-stop,
+  .rm-send-btn.is-streaming .rm-send-stop {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* 6. Image placeholder shimmer + blur-to-sharp reveal */
+  .rm-image-surface {
+    transition: filter 1.1s var(--rm-ease-out), transform 1.1s var(--rm-ease-out);
+  }
+  .rm-image-gen {
+    position: relative;
+    overflow: hidden;
+  }
+  .rm-image-gen .rm-image-surface {
+    filter: blur(24px) saturate(1.4);
+    transform: scale(1.15);
+  }
+  .rm-image-gen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+    background-size: 250% 100%;
+    animation: rm-sweep 1.6s linear infinite;
+    pointer-events: none;
+  }
+  .rm-image-reveal {
+    position: relative;
+    overflow: hidden;
+  }
+  .rm-image-reveal::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, 0.6) 50%, transparent 65%);
+    background-size: 250% 100%;
+    animation: rm-sweep 1s ease-out 1;
+    pointer-events: none;
+  }
+
+  /* 7. Swipe row actions */
+  .rm-swipe-row {
+    position: relative;
+    overflow: hidden;
+  }
+  .rm-swipe-actions {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+  }
+  .rm-swipe-front {
+    position: relative;
+    background: var(--rm-bg-solid);
+    transition: transform 0.35s var(--rm-ease-out);
+    touch-action: pan-y;
+  }
+  .rm-swipe-front[data-dragging="true"] {
+    transition: none;
+  }
+
+  /* 8. Status pulse */
+  .rm-status-pulse {
+    position: relative;
+    display: inline-block;
+    border-radius: 50%;
+    background: var(--rm-success);
+  }
+  .rm-status-pulse::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--rm-success);
+    animation: rm-status-pulse 2s ease-out infinite;
+  }
 }
 
-/* Animations */
+/* Keyframes */
+@keyframes rm-aurora-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(40px, 30px) scale(1.15); }
+  100% { transform: translate(-30px, 10px) scale(0.9); }
+}
+
+@keyframes rm-float {
+  50% { transform: translateY(-8px) rotate(3deg); }
+}
+
+@keyframes rm-sheet-in {
+  from { transform: translateY(105%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes rm-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes rm-tab-bounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.78); }
+  100% { transform: scale(1); }
+}
+
+@keyframes rm-caret-blink {
+  50% { opacity: 0.25; }
+}
+
+@keyframes rm-text-shimmer {
+  to { background-position: -300% 0; }
+}
+
+@keyframes rm-sweep {
+  from { background-position: 150% 0; }
+  to { background-position: -100% 0; }
+}
+
+@keyframes rm-status-pulse {
+  to { transform: scale(3); opacity: 0; }
+}
+
+@keyframes rm-decision-glow {
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--rm-decision) 4%, transparent); }
+}
+
+@keyframes rm-toast-in {
+  from { opacity: 0; transform: translateY(-90px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 @keyframes rm-breathe {
   50% { opacity: 0.35; }
 }
@@ -251,7 +632,7 @@ body {
 }
 
 @keyframes rm-skel {
-  50% { opacity: 0.5; }
+  50% { opacity: 0.45; }
 }
 
 @keyframes rm-push {
@@ -265,18 +646,22 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
+  *,
+  ::before,
+  ::after {
+    animation: none !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
 /* Markdown prose and table rendering for mobile chat */
 .rm-prose {
   color: var(--rm-text-primary);
-  font-size: 15px;
-  line-height: 23px;
+  font-size: 16px;
+  line-height: 25px;
   word-break: break-word;
   overflow-wrap: break-word;
 }
@@ -343,18 +728,18 @@ body {
 
 .rm-prose blockquote {
   margin: 0.6em 0;
-  padding: 0.4em 0.8em;
-  border-left: 3px solid var(--rm-separator);
+  padding: 0.45em 0.85em;
+  border-left: 3px solid var(--rm-accent-1);
   color: var(--rm-text-secondary);
   background-color: var(--rm-bg-surface);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 10px 10px 0;
 }
 
 .rm-prose code:not(pre code) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   padding: 0.15em 0.4em;
-  border-radius: 4px;
+  border-radius: 6px;
   background-color: var(--rm-bg-inset);
   color: var(--rm-link);
 }
@@ -362,9 +747,9 @@ body {
 .rm-prose pre {
   margin: 0.7em 0;
   padding: 0.75em 1em;
-  border-radius: 10px;
-  background-color: var(--rm-bg-surface);
-  border: 1px solid var(--rm-separator);
+  border-radius: var(--rm-radius-control, 14px);
+  background-color: var(--rm-code-bg);
+  border: 1px solid var(--rm-hair);
   overflow-x: auto;
   font-size: 13px;
   line-height: 19px;
@@ -384,8 +769,8 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
-  border-radius: 8px;
-  border: 1px solid var(--rm-separator);
+  border-radius: var(--rm-radius-control, 14px);
+  border: 1px solid var(--rm-hair);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -404,7 +789,7 @@ body {
   padding: 8px 12px;
   text-align: left;
   vertical-align: top;
-  border-bottom: 1px solid var(--rm-separator);
+  border-bottom: 1px solid var(--rm-hair);
 }
 
 .rm-prose th {
@@ -430,5 +815,5 @@ body {
 .rm-prose hr {
   margin: 1.2em 0;
   border: none;
-  border-top: 1px solid var(--rm-separator);
+  border-top: 1px solid var(--rm-hair);
 }

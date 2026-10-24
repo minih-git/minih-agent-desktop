@@ -19,6 +19,12 @@
 - Revision 2026-10-23: §18 defines the next bounded daily-use and image
   workflows. It supersedes only the named first-release limitations; it is not
   an implementation-status claim. Existing status prose above is historical.
+- Revision 2026-10-23: §19 records the redesign that is implemented on
+  `feat/mobile-redesign` — model capability from declared output modalities,
+  the three roots, Studio, the model picker, the session status strip, Settings
+  and the Aurora Glass visual system. Where §19 disagrees with §4, §5.1, §15.7,
+  §17.6.5, §18.1 or §18.3 it wins, and each of those places carries a one-line
+  pointer to it. It makes no claim about acceptance on a device.
 - Scope: `apps/remote-web`, i.e. the browser (H5) build and the Capacitor iOS
   and Android builds. They share one React codebase, so every rule here applies
   to all three unless a section names a platform.
@@ -98,6 +104,11 @@ root tab bar with two entries (Chats, Computers) shows on the two roots only of
 a native build; the browser build has neither the tab bar nor Chats and keeps
 today's single hierarchy. A timeline screen never shows the bar, so the bar
 costs no vertical space where the conversation lives.
+
+*Superseded by §19.3:* the native build has three roots — 对话 Chats, 创作
+Studio, 电脑 Computers — with settings behind the avatar on each of them; the
+browser build still has one hierarchy and no bar. The stack, the back rule and
+the push entry below are unchanged.
 
 ```text
 Native build, two roots in one stack (the browser build keeps only Computers)
@@ -206,6 +217,12 @@ Semantic tints for banners and chips are the semantic color at 10% (light) or
 16% (dark) over `--rm-bg-surface`. The theme follows the system appearance;
 there is no in-app theme switch. `theme-color` and the native splash use
 `--rm-bg-page` for each appearance (replacing `#0b0f14`).
+
+*Superseded by §19.8:* the shipped palette is Aurora Glass — dark-first with a
+complete light theme, a user override in Settings ▸ Appearance, and the aurora
+accent tokens (`--rm-accent-1/2/3`, `--rm-aurora`). The token names below were
+kept and their values re-tuned; the status tokens keep their meaning, not their
+exact values.
 
 ### 5.2 Typography
 
@@ -999,6 +1016,12 @@ Back returns to the root the gear was opened from. Empty: nothing paired — one
 line and a button back to S1. States: every row that calls the Host can fail,
 and fails in place with its reason.
 
+*Superseded by §19.7:* Settings is reached from the avatar button on each of the
+three roots, and §19.7 lists the shipped sections with what backs each. The
+Account sign-out row and the "Computers and devices" rows listed above are not
+present: computers are the third root, and revoking an account session is a
+§11.5 flow this client does not ship.
+
 ### 15.8 Prototype
 
 `apps/remote-web/design/prototype/index.html` gains: the new-session sheet with
@@ -1470,6 +1493,11 @@ Default for the first release: the filter is **off**, so all four kinds are sent
 because "your work finished" is the notification people want until it proves
 noisy. Turning the filter on is one tap.
 
+*Superseded by §19.7:* the shipped Settings page shows the master switch and the
+registration state only. It does not send `onlyActionable` and draws no filter
+switch, so all four kinds are delivered; per-event toggles do not exist in the
+registration contract.
+
 #### 17.6.6 Android and the browser
 
 - **Android** gets the same redacted payload, the four kinds, per-session grouping
@@ -1644,6 +1672,11 @@ already read the way each was decided.
 - Remote project Quick new uses the Host's defaults, not direct-chat settings.
   New with options retains model/mode/permissions; show actual Host values.
 
+*Superseded by §19.3:* the native build has three roots. Chats lists text
+conversations only, with no Create image action and no Images filter; image
+work lives in Studio, and picking an image model in the Chats picker switches
+to that root.
+
 ### 18.2 Conversation and message actions
 
 - A visible More action on a direct row and its header opens the same allowed
@@ -1690,6 +1723,11 @@ already read the way each was decided.
 - Edit this image is a subsequent increment gated by a verified edit contract;
   the original remains available and the new output retains its source link.
 
+*Superseded by §19.4:* image generation moved from a "Create image" action and
+an Images filter inside Chats to the Studio root, which states the
+one-image-per-request rule and the controls this version deliberately does not
+offer.
+
 ### 18.4 Continuity, limitations and acceptance
 
 - Nonempty drafts, account isolation and concurrent conversations must survive
@@ -1709,3 +1747,313 @@ already read the way each was decided.
 Implementation must finalize additive RACP/security wire details before the
 remote media change and keep existing text history readable through migration.
 No implementation may weaken roles or replace credentials to make a UI pass.
+
+## 19. Redesign (2026-10-23): model capability, three roots, Studio, Settings
+
+- Status: implemented on `feat/mobile-redesign` (commits `fb4d13dca`…`600a1308e`),
+  unit-tested and typechecked, **not device-accepted**. This section describes
+  what the client does now and is the state of record for the parts of §4,
+  §5.1, §15.7, §17.6.5, §18.1 and §18.3 that it supersedes.
+- Rationale and authority: [Mobile redesign ADR](../../adr/mobile-redesign.md).
+  The ADR holds the evidence for the two defects this work started from: models
+  classified from a channel-wide protocol union, and journey steps that
+  returned without saying anything.
+- Scope: `apps/remote-web`, i.e. the H5 build and the Capacitor iOS/Android
+  builds, plus one additive field in `packages/shared`
+  (`MinihRouterModel.outputModalities`). No Router change, no new endpoint, no
+  new runtime dependency.
+
+### 19.1 How a model's capability is decided
+
+Every model list in the client is projected from one classifier
+(`modelCapability`, `resolveDirectModel`, `resolveDirectImageModel` in
+`src/lib/direct-chat/catalog.ts`). It reads two facts about a catalog row: what
+the model declares it produces (`outputModalities`, parsed from
+`upstream_models[].catalog_reference.model.modalities.output`) and which
+protocols the gateway lists.
+
+| Declared output | Protocols listed | Chats picker | Studio picker |
+|---|---|---|---|
+| contains `text` | a chat protocol | usable, on `openai-completions` before `openai-responses` | not listed |
+| contains `image` | anything | not listed | usable, confirmed |
+| contains `image` and `text` | a chat protocol | usable | usable, confirmed |
+| contains `image`, no `text` | anything | listed as unavailable ("Image model — use in Studio") | usable, confirmed |
+| nothing declared | a chat protocol | usable | not listed |
+| nothing declared | `openai-images`, no chat protocol | listed as unavailable | usable, under "gateway did not declare image output" |
+| anything else | — | listed as unavailable, with its reason | not listed |
+
+- **The channel union is the trap this replaces.** Router does not declare
+  protocols per model: `/api/models` fills `protocols` with the union of the
+  channel type's client protocols over every route group serving the model, and
+  the OpenAI-compatible channel declares `openai-images` for every model it
+  carries. Reading `protocols.includes("openai-images")` therefore classified
+  every text model behind such a channel as an image model: it vanished from
+  Chats, appeared in the image list, and a new chat on it was refused or sent
+  to `/v1/images/generations`. Nothing reads that flag on its own any more.
+- **A declared `image` output is enough to be offered for generation**, whether
+  or not `openai-images` is listed: the catalog reference is the stronger
+  evidence, and the endpoint is fixed when the request is built.
+- **"Declared both" is one row in both lists.** A model declaring `text` and
+  `image` appears in the Chats picker and in Studio. Which operation runs is
+  decided by where the user starts, never by the name: a new draft in Chats
+  holds a conversation, a Studio request generates an image, and an existing
+  image conversation keeps sending images because `resolveSendTarget` reads
+  that flag from the conversation record.
+- **Names and UI categories prove nothing.** `model.category` is not consulted:
+  the shared parser derives it partly from the model's name for the desktop
+  catalog's grouping, so a name such as `qwen-vl` would otherwise disable a
+  model the gateway really serves over Chat Completions.
+- **Declared, or unconfirmed and said so.** A row whose image claim rests on
+  the channel union alone stays selectable but is listed apart and labelled
+  "gateway did not declare image output", because that is how such a gateway
+  publishes its image models in practice and hiding them would remove the only
+  working path.
+- **No silent fallback.** A model that is gone, forbidden, or cannot hold a
+  conversation resolves to "unavailable" and the sheet asks the user to choose;
+  no request is retried on another model or protocol, because that would bill a
+  second attempt the user did not pick.
+- **No row is hidden without a reason.** An unavailable model is still listed,
+  collapsed, with one of three reasons: an image model (use in Studio), not a
+  chat model (embeddings, rerank, OCR), or a protocol this client does not
+  implement.
+
+### 19.2 Chat and image selections are separate
+
+The connection record (`minih.remote-web.direct-chat.v1`, one per account
+identity) keeps four model fields instead of two:
+
+| Field | Meaning |
+|---|---|
+| `lastModelId` | the last model chosen for a text conversation |
+| `lastImageModelId` | the last model chosen for image generation |
+| `defaultChatModelId` | the account's explicit default for text conversation |
+| `defaultImageModelId` | the account's explicit default for image generation |
+
+- **One-time migration, on read.** A stored `lastModelId` whose cached catalog
+  row is image-capable and cannot hold a conversation is moved to
+  `lastImageModelId`, and the moved record is written back on the read that
+  performed it. An existing `lastImageModelId` is never overwritten; a row the
+  cache does not hold is left alone, because an absent catalog is not evidence;
+  a store that refuses the write keeps the answer correct for that session.
+- **A record written before the split is seeded, not reset.** Where
+  `defaultChatModelId` did not exist yet, the migrated chat model becomes the
+  chat default, so the default a user is shown is the model they last chose.
+- **A draft's model travels with the navigation, not with the account.** A new
+  conversation is opened as `{ kind: "chat", conversationId, draftModelId }`
+  and the screen keeps that model in local state until the first message
+  creates the record. A draft that is never sent therefore cannot change what
+  the next new chat starts on.
+- **Studio chooses its own model.** The account image default first, then
+  `lastImageModelId`, then nothing — never a chat model on the user's behalf.
+  Starting a generation or picking an image model writes `lastImageModelId`.
+- **The star sets the default.** Inside the picker the star writes the default
+  for the active segment; a default that is no longer usable is reported as
+  unavailable rather than replaced.
+
+### 19.3 Information architecture
+
+A native build has three roots, in this order in the bar, and settings behind
+the avatar button that every root draws in its navigation bar:
+
+| Root | Content |
+|---|---|
+| 对话 Chats | Text conversations only: a pinned card strip, recent rows with swipe and "More" actions, an archived link, and the new-chat action, which starts on the account's chat default (or the last chat model) and asks for a model only when neither is usable |
+| 创作 Studio | Image generation: the day-grouped result gallery, live generating cards, and the prompt composer (§19.4) |
+| 电脑 Computers | The existing hierarchy, one computer per row, then its projects, then a project's sessions, then a session (§4, §17.2) |
+
+- **Settings is not a root.** It is pushed from the avatar on any root and back
+  returns to the root it was opened from, because a tab pressed from a pushed
+  page would leave the page behind it.
+- **One root per launch.** A fresh native install opens Chats. The first launch
+  after an upgrade of an installation that already holds computers opens
+  Computers. Afterwards the app reopens the root last selected, a
+  credential-free preference in `localStorage` (`remote.last-root`), and the
+  opening root is recorded on first launch so "reopen where I was" is true from
+  the first run. A blocked store simply forgets the preference.
+- **Switching a root replaces it.** The entry the previous root occupied is
+  reused, so Back never alternates between roots and Android Back on a root
+  exits the app. A pushed page never shows the bar.
+- **No pushed page is restored across a cold start.**
+- **The notification entry is unchanged.** A tap still replaces the root with
+  Computers and opens the named session with the honest shallow stack beneath
+  it (§8.8, §17.6.3), and a foreground notice still opens the same stack
+  (§17.6.4). The browser build still ships no push.
+- **H5 keeps one root.** The browser build opens Computers, draws no tab bar,
+  and never reaches Chats or Studio; direct model accounts stay native-only.
+
+### 19.4 Studio
+
+Studio is where images are made. It lists the account's image work and starts
+new generations; it is not a chat screen with a different model.
+
+- **What it lists.** Every attempt that produced an image, plus the newest
+  non-complete attempt for a prompt, projected from the existing image
+  conversations by `studioCards` (`src/lib/direct-chat/studio.ts`). Cards are
+  grouped by calendar day (Today, Yesterday, then a date), newest first, with
+  generating cards pinned above the rest of their day so a fresh request is
+  visible after the tap. A superseded failed or stopped attempt is hidden once
+  a newer attempt for the same prompt exists; archived conversations are not
+  listed. Each card carries the prompt, the model, its status (generating,
+  complete, failed, stopped) and, when complete, the image.
+- **How a generation starts.** The composer at the bottom sends one request:
+  `history.beginTurn` with `operation: "image-generation"` and the
+  `openai-images` protocol records the attempt, then the runner is started on
+  it. The active model is the pill under the title and opens the Studio picker;
+  a request without an image model opens that picker instead of sending, and an
+  empty prompt is refused in place. While a generation is running the same
+  button becomes Stop. A completed card plays a blur-to-sharp reveal and one
+  toast names the result.
+- **What a card offers.** Open the full-screen viewer (copy prompt, generate
+  again with the same prompt, delete), stop a running generation, retry a
+  failed or stopped one on its own model, and delete the image with a
+  confirmation; deleting stops a live generation first.
+- **What it deliberately does not offer.** No aspect-ratio, size, count or
+  quality control: one image per request, exactly as the request adapter always
+  worked, and no invented parameter. No editing of an existing image. No
+  gallery-wide actions. A model that also holds a conversation is offered for
+  chat in Chats, not here, and picking a chat model inside Studio's picker
+  moves to Chats with that model in the new draft.
+
+### 19.5 The model picker
+
+One sheet serves Chats, Studio and Settings (`components/ModelSheet.tsx` over
+`src/lib/direct-chat/model-picker.ts`), and it is always in one of two modes:
+
+- **A chat / image segmented control** at the top. The mode decides which
+  classifier runs, so the same catalog produces two different lists: chat rows
+  grouped by vendor, or image rows with their unconfirmed group.
+- **Search** over the model id and the vendor.
+- **Vendor grouping** with a two-letter monogram per vendor; a row without a
+  declared vendor falls into "Other".
+- **Capability chips** on each row: chat, image, vision (from the gateway's
+  `inputModalities`), and the unconfirmed image chip. A row also shows its
+  context window and, when the gateway declared one, its input/output price.
+- **The unconfirmed group** for image modes: selectable rows whose image claim
+  comes from the channel union only, under the heading and the one-line
+  explanation that the gateway did not declare image output.
+- **Unavailable rows collapsed** behind a count, each with the reason it cannot
+  be used in the current mode.
+- **Star to set the default** for the active segment, with a toast naming the
+  model; the star never changes the model of the conversation or generation in
+  front of it.
+- **Cross-root selection.** Choosing an image row in the Chats picker moves to
+  Studio; choosing a chat row in Studio's picker moves to Chats with a new
+  draft on that model.
+
+### 19.6 The session header status strip
+
+A remote session's header shows what the desktop shows for the session, as a
+strip of chips under the title (`sessionChips` in `src/lib/session-chips.ts`),
+and tapping any chip or the info button opens the session info sheet.
+
+| Chip | Source field on `RacpSession` | Rendered when |
+|---|---|---|
+| Model | `modelLabel`, falling back to `modelId` | either field is a non-empty string; `thinkingLevel` is appended as `model · level` when it is also present |
+| Mode | `mode` | it is `agent`, `plan` or `goal` |
+| Permission | `permissionMode` | it is `ask`, `accept-edits` or `auto` |
+
+A field that is absent from the session record renders nothing: there is no
+placeholder chip and no value inferred from message text. The "live" marker
+next to the computer's name appears only while the event stream is open. The
+two session operations the phone does not own — deleting the session and
+granting an approval for the whole session — stay desktop-only, and each is
+explained in words where it would have been offered: the info sheet for
+deletion, the approval card for "allow for session". There is no button that
+cannot work.
+
+### 19.7 Settings
+
+One page, pushed from the avatar on any root. Every row performs a real action;
+there are no "later" subtitles and no dead rows.
+
+| Section | What backs it |
+|---|---|
+| Account card | The connection record: key name, masked key, `access_key_id`, and the number of models in the cached catalog (`buildAccountCardView`). With no connection it becomes the connect action, or says the build has no model gateway. **No balance**: `GET /api/auth/session` answers key identity only, so nothing is shown for it |
+| Default models | One chat row and one image row (`formatDefaultModelRow`), each showing the model name and vendor, or "Not set", or "Unavailable" when the configured default is no longer usable; both open the picker |
+| Model gateway | Connected state with the gateway root and a confirm-then-delete disconnect that reports a failed unlink in place; when unconnected, the connect action |
+| Notifications | The `usePushRegistration` snapshot via `describePushSettingsView`: a master switch that registers or unregisters this device, a status line for each state (registered, waiting for a computer, permission refused, disabled, gateway without a push service, native only, failed), a diagnostics row naming the gateway and the number of registered credentials, and one line stating that the gateway has no per-event filter switches |
+| Appearance | `lib/theme.ts`: system / light / dark, applied immediately, stored under `minih.remote-web.theme.v1`, and `system` follows the OS appearance live |
+| History | Count of this account's conversations on this phone, and a clear behind a confirmation that names the account; a clear is refused with its reason while a reply is still arriving |
+| Older accounts | Read-only scopes this device still holds, one row each, opened as read-only history |
+| About | The app version from `package.json` at build time, the active gateway origin, and a privacy-policy link |
+
+- **Per-event notification toggles do not exist, so none are drawn.** The
+  registration route accepts a single optional `onlyActionable` filter and no
+  per-event switches; this release does not send it, so all four event kinds
+  (approval, question, finished run, failed run) are delivered, and Settings
+  says so in one line instead of showing switches that would change nothing.
+- **The version cannot drift.** `vite.config.ts` reads `package.json` and
+  defines `__APP_VERSION__`; a manifest without a version fails the build
+  rather than shipping an empty string.
+- **The privacy row exists only where the policy has an address.** The policy
+  is a repository document, not a URL a shipped app can derive, so a build
+  configured with `VITE_PRIVACY_POLICY_URL` shows the row and every other build
+  omits it rather than offering a link that goes nowhere.
+
+### 19.8 Visual system
+
+Aurora Glass, defined once in `src/styles.css` and consumed through the
+`components/ui/` primitives so screens no longer hand-roll button, row and
+sheet classes.
+
+- **Tokens.** Aurora accents `--rm-accent-1/2/3` and the `--rm-aurora`
+  group and card range to `--rm-radius-sheet` (28 px), glass surfaces
+  (`--rm-glass`, `--rm-glass-strong`) with hairline borders, and the status
+  tokens (`--rm-running`, `--rm-decision`, `--rm-success`, `--rm-error`) with
+  re-tuned values, so state keeps its meaning without the old grey palette.
+- **Dark first, with a real light theme.** `:root` carries the dark palette;
+  `prefers-color-scheme: light` flips it, and `data-theme` on `<html>` lets an
+  explicit choice in Settings ▸ Appearance win over the OS. `color-scheme` is
+  set with it, so form controls and scrollbars match.
+- **Glass where it carries meaning.** The navigation bar keeps its transparent
+  state until the content beneath scrolls past 12 px and then becomes a blurred
+  surface; the tab bar and the composer are the same material. The aurora
+  gradient is an accent — a pill border, a send button, an avatar ring — not a
+  page background.
+- **Motion.** One keyframe set: a drifting aurora behind empty and hero states,
+  spring sheet entry, a sliding tab indicator, a streaming caret glow, a
+  send→stop morph, an image placeholder shimmer with a blur-to-sharp reveal,
+  swipe row actions, a status pulse and a top toast. All of it is CSS; no
+  animation library is shipped.
+- **Reduced motion.** One `prefers-reduced-motion: reduce` block disables every
+  animation and transition and turns scrolling behaviour back to `auto`, so the
+  layout is the only thing that changes.
+- **The preference is local.** It is a credential-free value in `localStorage`;
+  a blocked or full store keeps the in-memory choice and boots on `system`.
+
+### 19.9 Journey fixes, as the user sees them
+
+- Changing the model in a conversation that has no messages yet works, and it
+  changes that conversation only — not the account's model for the next one.
+- Starting an image job no longer moves the next new chat onto a model that
+  cannot talk.
+- Retrying a failed image generation retries the generation instead of doing
+  nothing.
+- Regenerate, edit-and-resend and retry either run or say why they cannot.
+- A rename opens with the conversation's current title and Save is available as
+  soon as the text changes, including when the record arrives after the sheet.
+- A copy that fails says so instead of looking like it worked.
+- Archiving a conversation that is still replying is labelled "Stop and
+  archive", and deleting one stops it before removing the record; both stop
+  only that conversation, and an operation refused because work is in flight
+  names the reason.
+- A revoked session offers "Forget this computer and pair again" and leaves the
+  screen immediately; if forgetting fails, the reason appears on the computer
+  list it landed on.
+- Every Settings row does something, and each one that can fail says what
+  failed.
+
+### 19.10 What this version does not do
+
+- No balance on the account card, for the reason in §19.7.
+- No per-event notification filters, and the `onlyActionable` filter is not
+  exposed.
+- No privacy-policy row unless the build was configured with its URL.
+- No image parameters — aspect ratio, size, count, quality — and no image
+  editing in Studio.
+- No browser automation of the new roots: E2E-266 still drives the H5 client at
+  390×844 and was not extended (§19 status). The new screens rest on unit tests
+  and on `apps/remote-web/design/prototype/redesign.html`.
+- No device acceptance. Simulator and device runs of the three roots, the
+  sheets with real keyboard and safe areas, and native appearance switching are
+  still to be reported separately from Chromium validation.

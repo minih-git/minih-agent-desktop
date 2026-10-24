@@ -10,13 +10,8 @@ import { buildResources, DEFAULT_LOCALE } from "../locales/index.js";
 import { SessionScreen } from "./SessionScreen.js";
 
 /**
- * The session screen names the computer, not its internal id.
- *
- * `host_10ed0253-2a52-4ea7-84b3-4b662d85a82c` is what a phone showed in the bar
- * above a conversation, because the screen fell back to `hostId` whenever nobody
- * passed the label — and nobody did, on the one path that reaches this screen.
- * The id is a credential-scoped identifier; the person looking at the phone needs
- * the name they gave the computer, and a long name has to stay on one line.
+ * The session screen names the computer, not its internal id, and renders the
+ * status strip of Tag chips strictly from the RACP session record.
  *
  * Rendered statically: this package runs no DOM, and the question is what the
  * header says, which the first render already answers.
@@ -66,4 +61,46 @@ test("an unnamed computer still shows something", async () => {
   // the one on the computer.
   const markup = await render({ ...base, hostLabel: "" });
   assert.match(markup, /host_10ed0253/);
+});
+
+test("when the session record has not arrived yet, no status strip chips are invented", async () => {
+  const markup = await render({ ...base, hostLabel: "minih-mbp" });
+  assert.doesNotMatch(markup, /Computer default/);
+  assert.doesNotMatch(markup, /Work directly/);
+  assert.doesNotMatch(markup, /Ask each time/);
+});
+
+/** One full session record; the status strip shows nothing without it. */
+const record = {
+  id: base.sessionId,
+  title: "Fix the build",
+  modelId: "claude-sonnet-4-6",
+  modelLabel: "Claude Sonnet 4.6",
+  thinkingLevel: "high",
+  mode: "agent" as const,
+  status: "idle" as const,
+  planningState: "inactive" as const,
+  permissionMode: "ask" as const,
+  queuedTurnIds: [],
+  revision: 1,
+  createdAt: "2026-10-23T09:00:00.000Z",
+  updatedAt: "2026-10-23T09:00:00.000Z",
+};
+
+test("the header status strip renders model (+ thinking level), mode, and permission from the session record", async () => {
+  const markup = await render({ ...base, hostLabel: "minih-mbp", initialSession: record });
+  assert.match(markup, /Claude Sonnet 4\.6 · high/);
+  assert.match(markup, /Work directly/);
+  assert.match(markup, /Ask each time/);
+});
+
+test("the status strip wraps instead of clipping the permission chip", async () => {
+  const markup = await render({ ...base, hostLabel: "minih-mbp", initialSession: record });
+  // A sideways-scrolling row put the permission chip behind a long model
+  // label: at 390 px only its first glyph showed, so the row wraps now and
+  // only the model label is allowed to compress.
+  assert.match(markup, /flex-wrap/);
+  assert.doesNotMatch(markup, /overflow-x-auto/);
+  assert.match(markup, /min-w-0 max-w-\[190px\]/);
+  assert.match(markup, /Ask each time/);
 });

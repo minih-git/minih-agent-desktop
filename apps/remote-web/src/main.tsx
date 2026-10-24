@@ -18,11 +18,24 @@ import i18n from "i18next";
 
 import { BootFailure } from "./components/BootFailure.js";
 import { initI18n } from "./lib/i18n.js";
+import {
+  DARK_SCHEME_QUERY,
+  applyTheme,
+  readThemePreference,
+  resolveTheme,
+  watchSystemTheme,
+} from "./lib/theme.js";
 import "./styles.css";
 
 async function bootstrap(): Promise<void> {
   const container = document.getElementById("root");
   if (!container) throw new Error("the app root element is missing");
+  const darkQuery =
+    typeof window.matchMedia === "function" ? window.matchMedia(DARK_SCHEME_QUERY) : null;
+  applyTheme(document, resolveTheme(readThemePreference(), darkQuery?.matches ?? true));
+  // The appearance follows the OS for the whole session: this used to be a
+  // Settings-only listener, so the theme froze as soon as that screen closed.
+  watchSystemTheme(document, darkQuery);
   await initI18n();
   document.documentElement.lang = i18n.language;
   const root = createRoot(container);

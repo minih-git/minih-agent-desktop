@@ -18,23 +18,23 @@ export function Banner({
   className = "",
   ...rest
 }: BannerProps) {
-  let toneClass = "bg-[var(--rm-bg-inset)] text-[var(--rm-text-secondary)]";
-  let defaultIcon = null;
+  let toneClass = "bg-[var(--rm-bg-surface-2)] text-[var(--rm-text-secondary)]";
+  let defaultIcon: ReactNode = null;
 
   if (tone === "running") {
     toneClass =
-      "bg-[color-mix(in_srgb,var(--rm-running)_var(--rm-tint),var(--rm-bg-page))] text-[var(--rm-running)]";
+      "bg-[color-mix(in_srgb,var(--rm-running)_15%,transparent)] text-[var(--rm-running)]";
     defaultIcon = <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />;
   } else if (tone === "error") {
     toneClass =
-      "bg-[color-mix(in_srgb,var(--rm-error)_var(--rm-tint),var(--rm-bg-page))] text-[var(--rm-error)]";
+      "bg-[color-mix(in_srgb,var(--rm-error)_15%,transparent)] text-[var(--rm-error)]";
     defaultIcon = <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />;
   }
 
   return (
     <div
       role={tone === "error" ? "alert" : "status"}
-      className={`flex shrink-0 animate-[rm-fade-down_0.2s_cubic-bezier(0.2,0,0,1)] items-center gap-2 px-4 py-2 text-[14px] leading-[20px] ${toneClass} ${className}`}
+      className={`flex shrink-0 animate-[rm-fade-down_0.2s_var(--rm-ease-out)] items-center gap-2 border-b border-[var(--rm-hair)] px-4 py-2 text-[14px] leading-[20px] backdrop-blur-md ${toneClass} ${className}`}
       {...rest}
     >
       {icon ?? defaultIcon}

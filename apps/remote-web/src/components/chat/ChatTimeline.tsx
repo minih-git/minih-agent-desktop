@@ -239,10 +239,10 @@ function HtmlPreviewCard({
   code: string;
   onExpand: (preview: { title: string; code: string }) => void;
 }) {
+  const { t } = useTranslation();
   const [showSource, setShowSource] = useState(false);
   const frameHtml = useMemo(() => prepareHtmlForFrame(code), [code]);
   const title = useMemo(() => extractHtmlTitle(frameHtml) ?? "HTML", [frameHtml]);
-
   return (
     <div className="my-2 w-full overflow-hidden rounded-2xl border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] shadow-[var(--rm-shadow)]">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--rm-separator)] bg-[var(--rm-bg-inset)] px-3 py-2 text-[12px] text-[var(--rm-text-secondary)]">
@@ -261,7 +261,7 @@ function HtmlPreviewCard({
             className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] text-[var(--rm-text-secondary)] active:bg-[var(--rm-bg-surface)]"
           >
             <Code size={12} aria-hidden="true" />
-            <span>{showSource ? "预览" : "代码"}</span>
+            <span>{showSource ? t("timeline.html.preview") : t("timeline.html.code")}</span>
           </button>
           <button
             type="button"
@@ -273,7 +273,7 @@ function HtmlPreviewCard({
             className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-[var(--rm-link)] active:bg-[var(--rm-bg-surface)]"
           >
             <Maximize2 size={12} aria-hidden="true" />
-            <span>全屏</span>
+            <span>{t("timeline.html.fullscreen")}</span>
           </button>
         </div>
       </div>
@@ -494,7 +494,7 @@ export function ChatTimeline({
                   className="inline-flex h-8 items-center gap-1 rounded-lg bg-[var(--rm-bg-inset)] px-2.5 text-[13px] font-medium text-[var(--rm-text-secondary)] active:opacity-75"
                 >
                   <Code size={14} aria-hidden="true" />
-                  <span>{expandedShowSource ? "预览" : "代码"}</span>
+                  <span>{expandedShowSource ? t("timeline.html.preview") : t("timeline.html.code")}</span>
                 </button>
                 <button
                   type="button"

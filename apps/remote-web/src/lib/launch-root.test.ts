@@ -25,6 +25,8 @@ describe("launchRoot", () => {
   it("reopens the remembered root once one has been stored", () => {
     const storage = fakeStorage({ [LAST_ROOT_STORAGE_KEY]: "chats" });
     expect(launchRoot({ isNativeApp: true, hasHosts: true, storage })).toBe("chats");
+    storage.set(LAST_ROOT_STORAGE_KEY, "studio");
+    expect(launchRoot({ isNativeApp: true, hasHosts: true, storage })).toBe("studio");
     storage.set(LAST_ROOT_STORAGE_KEY, "hosts");
     expect(launchRoot({ isNativeApp: true, hasHosts: false, storage })).toBe("hosts");
   });
@@ -40,6 +42,8 @@ describe("storeLastRoot", () => {
     const storage = fakeStorage({});
     storeLastRoot("chats", storage);
     expect(storage.get(LAST_ROOT_STORAGE_KEY)).toBe("chats");
+    storeLastRoot("studio", storage);
+    expect(storage.get(LAST_ROOT_STORAGE_KEY)).toBe("studio");
     storeLastRoot("hosts", storage);
     expect(storage.get(LAST_ROOT_STORAGE_KEY)).toBe("hosts");
   });

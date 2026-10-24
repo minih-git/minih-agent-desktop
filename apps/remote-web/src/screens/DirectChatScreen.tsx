@@ -10,7 +10,7 @@
  * keeps streaming when the user leaves for D1 or Computers, so everything here
  * re-reads the store on change instead of holding the truth in component state.
  */
-import { Info, RotateCcw, Square } from "lucide-react";
+import { Code2, Globe, Info, Lightbulb, Mail, RotateCcw, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,11 +20,16 @@ import { ModelSheet } from "../components/ModelSheet.js";
 import { ChatComposer } from "../components/chat/ChatComposer.js";
 import { ChatTimeline } from "../components/chat/ChatTimeline.js";
 import { Button } from "../components/ui/Button.js";
-import { NavBar } from "../components/ui/NavBar.js";
+import { Callout } from "../components/ui/Callout.js";
+import { EmptyState } from "../components/ui/EmptyState.js";
+import { ModelPill, NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { Sheet } from "../components/ui/Sheet.js";
 import { watchVisibility } from "../lib/app-state.js";
 import { checkModelVisionCapability, isImageModel, resolveDirectModel } from "../lib/direct-chat/catalog.js";
+
+import { copyText } from "../lib/clipboard.js";
+import { IMAGE_PROTOCOL, resolveSendTarget, type SendTarget } from "../lib/direct-chat/target.js";
 import type {
   DirectChatAttempt,
   DirectChatMedia,
@@ -52,6 +57,7 @@ import {
   directChatHistory,
   directChatRunner,
   directChatScope,
+  directChatService,
   directChatStore,
   secureStore,
   subscribeDirectChat,
@@ -64,6 +70,12 @@ const DRAFT_DEBOUNCE_MS = 500;
 
 export type DirectChatScreenProps = {
   conversationId: string;
+  /**
+   * The model a not-yet-saved conversation was started on (ADR mobile-redesign
+   * D2). Absent for a conversation opened from a list, whose model is on its
+   * record.
+   */
+  draftModelId?: string;
   onBack: () => void;
   connection: DirectChatConnection | null;
   onConnect: () => void;
@@ -77,6 +89,7 @@ export type DirectChatScreenProps = {
 
 export function DirectChatScreen({
   conversationId,
+  draftModelId,
   onBack,
   connection,
   onConnect,
@@ -91,6 +104,13 @@ export function DirectChatScreen({
 
   const [transcript, setTranscript] = useState<DirectChatTranscript | null>(null);
   /** False until the first read finishes, so "new" is not a guess. */
+  /**
+   * The model a draft is on. A conversation that does not exist yet has no
+   * record to hold it, and writing the choice to the account's remembered model
+   * would move the next new chat (bug B2), so the draft owns it in this screen
+   * until the first message saves the record.
+   */
+  const [draftModel, setDraftModel] = useState<string | null>(draftModelId ?? null);
   const [loaded, setLoaded] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -98,7 +118,8 @@ export function DirectChatScreen({
   const [sending, setSending] = useState(false);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string; index: number } | null>(null);
   const [editText, setEditText] = useState("");
-
+  const [seededDraft, setSeededDraft] = useState<string | null>(null);
+  const [composerKey, setComposerKey] = useState(0);
   /**
    * Reads are numbered, and a result is applied only if it is still the newest
    * and still about this conversation: switching conversations quickly would
@@ -192,7 +213,14 @@ export function DirectChatScreen({
     setTranscript(null);
     setLoaded(false);
     setNotice(null);
+    setSeededDraft(null);
   }, [conversationId]);
+
+  // A draft opened for a particular model starts on it, and re-opening the same
+  // screen for another model must not keep the previous choice.
+  useEffect(() => {
+    setDraftModel(draftModelId ?? null);
+  }, [conversationId, draftModelId]);
 
   useEffect(() => {
     void reload();
@@ -220,12 +248,14 @@ export function DirectChatScreen({
   const archived = conversation?.archived === true;
 
   /**
-   * The model the next send uses, resolved from the cached catalog. A new
-   * conversation starts on the account's last explicit choice, and a stored one
-   * on what it remembered.
+   * The model the next send uses, resolved from the cached catalog. A stored
+   * conversation uses the model on its record; a draft uses the model it was
+   * opened on (ADR mobile-redesign D2), so switching model in an unsent
+   * conversation works — that was bug B1 — without touching the account's
+   * remembered model, which is bug B2.
    */
   const catalog: MinihRouterModel[] = connection?.models ?? [];
-  const wantedModelId = conversation?.nextModelId ?? connection?.lastModelId ?? null;
+  const wantedModelId = conversation?.nextModelId ?? draftModel ?? connection?.lastModelId ?? null;
   const nextModel = catalog.find((model) => model.id === wantedModelId) ?? null;
   /** True for a conversation opened before its first message exists. */
   const isNew = loaded && transcript === null;
@@ -236,10 +266,25 @@ export function DirectChatScreen({
   const foreignScope = Boolean(
     conversation && scope && scopeKey(conversation.scope) !== scopeKey(scope),
   );
-  const isImage = (transcript ? isImageConversation(transcript.conversation, transcript.attempts) : false) || (nextModel ? isImageModel(nextModel) : false);
+  /**
+   * A draft is an image draft only when the model it was opened on cannot hold a
+   * conversation: a model that declares both text and image output is a chat
+   * model when the user started here (D1, "the entry point chooses").
+   */
   const nextChoice = nextModel ? resolveDirectModel(nextModel) : null;
-  const usable = isImage ? Boolean(nextModel && isImageModel(nextModel)) : nextChoice?.usable === true;
-  const activeProtocol = isImage ? "openai-images" : (nextChoice && "protocol" in nextChoice ? nextChoice.protocol : "openai-completions");
+  const isImage = transcript
+    ? isImageConversation(transcript.conversation, transcript.attempts)
+    : nextModel !== null && nextChoice !== null && !nextChoice.usable && isImageModel(nextModel);
+  // One decision for the composer, retry, regenerate and edit-resend, so an
+  // image conversation can retry (bug B3) and a refusal always has a reason
+  // (bug B4).
+  const target = resolveSendTarget(nextModel, isImage);
+  const usable = target.ok;
+  const activeProtocol = target.ok
+    ? target.protocol
+    : isImage
+      ? IMAGE_PROTOCOL
+      : "openai-completions";
   const visionCap = nextModel ? checkModelVisionCapability(nextModel) : "unsupported";
   const supportsImages = visionCap === "supported" && !isImage;
 
@@ -363,6 +408,11 @@ export function DirectChatScreen({
     // `beginTurn` stored an empty draft with the message; the text in hand is
     // the message now, so no later flush may write it back as a draft.
     clearDraft();
+    // Now that a real conversation exists, the account remembers the model it
+    // uses — the right slot per operation, so an image job never becomes the
+    // next new chat's model (D2). A draft that was never sent never gets here.
+    if (isImage) directChatService().rememberImageModel(nextModel.id);
+    else directChatService().rememberModel(nextModel.id);
     await reload();
     const started = await runner.start({
       conversationId: saved.conversation.id,
@@ -392,16 +442,38 @@ export function DirectChatScreen({
     return true;
   }
 
+  /** Why a turn cannot be sent, in words. */
+  const refusalNotice = useCallback(
+    (value: SendTarget): string | null => {
+      if (value.ok) return null;
+      if (value.reason === "no-model") return t("directChat.noModel");
+      if (value.reason === "not-an-image-model") return t("directChat.notAnImageModel");
+      return t("directChat.modelUnavailable");
+    },
+    [t],
+  );
+
   /** D3 in its archived state offers restore instead of an input. */
   async function restore(): Promise<void> {
-    await history.setArchived(conversationId, false, new Date().toISOString());
+    const outcome = await history.setArchived(conversationId, false, new Date().toISOString());
+    if (!outcome.ok) setNotice(t("directChat.saveFailed"));
     await reload();
     onChanged?.();
   }
 
   async function retry(attempt: DirectChatAttempt) {
-    // A retry sends: without a connected account there is no key to send with.
-    if (!scope || !nextModel || nextChoice?.usable !== true) return;
+    // A retry sends the same operation the turn used, which for an image
+    // conversation is the image endpoint — the old guard asked the chat
+    // classifier first and always got "unusable" (bug B3).
+    if (!scope) {
+      setNotice(t("chats.connect"));
+      return;
+    }
+    const blocked = refusalNotice(target);
+    if (blocked !== null || !nextModel || !target.ok) {
+      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      return;
+    }
     const key = await createDirectChatSecret(secureStore()).read();
     if (!key) {
       setNotice(t("directChat.failure.unauthorized"));
@@ -411,7 +483,7 @@ export function DirectChatScreen({
       attempt,
       scope,
       model: nextModel,
-      protocol: nextChoice.protocol,
+      protocol: target.protocol,
       authKey: key,
     });
     if (!outcome.ok) {
@@ -420,16 +492,26 @@ export function DirectChatScreen({
     await reload();
     onChanged?.();
   }
-  const copyMessage = useCallback(async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Ignore clipboard permission failures
-    }
-  }, []);
+
+  const copyMessage = useCallback(
+    async (text: string) => {
+      // A copy that did not happen must not look like one that did (bug B11).
+      const outcome = await copyText(text, navigator.clipboard);
+      setNotice(outcome.ok ? null : t("directChat.copyFailed"));
+    },
+    [t],
+  );
 
   async function regenerateMessage(messageId: string): Promise<void> {
-    if (!scope || !nextModel || !usable || !transcript) return;
+    if (!scope || !transcript) {
+      setNotice(t("directChat.modelUnavailable"));
+      return;
+    }
+    const blocked = refusalNotice(target);
+    if (blocked !== null || !nextModel || !target.ok) {
+      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      return;
+    }
     const msg = transcript.messages.find((m) => m.id === messageId);
     if (!msg) return;
     const attempt = transcript.attempts.find(
@@ -445,7 +527,7 @@ export function DirectChatScreen({
       attempt,
       scope,
       model: nextModel,
-      protocol: activeProtocol,
+      protocol: target.protocol,
       authKey: key,
     });
     if (!outcome.ok) {
@@ -466,7 +548,15 @@ export function DirectChatScreen({
   }
 
   async function handleConfirmEditResend(): Promise<void> {
-    if (!editingMessage || !scope || !nextModel || !usable || !transcript) return;
+    if (!editingMessage || !scope || !transcript) {
+      setNotice(t("directChat.modelUnavailable"));
+      return;
+    }
+    const blocked = refusalNotice(target);
+    if (blocked !== null || !nextModel || !target.ok) {
+      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      return;
+    }
     const key = await createDirectChatSecret(secureStore()).read();
     if (!key) {
       setNotice(t("directChat.failure.unauthorized"));
@@ -509,12 +599,30 @@ export function DirectChatScreen({
     }
   }
 
+  const fillSuggestion = (promptText: string) => {
+    setSeededDraft(promptText);
+    setComposerKey((k) => k + 1);
+    persistDraft(promptText);
+  };
+
+  const hasMessages = Boolean(view && view.items.length > 0);
+
   return (
-    <Screen>
+    <Screen aurora={!hasMessages}>
       <NavBar
-        title={conversation?.title ?? t("chats.title")}
+        solid={hasMessages}
+        title={isNew ? t("chats.newChat") : (conversation?.title ?? t("chats.title"))}
         onBack={onBack}
         backLabel={t("common.back")}
+        modelPill={
+          connection ? (
+            <ModelPill
+              label={nextModel?.id ?? t("chats.modelUnset")}
+              disabled={!idle}
+              onClick={() => setModelsOpen(true)}
+            />
+          ) : undefined
+        }
         trailing={
           <Button variant="plain" size="icon" aria-label={t("directChat.info")} onClick={() => setInfoOpen(true)}>
             <Info className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
@@ -522,40 +630,102 @@ export function DirectChatScreen({
         }
       />
 
-      {connection ? (
-        <button
-          type="button"
-          onClick={() => setModelsOpen(true)}
-          disabled={!idle}
-          className="mx-3 mb-1 flex min-h-[34px] shrink-0 items-center gap-1.5 self-start rounded-full bg-[var(--rm-bg-inset)] px-3 text-[13px] text-[var(--rm-text-secondary)] disabled:opacity-50"
-        >
-          <span className="truncate">{nextModel?.id ?? t("chats.modelUnset")}</span>
-        </button>
-      ) : null}
-
       <ScreenContent hasDock className="[overflow-anchor:none]">
         {view && view.items.length > 0 ? (
-          <ChatTimeline
-            items={view.items}
-            resolveMedia={resolveMedia}
-            onCopyMessage={(item) => void copyMessage(item.text)}
-            onRegenerateMessage={(item) => void regenerateMessage(item.id)}
-            onEditResendMessage={(item) => handleStartEditResend(item.id)}
-          />
+          <>
+            <ChatTimeline
+              items={view.items}
+              resolveMedia={resolveMedia}
+              onCopyMessage={(item) => void copyMessage(item.text)}
+              onRegenerateMessage={(item) => void regenerateMessage(item.id)}
+              onEditResendMessage={(item) => handleStartEditResend(item.id)}
+            />
+            {live ? (
+              <div className="mt-2 flex items-center gap-2 px-1" aria-live="polite">
+                <span className="rm-caret" aria-hidden="true" />
+                <span className="rm-text-shimmer text-[13px]">{t("chats.replying")}</span>
+              </div>
+            ) : null}
+          </>
         ) : (
-          <div className="px-4 py-10 text-center text-[15px] leading-[22px] text-[var(--rm-text-muted)]">
-            {t("directChat.startHint")}
-          </div>
+          <EmptyState
+            aurora={false}
+            orb={true}
+            title={t("directChat.heroTitle")}
+            description={t("directChat.heroSubtitle")}
+            suggestions={
+              !foreignScope && !archived ? (
+                <div className="grid grid-cols-2 gap-2.5 text-left">
+                  {[
+                    {
+                      key: "email",
+                      icon: Mail,
+                      title: t("directChat.sug.email.title"),
+                      sub: t("directChat.sug.email.sub"),
+                      prompt: t("directChat.sug.email.prompt"),
+                    },
+                    {
+                      key: "code",
+                      icon: Code2,
+                      title: t("directChat.sug.code.title"),
+                      sub: t("directChat.sug.code.sub"),
+                      prompt: t("directChat.sug.code.prompt"),
+                    },
+                    {
+                      key: "translate",
+                      icon: Globe,
+                      title: t("directChat.sug.translate.title"),
+                      sub: t("directChat.sug.translate.sub"),
+                      prompt: t("directChat.sug.translate.prompt"),
+                    },
+                    {
+                      key: "ideas",
+                      icon: Lightbulb,
+                      title: t("directChat.sug.ideas.title"),
+                      sub: t("directChat.sug.ideas.sub"),
+                      prompt: t("directChat.sug.ideas.prompt"),
+                    },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => fillSuggestion(item.prompt)}
+                        className="flex flex-col items-start rounded-[18px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] p-3.5 text-left backdrop-blur-md transition-transform duration-150 active:scale-[0.975] active:bg-[var(--rm-bg-surface-2)]"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="mb-2 grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--rm-bg-surface-2)] text-[var(--rm-accent-2)]"
+                        >
+                          <Icon className="h-[18px] w-[18px] stroke-[2]" />
+                        </span>
+                        <b className="block text-[14px] font-semibold leading-[19px] text-[var(--rm-text-primary)]">
+                          {item.title}
+                        </b>
+                        <small className="mt-0.5 block text-[12px] leading-[16px] text-[var(--rm-text-muted)]">
+                          {item.sub}
+                        </small>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : undefined
+            }
+          />
         )}
 
         {foreignScope ? (
-          <div className="mt-3 rounded-[12px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+          <Callout tone="neutral" className="mt-3">
             {t("directChat.readOnlyScope")}
-          </div>
+          </Callout>
         ) : null}
 
         {view?.retryable && !foreignScope ? (
-          <div className="mt-3 flex items-center gap-2 rounded-[12px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+          <Callout
+            tone={view.retryable.state === "failed" ? "error" : "warn"}
+            className="mt-3 flex items-center gap-2"
+          >
             <span className="min-w-0 flex-1">
               {view.retryable.state === "stopped"
                 ? t("directChat.state.stopped")
@@ -582,11 +752,13 @@ export function DirectChatScreen({
                 {t("directChat.newChat")}
               </Button>
             )}
-          </div>
+          </Callout>
         ) : null}
 
         {notice ? (
-          <p className="mt-2 px-1 text-[13px] leading-[18px] text-[var(--rm-error)]">{notice}</p>
+          <Callout tone="error" className="mt-3 py-2.5 text-[13px]">
+            {notice}
+          </Callout>
         ) : null}
       </ScreenContent>
 
@@ -631,15 +803,17 @@ export function DirectChatScreen({
           null
         ) : (
           <ChatComposer
+            key={composerKey}
             sending={sending}
             disabled={false}
             archived={false}
             queued={false}
             hideAttachments={!supportsImages}
             placeholder={isImage ? t("imageGen.promptPlaceholder") : undefined}
-            initialText={conversation?.draft ?? accountDraft ?? ""}
+            initialText={seededDraft ?? conversation?.draft ?? accountDraft ?? ""}
             onDraftChange={persistDraft}
             onSend={async (payload) => {
+              setSeededDraft(null);
               const sent = await send(payload.text, payload.attachments);
               return sent;
             }}
@@ -652,24 +826,31 @@ export function DirectChatScreen({
           open={modelsOpen}
           models={catalog}
           mode={isImage ? "image" : "chat"}
-          selectedId={conversation?.nextModelId ?? null}
+          selectedId={wantedModelId}
           onClose={() => setModelsOpen(false)}
           onSelect={(model) => {
-            if (isImage) {
-              if (!isImageModel(model) || !conversation) return;
-              const previous = conversation.nextModelId;
+            const choice = resolveDirectModel(model);
+            // The operation is what the row can do, not what the sheet shows:
+            // an image-only row picks the image protocol, a chat row its own.
+            const protocol: string = isImage
+              ? "openai-images"
+              : choice.usable
+                ? choice.protocol
+                : "";
+            if (!isImage && !choice.usable) return;
+            if (isImage && !isImageModel(model)) return;
+            const previous = wantedModelId;
+            if (conversation) {
               void history
-                .setNextModel(conversation.id, model.id, "openai-images", new Date().toISOString())
+                .setNextModel(conversation.id, model.id, protocol, new Date().toISOString())
                 .then(reload);
-              if (previous && previous !== model.id) setNotice(t("directChat.modelChanged", { model: model.id }));
             } else {
-              const choice = resolveDirectModel(model);
-              if (!choice.usable || !conversation) return;
-              const previous = conversation.nextModelId;
-              void history
-                .setNextModel(conversation.id, model.id, choice.protocol, new Date().toISOString())
-                .then(reload);
-              if (previous && previous !== model.id) setNotice(t("directChat.modelChanged", { model: model.id }));
+              // A draft has no record yet, so the choice lives here until the
+              // first message creates one (bug B1).
+              setDraftModel(model.id);
+            }
+            if (previous && previous !== model.id) {
+              setNotice(t("directChat.modelChanged", { model: model.id }));
             }
           }}
         />
@@ -720,19 +901,37 @@ export function DirectChatScreen({
         }}
         onArchive={async () => {
           if (!conversation) return;
-          await history.setArchived(conversationId, !conversation.archived, new Date().toISOString());
+          const outcome = await history.setArchived(
+            conversationId,
+            !conversation.archived,
+            new Date().toISOString(),
+          );
+          if (!outcome.ok) {
+            // The sheet offers "stop and archive" instead, so this is the
+            // path a caller that ignored `idle` ends up on (bug B6).
+            setNotice(t("directChat.stopFirst"));
+            return;
+          }
           await reload();
           onChanged?.();
           if (!conversation.archived) onBack();
         }}
+        onStopThenArchive={async () => {
+          await runner.stop(conversationId);
+          const outcome = await history.setArchived(conversationId, true, new Date().toISOString());
+          if (!outcome.ok) setNotice(t("directChat.saveFailed"));
+          await reload();
+          onChanged?.();
+          if (outcome.ok) onBack();
+        }}
         onCopy={async () => {
-          if (!transcript) return false;
-          try {
-            await navigator.clipboard.writeText(transcriptAsMarkdown(transcript));
-            return true;
-          } catch {
+          if (!transcript) {
+            setNotice(t("directChat.copyFailed"));
             return false;
           }
+          const outcome = await copyText(transcriptAsMarkdown(transcript), navigator.clipboard);
+          if (!outcome.ok) setNotice(t("directChat.copyFailed"));
+          return outcome.ok;
         }}
         onDelete={async () => {
           await runner.stop(conversationId);

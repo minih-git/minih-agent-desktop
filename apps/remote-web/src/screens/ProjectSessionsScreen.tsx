@@ -1,31 +1,19 @@
 /**
- * S5b: the sessions of one project (spec §17.2).
+ * S5b: the sessions of one project, with a horizontal project switcher rail at
+ * the top when multiple projects exist (spec §17.2, ADR mobile-redesign §3 Stage 5).
  *
- * This page used to be the computer's whole session list, grouped under
- * collapsible project headings. §17 moved the grouping up into a page of its own,
- * so what is left here answers a narrower question — "what happened in *this*
- * project" — and can spend the space on sections that matter: what needs the
- * user, what is running, and everything else newest first.
- *
- * The model catalog and the project catalog are still read the way the old screen
- * read them (`model/list` once per sheet open; `project/list` only to offer the
- * new-session choices), and every credential rule is unchanged.
+ * The model catalog and the project catalog are read the same way (`model/list`
+ * once per sheet open; `project/list` for the rail and new-session choices),
+ * and every status vocabulary rule from `session-groups`, `session-format`, and
+ * `host-status` is preserved without re-deriving status in the component.
  */
 import type { RacpModelSummary, RacpProjectSummary, RacpSession } from "@minih-agent/shared";
-import { Plus, RefreshCw } from "lucide-react";
+import { Folder, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AddProjectPanel } from "./AddProjectPanel.js";
-import type { HostStatusView } from "../hooks/useHostStatus.js";
-import type { HostCredential } from "../lib/credential-port.js";
-import type { OperationFailure } from "../lib/errors.js";
-import { createHostClient, type HostClient } from "../lib/host-client.js";
-import { hostStatusFromFailure } from "../lib/host-status.js";
-import { createSession, listModels, listProjects, listSessions, newSessionMode } from "../lib/mutations.js";
-import { gatewayOrigin } from "../lib/runtime.js";
-import { UNGROUPED_KEY, projectSessions } from "../lib/session-groups.js";
-import { createSessionViews, needsUser, sessionStateOf, type SessionStateView } from "../lib/session-state.js";
+import { NewSessionSheet, type NewSessionChoice } from "../components/sessions/NewSessionSheet.js";
+import { SessionRow } from "../components/sessions/SessionRow.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
 import { EmptyState } from "../components/ui/EmptyState.js";
@@ -35,8 +23,33 @@ import { Screen, ScreenContent } from "../components/ui/Screen.js";
 import { SectionHeader } from "../components/ui/SectionHeader.js";
 import { Skeleton } from "../components/ui/Skeleton.js";
 import { StatusDot } from "../components/ui/StatusDot.js";
-import { NewSessionSheet, type NewSessionChoice } from "../components/sessions/NewSessionSheet.js";
-import { SessionRow } from "../components/sessions/SessionRow.js";
+import { SessionStatusPill } from "../components/ui/StatusMark.js";
+import type { HostStatusView } from "../hooks/useHostStatus.js";
+import type { HostCredential } from "../lib/credential-port.js";
+import type { OperationFailure } from "../lib/errors.js";
+import { createHostClient, type HostClient } from "../lib/host-client.js";
+import { hostStatusFromFailure } from "../lib/host-status.js";
+import {
+  createSession,
+  listModels,
+  listProjects,
+  listSessions,
+  newSessionMode,
+} from "../lib/mutations.js";
+import { gatewayOrigin } from "../lib/runtime.js";
+import {
+  projectSessions,
+  summarizeProjects,
+  UNGROUPED_KEY,
+  type ProjectSummary,
+} from "../lib/session-groups.js";
+import {
+  createSessionViews,
+  needsUser,
+  sessionStateOf,
+  type SessionStateView,
+} from "../lib/session-state.js";
+import { AddProjectPanel } from "./AddProjectPanel.js";
 
 export interface ProjectSessionsScreenProps {
   hostId: string;
@@ -48,6 +61,12 @@ export interface ProjectSessionsScreenProps {
   /** Roles the Gateway granted this device; absent means "not recorded yet". */
   roles?: readonly string[];
   onOpenSession: (session: RacpSession) => void;
+  /**
+   * Switch the rail to another project. The parent rewrites the current screen
+   * entry instead of pushing a new one, so Back still returns to the project
+   * list and the project the user comes back to is the one they left.
+   */
+  onSwitchProject: (project: { id: string; label: string }) => void;
   onBack: () => void;
 }
 
@@ -63,16 +82,11 @@ export function ProjectSessionsScreen({
   credential,
   roles,
   onOpenSession,
+  onSwitchProject,
   onBack,
 }: ProjectSessionsScreenProps) {
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<RacpSession[] | null>(null);
-  /**
-   * The list read is also this screen's reachability probe: `session/list`
-   * answers 503 while the Host link is down and 401 before this Host has adopted
-   * the device, so a second request to ask the same question would cost a round
-   * trip per visit and could disagree with the list on screen.
-   */
   const [status, setStatus] = useState<HostStatusView>({ kind: "checking" });
   const [failure, setFailure] = useState<OperationFailure | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -86,9 +100,16 @@ export function ProjectSessionsScreen({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const clientRef = useRef<HostClient | null>(null);
   const credentialKey = credential.kind === "cookie" ? credential.csrfToken : credential.token;
+
+  /**
+   * The screen names the project it shows, so there is no local copy of the
+   * choice to drift from it: the rail navigates, and the highlight follows.
+   */
+  const currentProjectId = projectId;
+  const currentProjectLabel = projectLabel;
+
   const mode = newSessionMode(roles, projects);
-  const canCreate = mode !== "hidden" && projectId !== UNGROUPED_KEY;
-  const readOnly = roles !== undefined && !roles.includes("controller");
+  const canCreate = mode !== "hidden" && currentProjectId !== UNGROUPED_KEY;
 
   useEffect(() => {
     const client = createHostClient({
@@ -96,7 +117,7 @@ export function ProjectSessionsScreen({
       hostId,
       credential,
       onEvent: () => undefined,
-      log: (level, message, data) => console.warn(`[remote-web] ${message}`, data ?? {}),
+      log: (_level, message, data) => console.warn(`[remote-web] ${message}`, data ?? {}),
     });
     clientRef.current = client;
     return () => {
@@ -121,16 +142,12 @@ export function ProjectSessionsScreen({
     }
   }, []);
 
-  /**
-   * The project catalog is only needed for the new-session sheet, so a read-only
-   * device never asks for it.
-   */
   const loadProjects = useCallback(async (): Promise<void> => {
     const client = clientRef.current;
-    if (!client || readOnly) return;
+    if (!client) return;
     const result = await listProjects(client);
     setProjects(result.ok ? result.value : []);
-  }, [readOnly]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -152,26 +169,43 @@ export function ProjectSessionsScreen({
   const stateOf = (session: RacpSession): SessionStateView =>
     sessionStateOf(session, sessionViews.get(hostId, session.id));
 
+  const projectSummaries: ProjectSummary[] =
+    sessions === null || projects === null
+      ? []
+      : summarizeProjects(sessions, projects, stateOf);
+
   const rows = sessions ?? [];
   const mine =
-    projectId === UNGROUPED_KEY
+    currentProjectId === UNGROUPED_KEY
       ? rows.filter((session) => {
-          const known = projects?.some((project) => project.id === session.projectId && !project.archived);
+          const known = projects?.some(
+            (project) => project.id === session.projectId && !project.archived,
+          );
           return !known;
         })
       : projectSessions(
-          rows.filter((session) => session.projectId === projectId),
-          projectId,
+          rows.filter((session) => session.projectId === currentProjectId),
+          currentProjectId,
         );
   const waitingCount = mine.filter((session) => needsUser(stateOf(session))).length;
 
   const sections: Section[] = [
-    { key: "needsYou" as const, title: t("sessions.sections.needsYou"), rows: mine.filter((session) => needsUser(stateOf(session))) },
-    { key: "running" as const, title: t("sessions.sections.running"), rows: mine.filter((session) => stateOf(session) === "running") },
+    {
+      key: "needsYou" as const,
+      title: t("sessions.sections.needsYou"),
+      rows: mine.filter((session) => needsUser(stateOf(session))),
+    },
+    {
+      key: "running" as const,
+      title: t("sessions.sections.running"),
+      rows: mine.filter((session) => stateOf(session) === "running"),
+    },
     {
       key: "recent" as const,
       title: t("sessions.sections.recent"),
-      rows: mine.filter((session) => !needsUser(stateOf(session)) && stateOf(session) !== "running"),
+      rows: mine.filter(
+        (session) => !needsUser(stateOf(session)) && stateOf(session) !== "running",
+      ),
     },
   ].filter((section) => section.rows.length > 0);
 
@@ -201,16 +235,28 @@ export function ProjectSessionsScreen({
     const result = await listModels(client);
     setModelsLoaded(true);
     setModels(result.ok ? result.value : []);
-    setModelsFailure(result.ok || result.failure.code === "CAPABILITY_UNAVAILABLE" ? null : result.failure.message);
+    setModelsFailure(
+      result.ok || result.failure.code === "CAPABILITY_UNAVAILABLE"
+        ? null
+        : result.failure.message,
+    );
   }, [modelsLoaded]);
 
   const newSessionEntry = () => {
-    if (projectId === UNGROUPED_KEY) return null;
+    if (currentProjectId === UNGROUPED_KEY) return null;
     if (mode === "hidden") {
-      return <span className="text-[13px] text-[var(--rm-text-muted)]">{t("sessions.createReadOnly")}</span>;
+      return (
+        <span className="text-[13px] text-[var(--rm-text-muted)]">
+          {t("sessions.createReadOnly")}
+        </span>
+      );
     }
     if (mode === "unavailable") {
-      return <span className="text-[13px] text-[var(--rm-text-muted)]">{t("sessions.noProjects")}</span>;
+      return (
+        <span className="text-[13px] text-[var(--rm-text-muted)]">
+          {t("sessions.noProjects")}
+        </span>
+      );
     }
     return (
       <button
@@ -218,14 +264,15 @@ export function ProjectSessionsScreen({
         onClick={() => void openNewSessionSheet()}
         disabled={creating !== null}
         aria-label={t("sessions.create")}
-        className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] active:opacity-60 disabled:opacity-40"
+        className="flex h-9 w-9 items-center justify-center rounded-[10px] text-[var(--rm-text-secondary)] active:opacity-60 disabled:opacity-40"
       >
         <Plus className="h-5 w-5" aria-hidden="true" />
       </button>
     );
   };
 
-  const title = projectId === UNGROUPED_KEY ? t("sessions.otherGroup") : projectLabel;
+  const title =
+    currentProjectId === UNGROUPED_KEY ? t("sessions.otherGroup") : currentProjectLabel;
   const subtitle = (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--rm-text-secondary)]">
       <StatusDot status={isOnline ? "online" : "offline"} size="small" />
@@ -236,6 +283,7 @@ export function ProjectSessionsScreen({
   return (
     <Screen>
       <NavBar
+        solid
         title={title}
         subtitle={subtitle}
         onBack={onBack}
@@ -244,12 +292,18 @@ export function ProjectSessionsScreen({
             {!failure ? newSessionEntry() : null}
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={() => {
+                void load();
+                void loadProjects();
+              }}
               disabled={isRefreshing}
               aria-label={t("common.refresh")}
-              className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] active:opacity-60"
+              className="flex h-9 w-9 items-center justify-center rounded-[10px] text-[var(--rm-text-secondary)] active:opacity-60"
             >
-              <RefreshCw className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+              <RefreshCw
+                className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
             </button>
           </div>
         }
@@ -277,6 +331,77 @@ export function ProjectSessionsScreen({
           </div>
         ) : null}
 
+        {/* Horizontal project switcher rail (prototype 6b) */}
+        {projectSummaries.length > 0 ? (
+          <section aria-label={t("projects.title")} className="mb-2">
+            <SectionHeader
+              title={t("projects.title")}
+              action={
+                <span className="text-[var(--rm-text-muted)]">
+                  {projectSummaries.length}
+                </span>
+              }
+            />
+            <div className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pt-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {projectSummaries.map((summary) => {
+                const summaryId = summary.projectId ?? summary.key;
+                const summaryLabel = summary.label ?? t("sessions.otherGroup");
+                const isSelected = summaryId === currentProjectId;
+                return (
+                  <button
+                    key={summary.key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => {
+                      if (isSelected) return;
+                      onSwitchProject({ id: summaryId, label: summary.label ?? "" });
+                    }}
+                    className={`flex w-[156px] shrink-0 flex-col items-start rounded-[18px] p-3 text-left transition-transform duration-150 ease-[var(--rm-ease-out)] active:scale-[0.97] ${
+                      isSelected
+                        ? "bg-[image:var(--rm-aurora)] text-white shadow-[0_8px_20px_-6px_rgba(124,92,255,0.45)]"
+                        : "border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] text-[var(--rm-text-primary)] backdrop-blur-md"
+                    }`}
+                  >
+                    <div className="mb-2 flex w-full items-center justify-between gap-1.5">
+                      <span
+                        aria-hidden="true"
+                        className={`grid h-7 w-7 shrink-0 place-items-center rounded-[9px] ${
+                          isSelected
+                            ? "bg-white/25 text-white"
+                            : "bg-[var(--rm-bg-surface-2)] text-[var(--rm-accent-2)]"
+                        }`}
+                      >
+                        <Folder className="h-3.5 w-3.5 stroke-[2.2]" />
+                      </span>
+                      {!isSelected && summary.waiting > 0 ? (
+                        <SessionStatusPill view="approval" count={summary.waiting} />
+                      ) : !isSelected && summary.running > 0 ? (
+                        <SessionStatusPill view="running" count={summary.running} />
+                      ) : null}
+                    </div>
+                    <b
+                      className={`block w-full truncate text-[14px] font-semibold leading-[18px] ${
+                        isSelected ? "text-white" : "text-[var(--rm-text-primary)]"
+                      }`}
+                    >
+                      {summaryLabel}
+                    </b>
+                    <small
+                      className={`mt-0.5 block truncate text-[11px] leading-[15px] ${
+                        isSelected ? "text-white/80" : "text-[var(--rm-text-muted)]"
+                      }`}
+                    >
+                      {summary.total === 0
+                        ? t("projects.noSessions")
+                        : t("projects.sessionCount", { count: summary.total })}
+                    </small>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
         {choosing && canCreate ? (
           addingProject ? (
             <div className="mb-4">
@@ -295,7 +420,7 @@ export function ProjectSessionsScreen({
               projects={projects ?? []}
               models={models}
               modelsFailure={modelsFailure}
-              initialProjectId={projectId}
+              initialProjectId={currentProjectId}
               projectLocked
               creating={creating !== null}
               failure={createFailure ? createFailure.message || t("operation.sessionCreate") : null}
@@ -334,7 +459,9 @@ export function ProjectSessionsScreen({
               <section key={section.key} aria-label={section.title}>
                 <SectionHeader
                   title={section.title}
-                  action={<span className="text-[var(--rm-text-muted)]">{section.rows.length}</span>}
+                  action={
+                    <span className="text-[var(--rm-text-muted)]">{section.rows.length}</span>
+                  }
                 />
                 <ListGroup>
                   {section.rows.map((session) => (
@@ -342,7 +469,9 @@ export function ProjectSessionsScreen({
                       key={session.id}
                       session={session}
                       view={stateOf(session)}
-                      {...(section.key === "needsYou" && waitingCount > 1 ? { waitingCount } : {})}
+                      {...(section.key === "needsYou" && waitingCount > 1
+                        ? { waitingCount }
+                        : {})}
                       onOpen={() => onOpenSession(session)}
                     />
                   ))}

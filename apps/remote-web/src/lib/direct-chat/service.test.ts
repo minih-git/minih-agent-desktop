@@ -130,6 +130,7 @@ describe("connecting a model account", () => {
       keyName: "phone",
       maskedKey: "sk-gl-…0001",
       lastModelId: null,
+      lastImageModelId: null,
       connectedAt: "2026-10-21T09:00:00.000Z",
     });
     expect(record?.models.map((entry) => entry.id)).toEqual(["gpt-4.1"]);
@@ -359,6 +360,7 @@ describe("the connection's status", () => {
       keyName: "phone",
       maskedKey: "",
       lastModelId: null,
+      lastImageModelId: null,
       defaultChatModelId: null,
       defaultImageModelId: null,
       connectedAt: "2026-10-21T09:00:00.000Z",
@@ -455,6 +457,7 @@ describe("the connection record", () => {
       keyName: "phone",
       maskedKey: "sk-gl-…0001",
       lastModelId: null,
+      lastImageModelId: null,
       defaultChatModelId: null,
       defaultImageModelId: null,
       connectedAt: "2026-10-21T09:00:00.000Z",
@@ -477,6 +480,7 @@ describe("the connection record", () => {
       keyName: "",
       maskedKey: "",
       lastModelId: null,
+      lastImageModelId: null,
       defaultChatModelId: null,
       defaultImageModelId: null,
       connectedAt: "",

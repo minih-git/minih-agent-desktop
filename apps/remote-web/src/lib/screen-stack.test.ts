@@ -67,12 +67,17 @@ describe("previousScreen", () => {
   });
 
   it("returns D2 to the page it was opened from", () => {
-    // From D1's empty state, or a new chat without a key: back is Chats.
+    // From D1's empty state, Studio's empty state, or a new chat without a key.
     expect(previousScreen({ kind: "modelGateway", from: "chats" })).toEqual({ kind: "chats" });
+    expect(previousScreen({ kind: "modelGateway", from: "studio" })).toEqual({ kind: "studio" });
     // From Settings: back is Settings, which itself returns to its own root.
     expect(previousScreen({ kind: "modelGateway", from: "chats", viaSettings: true })).toEqual({
       kind: "settings",
       from: "chats",
+    });
+    expect(previousScreen({ kind: "modelGateway", from: "studio", viaSettings: true })).toEqual({
+      kind: "settings",
+      from: "studio",
     });
     expect(previousScreen({ kind: "modelGateway", from: "hosts", viaSettings: true })).toEqual({
       kind: "settings",
@@ -80,22 +85,26 @@ describe("previousScreen", () => {
     });
   });
 
-  it("returns Settings to the root its gear was opened from", () => {
+  it("returns Settings to the root its avatar/gear was opened from", () => {
     expect(previousScreen({ kind: "settings", from: "chats" })).toEqual({ kind: "chats" });
+    expect(previousScreen({ kind: "settings", from: "studio" })).toEqual({ kind: "studio" });
     expect(previousScreen({ kind: "settings", from: "hosts" })).toEqual({ kind: "hosts" });
   });
 
-  it("has nowhere to go from either root, so hardware back there exits", () => {
+  it("has nowhere to go from any of the three roots, so hardware back there exits", () => {
     expect(previousScreen({ kind: "chats" })).toBeNull();
+    expect(previousScreen({ kind: "studio" })).toBeNull();
     expect(previousScreen({ kind: "hosts" })).toBeNull();
   });
 
-  it("recognizes exactly the two roots", () => {
+  it("recognizes exactly the three roots", () => {
     expect(isRootScreen({ kind: "chats" })).toBe(true);
+    expect(isRootScreen({ kind: "studio" })).toBe(true);
     expect(isRootScreen({ kind: "hosts" })).toBe(true);
     expect(isRootScreen({ kind: "session", hostId: "h1", sessionId: "s1", title: "" })).toBe(false);
     expect(isRootScreen({ kind: "settings", from: "chats" })).toBe(false);
     expect(isRootKind("chats")).toBe(true);
+    expect(isRootKind("studio")).toBe(true);
     expect(isRootKind("hosts")).toBe(true);
     expect(isRootKind("session")).toBe(false);
     expect(isRootKind("nope")).toBe(false);
@@ -107,5 +116,8 @@ describe("the read-only list of an earlier account", () => {
     expect(
       previousScreen({ kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "42", from: "hosts" }),
     ).toEqual({ kind: "settings", from: "hosts" });
+    expect(
+      previousScreen({ kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "42", from: "studio" }),
+    ).toEqual({ kind: "settings", from: "studio" });
   });
 });

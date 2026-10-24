@@ -7,7 +7,7 @@ import {
   liveAttemptOf,
   type BeginTurnInput,
 } from "./history.js";
-import { scopeKey, titleFromMessage } from "./history-store.js";
+import { scopeDependency, scopeKey, titleFromMessage } from "./history-store.js";
 import { createMemoryDirectChatStore } from "./memory-store.js";
 
 const SCOPE = { gatewayRoot: "https://models.example.test", accessKeyId: "42" };
@@ -598,5 +598,159 @@ describe("anti-resurrection on deletion", () => {
     expect(finishedAttempt.state).toBe("complete");
     expect(await store.conversation(created.conversation.id)).toBeNull();
     expect(await store.messages(created.conversation.id)).toEqual([]);
+  });
+});
+
+/**
+ * Bug B6: archiving a conversation whose reply was still arriving returned
+ * nothing at all, so the sheet and the list showed no reaction — the action was
+ * silently dropped. The refusal is a value now, so both callers can offer
+ * "stop and archive" instead of a button that does nothing.
+ */
+describe("archiving says what happened", () => {
+  it("archives a conversation whose reply has finished", async () => {
+    const { history, turn } = harness();
+    const created = await history.beginTurn(turn());
+    if (!created.ok) throw new Error("setup failed");
+    await history.finish(created.attempt, { state: "complete", text: "ok", now: T0 });
+
+    expect(await history.setArchived(created.conversation.id, true, T0)).toEqual({ ok: true });
+    expect((await history.transcript(created.conversation.id))?.conversation.archived).toBe(true);
+  });
+
+  it("restores without asking for a stop", async () => {
+    const { history, turn } = harness();
+    const created = await history.beginTurn(turn());
+    if (!created.ok) throw new Error("setup failed");
+    await history.finish(created.attempt, { state: "complete", text: "ok", now: T0 });
+    await history.setArchived(created.conversation.id, true, T0);
+    const again = await history.beginTurn(turn({ conversationId: created.conversation.id }));
+    // The archived record refuses a new turn; restoring is what reopens it.
+    expect(again.ok).toBe(false);
+
+    expect(await history.setArchived(created.conversation.id, false, T0)).toEqual({ ok: true });
+    expect((await history.transcript(created.conversation.id))?.conversation.archived).toBe(false);
+  });
+
+  it("refuses while a reply is arriving, and names the reason", async () => {
+    const { history, turn } = harness();
+    const created = await history.beginTurn(turn());
+    if (!created.ok) throw new Error("setup failed");
+    await history.checkpoint(created.attempt, "still arriving", T0);
+
+    expect(await history.setArchived(created.conversation.id, true, T0)).toEqual({
+      ok: false,
+      reason: "busy",
+    });
+    expect((await history.transcript(created.conversation.id))?.conversation.archived).toBe(false);
+  });
+
+  it("reports a conversation that is already gone", async () => {
+    const { history } = harness();
+    expect(await history.setArchived("missing", true, T0)).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+  });
+});
+
+/**
+ * Bug found in review: Studio's "delete this image" called `remove(conversation)`,
+ * so deleting one picture from a conversation that held several deleted them
+ * all. The removal is per generation now.
+ */
+describe("deleting one image out of a conversation", () => {
+  async function twoGenerations() {
+    const { history, turn, store } = harness();
+    const first = await history.beginTurn(turn({ text: "a red fox" }));
+    if (!first.ok) throw new Error("setup failed");
+    await history.finish(first.attempt, { state: "complete", text: "done", now: T0 });
+    const second = await history.beginTurn(
+      turn({ conversationId: first.conversation.id, text: "a blue heron" }),
+    );
+    if (!second.ok) throw new Error("setup failed");
+    await history.finish(second.attempt, { state: "complete", text: "done", now: T0 });
+    return { history, turn, store, conversationId: first.conversation.id, first, second };
+  }
+
+  it("keeps the other generations and their messages", async () => {
+    const { history, store, conversationId, first, second } = await twoGenerations();
+
+    expect(await history.removeImage(conversationId, second.attempt.id)).toEqual({
+      ok: true,
+      conversationRemoved: false,
+    });
+
+    const transcript = await history.transcript(conversationId);
+    expect(transcript?.attempts.map((attempt) => attempt.id)).toEqual([first.attempt.id]);
+    // The prompt and reply of the removed generation go with it; the other pair
+    // stays, so the conversation still reads as one exchange.
+    expect(transcript?.messages).toHaveLength(2);
+    expect(store.snapshot().conversations).toHaveLength(1);
+  });
+
+  it("removes the conversation when it held nothing else", async () => {
+    const { history, store, conversationId, first } = await twoGenerations();
+    await history.removeImage(conversationId, first.attempt.id);
+    const last = (await history.transcript(conversationId))?.attempts[0];
+    if (!last) throw new Error("expected the other generation to remain");
+
+    expect(await history.removeImage(conversationId, last.id)).toEqual({
+      ok: true,
+      conversationRemoved: true,
+    });
+    expect(await history.transcript(conversationId)).toBeNull();
+    expect(store.snapshot().messages).toEqual([]);
+    expect(store.snapshot().attempts).toEqual([]);
+  });
+
+  it("refuses while that generation is still arriving", async () => {
+    const { history, turn, conversationId, first } = await twoGenerations();
+    const live = await history.beginTurn(
+      turn({ conversationId, text: "a third prompt" }),
+    );
+    if (!live.ok) throw new Error("setup failed");
+    await history.checkpoint(live.attempt, "still arriving", T0);
+
+    expect(await history.removeImage(conversationId, live.attempt.id)).toEqual({
+      ok: false,
+      reason: "busy",
+    });
+    expect((await history.transcript(conversationId))?.attempts).toHaveLength(3);
+    expect(first.ok).toBe(true);
+  });
+
+  it("reports a generation that is already gone", async () => {
+    const { history, conversationId } = await twoGenerations();
+    expect(await history.removeImage(conversationId, "att-missing")).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+    expect(await history.removeImage("conv-missing", "att-x")).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+  });
+});
+
+/**
+ * Review fix: Studio reloaded its whole gallery on every render because its
+ * effect depended on `directChatScope()`, which returns a new object each call.
+ * The dependency is a value now; this pins what it must be equal for.
+ */
+describe("the value an effect may depend on for a scope", () => {
+  it("is equal for the same account, whatever object it is asked about", () => {
+    const a = { gatewayRoot: "https://models.example.test", accessKeyId: "42" };
+    const b = { ...a };
+    expect(scopeDependency(a)).toBe(scopeDependency(b));
+    expect(a).not.toBe(b);
+  });
+
+  it("differs between accounts and is null with no account", () => {
+    const mine = { gatewayRoot: "https://models.example.test", accessKeyId: "42" };
+    const other = { gatewayRoot: "https://models.example.test", accessKeyId: "99" };
+    expect(scopeDependency(mine)).not.toBe(scopeDependency(other));
+    expect(scopeDependency(null)).toBeNull();
+    expect(scopeDependency(undefined)).toBeNull();
   });
 });

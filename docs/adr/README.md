@@ -24,6 +24,7 @@ Each ADR includes:
 | mobile-experience-completeness | [Mobile daily-use completeness and image workflows](mobile-experience-completeness.md) | Ready for bounded implementation; no device acceptance claimed |
 | optional-terminal-plugin | [Optional embedded terminal plugin](optional-terminal-plugin.md) | Accepted for implementation |
 | mobile-direct-gateway-chat | [Mobile direct gateway chat alongside remote computers](mobile-direct-gateway-chat.md) | Accepted |
+| mobile-redesign | [Mobile client redesign: model capability, broken journeys, IA and visual system](mobile-redesign.md) | Accepted — implemented on feat/mobile-redesign; no device acceptance claimed |
 | background-bash-task-ownership | [Host-owned background Bash tasks](background-bash-task-ownership.md) | Accepted for implementation |
 | network-center-gateway-issued-identity | [Gateway-issued network center identity](network-center-gateway-issued-identity.md) | Accepted for implementation |
 | remote-control-router-account-binding | [Router-account binding for remote control](remote-control-router-account-binding.md) | Accepted for implementation (post-MVP; D666; amends ADR 0331) |

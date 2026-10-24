@@ -18,10 +18,12 @@
  * `~/…`, because the absolute form would print the account name on a phone.
  */
 import type { RacpProjectSummary } from "@minih-agent/shared";
+import { Folder } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, FailureBanner } from "../components/Chrome.js";
+import { FailureBanner } from "../components/Chrome.js";
+import { Button } from "../components/ui/Button.js";
 import type { OperationFailure } from "../lib/errors.js";
 import type { HostClient } from "../lib/host-client.js";
 import { browseProjects, registerProject, type ProjectBrowseResult } from "../lib/mutations.js";
@@ -91,31 +93,43 @@ export function AddProjectPanel({
   const parent = listing?.parent;
 
   return (
-    <div className="flex flex-col gap-2">
-      <p className="text-sm font-medium">{t("sessions.addProject")}</p>
+    <div className="flex flex-col gap-2.5 rounded-[20px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] p-4 backdrop-blur-md">
+      <p className="text-[15px] font-semibold text-[var(--rm-text-primary)]">
+        {t("sessions.addProject")}
+      </p>
       {failure ? (
-        <FailureBanner failure={failure} operationKey="operation.projectBrowse" onDismiss={() => setFailure(null)} />
+        <FailureBanner
+          failure={failure}
+          operationKey="operation.projectBrowse"
+          onDismiss={() => setFailure(null)}
+        />
       ) : null}
-      <p className="truncate text-xs text-slate-500 dark:text-slate-400" title={here ? displayPath(here, root) : ""}>
+      <p
+        className="truncate font-mono text-[12px] text-[var(--rm-text-muted)]"
+        title={here ? displayPath(here, root) : ""}
+      >
         {here ? displayPath(here, root) : t("app.loading")}
       </p>
       {listing === null ? null : listing.entries.length === 0 ? (
-        <p className="text-sm text-slate-600 dark:text-slate-300">{t("sessions.folderEmpty")}</p>
+        <p className="text-[13px] text-[var(--rm-text-secondary)]">{t("sessions.folderEmpty")}</p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col gap-1.5">
           {listing.entries.map((entry) => (
-            <li key={entry.path} className="flex items-center gap-1">
+            <li key={entry.path} className="flex items-center gap-1.5">
               <Button
                 variant="secondary"
+                size="small"
                 className="min-w-0 flex-1 justify-start truncate"
                 disabled={registering}
                 onClick={() => void open(entry.path)}
               >
-                {entry.name}
+                <Folder className="h-3.5 w-3.5 shrink-0 text-[var(--rm-accent-2)]" aria-hidden="true" />
+                <span className="truncate">{entry.name}</span>
               </Button>
               <Button
-                variant="ghost"
-                className="shrink-0 text-xs"
+                variant="plain"
+                size="small"
+                className="shrink-0"
                 disabled={registering}
                 onClick={() => void register(entry.path)}
               >
@@ -125,22 +139,20 @@ export function AddProjectPanel({
           ))}
         </ul>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 pt-1">
         {parent ? (
-          <Button variant="ghost" disabled={registering} onClick={() => void open(parent)}>
+          <Button variant="plain" size="small" disabled={registering} onClick={() => void open(parent)}>
             {t("sessions.parentFolder")}
           </Button>
         ) : null}
         {here && listing?.parent === undefined ? (
-          // At the root there is nothing left to register: the root itself is
-          // what everything else lives under.
-          <span className="text-xs text-slate-500 dark:text-slate-400">{t("sessions.rootFolder")}</span>
+          <span className="text-[12px] text-[var(--rm-text-muted)]">{t("sessions.rootFolder")}</span>
         ) : here ? (
-          <Button variant="secondary" disabled={registering} onClick={() => void register(here)}>
+          <Button variant="secondary" size="small" disabled={registering} onClick={() => void register(here)}>
             {registering ? t("sessions.registering") : t("sessions.useThisFolder")}
           </Button>
         ) : null}
-        <Button variant="ghost" className="ml-auto" disabled={registering} onClick={onCancel}>
+        <Button variant="plain" size="small" className="ml-auto" disabled={registering} onClick={onCancel}>
           {t("common.cancel")}
         </Button>
       </div>

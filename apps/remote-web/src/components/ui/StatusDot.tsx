@@ -1,7 +1,22 @@
+/**
+ * Status dots, status labels, chips, and compact `.tag` badges (ADR mobile-redesign D4).
+ *
+ * `StatusDot` uses the `.rm-status-pulse` halo on `online`, two breathing cycles
+ * on `running`, and two purple pulses on `decision`. `Tag` implements the
+ * prototype's compact 20 px `.tag` badges (including the Aurora gradient-border
+ * `.tag.g` variant used for capability chips and session strip items).
+ */
 import { AlertCircle, Check } from "lucide-react";
 import type { HTMLAttributes, ReactNode } from "react";
 
-export type StatusType = "online" | "offline" | "running" | "decision" | "done" | "error" | "muted";
+export type StatusType =
+  | "online"
+  | "offline"
+  | "running"
+  | "decision"
+  | "done"
+  | "error"
+  | "muted";
 
 export interface StatusDotProps extends HTMLAttributes<HTMLSpanElement> {
   status: StatusType;
@@ -12,10 +27,12 @@ export function StatusDot({ status, size = "small", className = "", ...rest }: S
   const sizeClasses = size === "large" ? "w-2.5 h-2.5" : "w-2 h-2";
 
   let statusStyles = "";
-  if (status === "online" || status === "done") {
+  if (status === "online") {
+    statusStyles = "rm-status-pulse";
+  } else if (status === "done") {
     statusStyles = "bg-[var(--rm-success)]";
   } else if (status === "offline") {
-    statusStyles = "bg-transparent shadow-[inset_0_0_0_1.5px_var(--rm-text-muted)]";
+    statusStyles = "bg-transparent shadow-[inset_0_0_0_1.5px_var(--rm-text-faint)]";
   } else if (status === "running") {
     statusStyles = "bg-[var(--rm-running)] [animation:rm-breathe_1.6s_ease-in-out_2]";
   } else if (status === "decision") {
@@ -57,29 +74,60 @@ export function StatusLabel({ status, label, className = "", ...rest }: StatusLa
   );
 }
 
-export type ChipTone = "neutral" | "running" | "error" | "decision";
+export type ChipTone =
+  | "neutral"
+  | "running"
+  | "warn"
+  | "error"
+  | "decision"
+  | "success"
+  | "gradient";
 
 export interface ChipProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: ChipTone;
   children: ReactNode;
 }
 
-export function Chip({ tone = "neutral", children, className = "", ...rest }: ChipProps) {
-  let toneClass = "bg-[var(--rm-bg-inset)] text-[var(--rm-text-secondary)]";
-  if (tone === "running") {
-    toneClass =
-      "bg-[color-mix(in_srgb,var(--rm-running)_var(--rm-tint),var(--rm-bg-surface))] text-[var(--rm-running)]";
-  } else if (tone === "error") {
-    toneClass =
-      "bg-[color-mix(in_srgb,var(--rm-error)_var(--rm-tint),var(--rm-bg-surface))] text-[var(--rm-error)]";
-  } else if (tone === "decision") {
-    toneClass =
-      "bg-[color-mix(in_srgb,var(--rm-decision)_var(--rm-tint),var(--rm-bg-surface))] text-[var(--rm-decision)]";
-  }
+const CHIP_TONE_CLASSES: Record<ChipTone, string> = {
+  neutral: "bg-[var(--rm-bg-surface-2)] text-[var(--rm-text-secondary)]",
+  running:
+    "bg-[color-mix(in_srgb,var(--rm-running)_16%,transparent)] text-[var(--rm-running)]",
+  warn: "bg-[color-mix(in_srgb,var(--rm-warn)_16%,transparent)] text-[var(--rm-warn)]",
+  error:
+    "bg-[color-mix(in_srgb,var(--rm-error)_15%,transparent)] text-[var(--rm-error)]",
+  decision:
+    "bg-[color-mix(in_srgb,var(--rm-decision)_16%,transparent)] text-[var(--rm-decision)]",
+  success:
+    "bg-[color-mix(in_srgb,var(--rm-success)_15%,transparent)] text-[var(--rm-success)]",
+  gradient:
+    "border border-transparent text-[var(--rm-text-primary)] [background:linear-gradient(var(--rm-bg-solid),var(--rm-bg-solid))_padding-box,var(--rm-aurora)_border-box]",
+};
 
+export function Chip({ tone = "neutral", children, className = "", ...rest }: ChipProps) {
   return (
     <span
-      className={`inline-flex h-[22px] items-center gap-1 whitespace-nowrap rounded-full px-2 text-[12px] font-semibold ${toneClass} ${className}`}
+      className={`inline-flex h-[22px] items-center gap-1 whitespace-nowrap rounded-full px-2 text-[12px] font-semibold ${CHIP_TONE_CLASSES[tone]} ${className}`}
+      {...rest}
+    >
+      {children}
+    </span>
+  );
+}
+
+export type TagTone = ChipTone;
+export interface TagProps extends HTMLAttributes<HTMLSpanElement> {
+  tone?: TagTone;
+  children?: ReactNode;
+}
+
+/**
+ * Compact 20 px badge matching `.tag` in `design/prototype/redesign.html`
+ * (model capability chips, conversation tags, and status badges).
+ */
+export function Tag({ tone = "neutral", children, className = "", ...rest }: TagProps) {
+  return (
+    <span
+      className={`inline-flex h-[20px] items-center gap-1 whitespace-nowrap rounded-[6px] px-[7px] text-[11px] font-semibold ${CHIP_TONE_CLASSES[tone]} ${className}`}
       {...rest}
     >
       {children}

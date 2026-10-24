@@ -64,9 +64,10 @@ export type DirectChatService = {
   connect(key: string): Promise<ConnectOutcome>;
   /** Refresh the cached catalog for the current key. */
   refreshModels(): Promise<{ ok: true; models: MinihRouterModel[] } | { ok: false; failure: DirectChatFailure }>;
-  /** Remember the model the user picked. */
-  /** Remember the model the user picked. */
+  /** Remember the model the user picked for a text conversation. */
   rememberModel(modelId: string | null): void;
+  /** Remember the model the user picked for image generation. */
+  rememberImageModel(modelId: string | null): void;
   /** Set the explicit default model for new text chats. */
   setDefaultChatModel(modelId: string | null): void;
   /** Set the explicit default model for image creation. */
@@ -146,9 +147,10 @@ export function createDirectChatService(options: DirectChatServiceOptions): Dire
         accessKeyId: verified.value.accessKeyId,
         keyName: verified.value.keyName,
         maskedKey: verified.value.maskedKey,
-        // The remembered model survives a rotation of the same account, and does
+        // The remembered models survive a rotation of the same account, and do
         // not carry over to a different one.
         lastModelId: sameAccount ? (previous?.lastModelId ?? null) : null,
+        lastImageModelId: sameAccount ? (previous?.lastImageModelId ?? null) : null,
         defaultChatModelId: sameAccount ? (previous?.defaultChatModelId ?? null) : null,
         defaultImageModelId: sameAccount ? (previous?.defaultImageModelId ?? null) : null,
         connectedAt: now().toISOString(),
@@ -199,7 +201,15 @@ export function createDirectChatService(options: DirectChatServiceOptions): Dire
     rememberModel(modelId) {
       const connection = readConnection(options.storage);
       if (!connection) return;
+      // Chat and image choices are separate slots (ADR mobile-redesign D2), so
+      // remembering one can never move the other: that is bug B2.
       writeConnection(options.storage, { ...connection, lastModelId: modelId });
+    },
+
+    rememberImageModel(modelId) {
+      const connection = readConnection(options.storage);
+      if (!connection) return;
+      writeConnection(options.storage, { ...connection, lastImageModelId: modelId });
     },
 
     setDefaultChatModel(modelId) {

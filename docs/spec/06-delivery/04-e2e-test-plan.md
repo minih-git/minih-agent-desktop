@@ -10763,6 +10763,7 @@ selection already in place shows it without waiting for another event.
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
 | Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push, E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
+| Post-MVP remote control (mobile redesign 2026-10-23) | E2E-REMOTE-MODEL-channel-union-text-model-stays-in-chats, E2E-REMOTE-MODEL-image-job-keeps-chat-model, E2E-REMOTE-MODEL-switch-model-in-unsent-conversation, E2E-REMOTE-IMAGE-retry-uses-image-endpoint, E2E-REMOTE-CHAT-archive-while-replying-stops-first, E2E-REMOTE-SESSION-revoked-offers-forget-and-repair, E2E-REMOTE-SETTINGS-push-state-and-appearance-survive-reload, E2E-REMOTE-NAV-h5-has-only-the-computers-root |
 @end
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
 | Trusted extensions (R7 v1 npm recovery) | E2E-PLUGIN-import-extension-recovers-missing-npm |
@@ -16610,6 +16611,205 @@ sibling Hosts is still open for package D.
   The P0 measurement (`scripts/measure-remote-latency.mjs`) covers the two
   transports it stands on locally: an owner over loopback `RACP-WS` and an
   account device over `RACP-HTTP` + SSE.
+
+### Mobile redesign (2026-10-23)
+
+The acceptance targets of `docs/adr/mobile-redesign.md` and
+`04-ux/13-remote-mobile-client.md` §19. Most of them need no test Gateway and no
+Host: the client is the H5 build
+(`pnpm --filter @minih-agent/remote-web build`) served through the same-origin
+test proxy of `scripts/e2e-remote-web.mjs`, with a local stub answering the
+model gateway's `GET /api/auth/session`, `GET /api/models`,
+`POST /v1/chat/completions` and `POST /v1/images/generations` and logging every
+request path; a phone viewport (390×844) in Chromium is enough. The two
+scenarios that name a paired computer reuse the packaged Gateway and enrolled
+`agent-host-cli` Host of E2E-266.
+
+#### E2E-REMOTE-MODEL-channel-union-text-model-stays-in-chats
+
+- **Preconditions**: A connected model account whose catalog is a stub
+  answering Router's `/api/models` shape with three rows: `gpt-5` with
+  `protocols: ["openai-completions", "openai-images"]` and no
+  `catalog_reference` on its upstream model (so the client parses no
+  `outputModalities`), `gpt-image-1` with `protocols: ["openai-images"]` and
+  `upstream_models[].catalog_reference.model.modalities.output: ["image"]`, and
+  `gemini-flash-image` declaring `["text", "image"]` with both protocols. No
+  conversation yet.
+- **Steps**: 1) Open the Chats root and its picker in chat mode; list the usable
+  rows. 2) Switch to Studio and open its picker; list the requested rows and
+  the collapsed unavailable rows. 3) Open the picker from Chats again, switch
+  the segmented control to image, and read the groups.
+- **Expected**: `gpt-5` is usable in Chats, even though the gateway also
+  advertises `openai-images` for it, and appears nowhere in Studio. `gpt-image-1`
+  is not offered for chat — it is listed under the unavailable rows as an image
+  model — and is usable in Studio. `gemini-flash-image` is usable in both. No
+  row is classified from its name or from `openai-images` alone, and no request
+  has reached `/v1/chat/completions` or `/v1/images/generations` yet.
+- **Specs linked**: `04-ux/13-remote-mobile-client.md` §19.1, ADR
+  `mobile-redesign` D1
+- **Acceptance**: Quality
+- **Milestone**: Post-MVP (mobile redesign, stage 1)
+- **Status**: Planned — the classification itself is unit-tested
+  (`apps/remote-web/src/lib/direct-chat/catalog.test.ts`, including the channel
+  union and the "declared both" rows); the browser walk is not automated.
+
+#### E2E-REMOTE-MODEL-image-job-keeps-chat-model
+
+- **Preconditions**: The same stub with `gpt-5` (chat) and a declared image
+  model; one finished text conversation on `gpt-5`; the stored connection
+  record readable in the browser profile.
+- **Steps**: 1) In Chats, open the picker, choose `gpt-5`, and send one message.
+  2) Switch to Studio, choose the image model, and generate one image. 3) Back
+  in Chats, start a new chat and read the model it opens on. 4) Read
+  `minih.remote-web.direct-chat.v1` from the profile.
+- **Expected**: The new chat opens on `gpt-5` and its first request goes to
+  `/v1/chat/completions` on `gpt-5`; the record holds `lastModelId: gpt-5` and
+  `lastImageModelId` naming the image model; no picker is forced on the user and
+  nothing is sent to the image endpoint for the text conversation.
+- **Specs linked**: `04-ux/13-remote-mobile-client.md` §19.2, ADR
+  `mobile-redesign` D2
+- **Acceptance**: Quality
+- **Milestone**: Post-MVP (mobile redesign, stage 1)
+- **Status**: Planned — `service.test.ts` covers the two slots
+  (`rememberModel` / `rememberImageModel`) and `catalog.test.ts` the studio
+  resolution order.
+
+#### E2E-REMOTE-MODEL-switch-model-in-unsent-conversation
+
+- **Preconditions**: The same stub with two usable chat models A and C; a
+  remembered chat model A in the connection record.
+- **Steps**: 1) From Chats, start a new chat and choose A in the picker. 2)
+  Without sending anything, open the picker again and choose C; read the notice.
+  3) Send one message and read the request the stub received. 4) Go back, open
+  the conversation again, and read its model. 5) Repeat steps 1–2 and leave
+  without sending; start a new chat.
+- **Expected**: The change is accepted in the draft and a notice names the new
+  model; the first send goes to `/v1/chat/completions` on C and the conversation
+  keeps C on reopen; a draft abandoned without sending changes nothing — the
+  next new chat still opens on the model the account remembered (A until a send
+  with C, then C).
+- **Specs linked**: `04-ux/13-remote-mobile-client.md` §19.2, ADR
+  `mobile-redesign` D2 (fixes B1, B2)
+- **Acceptance**: Quality
+- **Milestone**: Post-MVP (mobile redesign, stage 1)
+- **Status**: Planned — `screen-stack.test.ts` covers `chat.draftModelId`
+  round-tripping through history; the screen walk is not automated.
+
+#### E2E-REMOTE-IMAGE-retry-uses-image-endpoint
+
+- **Preconditions**: Studio with a usable image model; the stub answers the
+  first `POST /v1/images/generations` with a terminal failure and the second
+  with a small image.
+- **Steps**: 1) Generate one image from Studio and wait for the failure. 2) Read
+  the card and press Retry. 3) Watch the stub's request log and the card state.
+  4) Open the finished image in the viewer.
+- **Expected**: The failure is shown on the card with its reason, and Retry
+  sends a second `POST /v1/images/generations` on the same image model — never a
+  chat completion — while the card returns to generating and then completes with
+  the image, which the viewer opens full screen. A retry on a model that is no
+  longer in the catalog says the model is unavailable and opens the picker
+  instead of sending.
+- **Specs linked**: `04-ux/13-remote-mobile-client.md` §19.4 and §19.9, ADR
+  `mobile-redesign` D1/D5 (fixes B3, B4)
+- **Acceptance**: Quality
+- **Milestone**: Post-MVP (mobile redesign, stage 2)
+- **Status**: Planned — `target.test.ts` proves the send decision carries the
+  image protocol, and `studio.test.ts` the card projection; no browser run yet.
+
+#### E2E-REMOTE-CHAT-archive-while-replying-stops-first
+
+- **Preconditions**: One text conversation whose reply the stub keeps streaming
+  for several seconds; the Chats root listed.
+- **Steps**: 1) Send a message and, while the reply is still arriving, open that
+  row's More sheet (and, separately, swipe the row). 2) Read the archive row's
+  label. 3) Invoke it. 4) While another reply is streaming, open Settings ▸
+  History and try to clear this account's history.
+- **Expected**: The archive action reads "Stop and archive" while the reply runs;
+  invoking it stops that conversation (one stop request at the Host or the stub's
+  abort), then the conversation appears under the archived link and is gone from
+  the list. Nothing is silently ignored. The history clear is refused with the
+  reason that a reply is still arriving, and its confirmation does not report
+  success.
+- **Specs linked**: `04-ux/13-remote-mobile-client.md` §19.7 and §19.9, ADR
+  `mobile-redesign` D5 (fixes B6)
+- **Acceptance**: Quality, Recovery
+- **Milestone**: Post-MVP (mobile redesign, stage 2)
+- **Status**: Planned — `history.test.ts` covers the `busy` refusal for archive
+  and for `clearScope`; the labelled action and the stop-first order are not
+  automated.
+
+#### E2E-REMOTE-SESSION-revoked-offers-forget-and-repair
+
+- **Preconditions**: One paired computer, and the test Gateway with the device's
+  credential revoked (the Host answers `UNAUTHORIZED` for it). A second variant
+  makes the follow-up forget fail (the registry write refused).
+- **Steps**: 1) Open a session of that computer. 2) Read the screen. 3) Press the
+  offered action. 4) Read the computer list, the registry in the browser profile,
+  and (in the failing variant) the notice shown after landing.
+- **Expected**: The session screen is the revoked result state with "Forget this
+  computer and pair again" — no composer, no retry, no dead control. Pressing it
+  leaves the screen immediately, removes the credential from the registry, and
+  deletes the account's push registration first in a native build. When
+  forgetting fails, the user is still moved to the computer list and a toast
+  names the reason, so the dead end is not re-entered.
+- **Specs linked**: `04-ux/13-remote-mobile-client.md` §19.9, ADR
+  `mobile-redesign` D5/D7 (fixes B8)
+- **Acceptance**: Recovery, Quality
+- **Milestone**: Post-MVP (mobile redesign, stage 2)
+- **Status**: Planned — `session-exit.test.ts` covers the leave-before-forget
+  order and the returned failure reason; the screen and the toast are not
+  automated.
+
+#### E2E-REMOTE-SETTINGS-push-state-and-appearance-survive-reload
+
+- **Preconditions**: H5 build (where push is unsupported) and, separately, a
+  native build with a test push provider; a connected model account; the browser
+  or WebView profile readable.
+- **Steps**: 1) From each root, open Settings with the avatar and go back; note
+  the root returned to. 2) Read the Notifications section in both builds. 3)
+  Toggle the master switch where it is enabled, and read the status line and the
+  diagnostics row. 4) Choose Light in Appearance, reload the app, and read the
+  resolved theme and `minih.remote-web.theme.v1`. 5) Choose System, change the
+  OS appearance, and observe the app without reloading. 6) Set the OS appearance
+  to Dark, choose Dark explicitly, and repeat step 5.
+- **Expected**: Back returns to the root Settings was opened from. The browser
+  build reports that push is a native-app feature and draws no usable switch
+  there; the native build reports the actual permission and registration state
+  (registered, waiting for a computer, refused, disabled, gateway without push,
+  or failed) and the switch registers or unregisters this device rather than only
+  changing a label. No per-event notification switch exists anywhere, and the
+  one line explaining that is present. The appearance choice applies immediately,
+  survives the reload, and — when the preference is System — follows the OS both
+  ways; an explicit Light or Dark does not.
+- **Specs linked**: `04-ux/13-remote-mobile-client.md` §19.7 and §19.8, ADR
+  `mobile-redesign` D4/D6
+- **Acceptance**: Quality
+- **Milestone**: Post-MVP (mobile redesign, stage 6)
+- **Status**: Planned — `settings-view.test.ts` and `theme.test.ts` cover the
+  projections and the storage fallbacks; the two builds and the reload are not
+  automated.
+
+#### E2E-REMOTE-NAV-h5-has-only-the-computers-root
+
+- **Preconditions**: The H5 build opened at 390×844, with one paired computer and
+  a connected model account available in the same profile as a native session
+  would leave them.
+- **Steps**: 1) Launch the app and read the first screen. 2) Look for a tab bar
+  and for any Chats or Studio entry. 3) Open a computer, one of its projects, its
+  session list, and one session; go back one level at a time. 4) Write
+  `remote.last-root` as `studio` in `localStorage` and reload.
+- **Expected**: The app opens on Computers and shows no tab bar, no Chats root and
+  no Studio root; every reachable path stays inside the computers ▸ projects ▸
+  sessions hierarchy, and Back steps one level each time. The remembered-root
+  preference is written by a native build only and has no effect here.
+- **Specs linked**: `04-ux/13-remote-mobile-client.md` §19.3, ADR
+  `mobile-redesign` D3
+- **Acceptance**: Quality
+- **Milestone**: Post-MVP (mobile redesign, stage 4)
+- **Status**: Planned — `launch-root.test.ts` and `tab-bar.test.ts` cover the two
+  rules; the walk is not automated. Scope note: a hand-written browser history
+  entry whose state names another root is adopted by `screenFromHistoryState`,
+  so this scenario covers the reachable UI paths, not a tampered history entry.
 
 ## Trusted extension scenarios (R7 v1)
 

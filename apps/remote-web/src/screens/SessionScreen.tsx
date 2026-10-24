@@ -1,15 +1,18 @@
 /**
- * Session timeline (PR-4; scroll behaviour in rollout D).
+ * Session timeline (PR-4; scroll behaviour in rollout D; header status strip in
+ * ADR mobile-redesign §3 Stage 5).
  *
  * The screen renders the rows, the pending approval and input cards, the turn
  * status with Stop/Interrupt for the active turn, and the composer. Every
  * in-flight control is disabled, and every failure names the operation it came
  * from plus the reason the Host or the transport gave.
  *
- * The transcript is the scrolling part: it opens at the newest row, follows new
- * ones while the reader is at the bottom, offers a way back down (with a count)
- * when they are not, and holds their place when older rows are loaded above.
+ * The header shows the session's title, the computer name, and the status strip
+ * of `Tag` chips (model + thinking level, mode, permission mode) taken strictly
+ * from the RACP session record (`sessionChips`). Tapping any chip or the info
+ * button opens `SessionInfoSheet`.
  */
+import type { RacpSession } from "@minih-agent/shared";
 import { Info } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -26,12 +29,13 @@ import { Button } from "../components/ui/Button.js";
 import { ResultState } from "../components/ui/EmptyState.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
+import { Tag } from "../components/ui/StatusDot.js";
 import { useSessionScreen } from "../hooks/useSessionScreen.js";
-
 import { useTimelineScroll } from "../hooks/useTimelineScroll.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import { failureReasonText } from "../lib/i18n.js";
 import { gatewayOrigin } from "../lib/runtime.js";
+import { sessionChips } from "../lib/session-chips.js";
 import {
   resolveConnectionBanner,
   resolveTurnStatusDisplay,
@@ -51,6 +55,8 @@ export interface SessionScreenProps {
    */
   hostLabel: string;
   roles?: readonly string[];
+  /** Optional initial session snapshot (used before `session/attach` resolves or in SSR tests). */
+  initialSession?: RacpSession | null;
   onBack: () => void;
   onForget?: () => void;
 }
@@ -62,17 +68,13 @@ export function SessionScreen({
   credential,
   hostLabel,
   roles,
+  initialSession = null,
   onBack,
   onForget,
 }: SessionScreenProps) {
   const { t } = useTranslation();
   const [stopSheetOpen, setStopSheetOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
-  /**
-   * The model catalog, read the first time the info sheet opens (R7): small,
-   * static per Host, and useless on a screen nobody opened.
-   */
-
 
   const { timeline, streamState, failure, pending, loadingEarlier, turnId, models, actions } =
     useSessionScreen({
@@ -82,32 +84,16 @@ export function SessionScreen({
       gatewayOrigin,
     });
 
-  const latestModelItem = [...timeline.items].reverse().find((item) => item.modelId);
-  const effectiveSession = timeline.session
-    ? {
-        ...timeline.session,
-        ...(timeline.session.providerId || latestModelItem?.providerId
-          ? { providerId: timeline.session.providerId || latestModelItem?.providerId }
-          : {}),
-        ...(timeline.session.modelId || latestModelItem?.modelId
-          ? { modelId: timeline.session.modelId || latestModelItem?.modelId }
-          : {}),
-        ...(timeline.session.modelLabel || timeline.session.modelId || latestModelItem?.modelId
-          ? { modelLabel: timeline.session.modelLabel || timeline.session.modelId || latestModelItem?.modelId }
-          : {}),
-      }
-    : null;
-  const matchedModel =
-    models.find(
-      (m) =>
-        (effectiveSession?.providerId && m.providerId === effectiveSession.providerId && m.modelId === effectiveSession?.modelId) ||
-        (!effectiveSession?.providerId && effectiveSession?.modelId && m.modelId === effectiveSession.modelId),
-    ) ?? (!effectiveSession?.modelId ? (models.find((m) => m.isDefault) ?? models[0]) : undefined);
-  const modelDisplay =
-    matchedModel?.label ||
-    effectiveSession?.modelLabel ||
-    effectiveSession?.modelId ||
-    t("model.hostDefault");
+  const session = timeline.session ?? initialSession;
+  const chips = sessionChips(session, {
+    modeLabel: (mode) => t(`mode.${mode}.title`),
+    permissionLabel: (perm) => t(`permission.${perm}.title`),
+  });
+
+  const openInfoSheet = () => {
+    setInfoOpen(true);
+    void actions.loadModels();
+  };
 
   const active = turnId !== undefined;
   const attention = timeline.pendingApprovals.length + timeline.pendingInputs.length;
@@ -123,7 +109,7 @@ export function SessionScreen({
   });
 
   const hostName = hostLabel || hostId;
-  const sessionTitle = timeline.session?.title || title || t("session.untitled", "未命名会话");
+  const sessionTitle = session?.title || title || t("session.untitled");
 
   // If revoked, show the full revoked ResultState (per spec 8.7)
   if (streamState === "revoked") {
@@ -168,6 +154,7 @@ export function SessionScreen({
   return (
     <Screen>
       <NavBar
+        solid
         title={sessionTitle}
         subtitle={
           // The computer's name is user data of unknown length: it takes the
@@ -184,15 +171,43 @@ export function SessionScreen({
             ) : null}
           </span>
         }
+        strip={
+          chips.length > 0 ? (
+            // Every chip stays readable at 390 px: the mode and the permission
+            // say what this session may do, so they keep their width, and the
+            // model label — the one a reader can also infer from the replies —
+            // compresses with an ellipsis instead. The row wraps rather than
+            // scrolling sideways, because a scrolled-away chip is a chip nobody
+            // knows is there.
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center justify-center gap-1.5">
+              {chips.map((chip) => (
+                <button
+                  key={chip.kind}
+                  type="button"
+                  onClick={openInfoSheet}
+                  className={`rounded-full outline-none transition-transform duration-150 active:scale-[0.95] focus-visible:ring-2 focus-visible:ring-[var(--rm-accent-1)] ${
+                    chip.kind === "model" ? "min-w-0 shrink" : "shrink-0"
+                  }`}
+                >
+                  <Tag
+                    tone={chip.tone}
+                    className={`h-[22px] text-[12px] ${
+                      chip.kind === "model" ? "min-w-0 max-w-[190px]" : "shrink-0"
+                    }`}
+                  >
+                    <span className="min-w-0 truncate">{chip.label}</span>
+                  </Tag>
+                </button>
+              ))}
+            </div>
+          ) : undefined
+        }
         trailing={
           <button
             type="button"
-            onClick={() => {
-              setInfoOpen(true);
-              void actions.loadModels();
-            }}
+            onClick={openInfoSheet}
             aria-label={t("session.info")}
-            className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] active:opacity-60"
+            className="flex h-9 w-9 items-center justify-center rounded-[10px] text-[var(--rm-text-secondary)] active:opacity-60"
           >
             <Info size={20} aria-hidden="true" />
           </button>
@@ -232,15 +247,11 @@ export function SessionScreen({
 
       {/* Replay or resync notices */}
       {timeline.replayIncomplete ? (
-        <Banner tone="neutral">
-          {t("session.replayIncomplete")}
-        </Banner>
+        <Banner tone="neutral">{t("session.replayIncomplete")}</Banner>
       ) : null}
 
       {timeline.needsResync ? (
-        <Banner tone="neutral">
-          {t("session.resync")}
-        </Banner>
+        <Banner tone="neutral">{t("session.resync")}</Banner>
       ) : null}
 
       {/* Run status bar */}
@@ -311,25 +322,6 @@ export function SessionScreen({
             />
           ) : null}
 
-          {!timeline.archived ? (
-            <div className="flex items-center gap-1.5 overflow-x-auto px-1 text-[12px] leading-[16px] text-[var(--rm-text-secondary)]">
-              <button
-                type="button"
-                onClick={() => {
-                  setInfoOpen(true);
-                  void actions.loadModels();
-                }}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--rm-bg-surface)] px-2.5 py-1 ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
-              >
-                <span className="max-w-[160px] truncate font-medium text-[var(--rm-text-primary)]">{modelDisplay}</span>
-                <span className="text-[var(--rm-text-faint)]">·</span>
-                <span>{t(`mode.${effectiveSession?.mode ?? "agent"}.title`)}</span>
-                <span className="text-[var(--rm-text-faint)]">·</span>
-                <span>{t(`permission.${effectiveSession?.permissionMode ?? "ask"}.title`)}</span>
-              </button>
-            </div>
-          ) : null}
-
           <ChatComposer
             sending={pending["turn/start"] === true}
             disabled={timeline.archived}
@@ -357,7 +349,7 @@ export function SessionScreen({
       {/* R7: what this session runs on, and the one place to change it. */}
       <SessionInfoSheet
         open={infoOpen}
-        session={effectiveSession}
+        session={session}
         computerLabel={hostName}
         roles={roles}
         models={models}

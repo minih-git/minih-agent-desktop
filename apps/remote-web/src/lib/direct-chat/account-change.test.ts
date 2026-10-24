@@ -10,6 +10,7 @@ const connection: DirectChatConnection = {
   keyName: "phone",
   maskedKey: "sk-…0001",
   lastModelId: null,
+  lastImageModelId: null,
   defaultChatModelId: null,
   defaultImageModelId: null,
   connectedAt: "2026-10-21T09:00:00.000Z",

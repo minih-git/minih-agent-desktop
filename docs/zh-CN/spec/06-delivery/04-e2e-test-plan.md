@@ -5808,71 +5808,66 @@ eleven-tool-round desktop paths are verified by
 - **Status:** Implemented automated fixture user-path coverage.
 
 ## 8. 可追溯性矩阵
+
 | 验收 | 应用场景 |
 |---|---|
-| C / Quality / Accessibility — 右侧通知卡片 | E2E-NOTIFICATION-right-side-cards |
-| C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
-| C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
-| Quality / Security — 已选上游 Bash/布局移植 | E2E-BASH-background-task-lifecycle-and-output, E2E-LAYOUT-sidebar-reopen-preserves-width-preference |
-| C / E / Security / Quality — Live Voice 四阶段交互 | E2E-LIVE-VOICE-four-stage-ui |
-| C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
-| C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
-| C / F / Quality — 桌面定时任务 | E2E-SCHEDULED-desktop-automation-lifecycle, E2E-SCHEDULED-run-in-activity-feed |
-| F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account |
+| C / 品质 / 无障碍 — 右侧通知卡片 | E2E-NOTIFICATION-right-side-cards |
+| C / G / 品质 / 安全性 — 账户菜单与侧边栏工具 | E2E-NAV-account-menu-and-sidebar-utilities |
+| C / E / F / 品质 / 安全性 — 会话待办清单 | E2E-CHAT-session-todo-checklist |
+| 品质 / 安全性 — 已选上游 Bash/布局导入 | E2E-BASH-background-task-lifecycle-and-output、E2E-LAYOUT-sidebar-reopen-preserves-width-preference |
+| C / E / 安全性 / 品质 — Live Voice 四阶段交互 | E2E-LIVE-VOICE-four-stage-ui |
+| C / F — 每小时任务更新 | E2E-SCHEDULED-manual-to-hourly |
+| C / F / 品质 — 已保存项目隔离 | E2E-SCHEDULED-manual-workspace-binding |
+| C / F / 品质 — 桌面自动化 | E2E-SCHEDULED-desktop-automation-lifecycle、E2E-SCHEDULED-run-in-activity-feed |
+| F / 安全性 / 品质 — 可移植配置同步 | E2E-CONFIG-SYNC-router-account |
 | A / C — Unicode stdio 成帧 | E2E-RPC-unicode-separators |
-| C / G / Quality — Plugins navigation | E2E-NAV-plugins-button-goes-back |
-| C / D / Quality — 侧边栏行状态 | E2E-LAYOUT-sidebar-row-states |
-| E / Quality — 浏览器截图超时恢复 | E2E-BROWSER-capture-resize |
-| A / C / Quality — 侧栏材质与设置返回 | E2E-LAYOUT-sidebar-settings |
-| C / Quality — 目的页加载与焦点 | E2E-087b |
-| C / F / 质量 — 会话子代理列表 | E2E-SESSION-subagent-roster-finds-old-delegations |
-| A / H / Quality — 渲染器进程崩溃恢复 | E2E-RUNTIME-renderer-crash-recovery |
-| C / F / Quality — 含聊天的项目文件夹安全分离并删除 | E2E-048c |
-| B / F / Security — 提供商复制 | E2E-PROVIDER-copy-config-without-credentials |
-| C / Quality — 自建端点收到会话 id | E2E-PROVIDER-custom-endpoint-session-identity |
-| B / F / Quality — 已选模型顺序 | E2E-MODEL-selected-order-persists |
-| E / F / Quality — MCP 服务器超时覆盖 | E2E-261 |
-| C / D / Quality — 折叠项目后重置会话历史 | E2E-263 |
-| A — 应用程序启动 | E2E-001、E2E-002、E2E-003、E2E-004、E2E-067、E2E-076、E2E-079、E2E-092、E2E-097、E2E-143、E2E-150、E2E-168、E2E-204、E2E-217 |
-| B——模型配置 | E2E-005、E2E-005G、E2E-006、E2E-007、E2E-038、E2E-050、E2E-052、E2E-055、E2E-066、E2E-080、E2E-082、E2E-151、E2E-005J、E2E-199、E2E-201、E2E-202、E2E-203、E2E-209、E2E-166 |
-| C — 对话和直播 | E2E-CHAT-running-status-survives-output-pauses、E2E-008、E2E-008d、E2E-008a、E2E-009、E2E-010、E2E-011、E2E-011a、E2E-011b、E2E-031、E2E-040、E2E-047、E2E-048、E2E-048c、E2E-048A、E2E-049、E2E-052、 E2E-053、E2E-054、E2E-055、E2E-059、E2E-059a、E2E-060c、E2E-060d、E2E-061、E2E-061a、E2E-062、E2E-064、E2E-065、E2E-068、E2E-071、 E2E-073、E2E-074、E2E-075、E2E-081、E2E-083、E2E-084、E2E-086、E2E-087、E2E-088、E2E-088b、E2E-089、E2E-090、E2E-094、E2E-095、E2E-096、 E2E-097、E2E-098、E2E-099、E2E-102、E2E-102a、E2E-102b、E2E-106、E2E-109、E2E-111、E2E-114、E2E-116、E2E-117、E2E-118、E2E-119、 E2E-120、E2E-121、E2E-代理-001、E2E-142、E2E-144、E2E-145、E2E-146、E2E-147、E2E-151、E2E-199、E2E-250、E2E-166、E2E-SUBAGENT-resume-a-settled-delegation |
-| C — 对话和直播（输入框草稿） | E2E-011c、E2E-011c-1 |
-| A / C / F / Quality — Tray session navigation | E2E-TRAY-bounded-session-navigation |
-| D——工作区 | E2E-012、E2E-013、E2E-022B、E2E-024I、E2E-047、E2E-049、E2E-057、E2E-058、E2E-060、E2E-068、E2E-075、E2E-078、E2E-153 |
-| D——工作区（项目排序） | E2E-253 |
-| E——工具和权限 | E2E-008a、E2E-014、E2E-015、E2E-016、E2E-017、E2E-018、E2E-019、E2E-024I、E2E-024K、E2E-040、E2E-049、E2E-074、E2E-093、E2E-097、 E2E-099、E2E-100、E2E-101、E2E-102、E2E-103、E2E-105、E2E-106、E2E-107、E2E-111、E2E-112、E2E-113、E2E-114、E2E-115、E2E-116、 E2E-119、E2E-121、E2E-122、E2E-123、E2E-142、E2E-145、E2E-147、E2E-PLUGIN-imported-pi-package-skills、E2E-166 |
-| F——坚持 | E2E-020、E2E-021、E2E-038、E2E-SETTINGS-inline-capability-imports、E2E-040、E2E-042、E2E-047、E2E-048、E2E-048c、E2E-051、E2E-054、E2E-056、E2E-061、E2E-062、 E2E-064、E2E-066、E2E-068、E2E-071、E2E-072、E2E-073、E2E-082、E2E-084、E2E-096、E2E-098、E2E-102、E2E-102b、E2E-103、E2E-代理-001、 E2E-061a、E2E-073a、E2E-104、E2E-106、E2E-107、E2E-108、E2E-109、E2E-110、E2E-112、E2E-118、E2E-119、E2E-120、E2E-121、E2E-123、E2E-142、E2E-146、E2E-148、E2E-151、E2E-171、E2E-005J |
-| F——持久化（项目排序） | E2E-253 |
-| G / Security — Fetch redirect policy | E2E-PLUGIN-fetch-redirect-policy |
-| G——插件 | E2E-022、E2E-022A、E2E-022B、E2E-022C、E2E-023、E2E-024、E2E-024B、E2E-024C、E2E-024D、E2E-024AA、E2E-024E、E2E-024W、E2E-024F、E2E-024G、E2E-024H、 E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M、E2E-024N、E2E-024O、E2E-024P、E2E-025、E2E-026、E2E-105、E2E-117、E2E-120、E2E-122、E2E-123、E2E-148、E2E-153、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-imported-pi-package-wrapper、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-global-shortcut-owns-only-its-own-command、E2E-PLUGIN-permission-gate-for-real-time-capabilities、E2E-PLUGIN-background-audio-and-realtime-connection |
-| H——诊断 | E2E-027、E2E-031、E2E-034、E2E-042、E2E-096、E2E-098、E2E-104、E2E-107、E2E-108、E2E-109、E2E-110、E2E-113、E2E-115、E2E-116、 E2E-118、E2E-121、E2E-146、E2E-194、E2E-195 |
-| 安全性 | E2E-SETTINGS-inline-capability-imports、E2E-028、E2E-029、E2E-030、E2E-024J、E2E-024K、E2E-024M、E2E-049、E2E-068、E2E-086、E2E-105、E2E-106、E2E-107、E2E-108、E2E-109、 E2E-110、E2E-112、E2E-113、E2E-115、E2E-116、E2E-117、E2E-119、E2E-121、E2E-122、E2E-123、E2E-142、E2E-148、E2E-151、E2E-153 |
-| 品质 | E2E-SETTINGS-inline-capability-imports、E2E-CHAT-running-status-survives-output-pauses、E2E-032、E2E-033、E2E-039、E2E-043、E2E-044、E2E-045、E2E-046、E2E-047、E2E-048、E2E-048c、E2E-048A、E2E-049、E2E-050、E2E-053、E2E-055、 E2E-056、E2E-057、E2E-058、E2E-059、E2E-060、E2E-061、E2E-062、E2E-063、E2E-064、E2E-065、E2E-066、E2E-067、E2E-068、E2E-069、 E2E-070、E2E-071、E2E-072、E2E-073、E2E-074、E2E-075、E2E-076、E2E-077、E2E-078、E2E-079、E2E-080、E2E-081、E2E-082、E2E-083、 E2E-084、E2E-085、E2E-086、E2E-092、E2E-093、E2E-094、E2E-095、E2E-096、E2E-097、E2E-098、E2E-099、E2E-100、E2E-101、E2E-102、 E2E-102a、E2E-102b、E2E-103、E2E-AGENTS-001、E2E-024N、E2E-024O、E2E-059a、E2E-060b、E2E-060c、E2E-060d、E2E-061a、E2E-073a、E2E-111、 E2E-114、E2E-117、E2E-118、E2E-119、E2E-120、E2E-122、E2E-123、E2E-142、E2E-143、E2E-144、E2E-145、E2E-146、E2E-147、E2E-148、E2E-150、E2E-151、E2E-153、E2E-194、E2E-195、E2E-199、E2E-200、E2E-201、E2E-202、E2E-203、E2E-204、E2E-209、E2E-210、E2E-UPDATE-preference-and-once-only-reminder、E2E-250、E2E-PLUGIN-imported-pi-package-skills、E2E-SUBAGENT-resume-a-settled-delegation |
+| C / G / 品质 — 插件导航 | E2E-NAV-plugins-button-goes-back |
+| C / D / 品质 — 侧边栏行状态 | E2E-LAYOUT-sidebar-row-states |
+| E / 品质 — 浏览器截图超时恢复 | E2E-BROWSER-capture-resize |
+| A / C / 品质 — 侧边栏材质与设置返回 | E2E-LAYOUT-sidebar-settings |
+| C / 品质 — 目的页加载与焦点 | E2E-087b |
+| C / F / 品质 — 会话子代理名册 | E2E-SESSION-subagent-roster-finds-old-delegations |
+| A / H / 品质 — 渲染进程崩溃恢复 | E2E-RUNTIME-renderer-crash-recovery |
+| C / F / 品质 — 含聊天的项目文件夹安全分离并删除 | E2E-048c |
+| B / F / 安全性 — 提供商配置复制 | E2E-PROVIDER-copy-config-without-credentials |
+| C / 品质 — 自托管端点收到会话 id | E2E-PROVIDER-custom-endpoint-session-identity |
+| B / F / 品质 — 已选模型顺序 | E2E-MODEL-selected-order-persists |
+| E / F / 品质 — MCP 服务器超时覆盖 | E2E-261 |
+| A — 应用启动 | E2E-001、E2E-002、E2E-003、E2E-004、E2E-067、E2E-076、E2E-079、E2E-092、E2E-097、E2E-143、E2E-150、E2E-168、E2E-204 |
+| A / C / F / 品质 — 托盘会话导航 | E2E-TRAY-bounded-session-navigation |
+| B — 模型配置 | E2E-005、E2E-PROVIDER-custom-endpoint-no-api-key、E2E-006、E2E-007、E2E-038、E2E-050、E2E-052、E2E-055、E2E-066、E2E-080、E2E-082、E2E-102c、E2E-102d、E2E-102e、E2E-151、E2E-154、E2E-163、E2E-166、E2E-172、E2E-174、E2E-197、E2E-005G、E2E-005J、E2E-199、E2E-201、E2E-202、E2E-203、E2E-205、E2E-206、E2E-209、E2E-PLUGIN-provider-catalog-add-service |
+| C — 对话与流式 | E2E-CHAT-long-history-stream-keeps-responsive、E2E-CHAT-detailed-density-keeps-a-covered-pane-plain、E2E-CHAT-running-status-survives-output-pauses、E2E-008、E2E-008d、E2E-008e、E2E-008a、E2E-009、E2E-010、E2E-011、E2E-011a、E2E-011b、E2E-011d、E2E-011e、E2E-011g、E2E-031、E2E-040、E2E-047、E2E-048、E2E-048A、E2E-049、E2E-052、E2E-053、E2E-054、E2E-055、E2E-059、E2E-059a、E2E-060c、E2E-060d、E2E-061、E2E-061a、E2E-062、E2E-064、E2E-065、E2E-068、E2E-071、E2E-073、E2E-074、E2E-075、E2E-081、E2E-083、E2E-084、E2E-086、E2E-087、E2E-088、E2E-088b、E2E-089、E2E-090、E2E-COMPOSER-narrow-controls、E2E-094、E2E-095、E2E-096、E2E-097、E2E-098、E2E-099、E2E-102、E2E-102a、E2E-102b、E2E-102c、E2E-102d、E2E-102g、E2E-106、E2E-109、E2E-111、E2E-114、E2E-116、E2E-117、E2E-118、E2E-119、E2E-120、E2E-121、E2E-218、E2E-259、E2E-219、E2E-AGENTS-001、E2E-142、E2E-144、E2E-145、E2E-146、E2E-146a、E2E-147、E2E-151、E2E-154、E2E-155、E2E-158、E2E-159、E2E-161、E2E-162、E2E-166、E2E-172、E2E-173、E2E-174、E2E-177、E2E-178、E2E-179、E2E-180、E2E-182、E2E-183、E2E-187、E2E-198、E2E-199、E2E-202、E2E-203、E2E-207、E2E-208、E2E-CHAT-content-width-handles、E2E-250、E2E-102i、E2E-PLUGIN-session-orchestrator-real-workers、E2E-SUBAGENT-settlement-updates-before-parent-poll、E2E-SUBAGENT-resume-a-settled-delegation |
+| C — 对话与流式（输入框草稿） | E2E-011c、E2E-011c-1 |
+| D — 工作区 | E2E-012、E2E-013、E2E-022B、E2E-024I、E2E-047、E2E-049、E2E-057、E2E-058、E2E-060、E2E-068、E2E-075、E2E-078、E2E-153、E2E-158、E2E-182、E2E-187、E2E-252 |
+| C / D / 品质 — 折叠项目后重置会话历史 | E2E-263 |
+| D — 工作区（项目排序） | E2E-253 |
+| E — 工具与权限 | E2E-008a、E2E-014、E2E-015、E2E-016、E2E-017、E2E-018、E2E-019、E2E-024I、E2E-024K、E2E-040、E2E-049、E2E-074、E2E-093、E2E-097、E2E-099、E2E-100、E2E-101、E2E-102、E2E-102d、E2E-102e、E2E-102g、E2E-103、E2E-105、E2E-106、E2E-107、E2E-111、E2E-112、E2E-113、E2E-114、E2E-115、E2E-116、E2E-119、E2E-121、E2E-122、E2E-142、E2E-145、E2E-147、E2E-155、E2E-158、E2E-166、E2E-181、E2E-PLUGIN-imported-pi-package-skills |
+| F — 持久化 | E2E-020、E2E-021、E2E-021a、E2E-038、E2E-SETTINGS-inline-capability-imports、E2E-040、E2E-042、E2E-047、E2E-048、E2E-051、E2E-054、E2E-056、E2E-061、E2E-062、E2E-064、E2E-066、E2E-068、E2E-071、E2E-072、E2E-073、E2E-082、E2E-084、E2E-096、E2E-098、E2E-102、E2E-102b、E2E-102c、E2E-102d、E2E-102g、E2E-102i、E2E-103、E2E-AGENTS-001、E2E-061a、E2E-073a、E2E-104、E2E-106、E2E-107、E2E-108、E2E-109、E2E-110、E2E-112、E2E-118、E2E-119、E2E-120、E2E-121、E2E-123、E2E-142、E2E-146、E2E-146a、E2E-148、E2E-151、E2E-158、E2E-160、E2E-168、E2E-171、E2E-177、E2E-178、E2E-183、E2E-186、E2E-005J、E2E-PROVIDER-custom-endpoint-no-api-key、E2E-PLUGIN-session-orchestrator-real-workers、E2E-PLUGIN-provider-catalog-add-service、E2E-SESSION-outbox-unclassifiable-failure-does-not-stall-the-queue |
+| F — 持久化（项目排序） | E2E-251 |
+| G / 安全性 — Fetch 重定向策略 | E2E-PLUGIN-fetch-redirect-policy |
+| G — 插件 | E2E-022、E2E-022A、E2E-022B、E2E-022C、E2E-023、E2E-024、E2E-024B、E2E-024C、E2E-024D、E2E-024AA、E2E-024E、E2E-024W、E2E-024F、E2E-024G、E2E-024H、E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M、E2E-024N、E2E-024O、E2E-024P、E2E-025、E2E-026、E2E-105、E2E-117、E2E-120、E2E-122、E2E-123、E2E-024Q、E2E-148、E2E-152、E2E-153、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-imported-pi-package-wrapper、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-global-shortcut-owns-only-its-own-command、E2E-PLUGIN-permission-gate-for-real-time-capabilities、E2E-PLUGIN-background-audio-and-realtime-connection、E2E-PLUGIN-fs-root-follows-the-calling-session、E2E-PLUGIN-provider-catalog-add-service、E2E-PLUGIN-sidebar-view-placement |
+| H — 诊断 | E2E-027、E2E-031、E2E-034、E2E-042、E2E-096、E2E-098、E2E-104、E2E-107、E2E-108、E2E-109、E2E-110、E2E-113、E2E-115、E2E-116、E2E-118、E2E-121、E2E-146、E2E-146a、E2E-155、E2E-159、E2E-176、E2E-194、E2E-195 |
+| 安全性 | E2E-SETTINGS-inline-capability-imports、E2E-028、E2E-029、E2E-030、E2E-024J、E2E-024K、E2E-024M、E2E-049、E2E-068、E2E-086、E2E-102c、E2E-102d、E2E-102e、E2E-105、E2E-106、E2E-107、E2E-108、E2E-109、E2E-110、E2E-112、E2E-113、E2E-115、E2E-116、E2E-117、E2E-119、E2E-121、E2E-122、E2E-123、E2E-142、E2E-148、E2E-151、E2E-153、E2E-158、E2E-187、E2E-196c、E2E-196b、E2E-196、E2E-PROVIDER-custom-endpoint-no-api-key、E2E-PLUGIN-fs-root-follows-the-calling-session、E2E-PLUGIN-provider-catalog-add-service |
+| 品质 | E2E-SETTINGS-inline-capability-imports、E2E-CHAT-long-history-stream-keeps-responsive、E2E-CHAT-detailed-density-keeps-a-covered-pane-plain、E2E-CHAT-running-status-survives-output-pauses、E2E-032、E2E-033、E2E-039、E2E-043、E2E-044、E2E-045、E2E-046、E2E-047、E2E-048、E2E-048A、E2E-049、E2E-050、E2E-053、E2E-055、E2E-056、E2E-057、E2E-058、E2E-059、E2E-060、E2E-061、E2E-062、E2E-063、E2E-064、E2E-065、E2E-066、E2E-067、E2E-068、E2E-069、E2E-070、E2E-071、E2E-072、E2E-073、E2E-074、E2E-075、E2E-076、E2E-077、E2E-078、E2E-079、E2E-080、E2E-081、E2E-082、E2E-083、E2E-084、E2E-085、E2E-086、E2E-092、E2E-093、E2E-094、E2E-095、E2E-096、E2E-097、E2E-098、E2E-099、E2E-100、E2E-101、E2E-102、E2E-102a、E2E-102b、E2E-102c、E2E-102d、E2E-102e、E2E-103、E2E-AGENTS-001、E2E-021a、E2E-024N、E2E-059a、E2E-060b、E2E-060c、E2E-061a、E2E-073a、E2E-111、E2E-114、E2E-117、E2E-118、E2E-119、E2E-120、E2E-122、E2E-123、E2E-142、E2E-143、E2E-144、E2E-145、E2E-146、E2E-147、E2E-148、E2E-150、E2E-151、E2E-153、E2E-155、E2E-158、E2E-159、E2E-160、E2E-161、E2E-162、E2E-163、E2E-168、E2E-172、E2E-173、E2E-174、E2E-011g、E2E-176、E2E-177、E2E-178、E2E-179、E2E-180、E2E-181、E2E-182、E2E-183、E2E-186、E2E-187、E2E-194、E2E-195、E2E-196a、E2E-196b、E2E-196c、E2E-198、E2E-199、E2E-200、E2E-196、E2E-201、E2E-204、E2E-202、E2E-203、E2E-205、E2E-206、E2E-207、E2E-208、E2E-209、E2E-210、E2E-UPDATE-preference-and-once-only-reminder、E2E-218、E2E-259、E2E-219、E2E-250、E2E-252、E2E-102i、E2E-SUBAGENT-settlement-updates-before-parent-poll、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-fs-root-follows-the-calling-session、E2E-SUBAGENT-resume-a-settled-delegation、E2E-PLUGIN-provider-catalog-add-service |
 | 品质（侧边栏菜单定位） | E2E-021c |
 | 品质（项目排序） | E2E-253 |
-| C — 对话和直播（输入法斜杠别名） | E2E-255 |
-| E——工具和权限（Skill 常驻） | E2E-254 |
+| C — 对话与流式（输入法斜杠别名） | E2E-255 |
+| E — 工具与权限（Skill 常驻） | E2E-254 |
 | 品质（Skill 常驻与输入法斜杠别名） | E2E-254、E2E-255 |
-| C / E / F / 品质——内置技能启用状态 | E2E-SKILL-builtin-activation |
-| C / E / 安全 / 品质——后台补全保留项目能力 | E2E-SESSION-background-completion-preserves-project-skills |
-| 品质——市场目录查询重试恢复 | E2E-MARKET-CATALOG-RETRY |
-| C — 对话和直播（插件会话导入可见性） | E2E-257 |
-| F——持久化（插件会话导入可见性） | E2E-257 |
-| C — 对话和直播（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-CHAT-directory-ref-reveals-in-system-file-manager、E2E-CHAT-outside-root-ref-offers-reveal-and-copy |
-| C / 质量 / 安全（对话 MP4 附件） | E2E-CHAT-mp4-attachment-opens-in-system-player |
-| G——插件（聊天文件引用） | E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-PLUGIN-file-view-collapse-persists |
-| 品质（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-PLUGIN-file-view-collapse-persists |
-| G——插件（项目文件夹根） | E2E-PLUGIN-file-view-switches-folder-per-project |
-| 安全性（项目文件夹根） | E2E-PLUGIN-file-view-switches-folder-per-project |
-| 品质（项目文件夹根） | E2E-PLUGIN-file-view-switches-folder-per-project |
-| G——插件（会话导入可见性） | E2E-257 |
+| C / E / F / 品质 — 内置技能启用 | E2E-SKILL-builtin-activation |
+| C / E / 安全性 / 品质 — 后台完成保留项目能力 | E2E-SESSION-background-completion-preserves-project-skills |
+| 品质 — 市场目录重试恢复 | E2E-MARKET-CATALOG-RETRY |
+| C — 对话与流式（插件会话导入可见性） | E2E-257 |
+| F — 持久化（插件会话导入可见性） | E2E-257 |
+| G — 插件（会话导入可见性） | E2E-257 |
 | 品质（插件会话导入可见性） | E2E-257 |
-| G——插件（Session Orchestrator） | E2E-PLUGIN-session-orchestrator-real-workers |
+| 品质（Windows 更新缓存） | E2E-260 |
+| G — 插件（Session Orchestrator） | E2E-PLUGIN-session-orchestrator-real-workers |
 | 安全性（Session Orchestrator） | E2E-PLUGIN-session-orchestrator-real-workers |
 | 品质（Session Orchestrator） | E2E-PLUGIN-session-orchestrator-real-workers |
 | C — 对话与流式（会话列表响应性） | E2E-SESSION-list-refresh-keeps-desktop-responsive |
 | 品质（会话列表响应性） | E2E-SESSION-list-refresh-keeps-desktop-responsive |
-| 品质（Windows 更新缓存） | E2E-260 |
+| C / F — 退出时中断运行中的回合 | E2E-SESSION-quit-settles-running-turn-interrupted |
 | 安全性（导入扩展依赖） | E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency |
 | 品质（导入扩展依赖） | E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency |
 | F / G / 安全性 / 品质 — 导入扩展的 npm 恢复 | E2E-PLUGIN-import-extension-recovers-missing-npm |
@@ -5882,11 +5877,18 @@ eleven-tool-round desktop paths are verified by
 | G — 插件（独立会话通信） | E2E-SESSION-independent-top-level-communication |
 | 品质（独立会话通信） | E2E-SESSION-independent-top-level-communication、E2E-SESSION-hover-card-model-and-links |
 | C — 对话与流式（hover 卡片模型和链接） | E2E-SESSION-hover-card-model-and-links |
+| C — 对话与流式（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-CHAT-directory-ref-reveals-in-system-file-manager、E2E-CHAT-outside-root-ref-offers-reveal-and-copy |
+| C / 品质 / 安全性（对话 MP4 附件） | E2E-CHAT-mp4-attachment-opens-in-system-player |
+| G — 插件（聊天文件引用） | E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-PLUGIN-file-view-collapse-persists |
+| 品质（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-PLUGIN-file-view-collapse-persists |
+| G — 插件（项目文件夹根） | E2E-PLUGIN-file-view-switches-folder-per-project |
+| 安全性（项目文件夹根） | E2E-PLUGIN-file-view-switches-folder-per-project |
+| 品质（项目文件夹根） | E2E-PLUGIN-file-view-switches-folder-per-project |
 | D — 工作区（删除项目） | E2E-PROJECT-delete-removes-project-and-owned-sessions |
 | F — 持久化（删除项目） | E2E-PROJECT-delete-removes-project-and-owned-sessions |
 | 品质（删除项目） | E2E-PROJECT-delete-removes-project-and-owned-sessions |
 | 品质（两步删除） | E2E-SESSION-two-click-delete-arms-first |
-| Security (plugin real-time capabilities) | E2E-PLUGIN-global-shortcut-owns-only-its-own-command、E2E-PLUGIN-permission-gate-for-real-time-capabilities、E2E-PLUGIN-background-audio-and-realtime-connection |
+| 安全性（插件实时能力） | E2E-PLUGIN-global-shortcut-owns-only-its-own-command、E2E-PLUGIN-permission-gate-for-real-time-capabilities、E2E-PLUGIN-background-audio-and-realtime-connection |
 | C — 对话与流式（展开详情保持阅读位置） | E2E-CHAT-disclosure-toggle-keeps-reading-position |
 | E — 工具与权限（展开详情保持阅读位置） | E2E-CHAT-disclosure-toggle-keeps-reading-position |
 | D（界面表面）/ 品质 — 远程主机添加与配对表单折叠 | E2E-REMOTE-HOST-settings-compact-inventory |
@@ -5898,16 +5900,16 @@ eleven-tool-round desktop paths are verified by
 |---|---|
 | MVP 后实验性交互维护 | E2E-LIVE-VOICE-four-stage-ui |
 | M1 | E2E-001、E2E-002、E2E-003、E2E-028、E2E-029 |
-| M2 | E2E-004、E2E-005、E2E-006、E2E-007、E2E-008、E2E-008d、E2E-009、E2E-010、E2E-011、E2E-011a、E2E-011b、E2E-020、E2E-021、E2E-027、E2E-031、E2E-042、E2E-087、E2E-088、E2E-088b、E2E-089、E2E-090、E2E-144、E2E-005J、E2E-201 |
+| M2 | E2E-004、E2E-005、E2E-006、E2E-007、E2E-008、E2E-008d、E2E-008e、E2E-009、E2E-010、E2E-011、E2E-011a、E2E-011b、E2E-011d、E2E-011e、E2E-011g、E2E-020、E2E-021、E2E-021a、E2E-027、E2E-031、E2E-042、E2E-087、E2E-088、E2E-088b、E2E-089、E2E-090、E2E-COMPOSER-narrow-controls、E2E-144、E2E-005J、E2E-201、E2E-202、E2E-207、E2E-206 |
 | M2（侧边栏菜单定位） | E2E-021c |
 | M3 | E2E-012、E2E-013、E2E-014、E2E-015、E2E-016、E2E-017、E2E-018、E2E-019、E2E-040 |
 | M4 | E2E-022、E2E-023、E2E-024、E2E-025、E2E-026、E2E-030、E2E-038 |
-| M5 | E2E-CHAT-running-status-survives-output-pauses、E2E-008a、E2E-032、E2E-033、E2E-034、E2E-039、E2E-043、E2E-044、E2E-045、E2E-046、E2E-047、E2E-048、E2E-048c、E2E-048A、E2E-049、E2E-050、 E2E-051、E2E-052、E2E-053、E2E-054、E2E-055、E2E-056、E2E-057、E2E-058、E2E-059、E2E-060、E2E-061、E2E-062、E2E-063、E2E-064、 E2E-065、E2E-066、E2E-067、E2E-068、E2E-069、E2E-070、E2E-071、E2E-072、E2E-073、E2E-074、E2E-075、E2E-076、E2E-077、E2E-078、 E2E-079、E2E-080、E2E-081、E2E-082、E2E-083、E2E-084、E2E-085、E2E-086、E2E-092、E2E-093、E2E-096、E2E-097、E2E-098、E2E-099、 E2E-100、E2E-101、E2E-102、E2E-102a、E2E-102b、E2E-AGENTS-001、E2E-059a、E2E-060b、E2E-060c、E2E-061a、E2E-073a、E2E-094、E2E-095、E2E-143、E2E-145、E2E-146、E2E-147、E2E-194、E2E-195、E2E-204、E2E-250 |
+| M5 | E2E-CHAT-long-history-stream-keeps-responsive、E2E-CHAT-detailed-density-keeps-a-covered-pane-plain、E2E-CHAT-running-status-survives-output-pauses、E2E-008a、E2E-032、E2E-033、E2E-034、E2E-039、E2E-043、E2E-044、E2E-045、E2E-046、E2E-047、E2E-048、E2E-048A、E2E-049、E2E-050、E2E-051、E2E-052、E2E-053、E2E-054、E2E-055、E2E-056、E2E-057、E2E-058、E2E-059、E2E-060、E2E-061、E2E-062、E2E-063、E2E-064、E2E-065、E2E-066、E2E-067、E2E-068、E2E-069、E2E-070、E2E-071、E2E-072、E2E-073、E2E-074、E2E-075、E2E-076、E2E-077、E2E-078、E2E-079、E2E-080、E2E-081、E2E-082、E2E-083、E2E-084、E2E-085、E2E-086、E2E-092、E2E-093、E2E-096、E2E-097、E2E-098、E2E-099、E2E-100、E2E-101、E2E-102、E2E-102a、E2E-102b、E2E-102c、E2E-102d、E2E-102e、E2E-AGENTS-001、E2E-059a、E2E-060b、E2E-060c、E2E-061a、E2E-073a、E2E-094、E2E-095、E2E-143、E2E-145、E2E-146、E2E-146a、E2E-147、E2E-177、E2E-178、E2E-180、E2E-181、E2E-182、E2E-183、E2E-186、E2E-187、E2E-194、E2E-195、E2E-204、E2E-208、E2E-CHAT-content-width-handles、E2E-250、E2E-252、E2E-102i、E2E-BROWSER-capture-resize |
 | M5（项目排序） | E2E-253 |
 | M2（输入法斜杠别名） | E2E-255 |
 | M5（Skill 常驻） | E2E-254 |
-| M6 | E2E-104、E2E-105、E2E-106、E2E-107、E2E-108、E2E-109、E2E-110、E2E-111、E2E-112、E2E-113、E2E-114、E2E-115、E2E-116、E2E-117、 E2E-118、E2E-119、E2E-120、E2E-103 |
-| M6+ | E2E-121、E2E-122、E2E-123、E2E-142、E2E-148、E2E-150、E2E-151、E2E-168、E2E-199、E2E-200、E2E-202、E2E-203、E2E-209、E2E-211、E2E-UPDATE-preference-and-once-only-reminder、E2E-212、E2E-213、E2E-214、E2E-215、E2E-216、E2E-217、E2E-257、E2E-SETTINGS-inline-capability-imports、E2E-166、E2E-SUBAGENT-resume-a-settled-delegation |
+| M6 | E2E-104、E2E-105、E2E-106、E2E-107、E2E-108、E2E-109、E2E-110、E2E-111、E2E-112、E2E-113、E2E-114、E2E-115、E2E-116、E2E-117、E2E-118、E2E-119、E2E-120、E2E-103、E2E-172 |
+| M6+ | E2E-121、E2E-122、E2E-148、E2E-150、E2E-151、E2E-154、E2E-155、E2E-158、E2E-159、E2E-160、E2E-161、E2E-162、E2E-163、E2E-166、E2E-168、E2E-173、E2E-174、E2E-176、E2E-179、E2E-196a、E2E-196b、E2E-196c、E2E-198、E2E-199、E2E-200、E2E-202、E2E-203、E2E-205、E2E-209、E2E-SETTINGS-inline-capability-imports、E2E-210、E2E-UPDATE-preference-and-once-only-reminder、E2E-212、E2E-213、E2E-214、E2E-215、E2E-216、E2E-217、E2E-218、E2E-259、E2E-219、E2E-257、E2E-SUBAGENT-settlement-updates-before-parent-poll、E2E-PLUGIN-fs-root-follows-the-calling-session、E2E-SUBAGENT-resume-a-settled-delegation |
 | M6+（Session Orchestrator） | E2E-PLUGIN-session-orchestrator-real-workers |
 | M6+（已选模型顺序） | E2E-MODEL-selected-order-persists |
 | M6+（MCP 服务器超时覆盖） | E2E-261 |
@@ -5919,23 +5921,24 @@ eleven-tool-round desktop paths are verified by
 | M5（对话 MP4 附件） | E2E-CHAT-mp4-attachment-opens-in-system-player |
 | M6+（聊天文件引用） | E2E-PLUGIN-file-view-collapse-persists |
 | M6+（项目文件夹根） | E2E-PLUGIN-file-view-switches-folder-per-project |
-| 后MVP | E2E-022A、E2E-022B、E2E-022C、E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M（插件路线图 R2/R3/R6） |
+| MVP 后 | E2E-022A、E2E-022B、E2E-022C、E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M （插件路线图 R2/R3/R6） |
 | 基线后本地自动化 | E2E-220 |
 | 基线后本地自动化（MCP `minih_session_get` 超大 compaction） | E2E-MCP-session-get-projects-large-compaction |
-| MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232、E2E-265、E2E-266、E2E-REMOTE-HOST-settings-compact-inventory、E2E-REMOTE-MOBILE-native-shell-credential-storage、E2E-REMOTE-ACCOUNT-cross-account-isolation、E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts、E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm、E2E-REMOTE-ACCOUNT-key-rotation-keeps-account、E2E-REMOTE-ACCOUNT-disabled-key-blocks-login、E2E-REMOTE-ACCOUNT-redacted-push |
-| 受信任扩展（R7 v1） | E2E-DIALOG-long-text-boundaries、E2E-241、E2E-242、E2E-HOOKS-cancel-and-dispose、E2E-243、E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch、E2E-244、E2E-245、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list |
+| MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232、E2E-265、E2E-266、E2E-REMOTE-HOST-settings-compact-inventory、E2E-REMOTE-MOBILE-native-shell-credential-storage、E2E-REMOTE-ACCOUNT-cross-account-isolation、E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts、E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm、E2E-REMOTE-ACCOUNT-key-rotation-keeps-account、E2E-REMOTE-ACCOUNT-disabled-key-blocks-login、E2E-REMOTE-ACCOUNT-redacted-push、E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
+| MVP 后远程控制（移动端重设计 2026-10-23） | E2E-REMOTE-MODEL-channel-union-text-model-stays-in-chats、E2E-REMOTE-MODEL-image-job-keeps-chat-model、E2E-REMOTE-MODEL-switch-model-in-unsent-conversation、E2E-REMOTE-IMAGE-retry-uses-image-endpoint、E2E-REMOTE-CHAT-archive-while-replying-stops-first、E2E-REMOTE-SESSION-revoked-offers-forget-and-repair、E2E-REMOTE-SETTINGS-push-state-and-appearance-survive-reload、E2E-REMOTE-NAV-h5-has-only-the-computers-root |
+| 受信任扩展（R7 v1） | E2E-DIALOG-long-text-boundaries、E2E-241、E2E-242、E2E-HOOKS-prompt-chain、E2E-HOOKS-cancel-and-dispose、E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding、E2E-243、E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch、E2E-244、E2E-245、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list、E2E-PLUGIN-provider-catalog-add-service |
 | 受信任扩展（R7 v1 npm 恢复） | E2E-PLUGIN-import-extension-recovers-missing-npm |
-| Post-MVP 回归覆盖（插件工具调度） | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
+| MVP 后回归覆盖（插件工具调度） | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
 | M6+（删除项目） | E2E-PROJECT-delete-removes-project-and-owned-sessions |
 | M6+（两步删除） | E2E-SESSION-two-click-delete-arms-first |
-| C — 对话和直播（模型回退） | E2E-SUBAGENT-ordered-model-fallback-preserves-work |
+| C — 对话与流式（模型回退） | E2E-SUBAGENT-ordered-model-fallback-preserves-work |
 | 品质（模型回退隔离） | E2E-SUBAGENT-ordered-model-fallback-preserves-work |
-| C — 对话和直播（旧版子代理回合上限） | E2E-SUBAGENT-legacy-turn-limit-frontmatter-is-ignored |
+| C — 对话与流式（旧版子代理回合上限） | E2E-SUBAGENT-legacy-turn-limit-frontmatter-is-ignored |
 | 品质（旧版子代理回合上限） | E2E-SUBAGENT-legacy-turn-limit-frontmatter-is-ignored |
 | M6+（展开详情保持阅读位置） | E2E-CHAT-disclosure-toggle-keeps-reading-position |
 | M6+（能力跨级别迁移） | E2E-CAPABILITY-move-across-levels |
-| E — 工具与权限（内置子智能体默认项） | E2E-SUBAGENT-settings-lists-builtin-defaults |
-| 品质（内置子智能体默认项） | E2E-SUBAGENT-settings-lists-builtin-defaults |
+| E — 工具与权限（内置子代理默认项） | E2E-SUBAGENT-settings-lists-builtin-defaults |
+| 品质（内置子代理默认项） | E2E-SUBAGENT-settings-lists-builtin-defaults |
 | C — 对话与流式（不透明浮动表面） | E2E-CHAT-opaque-floating-decision-and-retry-surfaces |
 | 品质（不透明浮动表面） | E2E-CHAT-opaque-floating-decision-and-retry-surfaces |
 | M6（不透明浮动表面） | E2E-CHAT-opaque-floating-decision-and-retry-surfaces |
@@ -5943,22 +5946,21 @@ eleven-tool-round desktop paths are verified by
 | F — 持久化（目录窗口来源） | E2E-MODEL-catalog-window-correction-reaches-saved-bindings |
 | 品质（目录窗口来源） | E2E-MODEL-catalog-window-correction-reaches-saved-bindings |
 | M6+（目录窗口来源） | E2E-MODEL-catalog-window-correction-reaches-saved-bindings |
-| C — 对话和直播（委托上下文预算） | E2E-SUBAGENT-context-overflow-compacts-before-failing、E2E-SUBAGENT-context-overflow-reports-actionable-failure、E2E-SUBAGENT-resume-seeds-within-context-budget |
+| C — 对话与流式（委托上下文预算） | E2E-SUBAGENT-context-overflow-compacts-before-failing、E2E-SUBAGENT-context-overflow-reports-actionable-failure、E2E-SUBAGENT-resume-seeds-within-context-budget |
 | 品质（委托上下文预算） | E2E-SUBAGENT-context-overflow-compacts-before-failing、E2E-SUBAGENT-context-overflow-reports-actionable-failure、E2E-SUBAGENT-resume-seeds-within-context-budget |
 | M6+（委托上下文预算） | E2E-SUBAGENT-context-overflow-compacts-before-failing、E2E-SUBAGENT-context-overflow-reports-actionable-failure、E2E-SUBAGENT-resume-seeds-within-context-budget |
-| C / F / 品质 —— 上下文估算保持安全（校准） | E2E-CONTEXT-estimate-calibration-stays-safe |
+| C / F / 品质 — 上下文估算保持安全（校准） | E2E-CONTEXT-estimate-calibration-stays-safe |
 | C — 对话与流式（工具调用 id 唯一） | E2E-RUNTIME-unique-tool-call-ids-per-request |
+| F — 持久化（存储的模型绑定数组） | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
+| 品质（存储的模型绑定数组） | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
 | 品质（工具调用 id 唯一） | E2E-RUNTIME-unique-tool-call-ids-per-request |
 | C — 对话与流式（工具执行期间的系统更新恢复） | E2E-RUNTIME-system-update-during-tool-call-restore |
 | 品质（工具执行期间的系统更新恢复） | E2E-RUNTIME-system-update-during-tool-call-restore |
 | C — 对话与流式（循环上下文归属） | E2E-RUNTIME-loop-context-ownership |
+| C / F / 品质 — 转录非法 UTF-8 恢复 | E2E-TRANSCRIPT-invalid-utf8-window-remains-readable |
 | 品质（循环上下文归属） | E2E-RUNTIME-loop-context-ownership |
-| C / F / 质量 — 转录非法 UTF-8 恢复 | E2E-TRANSCRIPT-invalid-utf8-window-remains-readable |
 | G — 插件宿主生命周期（崩溃上报） | E2E-PLUGIN-crash-report-names-the-exit-code |
 | 品质（崩溃上报） | E2E-PLUGIN-crash-report-names-the-exit-code |
-| F — 持久化（存储的模型绑定数组） | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
-| 品质（存储的模型绑定数组） | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
-| C / F — 退出时中断运行中回合 | E2E-SESSION-quit-settles-running-turn-interrupted |
 
 `US-UI-*` 视觉场景（§UI shell 视觉场景）追踪到
 [决策日志 §D](/zh-CN/spec/08-meta/decisions-log) 中的法典平价决策

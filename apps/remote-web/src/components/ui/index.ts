@@ -1,3 +1,4 @@
+export * from "./Aurora.js";
 export * from "./Button.js";
 export * from "./StatusDot.js";
 export * from "./NavBar.js";

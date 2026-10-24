@@ -116,6 +116,14 @@ function parseModel(value: unknown): MinihRouterModel | null {
       catalogs.flatMap((model) => list(record(model.modalities).input).map(text).filter(Boolean)),
     ),
   );
+  // What the model produces, which is the only per-model evidence of image
+  // output. `protocols` cannot answer this: Router fills it with the channel
+  // type's whole union, so every OpenAI-compatible model declares `openai-images`.
+  const outputModalities = Array.from(
+    new Set(
+      catalogs.flatMap((model) => list(record(model.modalities).output).map(text).filter(Boolean)),
+    ),
+  );
   const contextWindow = catalogs
     .map((model) => integer(record(model.limits).context))
     .find((limit): limit is number => limit !== null && limit > 0) ?? null;
@@ -147,6 +155,7 @@ function parseModel(value: unknown): MinihRouterModel | null {
     contextWindow,
     maxOutput,
     inputModalities: inputModalities.length > 0 ? inputModalities : undefined,
+    outputModalities: outputModalities.length > 0 ? outputModalities : undefined,
   };
 }
 

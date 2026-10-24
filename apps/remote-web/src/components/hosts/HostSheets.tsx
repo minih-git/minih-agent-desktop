@@ -100,10 +100,12 @@ export function ConnectSheet({
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[15px] font-semibold leading-[20px] text-[var(--rm-text-primary)]">
-                切换网关环境
+                {t("hosts.gateway.title")}
               </div>
               <div className="truncate font-mono text-[12px] leading-[18px] text-[var(--rm-text-muted)]">
-                当前：{gatewayOrigin || "默认"}
+                {t("hosts.gateway.current", {
+                  origin: gatewayOrigin || t("hosts.gateway.default"),
+                })}
               </div>
             </div>
           </button>
@@ -284,7 +286,7 @@ export function GatewaySheet({
   const handleSave = () => {
     const normalized = normalizeUserGatewayOrigin(input);
     if (!normalized) {
-      setError("请输入有效的网关地址（如 https://rc.hmini.org）");
+      setError(t("hosts.gateway.invalidUrl"));
       return;
     }
     onClose();
@@ -295,14 +297,14 @@ export function GatewaySheet({
     <Sheet
       open={open}
       onClose={onClose}
-      title="切换网关环境"
-      description="支持配置多套远程网关地址，每个网关各自保存已连接的电脑与凭证，可随时一键切换。"
+      title={t("hosts.gateway.title")}
+      description={t("hosts.gateway.description")}
     >
       <div className="space-y-3 pt-2">
         {saved.length > 0 ? (
           <div className="space-y-1.5">
             <div className="px-1 text-[12px] font-medium text-[var(--rm-text-muted)]">
-              已保存的网关
+              {t("hosts.gateway.saved")}
             </div>
             <div className="space-y-1.5">
               {saved.map((origin) => {
@@ -331,7 +333,7 @@ export function GatewaySheet({
                       </span>
                       {isDefault ? (
                         <span className="shrink-0 rounded-full bg-[var(--rm-bg-surface)] px-2 py-0.5 text-[11px] text-[var(--rm-text-muted)] ring-1 ring-[var(--rm-separator)]">
-                          默认
+                          {t("hosts.gateway.default")}
                         </span>
                       ) : null}
                     </button>
@@ -344,7 +346,7 @@ export function GatewaySheet({
                           removeSavedGatewayOrigin(origin);
                           setSaved(getSavedGatewayOrigins());
                         }}
-                        aria-label="删除网关"
+                        aria-label={t("hosts.gateway.delete")}
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--rm-text-muted)] active:opacity-60"
                       >
                         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -362,7 +364,7 @@ export function GatewaySheet({
             htmlFor="gateway-origin-input"
             className="block px-1 text-[12px] font-medium text-[var(--rm-text-muted)]"
           >
-            输入新网关地址
+            {t("hosts.gateway.inputLabel")}
           </label>
           <input
             id="gateway-origin-input"
@@ -385,7 +387,7 @@ export function GatewaySheet({
 
         <div className="flex flex-col gap-2 pt-2">
           <Button variant="primary" size="large" onClick={handleSave}>
-            保存并切换网关
+            {t("hosts.gateway.saveAndSwitch")}
           </Button>
           {defaultGatewayOrigin && gatewayOrigin !== defaultGatewayOrigin ? (
             <Button
@@ -396,7 +398,7 @@ export function GatewaySheet({
                 switchGatewayOrigin(defaultGatewayOrigin);
               }}
             >
-              恢复默认（{defaultGatewayOrigin}）
+              {t("hosts.gateway.restoreDefault", { origin: defaultGatewayOrigin })}
             </Button>
           ) : null}
           <Button variant="plain" size="large" onClick={onClose}>

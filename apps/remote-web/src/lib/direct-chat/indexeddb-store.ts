@@ -253,8 +253,14 @@ export function createIndexedDbDirectChatStore(
           async putMessage(record) {
             messages.put(record);
           },
+          async deleteMessage(id) {
+            messages.delete(id);
+          },
           async putAttempt(record) {
             attempts.put(record);
+          },
+          async deleteAttempt(id) {
+            attempts.delete(id);
           },
           async putDraft(scope, text, now) {
             drafts.put({ scopeKey: scopeKey(scope), text, updatedAt: now ?? new Date().toISOString() });

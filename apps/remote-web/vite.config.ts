@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin, type PluginOption } from "vite";
@@ -63,6 +65,27 @@ export default defineConfig(({ mode }) => {
     plugins,
     server: { proxy },
     preview: { proxy },
+    define: {
+      // Settings ▸ About shows the real package version. Reading the manifest
+      // here is what keeps the number from drifting from `package.json`; a
+      // manifest that cannot be read fails the build instead of shipping a
+      // version nobody can reproduce.
+      __APP_VERSION__: JSON.stringify(readPackageVersion()),
+    },
     build: { outDir: "dist", emptyOutDir: true, sourcemap: false, target: "es2022" },
   };
 });
+
+function readPackageVersion(): string {
+  const manifest: unknown = JSON.parse(
+    readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+  );
+  const version =
+    manifest && typeof manifest === "object" && "version" in manifest
+      ? (manifest as { version?: unknown }).version
+      : null;
+  if (typeof version !== "string" || !version.trim()) {
+    throw new Error("apps/remote-web/package.json has no version");
+  }
+  return version;
+}

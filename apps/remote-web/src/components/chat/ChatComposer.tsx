@@ -2,7 +2,7 @@ import { ArrowUp, Clock, Loader2, Paperclip, X } from "lucide-react";
 import { type ChangeEvent, type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ComposerSend } from "../../lib/composer-send.js";
+import { submitsOnEnter, type ComposerSend } from "../../lib/composer-send.js";
 import {
   attemptSignature,
   attachmentPayload,
@@ -184,10 +184,20 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void submit();
+    // An IME owns Enter while it is composing: it commits the candidate, and
+    // sending here would post half-typed text.
+    if (
+      !submitsOnEnter({
+        key: e.key,
+        shiftKey: e.shiftKey,
+        isComposing: e.nativeEvent.isComposing,
+        keyCode: e.keyCode,
+      })
+    ) {
+      return;
     }
+    e.preventDefault();
+    void submit();
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -253,7 +263,7 @@ export function ChatComposer({
       ) : null}
 
       {/* Pill field */}
-      <div className="flex items-end gap-1 rounded-[22px] border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] p-1.5 pl-2 transition-colors focus-within:border-[var(--rm-accent)]">
+      <div className="flex items-end gap-1.5 rounded-[26px] border border-[var(--rm-hair)] bg-[var(--rm-glass-strong)] p-1.5 pl-2 shadow-[var(--rm-shadow)] backdrop-blur-[22px] transition-colors focus-within:border-[var(--rm-accent)]">
         {hideAttachments ? null : (
           <>
             <input
@@ -295,7 +305,7 @@ export function ChatComposer({
           type="submit"
           disabled={disabled || sending || isBlank}
           aria-label={t("composer.send")}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--rm-accent)] text-[var(--rm-on-accent)] transition-opacity disabled:opacity-25 cursor-pointer disabled:cursor-default"
+          className="rm-send-btn flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[image:var(--rm-aurora)] text-white transition-opacity disabled:opacity-25 cursor-pointer disabled:cursor-default"
         >
           {sending ? (
             <Loader2 size={18} className="animate-spin" />

@@ -186,11 +186,24 @@ export type DirectChatHistory = {
   setDraft(conversationId: string, draft: string): Promise<void>;
   rename(conversationId: string, title: string, now?: string): Promise<void>;
   setPinned(conversationId: string, pinned: boolean, now?: string): Promise<void>;
-  setArchived(conversationId: string, archived: boolean, now?: string): Promise<void>;
+  /**
+   * Archive or restore. A live reply refuses the archive and says why, instead
+   * of returning nothing: the sheet and the list both act on this (bug B6).
+   */
+  setArchived(conversationId: string, archived: boolean, now?: string): Promise<ConversationEditResult>;
   /** The model the next send uses; only allowed while the conversation is idle. */
   setNextModel(conversationId: string, modelId: string, protocol: string, now: string): Promise<void>;
   /** Conversation, messages and attempts together; a live attempt blocks it. */
   remove(conversationId: string): Promise<{ ok: boolean; reason?: string }>;
+  /**
+   * Delete one generation from a conversation, not the conversation itself.
+   *
+   * An image conversation can hold several generations (that is how Studio
+   * draws them), so "delete this image" must remove exactly that attempt, the
+   * prompt and reply it owns, and its media — and then remove the conversation
+   * only when nothing else is left in it.
+   */
+  removeImage(conversationId: string, attemptId: string): Promise<ImageRemovalResult>;
 
   /**
    * Delete every conversation of one account, or none of them.
@@ -201,6 +214,26 @@ export type DirectChatHistory = {
    */
   clearScope(scope: DirectChatScope): Promise<{ ok: true } | { ok: false; reason: "busy" | "storage" }>;
 };
+
+/**
+ * The outcome of an edit that has a precondition, so a caller can tell "done"
+ * from "refused" and name the reason.
+ */
+export type ConversationEditResult =
+  | { ok: true }
+  /** A reply is still arriving; the user stops it first. */
+  | { ok: false; reason: "busy" }
+  /** The record is gone, so there is nothing to edit. */
+  | { ok: false; reason: "missing" };
+
+/** What "delete this image" did, so the gallery can say so. */
+export type ImageRemovalResult =
+  /** Removed the generation; `conversationRemoved` when nothing else was left. */
+  | { ok: true; conversationRemoved: boolean }
+  /** A reply is still arriving; the user stops it first. */
+  | { ok: false; reason: "busy" }
+  /** The conversation or the generation is already gone. */
+  | { ok: false; reason: "missing" };
 
 /** A conversation is idle when no attempt is pending or streaming. */
 export function isIdle(attempts: readonly DirectChatAttempt[]): boolean {
@@ -778,13 +811,18 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
 
     async setArchived(conversationId, archived, now) {
       const conversation = await store.conversation(conversationId);
-      if (!conversation) return;
+      if (!conversation) return { ok: false, reason: "missing" };
       // Archiving a conversation with a live reply would leave a reply growing
-      // where the user cannot see it; the caller stops first.
-      if (archived && !isIdle(await store.attempts(conversationId))) return;
+      // where the user cannot see it. The refusal is returned rather than
+      // dropped, because both callers (the sheet and the list) offer "stop and
+      // archive" instead of a button that does nothing (bug B6).
+      if (archived && !isIdle(await store.attempts(conversationId))) {
+        return { ok: false, reason: "busy" };
+      }
       await store.transact(async (tx) => {
         await tx.putConversation({ ...conversation, archived, updatedAt: now ?? new Date().toISOString() });
       });
+      return { ok: true };
     },
 
     async setNextModel(conversationId, modelId, protocol, now) {
@@ -834,6 +872,60 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
         await tx.deleteConversation(conversationId);
       });
       return { ok: true };
+    },
+
+    async removeImage(conversationId, attemptId) {
+      const conversation = await store.conversation(conversationId);
+      if (!conversation) return { ok: false, reason: "missing" };
+      const attempts = await store.attempts(conversationId);
+      const target = attempts.find((attempt) => attempt.id === attemptId);
+      if (!target) return { ok: false, reason: "missing" };
+      // Deleting a generation that is still arriving would report success while
+      // the request keeps running and bills the user; stop it first.
+      if (target.state === "pending" || target.state === "streaming") {
+        return { ok: false, reason: "busy" };
+      }
+
+      const remaining = attempts.filter((attempt) => attempt.id !== attemptId);
+      if (remaining.length === 0) {
+        // Nothing else lives in this conversation, so the record itself goes —
+        // which also takes its messages and media with it.
+        await store.transact(async (tx) => {
+          await tx.deleteConversation(conversationId);
+        });
+        return { ok: true, conversationRemoved: true };
+      }
+
+      // A prompt or reply still referenced by another attempt (a retry shares
+      // the prompt) stays; only this generation's own rows are removed.
+      const stillReferenced = new Set<string>();
+      for (const attempt of remaining) {
+        stillReferenced.add(attempt.userMessageId);
+        if (attempt.assistantMessageId) stillReferenced.add(attempt.assistantMessageId);
+      }
+      const orphanIds = new Set(
+        [target.userMessageId, target.assistantMessageId].filter(
+          (id): id is string => typeof id === "string" && id.length > 0,
+        ),
+      );
+      for (const id of stillReferenced) orphanIds.delete(id);
+      for (const attempt of attempts) {
+        if (attempt.id === attemptId) continue;
+        for (const mediaId of attempt.mediaIds ?? []) orphanIds.delete(mediaId);
+      }
+
+      const mediaOfOthers = new Set(
+        remaining.flatMap((attempt) => attempt.mediaIds ?? []),
+      );
+      const mediaToDelete = (target.mediaIds ?? []).filter((id) => !mediaOfOthers.has(id));
+
+      await store.transact(async (tx) => {
+        await tx.deleteAttempt(attemptId);
+        for (const id of orphanIds) await tx.deleteMessage(id);
+        for (const id of mediaToDelete) await tx.deleteMedia(id);
+        await tx.putConversation({ ...conversation, updatedAt: new Date().toISOString() });
+      });
+      return { ok: true, conversationRemoved: false };
     },
   };
 }

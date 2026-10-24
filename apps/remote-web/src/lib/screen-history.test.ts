@@ -36,12 +36,15 @@ describe("screenFromHistoryState", () => {
       { kind: "pair" } as Screen,
       { kind: "account" } as Screen,
       { kind: "chats" } as Screen,
+      { kind: "studio" } as Screen,
       { kind: "chat", conversationId: "c1" } as Screen,
       { kind: "chat", conversationId: "c1", fromArchive: true } as Screen,
       { kind: "chatArchive" } as Screen,
       { kind: "modelGateway", from: "chats" } as Screen,
+      { kind: "modelGateway", from: "studio" } as Screen,
       { kind: "modelGateway", from: "hosts", viaSettings: true } as Screen,
       { kind: "settings", from: "hosts" } as Screen,
+      { kind: "settings", from: "studio" } as Screen,
     ]) {
       expect(screenFromHistoryState({ screen })).toEqual(screen);
     }
@@ -57,10 +60,14 @@ describe("screenFromHistoryState", () => {
     expect(screenFromHistoryState({ screen: { kind: "settings", from: "session" } })).toBeNull();
   });
 
-  it("treats the two roots as different destinations", () => {
+  it("treats the three roots as different destinations", () => {
     expect(sameScreen({ kind: "chats" }, { kind: "hosts" })).toBe(false);
+    expect(sameScreen({ kind: "chats" }, { kind: "studio" })).toBe(false);
+    expect(sameScreen({ kind: "studio" }, { kind: "hosts" })).toBe(false);
     expect(sameScreen({ kind: "chats" }, { kind: "chats" })).toBe(true);
+    expect(sameScreen({ kind: "studio" }, { kind: "studio" })).toBe(true);
     expect(sameScreen({ kind: "settings", from: "chats" }, { kind: "settings", from: "hosts" })).toBe(false);
+    expect(sameScreen({ kind: "settings", from: "chats" }, { kind: "settings", from: "studio" })).toBe(false);
     expect(sameScreen({ kind: "settings", from: "chats" }, { kind: "settings", from: "chats" })).toBe(true);
   });
 

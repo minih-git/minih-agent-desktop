@@ -18,8 +18,11 @@
  */
 import type { RacpSession } from "@minih-agent/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+
 
 import { ForegroundNoticeBar, type ForegroundNotice } from "./components/ForegroundNotice.js";
+import { Toast } from "./components/ui/Toast.js";
 import { AccountScreen } from "./screens/AccountScreen.js";
 import { ChatArchiveScreen } from "./screens/ChatArchiveScreen.js";
 import { ChatsScreen } from "./screens/ChatsScreen.js";
@@ -33,6 +36,7 @@ import { ProjectSessionsScreen } from "./screens/ProjectSessionsScreen.js";
 import { ProjectsScreen } from "./screens/ProjectsScreen.js";
 import { ScopedChatsScreen } from "./screens/ScopedChatsScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
+import { StudioScreen } from "./screens/StudioScreen.js";
 import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
@@ -41,9 +45,12 @@ import { registryHasHosts } from "./lib/host-registry.js";
 import { resolveLaunchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
 import type { DirectChatConnection } from "./lib/direct-chat/connection.js";
+import { forgetHost } from "./lib/forget.js";
 import {
   credentialPort,
   directChatService,
+  gatewayOrigin,
+  hostRegistry,
   isNativeApp,
   modelGatewayOrigin,
   nativePlatform,
@@ -52,6 +59,7 @@ import {
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
 import { createScreenHistory, sameScreen, screenFromHistoryState } from "./lib/screen-history.js";
 import { previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
+import { leaveRevokedSession } from "./lib/session-exit.js";
 import { tabBarVisible } from "./lib/tab-bar.js";
 import { createSessionViews } from "./lib/session-state.js";
 
@@ -90,7 +98,13 @@ const initialRoot = resolveLaunchRoot({
 });
 
 export default function App() {
+  const { t } = useTranslation();
   const hosts = useHostRegistry();
+  /**
+   * Why the last "forget this computer" failed. A revoked session's only way
+   * out is that action, so its failure is reported instead of swallowed.
+   */
+  const [forgetFailure, setForgetFailure] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: initialRoot });
   /**
    * The model connection this device holds, or null. Read once at mount and
@@ -330,18 +344,42 @@ export default function App() {
           onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
           onOpenConversation={(conversationId) => navigate({ kind: "chat", conversationId })}
-          onNewConversation={(modelId) => {
-            // The account remembers the explicit choice, and the conversation
-            // itself does not exist until its first message is saved.
-            directChatService().rememberModel(modelId);
-            reloadConnection();
-            navigate({ kind: "chat", conversationId: `conv-${Date.now().toString(36)}` });
-          }}
+          onNewConversation={(modelId) =>
+            // The model rides in the navigation target (ADR mobile-redesign
+            // D2): the conversation does not exist until its first message is
+            // saved, and a draft must not move the account's remembered chat
+            // model — that was bug B2.
+            navigate({
+              kind: "chat",
+              conversationId: `conv-${Date.now().toString(36)}`,
+              draftModelId: modelId ?? undefined,
+            })
+          }
           onOpenArchive={() => navigate({ kind: "chatArchive" })}
+          onOpenStudio={() => switchRoot("studio")}
         />
       );
     }
 
+    if (screen.kind === "studio") {
+      return (
+        <StudioScreen
+          connection={connection}
+          gatewayConfigured={modelGatewayOrigin !== null}
+          onConnect={() => navigate({ kind: "modelGateway", from: "studio" })}
+          onOpenSettings={() => navigate({ kind: "settings", from: "studio" })}
+          onConnectionChanged={reloadConnection}
+          onSwitchToChats={(modelId) => {
+            storeLastRoot("chats", window.localStorage);
+            navigate({
+              kind: "chat",
+              conversationId: `conv-${Date.now().toString(36)}`,
+              draftModelId: modelId,
+            });
+          }}
+        />
+      );
+    }
     if (screen.kind === "chatArchive") {
       return (
         <ChatArchiveScreen
@@ -358,16 +396,21 @@ export default function App() {
       return (
         <DirectChatScreen
           conversationId={screen.conversationId}
+          draftModelId={screen.draftModelId}
           onBack={goBack}
           connection={connection}
           onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onChanged={notifyDirectChatChanged}
           onOpenConversation={(id) => navigate({ kind: "chat", conversationId: id })}
-          onNewConversation={(modelId) => {
-            directChatService().rememberModel(modelId);
-            reloadConnection();
-            navigate({ kind: "chat", conversationId: `conv-${Date.now().toString(36)}` });
-          }}
+          onNewConversation={(modelId) =>
+            // Same rule as the Chats root: the model travels with the draft and
+            // is not written to the account's remembered chat model (D2).
+            navigate({
+              kind: "chat",
+              conversationId: `conv-${Date.now().toString(36)}`,
+              draftModelId: modelId ?? undefined,
+            })
+          }
         />
       );
     }
@@ -497,6 +540,18 @@ export default function App() {
           credential={credential}
           {...(host.roles ? { roles: host.roles } : {})}
           onOpenSession={(session) => openSession(host.hostId, session, project)}
+          // Switching project in the rail is a sideways move: `sync` replaces the
+          // entry this screen occupies instead of stacking one, so Back still
+          // lands on the project list and does not return to a stale project.
+          onSwitchProject={(next) =>
+            navigate({
+              kind: "projectSessions",
+              hostId: host.hostId,
+              projectId: next.id,
+              projectLabel: next.label,
+              ...(screen.viaProjects === false ? { viaProjects: false } : {}),
+            })
+          }
           onBack={goBack}
         />
       );
@@ -515,6 +570,25 @@ export default function App() {
           hostLabel={host.label}
           {...(host.roles ? { roles: host.roles } : {})}
           onBack={goBack}
+          // A revoked session used to be a dead end here because this handler
+          // was never passed, so the screen could not draw the action (B8).
+          onForget={() => {
+            const target = host;
+            void leaveRevokedSession({
+              hostId: target.hostId,
+              forget: (hostId) =>
+                forgetHost(hostId, {
+                  registry: hostRegistry,
+                  credentialPort,
+                  ...(isNativeApp ? { push: { gatewayOrigin } } : {}),
+                }),
+              // Leaving does not wait for the unregistration: the credential is
+              // what blocked the user, and the computer list can retry.
+              onLeft: () => navigate({ kind: "hosts" }),
+            }).then((outcome) => {
+              if (!outcome.ok) setForgetFailure(outcome.reason);
+            });
+          }}
         />
       );
     }
@@ -559,6 +633,15 @@ export default function App() {
           }}
         />
       ) : null}
+      {/*
+        A failed "forget" leaves the credential behind. The session screen has
+        already been left, so the reason is reported here (see `onForget`).
+      */}
+      <Toast
+        message={forgetFailure ? t("hosts.forgetFailed", { reason: forgetFailure }) : null}
+        visible={forgetFailure !== null}
+        onDismiss={() => setForgetFailure(null)}
+      />
     </div>
   );
 }
