@@ -143,6 +143,27 @@ export type MinihRouterModelPrice = {
   cacheWrite: string | null;
 };
 
+/**
+ * Thinking efforts `/api/models` may declare in `reasoning_levels`.
+ *
+ * The gateway's own vocabulary, in its own order: it says `none` where the
+ * desktop ladder says `off`, and it knows `ultra` and `persistent`, which the
+ * ladder does not. A client sends a value from this list verbatim
+ * (`reasoning_effort`), so it must not be re-mapped onto the desktop ladder.
+ */
+export const MINIH_ROUTER_REASONING_LEVELS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+  "persistent",
+] as const;
+export type MinihRouterReasoningLevel = (typeof MINIH_ROUTER_REASONING_LEVELS)[number];
+
 export type MinihRouterModel = {
   /** The model id a client sends. */
   id: string;
@@ -163,12 +184,49 @@ export type MinihRouterModel = {
   /** Authoritative input modalities declared by upstream catalog, e.g. ["text", "image"]. */
   inputModalities?: string[];
   /**
-   * Authoritative output modalities declared by upstream catalog, e.g. ["text"]
-   * or ["image"]. This is the only per-model evidence of what the model
-   * produces: `/api/models` fills `protocols` from the channel type, so a text
-   * model behind an OpenAI-compatible channel also declares `openai-images`.
+   * What the model produces, e.g. `["text"]`, `["image"]`, or both (`text`
+   * first). `["image"]` alone is legal: a pure image model.
+   *
+   * A non-empty `output_modalities` from `/api/models` decides this. An empty
+   * array, or a gateway too old to send the field, means "not asserted", so the
+   * upstream catalog's `modalities.output` is consulted; an empty array is never
+   * read as "produces nothing". No client infers image output from `protocols`:
+   * `/api/models` fills that from the channel type, so a text model behind an
+   * OpenAI-compatible channel also declares `openai-images`.
    */
   outputModalities?: string[];
+  /**
+   * Thinking levels the gateway declares for this model (`reasoning_levels`),
+   * in the gateway's order (`none` → `persistent`).
+   *
+   * A current gateway always sends the field; `[]` means it declares no
+   * reasoning capability, and an older gateway omits it entirely. Both leave the
+   * client without a picker and without a reasoning parameter — "no declaration"
+   * is never read as "supports nothing but `none`". "Unspecified" is not one of
+   * the levels: sending no parameter is always allowed, which is what the
+   * picker's first row does.
+   */
+  reasoningLevels?: MinihRouterReasoningLevel[];
+  /**
+   * The gateway's own default level (`default_reasoning_level`).
+   *
+   * Always one of `reasoningLevels`; the gateway omits the key when the list is
+   * empty, and a value outside the list is ignored rather than shown.
+   */
+  defaultReasoningLevel?: MinihRouterReasoningLevel;
+  /**
+   * Whether the gateway opened this model to mobile conversations
+   * (`mobile_chat`), when it sends that field at all.
+   *
+   * `false` means an operator deliberately kept this model off phones, so a
+   * mobile client does not offer it for chat. `undefined` is an older gateway
+   * without the concept: the mobile client then keeps its previous rules rather
+   * than reading silence as "nothing is enabled".
+   *
+   * It gates conversations only. Image work stays a question of
+   * `outputModalities`, which this flag never touches.
+   */
+  mobileChat?: boolean;
 };
 
 export type MinihRouterModelPage = {

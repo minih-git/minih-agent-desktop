@@ -159,6 +159,142 @@ describe("parseMinihRouterModelPage", () => {
     expect(parsed.items[2]?.outputModalities).toBeUndefined();
   });
 
+  it("prefers the gateway's own output_modalities over the catalog reference", () => {
+    const declared = {
+      items: [
+        {
+          // The operator marked this model as image output; the upstream catalog
+          // reference says text, and it must not win.
+          client_model: "gpt-image-2.5",
+          protocols: ["openai-completions", "openai-images"],
+          output_modalities: ["image"],
+          upstream_models: [
+            { catalog_reference: { model: { modalities: { output: ["text"] } } } },
+          ],
+        },
+        {
+          client_model: "declared-both",
+          protocols: ["openai-completions"],
+          output_modalities: ["text", "image"],
+        },
+        {
+          // Present but empty: the gateway could not assert, which is not a
+          // declaration of "no output" — the catalog reference still counts.
+          client_model: "declared-nothing",
+          output_modalities: [],
+          upstream_models: [
+            { catalog_reference: { model: { modalities: { output: ["text"] } } } },
+          ],
+        },
+        {
+          // Reported in the wrong order and with a value the contract does not
+          // allow: text is put first and `audio` is dropped.
+          client_model: "declared-messy",
+          output_modalities: ["image", "audio", "text", "image"],
+        },
+      ],
+      pagination: { page: 1, page_size: 4, total_items: 4, total_pages: 1 },
+    };
+    const parsed = parseMinihRouterModelPage(declared);
+    expect(parsed.items[0]?.outputModalities).toEqual(["image"]);
+    expect(parsed.items[1]?.outputModalities).toEqual(["text", "image"]);
+    expect(parsed.items[2]?.outputModalities).toEqual(["text"]);
+    expect(parsed.items[3]?.outputModalities).toEqual(["text", "image"]);
+  });
+
+  it("reads an empty output_modalities as 'cannot assert', never as 'produces nothing'", () => {
+    // The gateway sends `[]` when it has no opinion. Dropping the catalog
+    // reference on that would silently turn a declared image model into a
+    // chat-only one, which is the failure this rule exists to avoid.
+    const parsed = parseMinihRouterModelPage({
+      items: [
+        {
+          client_model: "empty-with-catalog-image",
+          output_modalities: [],
+          upstream_models: [
+            { catalog_reference: { model: { modalities: { output: ["image"] } } } },
+          ],
+        },
+        {
+          client_model: "empty-without-catalog",
+          output_modalities: [],
+          upstream_models: [{ model_id: "empty-without-catalog" }],
+        },
+        {
+          client_model: "null-is-not-a-declaration",
+          output_modalities: null,
+          upstream_models: [
+            { catalog_reference: { model: { modalities: { output: ["image"] } } } },
+          ],
+        },
+      ],
+      pagination: { page: 1, page_size: 3, total_items: 3, total_pages: 1 },
+    });
+    expect(parsed.items[0]?.outputModalities).toEqual(["image"]);
+    expect(parsed.items[1]?.outputModalities).toBeUndefined();
+    expect(parsed.items[2]?.outputModalities).toEqual(["image"]);
+  });
+
+  it("reads the gateway's reasoning levels in its own order and drops what it cannot send", () => {
+    const parsed = parseMinihRouterModelPage({
+      items: [
+        {
+          client_model: "reasoning-model",
+          // Out of order, duplicated, with a level the gateway does not use
+          // (`off` is the desktop ladder's word) and one nobody knows.
+          reasoning_levels: ["high", "none", "medium", "high", "turbo", "off"],
+          default_reasoning_level: "medium",
+        },
+        {
+          // The two levels only the gateway knows.
+          client_model: "codex-template",
+          reasoning_levels: ["max", "ultra", "persistent"],
+          default_reasoning_level: "persistent",
+        },
+        {
+          // Empty means "declares no reasoning", so a default naming a level
+          // that is not in the list is not a claim either.
+          client_model: "no-basis",
+          reasoning_levels: [],
+          default_reasoning_level: "high",
+        },
+        {
+          // An older gateway: no field at all, which reads the same way.
+          client_model: "old-gateway",
+        },
+      ],
+      pagination: { page: 1, page_size: 4, total_items: 4, total_pages: 1 },
+    });
+
+    expect(parsed.items[0]?.reasoningLevels).toEqual(["none", "medium", "high"]);
+    expect(parsed.items[0]?.defaultReasoningLevel).toBe("medium");
+    expect(parsed.items[1]?.reasoningLevels).toEqual(["max", "ultra", "persistent"]);
+    expect(parsed.items[1]?.defaultReasoningLevel).toBe("persistent");
+    expect(parsed.items[2]?.reasoningLevels).toBeUndefined();
+    expect(parsed.items[2]?.defaultReasoningLevel).toBeUndefined();
+    expect(parsed.items[3]?.reasoningLevels).toBeUndefined();
+  });
+
+  it("reads mobile_chat only when the gateway sends it", () => {
+    // Present is authoritative either way; absent is an older gateway without
+    // the concept, which must not read as "nothing is enabled" — that would
+    // empty every phone's chat list the day this shipped.
+    const parsed = parseMinihRouterModelPage({
+      items: [
+        { client_model: "opened", mobile_chat: true },
+        { client_model: "closed", mobile_chat: false },
+        { client_model: "old-gateway" },
+        // A non-boolean is not a declaration either.
+        { client_model: "junk", mobile_chat: "yes" },
+      ],
+      pagination: { page: 1, page_size: 4, total_items: 4, total_pages: 1 },
+    });
+    expect(parsed.items[0]?.mobileChat).toBe(true);
+    expect(parsed.items[1]?.mobileChat).toBe(false);
+    expect(parsed.items[2]?.mobileChat).toBeUndefined();
+    expect(parsed.items[3]?.mobileChat).toBeUndefined();
+  });
+
   it("keeps pagination as the gateway reported it", () => {
     expect(parseMinihRouterModelPage(page)).toMatchObject({
       page: 1,

@@ -12,11 +12,17 @@
  */
 import {
   MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
+  MINIH_ROUTER_REASONING_LEVELS,
   type MinihRouterModel,
   type MinihRouterModelCategory,
   type MinihRouterModelPage,
   type MinihRouterModelPrice,
+  type MinihRouterReasoningLevel,
 } from "./minih-router.js";
+
+const isReasoningLevel = (value: unknown): value is MinihRouterReasoningLevel =>
+  typeof value === "string" &&
+  (MINIH_ROUTER_REASONING_LEVELS as readonly string[]).includes(value);
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -116,17 +122,74 @@ function parseModel(value: unknown): MinihRouterModel | null {
       catalogs.flatMap((model) => list(record(model.modalities).input).map(text).filter(Boolean)),
     ),
   );
-  // What the model produces, which is the only per-model evidence of image
-  // output. `protocols` cannot answer this: Router fills it with the channel
-  // type's whole union, so every OpenAI-compatible model declares `openai-images`.
-  const outputModalities = Array.from(
+  /**
+   * What the model produces.
+   *
+   * Router's top-level `output_modalities` is the operator's own per-model
+   * declaration (spec §19.5): `["text"]`, `["image"]`, or both with `text`
+   * first. A non-empty array is authoritative — a model the gateway marked as
+   * image output is an image model even when no upstream catalog reference says
+   * so.
+   *
+   * An empty array is not a declaration that the model produces nothing. It is
+   * the gateway saying it cannot assert, so the catalog reference is still
+   * consulted; a gateway too old to send the field behaves the same way.
+   *
+   * `protocols` is never evidence: Router fills it with the channel type's whole
+   * union, so every OpenAI-compatible model declares `openai-images`.
+   */
+  const declaredOutputs = Array.from(
+    new Set(
+      list(row.output_modalities)
+        .map(text)
+        .filter((value) => value === "text" || value === "image"),
+    ),
+  );
+  const derivedOutputs = Array.from(
     new Set(
       catalogs.flatMap((model) => list(record(model.modalities).output).map(text).filter(Boolean)),
     ),
   );
+  const outputModalities =
+    declaredOutputs.length > 0
+      ? // The gateway's order is already text first; normalising it keeps our
+        // own output stable for callers that compare arrays.
+        [...declaredOutputs].sort((a, b) => (a === b ? 0 : a === "text" ? -1 : b === "text" ? 1 : 0))
+      : derivedOutputs;
+  /**
+   * Thinking levels the gateway declares for this model (`reasoning_levels`).
+   *
+   * The gateway's own vocabulary and order: `none` where the desktop ladder says
+   * `off`, plus `ultra` and `persistent`. A client sends one of these strings
+   * verbatim, so anything else is dropped rather than mapped. An empty list is
+   * "declares no reasoning", and an older gateway omits the field — both leave
+   * the client without a picker.
+   */
+  const declaredReasoning = new Set(list(row.reasoning_levels).filter(isReasoningLevel));
+  const reasoningLevels = MINIH_ROUTER_REASONING_LEVELS.filter((level) =>
+    declaredReasoning.has(level),
+  );
+  const declaredDefaultReasoning: unknown = text(row.default_reasoning_level).trim();
+  // A default is only a claim when the gateway also lists it: naming a level it
+  // never declared would put an unreachable option first in the picker.
+  const defaultReasoningLevel =
+    isReasoningLevel(declaredDefaultReasoning) && reasoningLevels.includes(declaredDefaultReasoning)
+      ? declaredDefaultReasoning
+      : undefined;
   const contextWindow = catalogs
     .map((model) => integer(record(model.limits).context))
     .find((limit): limit is number => limit !== null && limit > 0) ?? null;
+  /**
+   * Whether the operator opened this model to mobile conversations
+   * (`mobile_chat`).
+   *
+   * A boolean is authoritative: `false` means the gateway deliberately kept the
+   * model off phones, and no client may offer it for a conversation. The field
+   * missing is an older gateway that has no such concept — that is *not*
+   * "nothing is enabled", and reading it that way would empty every phone's
+   * chat list the day this shipped. Absent therefore stays `undefined`.
+   */
+  const mobileChat = typeof row.mobile_chat === "boolean" ? row.mobile_chat : undefined;
   const maxOutput = catalogs
     .map((model) => integer(record(model.limits).output))
     .find((limit): limit is number => limit !== null && limit > 0) ?? null;
@@ -156,6 +219,9 @@ function parseModel(value: unknown): MinihRouterModel | null {
     maxOutput,
     inputModalities: inputModalities.length > 0 ? inputModalities : undefined,
     outputModalities: outputModalities.length > 0 ? outputModalities : undefined,
+    ...(reasoningLevels.length > 0 ? { reasoningLevels } : {}),
+    ...(defaultReasoningLevel ? { defaultReasoningLevel } : {}),
+    ...(mobileChat === undefined ? {} : { mobileChat }),
   };
 }
 
