@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    highlights: [
+      "Eklentiler pi.memory.list üzerinden etkin öğrenilmiş bellek notlarına salt okunur erişim isteyebilir; kurulum incelemesi kullanıcı ve belirtilen proje kapsamlarını açıklar, mevcut bellek okuma anahtarı da geçerliliğini korur.",
+    ],
+  },
+  {
     version: "0.27.0",
     date: "2026-10-24",
     highlights: [

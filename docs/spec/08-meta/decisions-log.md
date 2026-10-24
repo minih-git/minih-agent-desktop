@@ -8410,3 +8410,18 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   (`chat.quoteSelection`, `chat.quoteUnavailable`).
 - See ADR 0334 (amendment D681), `04-ux/08-component-spec.md` §7.4, and
   E2E-CHAT-selection-quote-into-composer.
+
+## 2026-10-24 — Plugins may read active learned memory with consent (D682)
+
+- Add the high-risk `memory.read` permission for `pi.memory.list`. The host
+  returns a bounded active-only projection of user or plugin-named project
+  notes; it does not expose suggestions, archived notes, tombstones, detailed
+  provenance, or a write path.
+- Electron main enforces the existing `learnedMemoryRead` switch and short-
+  circuits the listing when it is off. Listing is read-only and does not update
+  memory-use counters. The existing plugin API audit records the call and
+  result count without note content.
+- Consumers that declare `memory.read` must require the first Desktop release
+  that ships the API through `engines.minihAgent`; older hosts reject the
+  unknown permission. No schema migration or protocol-version bump is needed.
+- See [ADR plugin-learned-memory-read](../../adr/plugin-learned-memory-read.md).

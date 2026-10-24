@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    highlights: [
+      "플러그인은 pi.memory.list를 통해 활성 학습 메모를 읽기 전용으로 요청할 수 있습니다. 설치 검토에서 사용자 및 지정 프로젝트 범위를 설명하며 기존 기억 읽기 스위치도 계속 적용됩니다.",
+    ],
+  },
+  {
     version: "0.27.0",
     date: "2026-10-24",
     highlights: [

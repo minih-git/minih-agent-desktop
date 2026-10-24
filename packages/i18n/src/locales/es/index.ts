@@ -2916,6 +2916,7 @@ sklm: {
       "bus.subscribe": "Recibir mensajes de otros complementos",
       "browser.cdp": "Controlar el navegador del panel de trabajo",
       "usage.read": "Leer estadísticas de uso",
+      "memory.read": "Leer la memoria aprendida",
       "session.autoTitle": "Leer el contexto del primer turno y actualizar títulos automáticos"
     },
     "permissionHelp": {
@@ -2959,6 +2960,8 @@ sklm: {
       "browser.cdp": "Puede navegar por el navegador del panel de trabajo, leer la página, ejecutar JavaScript y enviar comandos de Chrome DevTools incluidos en la lista permitida. Las cookies y los métodos de almacenamiento están bloqueados.",
       "usage.read":
         "Enumera los datos de uso de los turnos completados (contadores de tokens por turno, paginados). No incluye el contenido de los mensajes.",
+      "memory.read":
+        "Enumera las notas activas de la memoria aprendida (preferencias, comentarios, hechos y referencias) del ámbito del usuario y de las rutas de proyecto indicadas por el complemento. Sin sugerencias, notas archivadas ni datos de procedencia; solo lectura.",
       "session.autoTitle":
         "Solo puede leer el primer mensaje y la primera respuesta de las sesiones aptas y actualizar el título si nadie lo cambió manualmente. No puede leer la transcripción completa.",
     }

@@ -525,3 +525,93 @@ test("plugin usage listTurns is refused without the usage.read permission", asyn
   assert.deepEqual(calls, []);
   assert.deepEqual(runtime.drainToasts(), ["listTurns:PERMISSION_DENIED"]);
 });
+
+test("plugin memory list requires memory.read and validates its bounded input", async (t) => {
+  const calls = [];
+  const runtime = new PluginRuntime({
+    hostEntry: hostProcessEntry,
+    spawnProcess: forkPluginProcess,
+    memory: {
+      list: async (pluginId, input) => {
+        calls.push([pluginId, input]);
+        return { readEnabled: true, entries: [], nextOffset: null };
+      },
+    },
+  });
+  t.after(async () => {
+    for (const loaded of runtime.listLoaded()) await runtime.unload(loaded.manifest.id);
+  });
+  const dir = writePlugin({
+    id: "demo.memory",
+    permissions: ["memory.read"],
+    main: `
+      module.exports = {
+        async onLoad() {
+          await pi.commands.register({
+            id: "read-memory",
+            title: "Read memory",
+            run: async () => {
+              const page = await pi.memory.list({ scope: "user", kind: "fact", limit: 3 });
+              await pi.ui.showToast("enabled:" + page.readEnabled);
+              for (const [name, input] of [
+                ["missingPath", { scope: "project" }],
+                ["relativePath", { scope: "project", path: "relative/path" }],
+                ["badKind", { scope: "user", kind: "unknown" }],
+                ["badLimit", { scope: "user", limit: 201 }],
+                ["badOffset", { scope: "user", offset: -1 }]
+              ]) {
+                try { await pi.memory.list(input); }
+                catch (error) { await pi.ui.showToast(name + ":" + error.code); }
+              }
+            }
+          });
+        }
+      };
+    `,
+  });
+  await runtime.loadFromPath(dir, ["memory.read"]);
+  await runCommand(runtime, "read-memory");
+  assert.deepEqual(calls, [["demo.memory", { scope: "user", limit: 3, offset: 0, kind: "fact" }]]);
+  assert.deepEqual(runtime.drainToasts(), [
+    "enabled:true",
+    "missingPath:INVALID_PARAMS",
+    "relativePath:INVALID_PARAMS",
+    "badKind:INVALID_PARAMS",
+    "badLimit:INVALID_PARAMS",
+    "badOffset:INVALID_PARAMS",
+  ]);
+});
+
+test("plugin memory list is refused without the memory.read permission", async (t) => {
+  const calls = [];
+  const runtime = new PluginRuntime({
+    hostEntry: hostProcessEntry,
+    spawnProcess: forkPluginProcess,
+    memory: { list: async (...args) => calls.push(args) },
+  });
+  t.after(async () => {
+    for (const loaded of runtime.listLoaded()) await runtime.unload(loaded.manifest.id);
+  });
+  const dir = writePlugin({
+    id: "demo.memory-denied",
+    permissions: ["session.read.own"],
+    main: `
+      module.exports = {
+        async onLoad() {
+          await pi.commands.register({
+            id: "peek-memory",
+            title: "Peek memory",
+            run: async () => {
+              try { await pi.memory.list({ scope: "user" }); }
+              catch (error) { await pi.ui.showToast("list:" + error.code); }
+            }
+          });
+        }
+      };
+    `,
+  });
+  await runtime.loadFromPath(dir, ["session.read.own"]);
+  await runCommand(runtime, "peek-memory");
+  assert.deepEqual(calls, []);
+  assert.deepEqual(runtime.drainToasts(), ["list:PERMISSION_DENIED"]);
+});

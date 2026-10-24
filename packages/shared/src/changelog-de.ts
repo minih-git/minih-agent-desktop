@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    highlights: [
+      "Plugins können über pi.memory.list schreibgeschützt auf aktive Einträge des erlernten Gedächtnisses zugreifen; die Installationsprüfung erklärt Benutzer- und benannte Projektbereiche, und der vorhandene Schalter zum Lesen des Gedächtnisses gilt weiterhin.",
+    ],
+  },
+  {
     version: "0.27.0",
     date: "2026-10-24",
     highlights: [

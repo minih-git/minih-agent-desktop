@@ -2946,6 +2946,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "bus.subscribe": "Receive messages from other plugins",
       "browser.cdp": "Control the work-panel browser",
       "usage.read": "Read usage statistics",
+      "memory.read": "Read learned memory",
       "session.autoTitle": "Read first-turn title context and update automatic titles",
     },
     permissionHelp: {
@@ -3005,6 +3006,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         "Can navigate the work-panel browser, read the page, run JavaScript, and send allowlisted Chrome DevTools commands. Cookie and storage methods are blocked.",
       "usage.read":
         "Lists completed-turn usage facts (paginated token counters and session titles). No message content is included.",
+      "memory.read":
+        "Lists active learned-memory notes (preferences, feedback, facts, references) for the user scope and project paths the plugin names. No suggestions, archived notes, or provenance; read-only.",
       "session.autoTitle":
         "Can read only the first prompt and reply for eligible sessions, then replace an automatic title if it has not been manually changed. It cannot read the full transcript.",
     },

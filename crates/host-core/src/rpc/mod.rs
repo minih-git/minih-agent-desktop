@@ -3554,6 +3554,22 @@ async fn handle_request(
             Ok(page)
         }
 
+        "plugin.memory.list" => {
+            let plugin_id = params
+                .get("pluginId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| rpc_err(1002, "pluginId required", "INVALID_PARAMS"))?;
+            let st = state.lock().await;
+            let page = memory_rpc::plugin_list_page(&st.db, &params)?;
+            tracing::debug!(
+                method = "plugin.memory.list",
+                plugin_id,
+                count = page["entries"].as_array().map(Vec::len).unwrap_or(0),
+                "plugin memory rpc served"
+            );
+            Ok(page)
+        }
+
         "session.beginTurn" => {
             let session_id = params
                 .get("sessionId")

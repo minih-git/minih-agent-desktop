@@ -36,6 +36,7 @@ import { pluginWorkspaceInfo, projectFolderPaths } from "../workspace-roots";
 import { createDesktopConsentService } from "../plugin-desktop-consent";
 import { PluginRuntime } from "../plugin-runtime";
 import { confirmPluginInterruption } from "../plugin-active-work";
+import { listPluginMemoryWhenEnabled } from "../plugin-memory-read";
 import { createSpeechService } from "./speech-service";
 import { PluginShortcutRegistry } from "../plugin-shortcut-registry";
 import { PluginWebSocketRegistry } from "../plugin-websocket";
@@ -396,6 +397,22 @@ export function createPluginServices({
     usage: {
       listTurns: (pluginId, input) =>
         callPluginSessionHost("plugin.usage.listTurns", pluginId, input),
+    },
+
+    // Read-only learned memory uses the existing host settings and session RPC transport.
+    memory: {
+      list: (pluginId, input) =>
+        listPluginMemoryWhenEnabled(
+          async () => {
+            const host = getHost();
+            if (!host) {
+              throw Object.assign(new Error("host unavailable"), { code: "UNSUPPORTED" });
+            }
+            const settings = await host.call<AppSettings>("settings.get");
+            return settings.learnedMemoryRead !== false;
+          },
+          () => callPluginSessionHost("plugin.memory.list", pluginId, input),
+        ),
     },
     complete: async (input): Promise<PluginCompleteResult> => {
       if (!getHost()) {

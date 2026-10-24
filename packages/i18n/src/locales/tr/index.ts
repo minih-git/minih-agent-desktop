@@ -2925,6 +2925,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "bus.subscribe": "Diğer eklentilerden ileti al",
       "browser.cdp": "Çalışma paneli tarayıcısını kontrol et",
       "usage.read": "Kullanım istatistiklerini oku",
+      "memory.read": "Öğrenilmiş belleği oku",
       "session.autoTitle": "İlk tur başlık bağlamını oku ve otomatik başlıkları güncelle",
     },
     permissionHelp: {
@@ -2981,6 +2982,8 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
         "Çalışma paneli tarayıcısında gezebilir, sayfayı okuyabilir, JavaScript çalıştırabilir ve izin listesindeki Chrome DevTools komutlarını gönderebilir. Çerez ve depolama yöntemleri engellenir.",
       "usage.read":
         "Tamamlanan turların kullanım verilerini sayfalı olarak listeler (tur başına token sayaçları). Mesaj içeriği dahil değildir.",
+      "memory.read":
+        "Kullanıcı kapsamındaki ve eklentinin belirttiği proje yollarındaki etkin öğrenilmiş bellek notlarını (tercihler, geri bildirim, olgular, başvurular) listeler. Öneriler, arşivlenmiş notlar veya kaynak bilgileri dahil değildir; salt okunurdur.",
       "session.autoTitle":
         "Yalnızca uygun oturumların ilk istemini ve ilk yanıtını okuyabilir; başlık elle değiştirilmemişse otomatik başlığı günceller. Tam dökümü okuyamaz.",
     },

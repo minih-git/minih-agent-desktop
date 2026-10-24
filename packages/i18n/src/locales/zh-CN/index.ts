@@ -2915,6 +2915,7 @@ sklm: {
       "bus.subscribe": "接收其他插件的消息",
       "browser.cdp": "控制工作面板浏览器",
       "usage.read": "读取用量统计",
+      "memory.read": "读取长期记忆",
       "session.autoTitle": "读取首轮标题上下文并更新自动标题",
     },
     permissionHelp: {
@@ -2961,6 +2962,8 @@ sklm: {
         "可导航工作面板浏览器、读取页面、运行 JavaScript，并发送白名单内的 Chrome DevTools 命令。Cookie 与存储相关方法会被拒绝。",
       "usage.read":
         "分页列出已完成回合的用量事实（每回合 token 计数与会话标题）。不包含任何消息内容。",
+      "memory.read":
+        "列出用户范围与插件指定项目路径下的活跃长期记忆（偏好、反馈、事实、参考）；不含建议、归档与来源信息，只读。",
       "session.autoTitle":
         "只能读取符合条件会话的首条提示和首条回复，并仅在标题未被手动修改时更新；不能读取完整会话记录。",
     },

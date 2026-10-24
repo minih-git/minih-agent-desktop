@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    highlights: [
+      "Plugins podem solicitar acesso somente para leitura às notas ativas da memória aprendida por meio de pi.memory.list; a revisão da instalação explica os escopos do usuário e dos projetos informados, e o controle de leitura existente continua valendo.",
+    ],
+  },
+  {
     version: "0.27.0",
     date: "2026-10-24",
     highlights: [

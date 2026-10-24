@@ -662,6 +662,10 @@ Electron main after plugin permission and manifest-source checks:
 - `plugin.usage.listTurns` — keyset page of completed-turn facts (identifiers
   and token counters, never a message body) for non-deleted sessions. Gated
   in Electron main by `usage.read`. Additive; no protocol version bump.
+- `plugin.memory.list` — active-only, bounded learned-memory projection for a
+  user scope or one plugin-named project path. Electron main gates it with
+  `memory.read` and the `learnedMemoryRead` setting; no write path or protocol
+  version bump.
 - Successful plugin session mutations cause Electron main to emit one
   `sessionsChanged` renderer event; the renderer refreshes the session list,
   and plugins do not emit this UI synchronization event.

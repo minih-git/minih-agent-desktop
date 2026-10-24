@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    highlights: [
+      "Plugins can request read-only access to active learned-memory notes through pi.memory.list; the install review explains the user and named-project scopes, and the existing memory-read switch still applies.",
+    ],
+  },
+  {
     version: "0.27.0",
     date: "2026-10-24",
     highlights: [

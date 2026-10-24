@@ -2882,6 +2882,7 @@ export const ptBR = {
       "bus.subscribe": "Receber mensagens de outros plugins",
       "browser.cdp": "Controlar o navegador do painel de trabalho",
       "usage.read": "Ler estatísticas de uso",
+      "memory.read": "Ler a memória aprendida",
       "session.autoTitle": "Ler o contexto do primeiro turno e atualizar títulos automáticos"
     },
     permissionHelp: {
@@ -2925,6 +2926,7 @@ export const ptBR = {
       "bus.subscribe": "Pode receber mensagens nos tópicos que declarou.",
       "browser.cdp": "Pode navegar pelo navegador do painel de trabalho, ler páginas, executar JavaScript e enviar comandos permitidos do Chrome DevTools. Métodos de cookies e armazenamento são bloqueados.",
       "usage.read": "Lista dados de uso de rodadas concluídas (contagens paginadas de tokens e títulos de sessões). Nenhum conteúdo das mensagens é incluído.",
+      "memory.read": "Lista notas ativas da memória aprendida (preferências, feedback, fatos e referências) para o escopo do usuário e os caminhos de projeto informados pelo plugin. Não inclui sugestões, notas arquivadas nem informações de origem; somente leitura.",
       "session.autoTitle": "Pode ler apenas a primeira solicitação e resposta de sessões elegíveis e atualizar o título se ele não tiver sido alterado manualmente. Não pode ler a transcrição completa.",
     }
   },
