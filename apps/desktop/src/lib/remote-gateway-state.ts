@@ -1,4 +1,8 @@
-import type { RemoteGatewayLinkState, RemoteGatewayStatus } from "@minih-agent/shared";
+import type {
+  RemoteGatewayAccountComputers,
+  RemoteGatewayLinkState,
+  RemoteGatewayStatus,
+} from "@minih-agent/shared";
 
 /**
  * Renderer-side rules for the Remote gateway settings page (rollout R5,
@@ -106,6 +110,35 @@ export function accountModeReplacesEnrollment(
 /** Whether the account-mode section has anything to say. */
 export function accountModeVisible(status: RemoteGatewayStatus | null): boolean {
   return status?.accountMode !== undefined;
+}
+
+/**
+ * What the accounts page says about the account's other computers, or `null`
+ * when it should say nothing.
+ *
+ * The round's own answer is the only source: the roster is the Gateway's, so a
+ * failed or skipped round is the only explanation a user can get for a missing
+ * computer. `failed` is the case the link retries, so its copy promises that —
+ * but only while a retry is actually scheduled (`nextRetryAt`); once the backoff
+ * is spent, the neutral "not loaded" line names the reason and stops there.
+ * `self-only` and `in-flight` stay silent: the account genuinely has no other
+ * computer, or a round is running right now.
+ */
+export function accountComputersNotice(
+  report?: RemoteGatewayAccountComputers,
+): { key: string; reason: string; failed: boolean } | null {
+  if (!report || report.state === "joined") return null;
+  if (report.state === "skipped" && (report.reason === "self-only" || report.reason === "in-flight")) return null;
+  const retrying = report.state === "failed" && Boolean(report.nextRetryAt);
+  return {
+    key: retrying
+      ? "settings.accountsDevices.joinFailed"
+      : "settings.accountsDevices.joinSkipped",
+    // The Gateway's own code explains a refusal better than the round's summary
+    // when it named one; neither value is a secret.
+    reason: report.detail ?? report.reason ?? "unknown",
+    failed: report.state === "failed",
+  };
 }
 
 /**

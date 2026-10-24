@@ -3377,6 +3377,10 @@
           {
             "type": "string",
             "const": "android"
+          },
+          {
+            "type": "string",
+            "const": "desktop"
           }
         ]
       },

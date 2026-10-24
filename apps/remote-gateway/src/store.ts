@@ -206,11 +206,11 @@ export type GatewayAccountSessionRecord = {
   /**
    * Which client asked for this session (protocol §11.5). A browser session
    * receives the account device token as `HttpOnly` cookies scoped to each Host
-   * of the account; a native session receives it in the response body for its
-   * secure store. Absent on a session written before this field existed, which
-   * is treated as non-browser.
+   * of the account; a native or desktop session receives it in the response body
+   * for its secure store. Absent on a session written before this field existed,
+   * which is treated as non-browser.
    */
-  client?: "web" | "ios" | "android";
+  client?: "web" | "ios" | "android" | "desktop";
   createdAt: string;
   expiresAt: string;
   revokedAt?: string;

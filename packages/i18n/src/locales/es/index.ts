@@ -1442,6 +1442,8 @@ sklm: {
         kindComputer: "Ordenador",
         kindPhone: "Teléfono",
         kindRoles: "{{roles}}",
+        joinFailed: "No se pudieron cargar los otros ordenadores de esta cuenta: {{reason}}. Se reintentará en breve.",
+        joinSkipped: "No se cargaron los otros ordenadores de esta cuenta: {{reason}}.",
       },
     "remoteGateway": {
       "title": "Puerta de enlace remota",

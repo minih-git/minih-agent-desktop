@@ -267,10 +267,13 @@ describe("account mode contracts (spec §11.5)", () => {
     expect(RACP_HTTP_ROUTE_LIST.hosts).toBe("GET /v1/hosts");
   });
 
-  it("accepts a native and a browser login round trip", () => {
+  it("accepts a native, a browser, and a computer login round trip", () => {
     expect(Value.Check(RacpAccountLoginRequestSchema, { client: "ios", label: "phone" })).toBe(true);
     expect(Value.Check(RacpAccountLoginRequestSchema, { client: "web" })).toBe(true);
-    expect(Value.Check(RacpAccountLoginRequestSchema, { client: "desktop" })).toBe(false);
+    // The desktop is the header profile: the token arrives in the body so it can
+    // be stored. Without this the account's computer roster is never readable.
+    expect(Value.Check(RacpAccountLoginRequestSchema, { client: "desktop", label: "mac" })).toBe(true);
+    expect(Value.Check(RacpAccountLoginRequestSchema, { client: "server" })).toBe(false);
     expect(
       Value.Check(RacpAccountLoginResponseSchema, {
         accountId: "7",

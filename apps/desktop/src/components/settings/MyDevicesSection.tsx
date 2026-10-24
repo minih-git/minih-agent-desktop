@@ -13,8 +13,9 @@
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { RemoteHostSummary } from "@minih-agent/shared";
+import type { RemoteGatewayAccountComputers, RemoteHostSummary } from "@minih-agent/shared";
 import { api } from "../../lib/api";
+import { accountComputersNotice } from "../../lib/remote-gateway-state";
 import { Badge, Button, cx } from "../ui";
 import type { RemoteControl } from "./useRemoteControl";
 
@@ -23,7 +24,11 @@ export function MyDevicesSection({ control }: { control: RemoteControl }) {
   const [hosts, setHosts] = useState<RemoteHostSummary[] | null>(null);
 
   // The computer list refreshes with the device list: both change together when
-  // a sibling joins or is revoked. Unmounting drops the read, not the hosts.
+  // a sibling joins or is revoked. The join report is a dependency too — a retry
+  // that finally reaches the account's roster is the round that makes these rows
+  // appear, and nothing else in this renderer changes at that moment.
+  // Unmounting drops the read, not the hosts.
+  const joinAt = control.status?.accountComputers?.at;
   useEffect(() => {
     let live = true;
     void api.listRemoteHosts().then((result) => {
@@ -33,7 +38,7 @@ export function MyDevicesSection({ control }: { control: RemoteControl }) {
       // which is a worse lie than slightly stale rows.
     });
     return () => { live = false; };
-  }, [control.devices]);
+  }, [control.devices, joinAt]);
 
   const accountComputers = (hosts ?? []).filter((host) => host.transport === "account");
 
@@ -77,6 +82,10 @@ export function MyDevicesSection({ control }: { control: RemoteControl }) {
         )}
       </div>
 
+      {/* Why the account's other computers are not listed. The roster is the
+          Gateway's answer, so without this line a round that failed is silence. */}
+      <AccountComputersNotice report={control.status?.accountComputers} />
+
       <DeviceGrantList control={control} />
     </section>
   );
@@ -110,10 +119,7 @@ function DeviceGrantList({ control }: { control: RemoteControl }) {
           <article
             key={device.deviceId}
             role="listitem"
-            className={cx(
-              "flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-default px-3 py-2",
-              device.revokedAt && "opacity-60",
-            )}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-default px-3 py-2"
           >
             <div className="space-y-1">
               <div className="text-sm text-text-primary">{device.label}</div>
@@ -151,7 +157,6 @@ function DeviceGrantList({ control }: { control: RemoteControl }) {
               <Button
                 type="button"
                 variant="ghost"
-                disabled={Boolean(device.revokedAt)}
                 onClick={() => control.setPendingRevoke(device.deviceId)}
                 aria-label={t("settings.remoteGateway.revokeTitle", { label: device.label })}
               >
@@ -162,6 +167,28 @@ function DeviceGrantList({ control }: { control: RemoteControl }) {
         ))
       )}
     </div>
+  );
+}
+
+/**
+ * Why the account's other computers are not listed, or nothing when they all are.
+ *
+ * The wording lives in one place (`accountComputersNotice`) so the rule — a
+ * failed round is retried, a skipped one is not, and two reasons say nothing —
+ * is testable without a DOM.
+ */
+function AccountComputersNotice({ report }: { report?: RemoteGatewayAccountComputers }) {
+  const { t } = useTranslation();
+  const notice = accountComputersNotice(report);
+  if (!notice) return null;
+  return (
+    <p
+      className={cx("py-1 text-sm", notice.failed ? "text-danger" : "text-text-secondary")}
+      role="status"
+      data-testid="accounts-devices-join-status"
+    >
+      {t(notice.key, { reason: notice.reason })}
+    </p>
   );
 }
 

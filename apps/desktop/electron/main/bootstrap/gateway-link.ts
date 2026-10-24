@@ -3,6 +3,7 @@ import type { HostRpc } from "@minih-agent/host-runtime";
 import type { HostNotifier } from "@minih-agent/racp";
 import type {
   AppSettings,
+  RemoteGatewayAccountComputers,
   RemoteGatewayAccountMode,
   RemoteGatewayDeviceNotice,
   RemoteGatewayDeviceRequest,
@@ -28,6 +29,19 @@ import {
   type GatewayLinkPort,
 } from "../remote/gateway-link/gateway-link-port.js";
 import type { EncryptionPort } from "../remote/remote-host-registry.js";
+import type { AccountJoinInput, AccountJoinOutcome } from "../remote/gateway-link/account-computers.js";
+
+/**
+ * Backoff for a failed account join round: the Gateway refused the login or
+ * could not answer while the link itself is up. Three more tries, then the next
+ * connection transition is the next chance — never an unbounded timer.
+ */
+const ACCOUNT_JOIN_RETRY_DELAYS_MS: readonly number[] = [15_000, 60_000, 300_000];
+
+/** Whether a round's answer is a report, rather than a caller's `void`. */
+function isAccountJoinOutcome(value: unknown): value is AccountJoinOutcome {
+  return typeof value === "object" && value !== null && "state" in value;
+}
 
 /**
  * Desktop-as-connected-Host boot and wiring (rollout R5, ADR 0331).
@@ -73,14 +87,13 @@ export type GatewayLinkBootstrapOptions = {
    * caller runs the round. Absent keeps the pre-feature behavior: nothing is
    * discovered and the list stays empty.
    */
-  onAccountLinkUp?: (input: {
-    /** The Gateway's `https://` origin, as the Router advertised it. */
-    publicOrigin: string;
-    /** This desktop's own Host id. */
-    hostId: string;
-    certificatePem: string;
-    privateKeyPem: string;
-  }) => void;
+  onAccountLinkUp?: (input: AccountJoinInput) => void | Promise<AccountJoinOutcome | void>;
+  /**
+   * Backoff for a failed account join round, in milliseconds: entry N is the
+   * wait before retry N+1, so the length bounds how many retries a link gets.
+   * Absent uses the production backoff; a test passes a short one.
+   */
+  accountJoinRetryDelaysMs?: readonly number[];
   /**
    * Redacted push (§11.6): the notifier the Agent Host feeds and the link
    * carries. Absent (or `notifyEnabled: false`) means this desktop advertises
@@ -185,9 +198,26 @@ export function createGatewayLinkBootstrap(
     return store;
   };
 
+  /**
+   * The last account join round, as the accounts page shows it (rollout R8
+   * package E). Kept here because this bootstrap is the only place that runs the
+   * round: the link service knows nothing about the paired-host roster.
+   */
+  let accountComputers: RemoteGatewayAccountComputers | undefined;
+  /** The scheduled retry, if any. Owned here and cleared with the link. */
+  let accountJoinTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Bumped whenever a round stops being wanted: a new connection, the link going
+   * down, or disposal. A round that finishes under a newer generation is dropped
+   * instead of reported, so a dead connection never writes its answer.
+   */
+  let accountJoinGeneration = 0;
+  let accountJoinAttempt = 0;
+
   const decorate = (status: RemoteGatewayStatus): RemoteGatewayStatus => ({
     ...status,
     ...(configuredUrl ? { url: configuredUrl } : {}),
+    ...(accountComputers ? { accountComputers } : {}),
   });
 
   /**
@@ -198,6 +228,79 @@ export function createGatewayLinkBootstrap(
    * more often than the account can change.
    */
   let linkWasConnected = false;
+
+  const clearAccountJoinTimer = (): void => {
+    if (!accountJoinTimer) return;
+    clearTimeout(accountJoinTimer);
+    accountJoinTimer = null;
+  };
+
+  /**
+   * Stop the chain: the link those rounds were about is gone. A round already in
+   * flight is invalidated rather than cancelled — it has no side effect beyond
+   * the registry work its caller owns — and its answer is dropped.
+   */
+  const cancelAccountJoin = (): void => {
+    accountJoinGeneration += 1;
+    accountJoinAttempt = 0;
+    clearAccountJoinTimer();
+  };
+
+  /**
+   * Report the current status again, so a round that finished on its own (a
+   * retry that finally reached the Gateway) reaches the page without waiting for
+   * the link's next unrelated change.
+   */
+  const pushStatus = (): void => {
+    const current = service?.status();
+    if (!current || disposed) return;
+    emit(current);
+  };
+
+  /**
+   * One discovery round, plus the retry it earns.
+   *
+   * The round is the only thing that turns the account's other computers into
+   * remote hosts, and it runs on a connection transition — so a single failure
+   * used to leave the list empty until the next restart, with nothing on screen
+   * saying why. A failed round is retried on a bounded backoff while this link
+   * stays up, and every outcome is reported in the status.
+   */
+  const runAccountJoin = async (input: AccountJoinInput, generation: number): Promise<void> => {
+    const onAccountLinkUp = options.onAccountLinkUp;
+    if (!onAccountLinkUp) return;
+    let answer: AccountJoinOutcome | void;
+    try {
+      answer = await onAccountLinkUp(input);
+    } catch (error) {
+      answer = { state: "failed", reason: error instanceof Error ? error.message : String(error) };
+    }
+    if (disposed || generation !== accountJoinGeneration) return;
+    // A caller that reports nothing (a wiring that does not know the outcome)
+    // leaves the page as it was: no reason to show, and none to retry against.
+    if (!isAccountJoinOutcome(answer)) return;
+    const delays = options.accountJoinRetryDelaysMs ?? ACCOUNT_JOIN_RETRY_DELAYS_MS;
+    const delayMs = answer.state === "failed" && accountJoinAttempt < delays.length
+      ? delays[accountJoinAttempt]
+      : undefined;
+    accountJoinAttempt = answer.state === "failed" ? accountJoinAttempt + 1 : 0;
+    accountComputers = {
+      state: answer.state,
+      ...(answer.state === "joined" ? { computers: answer.computers } : { reason: answer.reason }),
+      ...(answer.state === "failed" && answer.detail ? { detail: answer.detail } : {}),
+      at: new Date(now()).toISOString(),
+      ...(delayMs === undefined ? {} : { nextRetryAt: new Date(now() + delayMs).toISOString() }),
+    };
+    pushStatus();
+    if (delayMs === undefined) return;
+    clearAccountJoinTimer();
+    accountJoinTimer = setTimeout(() => {
+      accountJoinTimer = null;
+      void runAccountJoin(input, generation);
+    }, delayMs);
+    // A pending retry must not keep the process alive on its own.
+    accountJoinTimer.unref?.();
+  };
 
   /**
    * Hand this computer's account identity to the account join round
@@ -212,27 +315,37 @@ export function createGatewayLinkBootstrap(
     const hostId = status.hostId ?? credentials?.hostId ?? "";
     if (!onAccountLinkUp || !publicOrigin || !hostId) return;
     if (!credentials?.tlsServerName) return;
-    try {
-      onAccountLinkUp({
+    // A new connection is a new chain: whatever the previous one queued is void.
+    cancelAccountJoin();
+    void runAccountJoin(
+      {
         publicOrigin,
         hostId,
         certificatePem: credentials.certificatePem,
         privateKeyPem: credentials.privateKeyPem,
-      });
-    } catch (error) {
-      log("warn", "the account join round could not be started", { error: String(error) });
-    }
+      },
+      accountJoinGeneration,
+    );
   };
 
   const emit = (status: RemoteGatewayStatus): void => {
+    const wasConnected = linkWasConnected;
+    linkWasConnected = status.state === "connected";
+    if (!linkWasConnected && wasConnected) {
+      // The link those rounds were about is gone, and so is the retry they
+      // promised: the report described a connection that no longer exists.
+      cancelAccountJoin();
+      accountComputers = undefined;
+    }
     try {
       options.emitStatus(decorate(status));
     } catch (error) {
       log("warn", "gateway link status could not be delivered", { error: String(error) });
     }
-    const connected = status.state === "connected";
-    if (connected && !linkWasConnected) announceAccountComputers(status);
-    linkWasConnected = connected;
+    // Announced only after `linkWasConnected` is current: a round that reports
+    // its outcome synchronously re-enters here through `pushStatus`, and it must
+    // see this connection as already announced rather than start another round.
+    if (linkWasConnected && !wasConnected) announceAccountComputers(status);
   };
 
   /**
@@ -550,6 +663,8 @@ export function createGatewayLinkBootstrap(
     async dispose() {
       if (disposed) return;
       disposed = true;
+      // A queued retry outlives nothing: the link it would report on is gone.
+      cancelAccountJoin();
       const current = service;
       service = null;
       serviceInitialized = false;

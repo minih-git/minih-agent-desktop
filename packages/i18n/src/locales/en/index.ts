@@ -1309,6 +1309,8 @@ sklm: {
         kindComputer: "Computer",
         kindPhone: "Phone",
         kindRoles: "{{roles}}",
+        joinFailed: "This account's other computers could not be loaded: {{reason}}. Retrying shortly.",
+        joinSkipped: "This account's other computers were not loaded: {{reason}}.",
       },
     remoteGateway: {
       title: "Remote gateway",

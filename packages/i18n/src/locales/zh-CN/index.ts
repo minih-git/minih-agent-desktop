@@ -1442,6 +1442,8 @@ sklm: {
         kindComputer: "电脑",
         kindPhone: "手机",
         kindRoles: "{{roles}}",
+        joinFailed: "账号电脑没能加载：{{reason}}。稍后会自动重试。",
+        joinSkipped: "账号电脑没有加载：{{reason}}。",
       },
     remoteGateway: {
       title: "远程网关",

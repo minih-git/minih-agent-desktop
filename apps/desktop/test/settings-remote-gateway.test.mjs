@@ -18,6 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 register(pathToFileURL(join(here, "helpers/ts-import-hooks.mjs")));
 
 const {
+  accountComputersNotice,
   accountModeVisible,
   pairingCodeExpired,
   pairingCodeRemainingLabel,
@@ -303,4 +304,39 @@ test("a stale remoteGateway destination falls back to the accounts page", () => 
   for (const entry of SETTINGS_NAV) {
     assert.equal(normalizeSettingsTabId(entry.id), entry.id, entry.id);
   }
+});
+
+test("the account-computer notice names a failure and stays silent when there is none", () => {
+  // A round that failed is the only explanation a user gets for a missing
+  // computer, and while a retry is scheduled the copy may promise one.
+  assert.deepEqual(
+    accountComputersNotice({
+      state: "failed",
+      reason: "ACCOUNT_LOGIN_REFUSED",
+      detail: "INVALID_ARGUMENT",
+      at: "2026-10-24T00:00:00.000Z",
+      nextRetryAt: "2026-10-24T00:00:15.000Z",
+    }),
+    { key: "settings.accountsDevices.joinFailed", reason: "INVALID_ARGUMENT", failed: true },
+  );
+
+  // The backoff is spent: the same failure must not promise a retry that will
+  // never come, so it falls back to the neutral line (still shown as a failure).
+  assert.deepEqual(
+    accountComputersNotice({ state: "failed", reason: "ACCOUNT_ROSTER_UNAVAILABLE", at: "2026-10-24T00:00:00.000Z" }),
+    { key: "settings.accountsDevices.joinSkipped", reason: "ACCOUNT_ROSTER_UNAVAILABLE", failed: true },
+  );
+
+  // Skipped keeps its own wording: repeating it cannot fix the reason.
+  assert.deepEqual(
+    accountComputersNotice({ state: "skipped", reason: "no-access-key", at: "2026-10-24T00:00:00.000Z" }),
+    { key: "settings.accountsDevices.joinSkipped", reason: "no-access-key", failed: false },
+  );
+
+  // Nothing worth saying: everything joined, the account has one computer, or a
+  // round is running right now.
+  assert.equal(accountComputersNotice(undefined), null);
+  assert.equal(accountComputersNotice({ state: "joined", computers: 2, at: "2026-10-24T00:00:00.000Z" }), null);
+  assert.equal(accountComputersNotice({ state: "skipped", reason: "self-only", at: "2026-10-24T00:00:00.000Z" }), null);
+  assert.equal(accountComputersNotice({ state: "skipped", reason: "in-flight", at: "2026-10-24T00:00:00.000Z" }), null);
 });

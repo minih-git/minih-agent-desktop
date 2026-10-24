@@ -362,11 +362,10 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       emitDeviceNotice: (notice) => sendToRenderer(IPC.event.remoteGatewayDeviceNotice, notice),
       // Account mode (R8 package E): the link tells this desktop when it is up
       // in account mode, and the join round above turns the account's other
-      // computers into remote hosts. Fire-and-forget: discovery must never
-      // delay or fail the link itself.
-      onAccountLinkUp: (input) => {
-        void accountComputers.run(input);
-      },
+      // computers into remote hosts. The outcome is returned, not swallowed: the
+      // link reports it to the page and retries a failed round, and discovery
+      // still never delays or fails the link itself.
+      onAccountLinkUp: (input) => accountComputers.run(input),
       // Redacted push (§11.6): the link service carries the notifier to
       // `host.notify`, and the Agent Host above feeds it the four events.
       notifier: notifyHost,

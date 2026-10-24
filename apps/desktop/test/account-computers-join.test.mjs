@@ -200,3 +200,17 @@ test("concurrent runs share one round instead of minting two requests", async ()
   assert.equal(joined.length, 1);
   assert.equal(gateway.seen.filter((route) => route === "GET /v1/account/hosts").length, 1);
 });
+
+test("a round about another Gateway is not answered by the one already running", async () => {
+  // A reconnect to a different Gateway while the first round is still running
+  // must start its own round. Sharing it would report the old account's answer
+  // as the new connection's, and the new Gateway's computers are never found.
+  const gateway = fakeGateway({ hosts: [{ hostId: "host_studio", label: "Studio", online: true }] });
+  const { account, joined } = round({ fetch: gateway.fetch });
+  const other = "https://other-gateway.test";
+
+  await Promise.all([account.run(input), account.run({ ...input, publicOrigin: other })]);
+
+  assert.equal(joined.length, 2);
+  assert.deepEqual(joined.map((call) => call.publicOrigin).sort(), [ORIGIN, other]);
+});

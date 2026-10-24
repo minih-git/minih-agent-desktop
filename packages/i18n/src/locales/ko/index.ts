@@ -1449,6 +1449,8 @@ sklm: {
         kindComputer: "컴퓨터",
         kindPhone: "휴대전화",
         kindRoles: "{{roles}}",
+        joinFailed: "이 계정의 다른 컴퓨터를 불러오지 못했습니다: {{reason}}. 곧 다시 시도합니다.",
+        joinSkipped: "이 계정의 다른 컴퓨터를 불러오지 않았습니다: {{reason}}.",
       },
     remoteGateway: {
       title: "원격 게이트웨이",
