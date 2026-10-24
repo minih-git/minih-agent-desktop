@@ -183,17 +183,16 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
         const state = get();
         const liveMessages =
           sessionTranscriptCache.get(id) ?? state.retainedTranscripts[id];
-        const freshMessages =
-          (liveSessionTranscripts.has(id) || state.runningSessions[id]) &&
-          liveMessages
-            ? mergeLiveSessionMessages(detail.session.messages ?? [], liveMessages)
-            : detail.session.messages ?? [];
         // Deliberately no object reuse here: comparing two reads for equality
         // reads every row's content, and the renderer contract (asserted by the
         // long-history probe) is that a background delta performs no historical
         // body reads. Collapsing the duplicate copies therefore has to happen in
         // the projection layer, not on the read path.
-        const messages = freshMessages;
+        const messages =
+          (liveSessionTranscripts.has(id) || state.runningSessions[id]) &&
+          liveMessages
+            ? mergeLiveSessionMessages(detail.session.messages ?? [], liveMessages)
+            : detail.session.messages ?? [];
         // Never cache a suspiciously empty window (issue #795): hover prefetch
         // would then re-serve that emptiness on every later open, and the
         // session could not recover without a restart.
