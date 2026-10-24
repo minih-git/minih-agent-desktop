@@ -116,7 +116,7 @@ test("remote project groups share sorted visible order with range selection", ()
 test("a cold RACP catalog count of zero never reuses a chat with actual history", async () => {
   const { createRemoteSessionCatalog } = await import("../electron/main/remote/remote-session-catalog.ts");
   const host = {
-    hostKey: "ssh-one", label: "Host", connection: { ensureSession: async () => {} },
+    hostKey: "ssh-one", label: "Host", connection: { ensureSession: async () => {} }, visible: () => true, adopt: async () => {},
     client: { request: async () => ({ sessions: [{ id: "one", title: "Previous chat", projectId: "project",
       workspaceLabel: "app", mode: "agent", permissionMode: "ask", status: "idle", planningState: "inactive",
       queuedTurnIds: [], createdAt: "2026-10-11T00:00:00Z", updatedAt: "2026-10-11T00:00:00Z" }] }) },

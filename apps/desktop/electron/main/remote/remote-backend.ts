@@ -58,6 +58,8 @@ export type RemoteBackendOptions = {
    * dropped from this desktop's cached lists.
    */
   onSessionDeleted?: (hostSessionId: string) => void;
+  /** Called with a fork's new Host session id before its transcript is read. */
+  onSessionForked?: (hostSessionId: string) => Promise<void>;
   /** Injectable id source for RACP request contexts; defaults to a UUID. */
   newRequestId?: () => string;
 };
@@ -301,6 +303,7 @@ export function createRemoteBackend(options: RemoteBackendOptions): RemoteBacken
         });
         // The fork is a new host session; the connection layer registers its
         // backend on the `session.created` event. Attach to build its transcript.
+        await options.onSessionForked?.(session.id);
         const forkedRemoteId = makeRemoteSessionId(hostKey, session.id);
         const attach = await client.request<AttachResultLike>("session/attach", {
           sessionId: session.id,
