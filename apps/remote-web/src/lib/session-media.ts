@@ -19,7 +19,11 @@
  *   distinct state the screen names, so a missing image never looks like a
  *   broken one.
  */
-import type { SessionMediaReadRequest, SessionMediaReadResponse } from "@minih-agent/shared";
+import {
+  decodeBase64ToBytes,
+  type SessionMediaReadRequest,
+  type SessionMediaReadResponse,
+} from "@minih-agent/shared";
 
 import type { MediaViewerItem } from "../components/ui/MediaViewer.js";
 import { failureFrom, type OperationFailure } from "./errors.js";
@@ -65,86 +69,23 @@ function reasonOf(error: unknown): string | undefined {
   return typeof reason === "string" ? reason : undefined;
 }
 
-/** Base64 alphabet, standard form (the Host never emits URL-safe here). */
-const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const BASE64_LOOKUP: Int16Array = (() => {
-  const table = new Int16Array(128).fill(-1);
-  for (let index = 0; index < BASE64_ALPHABET.length; index += 1) table[BASE64_ALPHABET.charCodeAt(index)] = index;
-  return table;
-})();
-
 /**
- * Decode standard base64 into bytes, or `null` when the text is not base64.
+ * One image from its chunks, in the order the Host sent them.
  *
- * Written out rather than delegated to `atob`: a multi-chunk image is megabytes
- * of base64, and a decoder over the whole string must neither depend on a
- * particular runtime's input ceiling nor allocate a second byte-per-char string.
- * Padding is accepted only at the end.
+ * Each chunk is decoded on its own before this, because the Host encodes each
+ * one separately: joining the base64 text first would put a chunk's padding in
+ * the middle of the value, where it means corruption rather than an ending.
  */
-export function base64ToBytes(text: string): Uint8Array | null {
-  // A standard base64 string is a whole number of 4-character groups, with at
-  // most two `=` of padding at the very end.
-  if (text.length % 4 !== 0) return null;
-  // `=` both terminates the data and pads it to the group boundary, so the
-  // first one is where decoding stops — everything after it is padding.
-  const terminator = text.indexOf("=");
-  const end = terminator < 0 ? text.length : terminator;
-  if (end % 4 === 1) return null;
-  const output = new Uint8Array(Math.floor((end * 3) / 4));
-  let written = 0;
-  // Four symbols are exactly three bytes, so a fixed group keeps the arithmetic
-  // in 32-bit range whatever the length of the string.
-  for (let index = 0; index < end - (end % 4); index += 4) {
-    const first = BASE64_LOOKUP[text.charCodeAt(index)];
-    const second = BASE64_LOOKUP[text.charCodeAt(index + 1)];
-    const third = BASE64_LOOKUP[text.charCodeAt(index + 2)];
-    const fourth = BASE64_LOOKUP[text.charCodeAt(index + 3)];
-    if (
-      first === undefined ||
-      second === undefined ||
-      third === undefined ||
-      fourth === undefined ||
-      first < 0 ||
-      second < 0 ||
-      third < 0 ||
-      fourth < 0
-    ) {
-      // A character past ASCII indexes nothing, and a non-base64 one answered
-      // `-1`; both mean this is not base64, never a byte to guess at.
-      return null;
-    }
-    const group = (first << 18) | (second << 12) | (third << 6) | fourth;
-    output[written] = (group >> 16) & 0xff;
-    output[written + 1] = (group >> 8) & 0xff;
-    output[written + 2] = group & 0xff;
-    written += 3;
+function joinChunks(parts: Uint8Array[]): Uint8Array {
+  if (parts.length === 1) return parts[0]!;
+  const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const joined = new Uint8Array(total);
+  let at = 0;
+  for (const part of parts) {
+    joined.set(part, at);
+    at += part.byteLength;
   }
-  // The final partial group (only reachable without padding) still carries the
-  // high bits of the bytes it holds.
-  const remainder = end % 4;
-  if (remainder > 0) {
-    const base = end - remainder;
-    let group = 0;
-    let bits = 0;
-    for (let index = base; index < end; index += 1) {
-      const value = BASE64_LOOKUP[text.charCodeAt(index)];
-      if (value === undefined || value < 0) return null;
-      group = (group << 6) | value;
-      bits += 6;
-    }
-    const bytes = Math.floor(bits / 8);
-    for (let offset = 0; offset < bytes; offset += 1) {
-      output[written] = (group >> (bits - 8 * (offset + 1))) & 0xff;
-      written += 1;
-    }
-  }
-  return written === output.length ? output : output.subarray(0, written);
-}
-
-/** How many bytes one base64 chunk carries, without decoding it twice. */
-function decodedLength(base64: string): number {
-  const end = base64.endsWith("==") ? base64.length - 2 : base64.endsWith("=") ? base64.length - 1 : base64.length;
-  return Math.floor((end * 3) / 4);
+  return joined;
 }
 
 function mediaUrl(bytes: Uint8Array, mime: string): string {
@@ -163,7 +104,7 @@ export async function readSessionMedia(
   client: SessionMediaClient,
   input: { sessionId: string; mediaId: string; name?: string },
 ): Promise<SessionMediaState> {
-  const chunks: string[] = [];
+  const parts: Uint8Array[] = [];
   let offset = 0;
   let totalBytes = 0;
   let mime = "";
@@ -193,18 +134,24 @@ export async function readSessionMedia(
       }
       if (!mime) mime = chunk.mime;
       totalBytes = chunk.totalBytes;
-      chunks.push(chunk.data);
-      const advanced = decodedLength(chunk.data);
-      if (advanced <= 0) {
+      const bytes = decodeBase64ToBytes(chunk.data);
+      if (!bytes) {
+        return {
+          kind: "failed",
+          failure: { code: "INTERNAL", message: "the host sent a media chunk that is not base64", retriable: false },
+        };
+      }
+      // The Host encodes each chunk on its own, so what advances the read is the
+      // byte count of the decoded chunk: a chunk boundary that does not fall on a
+      // 3-byte group leaves padding the next chunk cannot share.
+      if (bytes.byteLength === 0) {
         return { kind: "failed", failure: { code: "INTERNAL", message: "the host sent an empty media chunk", retriable: true } };
       }
-      offset += advanced;
+      parts.push(bytes);
+      offset += bytes.byteLength;
       if (offset >= totalBytes) break;
     }
-    const bytes = base64ToBytes(chunks.join(""));
-    if (!bytes) {
-      return { kind: "failed", failure: { code: "INTERNAL", message: "the image bytes could not be decoded", retriable: false } };
-    }
+    const bytes = joinChunks(parts);
     return {
       kind: "ready",
       item: { id: input.mediaId, url: mediaUrl(bytes, mime), mime, ...(input.name ? { name: input.name } : {}) },

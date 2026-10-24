@@ -11,6 +11,13 @@ function payload(length: number): Uint8Array {
   return bytes;
 }
 
+/** A cheap content digest: enough to prove every byte arrived, small to compare. */
+function digest(bytes: Uint8Array): string {
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  return `${bytes.byteLength}:${hash.toString(16)}`;
+}
+
 /**
  * A Host that answers `session/mediaRead` from one in-memory blob, in the same
  * bounds the real one enforces: a request past the end of the chunk budget is a
@@ -60,9 +67,22 @@ describe("readSessionMedia (D6, rollout B4)", () => {
     // 2.5 chunks: the last answer is short, exactly as the Host sends it.
     const blob = payload(SESSION_MEDIA_CHUNK_BYTES * 2 + 1024);
     const { client, calls } = mediaHost(blob);
-    const state = await readSessionMedia(client, { sessionId: "s1", mediaId: "media_big" });
+    const created: Blob[] = [];
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockImplementation((value) => {
+      created.push(value as Blob);
+      return `blob:session-media-${created.length}`;
+    });
+    let state: Awaited<ReturnType<typeof readSessionMedia>>;
+    try {
+      state = await readSessionMedia(client, { sessionId: "s1", mediaId: "media_big" });
+    } finally {
+      createObjectUrl.mockRestore();
+    }
     expect(state.kind).toBe("ready");
     expect(calls.map((call) => call.offset)).toEqual([0, SESSION_MEDIA_CHUNK_BYTES, SESSION_MEDIA_CHUNK_BYTES * 2]);
+    // The bytes, not the call count: the Host encodes every chunk on its own, so
+    // a reader that merged the text first would end the image at chunk one.
+    expect(digest(new Uint8Array(await created[0]!.arrayBuffer()))).toBe(digest(blob));
   });
 
   it("names an old Host instead of showing a broken preview", async () => {
