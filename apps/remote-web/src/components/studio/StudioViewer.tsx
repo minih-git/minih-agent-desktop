@@ -28,6 +28,7 @@ import type { StudioCard } from "../../lib/direct-chat/studio.js";
 import { failureReasonKey } from "../../lib/direct-chat/view.js";
 import { takeModalFocus } from "../../lib/modal-focus.js";
 import { Button } from "../ui/Button.js";
+import { FailureDetail } from "../ui/FailureDetail.js";
 import {
   cleanupCacheFiles,
   isAbortOrCancel,
@@ -171,6 +172,9 @@ export function StudioArtCard({
             {card.prompt}
           </p>
           <p className="mt-1 text-[12px] leading-[16px] text-[var(--rm-text-muted)]">{reasonText}</p>
+          {/* A failed generation keeps its stored reason one tap away, so a
+              phone-only failure can be told apart from a broken gateway. */}
+          {card.status === "failed" ? <FailureDetail reason={card.error} /> : null}
         </div>
         {/* A wide card keeps the two actions beside the reason instead of under
             it, which is what leaves the right half of the row empty otherwise. */}

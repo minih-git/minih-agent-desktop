@@ -23,13 +23,14 @@
  *   can contain it.
  */
 import {
+  decodeBase64ToBytes,
   IMAGE_GENERATION_MAX_BYTES,
   IMAGE_GENERATION_TIMEOUT_MS,
   type MinihRouterModel,
 } from "@minih-agent/shared";
 
 import { classifyGatewayRefusal, parseGatewayRefusal } from "./gateway-error.js";
-import { base64ToBytes, probeImageDimensions, validateRasterImageBytes } from "./media.js";
+import { probeImageDimensions, validateRasterImageBytes } from "./media.js";
 
 /** What may be sent for one image: the prompt, and the model that answers it. */
 export type DirectImageGenerationInput = {
@@ -357,7 +358,7 @@ export async function requestDirectImageGeneration(
 
     const inline = text(first.b64_json);
     if (inline) {
-      const bytes = base64ToBytes(inline);
+      const bytes = decodeBase64ToBytes(inline);
       if (!bytes) return outputFailure(IMAGE_FAILURE_MESSAGES.undecodable);
       if (bytes.byteLength > IMAGE_GENERATION_MAX_BYTES) return outputFailure(IMAGE_FAILURE_MESSAGES.tooLarge);
       return await acceptBytes(bytes);

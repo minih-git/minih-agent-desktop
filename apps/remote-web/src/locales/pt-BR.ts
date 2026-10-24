@@ -535,6 +535,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "directChat.reason.storage": "A resposta não pôde ser salva neste celular.",
   "directChat.reason.contextOverflow": "Esta conversa não cabe mais no contexto do modelo. Comece outra.",
   "directChat.reason.interrupted": "Interrompido · acima está o que chegou",
+  "directChat.failureDetail": "Detalhes",
   "directChat.reason.gateway": "O gateway de modelos falhou.",
   "directChat.reason.noRoute": "Este modelo não tem nenhuma rota disponível agora. Tente outro modelo.",
   "directChat.reason.upstreamBusy": "Este modelo está ocupado agora. Tente de novo em instantes.",

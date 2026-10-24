@@ -141,6 +141,59 @@ describe("projectMessage", () => {
     expect(item?.mediaIds).toEqual(["media_bTEvaWR4LTA"]);
   });
 
+
+  it("names an image the Host did not name, so a just-sent photo still shows", () => {
+    // The live event path — and any Host older than the projection — hands the
+    // row over without a `mediaId`. The id is derivable (message id + row
+    // position) and the Host's own reader computes it the same way, so the phone
+    // does not have to show a file name until the desktop is updated.
+    const sha = "a".repeat(64);
+    const item = projectMessage(
+      message({
+        id: "0581cb5e-2730-4932-af3f-62a4b5a2a2c0",
+        role: "user",
+        content: "这个图你能看到吗",
+        attachments: [
+          { kind: "image", name: "IMG_3522.png", ref: `attachments/${sha}`, mimeType: "image/jpeg" },
+          { kind: "file", name: "notes.pdf", ref: "/tmp/notes.pdf" },
+        ],
+      }),
+    );
+
+    const expected = `media_${Buffer.from("0581cb5e-2730-4932-af3f-62a4b5a2a2c0/idx-0").toString("base64url")}`;
+    expect(item?.mediaIds).toEqual([expected]);
+    // A ref the Host cannot read back stays a name, with no id to refuse.
+    expect(item?.attachments?.[1]).not.toHaveProperty("mediaId");
+  });
+
+  it("gives a generated image the media id its tool result names", () => {
+    // The tool reports the file by path and by `attachments/<sha256>`; the ref is
+    // what the phone reads back, and the row id is its position in the result.
+    const sha = "b".repeat(64);
+    const item = projectMessage(
+      message({
+        id: "call_1",
+        role: "tool",
+        toolName: "GenerateImages",
+        toolResult: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                kind: "generated-images",
+                results: [
+                  { index: 0, status: "succeeded", ref: `attachments/${sha}`, mimeType: "image/png", name: "generated.png" },
+                ],
+              }),
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(item?.mediaIds).toEqual([`media_${Buffer.from("call_1/img-0").toString("base64url")}`]);
+  });
+
   it("marks a side note", () => {
     expect(projectMessage(message({ role: "user", content: "hi", sideNote: true }))?.sideNote).toBe(true);
   });

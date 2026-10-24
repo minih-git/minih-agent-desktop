@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, realpath, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { createImageBinding, generateImageBatch, type ImageOperationMetadata } from "@minih-agent/agent-runtime";
 import type { ImageApi, ImageModel } from "@earendil-works/pi-ai";
 import type { VendorOAuth } from "../oauth";
@@ -14,6 +14,7 @@ import {
 } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
 import type { LocalToolHandler } from "../agent-sidecar";
+import { ensureAttachmentBlobFromFile } from "../prompt-attachments";
 import { imageInputLoader } from "./image-inputs";
 
 function failure(errorCode: string, content: string) {
@@ -120,7 +121,25 @@ export function createImageGenerationTool(options: {
         return target;
       },
     });
-    const ok = results.some((result) => result.status === "succeeded");
+    // A generated image is written to the session's scratch directory, which only
+    // this computer can open. Storing the same bytes as `attachments/<sha256>` is
+    // what lets a phone reopen it through `session/mediaRead`, so each result
+    // carries that ref beside the path the desktop already renders.
+    const stored = await Promise.all(
+      results.map(async (result) => {
+        if (result.status !== "succeeded" || typeof result.path !== "string") return result;
+        try {
+          const ref = await ensureAttachmentBlobFromFile(options.dataDir, result.path);
+          const { size } = await stat(result.path);
+          return { ...result, ref, name: basename(result.path), size };
+        } catch (error) {
+          // The desktop still has the image by path; only remote clients lose it.
+          // Naming the failure keeps that from being invisible.
+          return { ...result, refError: error instanceof Error ? error.message : String(error) };
+        }
+      }),
+    );
+    const ok = stored.some((result) => result.status === "succeeded");
     return {
       ok,
       isError: !ok,
@@ -128,7 +147,7 @@ export function createImageGenerationTool(options: {
         kind: "generated-images",
         providerId: binding.providerId,
         modelId: binding.modelId,
-        results,
+        results: stored,
         operations: operations.sort((a, b) => a.index - b.index),
       },
     };

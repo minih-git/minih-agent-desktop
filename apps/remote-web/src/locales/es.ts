@@ -535,6 +535,7 @@ export const es: Record<TranslationKey, string> = {
   "directChat.reason.storage": "La respuesta no se pudo guardar en este teléfono.",
   "directChat.reason.contextOverflow": "Esta conversación ya no cabe en el contexto del modelo. Empieza otra.",
   "directChat.reason.interrupted": "Interrumpido · arriba está lo que llegó",
+  "directChat.failureDetail": "Detalles",
   "directChat.reason.gateway": "La pasarela de modelos falló.",
   "directChat.reason.noRoute": "Este modelo no tiene ninguna ruta disponible ahora mismo. Prueba con otro modelo.",
   "directChat.reason.upstreamBusy": "Este modelo está ocupado ahora mismo. Inténtalo de nuevo en un momento.",

@@ -1,8 +1,4 @@
-import {
-  DIRECT_IMAGE_INPUT_MAX_BYTES,
-  decodeInlineAttachmentData,
-  sniffInlineAttachment,
-} from "@minih-agent/shared";
+import { DIRECT_IMAGE_INPUT_MAX_BYTES, sniffInlineAttachment } from "@minih-agent/shared";
 import type { DirectChatMedia } from "./history-store.js";
 
 export type ImageValidationResult =
@@ -68,24 +64,6 @@ export async function probeImageDimensions(
 export function createMediaUrl(media: Pick<DirectChatMedia, "mime" | "data">): string {
   const blob = media.data instanceof Blob ? media.data : new Blob([media.data.slice()], { type: media.mime });
   return URL.createObjectURL(blob);
-}
-
-
-/**
- * Decode base64 into bytes, or `null` when the text is not base64.
- *
- * Image endpoints answer with megabytes of base64 and the bytes are only kept
- * when they pass the raster and size checks, so a value that cannot be decoded
- * is a refusal rather than a length. The shared decoder is reused: a second
- * base64 implementation would be a second place for a padding bug.
- */
-export function base64ToBytes(text: string): Uint8Array | null {
-  try {
-    return decodeInlineAttachmentData(text);
-  } catch {
-    // A non-ASCII character indexes nothing: the value is not base64 at all.
-    return null;
-  }
 }
 
 /**

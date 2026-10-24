@@ -357,10 +357,15 @@ export function StudioScreen({
     try {
       // "Delete this image" removes one generation, not the conversation: an
       // image conversation can hold several, and the older ones must survive.
-      // A generation still arriving is stopped first, which is what the confirm
-      // text promises.
+      // A card without an image is the visible end of a chain of attempts for
+      // the same prompt, so it goes with the failures it was hiding; a card with
+      // an image is that image's own record and goes alone. A generation still
+      // arriving is stopped first, which is what the confirm text promises.
       if (target.status === "generating") await runner.stop(target.conversationId);
-      const outcome = await history.removeImage(target.conversationId, target.attemptId);
+      const outcome =
+        target.status === "complete"
+          ? await history.removeImage(target.conversationId, target.attemptId)
+          : await history.removeFailedGeneration(target.conversationId, target.attemptId);
       if (!outcome.ok) {
         if (outcome.reason === "busy") setToastMsg(t("directChat.stopFirst"));
         else setNotice(t("directChat.saveFailed"));

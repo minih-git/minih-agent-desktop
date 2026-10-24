@@ -18,6 +18,7 @@
  */
 import Type, { type Static } from "typebox";
 
+import { decodeBase64ToBytes } from "./base64.js";
 /**
  * Raw bytes one inline attachment may carry.
  *
@@ -119,14 +120,18 @@ export function declaredMimeMatches(declared: string | undefined, sniffed: Sniff
   if (base.startsWith("image/")) return false;
   return base.startsWith("text/") || base === "application/json" || base === "application/xml" || base.endsWith("+json") || base.endsWith("+xml");
 }
-
-/** Base64 as it arrives on the wire; a data-URL prefix is refused, not stripped. */
+/**
+ * Base64 as it arrives on the wire; a data-URL prefix is refused, not stripped.
+ *
+ * The bytes come from the shared decoder rather than `Buffer.from`: this function
+ * is reachable from the phone client, where `Buffer` does not exist, and a bare
+ * `Buffer.from` there threw inside a `catch` that read it as "not an image".
+ */
 export function decodeInlineAttachmentData(data: string): Uint8Array | null {
   if (data.startsWith("data:")) return null;
   const compact = data.replace(/\s+/g, "");
   if (!compact || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) return null;
-  const bytes = Uint8Array.from(Buffer.from(compact, "base64"));
-  // `Buffer` accepts a truncated tail silently; re-encoding proves the input was
-  // the canonical base64 of these bytes and not a prefix of something longer.
-  return Buffer.from(bytes).toString("base64").replace(/=+$/, "") === compact.replace(/=+$/, "") ? bytes : null;
+  // The decoder refuses a non-canonical tail as well, so a truncated value stays
+  // a refusal instead of decoding to a shorter byte string.
+  return decodeBase64ToBytes(compact);
 }

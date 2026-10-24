@@ -535,6 +535,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "directChat.reason.storage": "這則回覆沒能儲存到這台手機。",
   "directChat.reason.contextOverflow": "這個對話已超出模型的上下文長度。請新增對話。",
   "directChat.reason.interrupted": "已中斷 · 上面是已收到的內容",
+  "directChat.failureDetail": "詳情",
   "directChat.reason.gateway": "模型閘道發生錯誤。",
   "directChat.reason.noRoute": "這個模型目前沒有可用的線路，換個模型試試。",
   "directChat.reason.upstreamBusy": "這個模型暫時繁忙，請稍後再試。",

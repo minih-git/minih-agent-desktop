@@ -545,6 +545,7 @@ export const en = {
   "directChat.reason.storage": "The reply could not be saved on this phone.",
   "directChat.reason.contextOverflow": "This conversation no longer fits the model's context. Start a new one.",
   "directChat.reason.interrupted": "Interrupted · the text above is what arrived",
+  "directChat.failureDetail": "Details",
   "directChat.reason.gateway": "The model gateway failed.",
   "directChat.reason.noRoute": "This model has no available route right now. Try another model.",
   "directChat.reason.upstreamBusy": "This model is busy right now. Try again in a moment.",
