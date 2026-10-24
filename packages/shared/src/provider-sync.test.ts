@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isSyncableProvider, parseProviderImportPayload, parseProviderImportSummary, PROVIDER_SYNC_MAX_PROVIDERS } from "./provider-sync.js";
+import { MODEL_SYSTEM_PROMPT_MAX_CHARS } from "./types/models.js";
 import type { ProviderPublic } from "./types/providers.js";
 
 const model = { id: "model/a", contextWindow: 120000, maxTokens: 8000, thinkingLevels: ["off", "high"] as const, defaultThinkingLevel: "high", thinkingProtocol: "adaptive", nativeWebSearch: true };
@@ -22,6 +23,21 @@ describe("provider sync boundary", () => {
     const input = payload();
     Object.assign(input.providers[0]!.input.models[0]!, { apiStyle: "anthropic_messages" });
     expect(parseProviderImportPayload(input)).toEqual(input);
+  });
+  it("carries a multi-line per-model instruction block", () => {
+    const input = payload();
+    Object.assign(input.providers[0]!.input.models[0]!, { systemPrompt: "Line one.\nLine two." });
+    expect(parseProviderImportPayload(input)).toEqual(input);
+  });
+  it("rejects an oversized or NUL-bearing instruction block", () => {
+    const oversized = payload();
+    Object.assign(oversized.providers[0]!.input.models[0]!, {
+      systemPrompt: "a".repeat(MODEL_SYSTEM_PROMPT_MAX_CHARS + 1),
+    });
+    expect(() => parseProviderImportPayload(oversized)).toThrow("Invalid provider import payload");
+    const nul = payload();
+    Object.assign(nul.providers[0]!.input.models[0]!, { systemPrompt: "a\u0000b" });
+    expect(() => parseProviderImportPayload(nul)).toThrow("Invalid provider import payload");
   });
   it("preserves current model settings and meaningful zero values", () => {
     const input = payload();

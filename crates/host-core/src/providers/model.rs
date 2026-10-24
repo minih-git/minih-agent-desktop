@@ -127,6 +127,12 @@ pub struct ModelBinding {
     /// published name; `id` remains the wire identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alias: Option<String>,
+    /// Optional per-model instruction block. When this model is the session's
+    /// main model, the runtime appends it to the composed system prompt as its
+    /// own section; a blank value is dropped by normalization so an empty box
+    /// and an absent key read the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
     /// Provenance of `context_window`. `catalog` values follow the published
     /// models.dev record, so a catalog correction still reaches a saved binding;
     /// `user` values are the user's own number. Absent means the record predates

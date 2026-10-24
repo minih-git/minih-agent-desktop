@@ -242,6 +242,7 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
                 ModelBinding {
                     id: "reasoning-model".into(),
                     alias: Some("pro".into()),
+                    system_prompt: None,
                     context_window_source: None,
                     max_tokens_source: None,
                     context_window: 256_000,
@@ -259,6 +260,7 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
                 ModelBinding {
                     id: "plain-model".into(),
                     alias: None,
+                    system_prompt: None,
                     context_window_source: None,
                     max_tokens_source: None,
                     context_window: 128_000,
@@ -376,6 +378,7 @@ fn binding_with_alias(id: &str, alias: Option<&str>) -> ModelBinding {
     ModelBinding {
         id: id.into(),
         alias: alias.map(str::to_string),
+        system_prompt: None,
         context_window_source: None,
         max_tokens_source: None,
         context_window: DEFAULT_CONTEXT_WINDOW,
@@ -491,6 +494,72 @@ fn alias_survives_the_provider_config_round_trip() {
 }
 
 #[test]
+fn normalize_model_bindings_trims_model_system_prompts_and_drops_blank_ones() {
+    let normalized = normalize_model_bindings(&[
+        ModelBinding {
+            system_prompt: Some("  Follow the house style.\n".into()),
+            ..binding_with_alias("styled-model", None)
+        },
+        ModelBinding {
+            system_prompt: Some("   \n\t".into()),
+            ..binding_with_alias("blank-prompt", None)
+        },
+        binding_with_alias("no-prompt", None),
+    ]);
+    assert_eq!(
+        normalized[0].system_prompt.as_deref(),
+        Some("Follow the house style.")
+    );
+    // An emptied box and an absent key stay one state: both mean no prompt.
+    assert_eq!(normalized[1].system_prompt, None);
+    assert_eq!(normalized[2].system_prompt, None);
+}
+
+#[test]
+fn model_system_prompt_survives_the_provider_config_round_trip() {
+    let bindings = vec![ModelBinding {
+        system_prompt: Some("Line one.\nLine two.".into()),
+        ..binding_with_alias("prompted-model", None)
+    }];
+    let config = build_provider_config_json(
+        None,
+        None,
+        Some(&bindings),
+        &LimitOverrides {
+            context_window: None,
+            max_output_tokens: None,
+            temperature: None,
+        },
+    )
+    .unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(parsed["models"][0]["systemPrompt"], "Line one.\nLine two.");
+    let restored: Vec<ModelBinding> = serde_json::from_value(parsed["models"].clone()).unwrap();
+    assert_eq!(
+        restored[0].system_prompt.as_deref(),
+        Some("Line one.\nLine two.")
+    );
+}
+
+#[test]
+fn model_system_prompt_length_is_limited_to_configured_characters() {
+    let at_limit = ModelBinding {
+        system_prompt: Some("a".repeat(MAX_MODEL_SYSTEM_PROMPT_CHARS)),
+        ..binding_with_alias("model", None)
+    };
+    assert!(validate_model_bindings(&[at_limit]).is_ok());
+
+    let over_limit = ModelBinding {
+        system_prompt: Some("a".repeat(MAX_MODEL_SYSTEM_PROMPT_CHARS + 1)),
+        ..binding_with_alias("model", None)
+    };
+    let error = validate_model_bindings(&[over_limit])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("MODEL_SYSTEM_PROMPT_TOO_LONG"), "{error}");
+}
+
+#[test]
 fn alias_survives_provider_create_and_update() {
     let (_dir, db, secrets) = test_context();
     let provider = create_provider(
@@ -555,20 +624,20 @@ fn alias_survives_provider_create_and_update() {
 #[test]
 fn alias_length_is_limited_to_sixty_characters() {
     let at_limit = binding_with_alias("model", Some(&"a".repeat(MAX_MODEL_ALIAS_CHARS)));
-    assert!(validate_model_aliases(&[at_limit]).is_ok());
+    assert!(validate_model_bindings(&[at_limit]).is_ok());
 
     let over_limit = binding_with_alias("model", Some(&"a".repeat(MAX_MODEL_ALIAS_CHARS + 1)));
-    let error = validate_model_aliases(&[over_limit])
+    let error = validate_model_bindings(&[over_limit])
         .unwrap_err()
         .to_string();
     assert!(error.contains("MODEL_ALIAS_TOO_LONG"), "{error}");
 
     // Multi-byte aliases are counted in characters, not bytes.
     let multi_byte = binding_with_alias("model", Some(&"あ".repeat(MAX_MODEL_ALIAS_CHARS)));
-    assert!(validate_model_aliases(&[multi_byte]).is_ok());
+    assert!(validate_model_bindings(&[multi_byte]).is_ok());
     let multi_byte_over =
         binding_with_alias("model", Some(&"あ".repeat(MAX_MODEL_ALIAS_CHARS + 1)));
-    let error = validate_model_aliases(&[multi_byte_over])
+    let error = validate_model_bindings(&[multi_byte_over])
         .unwrap_err()
         .to_string();
     assert!(error.contains("MODEL_ALIAS_TOO_LONG"), "{error}");
@@ -1604,6 +1673,7 @@ fn binding_with_limits(id: &str, context_window: u32, max_tokens: u32) -> ModelB
     ModelBinding {
         id: id.into(),
         alias: None,
+        system_prompt: None,
         context_window_source: None,
         max_tokens_source: None,
         context_window,

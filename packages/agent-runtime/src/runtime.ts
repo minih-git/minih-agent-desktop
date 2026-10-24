@@ -1013,6 +1013,12 @@ export type AgentRuntimeOptions = {
   systemPrompt?: string;
   /** pi-compatible SYSTEM.md / APPEND_SYSTEM.md resolved for the session (issue #542). */
   customSystemPrompt?: CustomSystemPrompt;
+  /**
+   * Instruction block of the binding this session runs on (per-model
+   * `systemPrompt`). Composed as its own prompt section; a different model or
+   * edited text retires the runtime through the reuse match.
+   */
+  modelSystemPrompt?: string;
   /** Session-bound workspace root used for path-scoped instruction requests. */
   projectPath?: string;
   /** Remote tool root. Model requests and runtime state remain on this machine. */
@@ -1097,6 +1103,12 @@ export type RuntimeMatchConfig = {
   pluginSkills?: PluginSkillDef[];
   trustedExtensions?: TrustedExtensionSpec[];
   customSystemPrompt?: CustomSystemPrompt;
+  /**
+   * Instruction block of the binding this session runs on (per-model
+   * `systemPrompt`). Composed as its own prompt section; a different model or
+   * edited text retires the runtime through the reuse match.
+   */
+  modelSystemPrompt?: string;
   projectInstructions?: ProjectInstructions;
   projectMemory?: string;
   /**
@@ -1851,6 +1863,7 @@ export class DesktopAgentRuntime {
   private streamSink: StreamCoalescer;
   private baseSystemPrompt: string;
   private customSystemPrompt?: CustomSystemPrompt;
+  private modelSystemPrompt?: string;
   private planningState: PlanningState;
   private pendingPlanId?: string;
   private currentAssistant?: UiMessage;
@@ -2124,6 +2137,7 @@ export class DesktopAgentRuntime {
     // Remote workspaces are never isolated (ADR 0329).
     this.workspaceRoot = opts.remoteWorkspace ? undefined : opts.workspaceRoot?.trim() || undefined;
     this.customSystemPrompt = opts.customSystemPrompt;
+    this.modelSystemPrompt = opts.modelSystemPrompt?.trim() || undefined;
     this.baseProjectInstructions = opts.projectInstructions;
     this.projectInstructions = opts.projectInstructions;
     this.projectMemory = opts.projectMemory?.trim() || undefined;
@@ -2597,6 +2611,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       ...pluginSkillsPromptSections(this.pluginSkills),
       context: composeModeSystemPrompt(this.mode, [
         ...(this.customSystemPrompt?.append ? [this.customSystemPrompt.append] : []),
+        // The active model's own instruction block, after the user's
+        // APPEND_SYSTEM.md so the narrower rule reads closer to the request,
+        // and before project instructions so the workspace keeps the last word.
+        ...(this.modelSystemPrompt ? [this.modelSystemPrompt] : []),
         ...(optionalToolsPrompt ? [optionalToolsPrompt] : []),
         ...(projectPrompt ? [projectPrompt] : []),
         ...(memoryPrompt ? [memoryPrompt] : []),
@@ -2866,6 +2884,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       // prompt recomposes from the fresh content.
       safeJson(this.customSystemPrompt ?? null) ===
         safeJson(config.customSystemPrompt ?? null) &&
+      // Editing a model's prompt retires the runtime for the same reason: the
+      // next prompt must recompose from the saved text.
+      (this.modelSystemPrompt ?? "") === (config.modelSystemPrompt?.trim() ?? "") &&
       (this.projectMemory ?? "") === (config.projectMemory?.trim() ?? "") &&
       // The learned-memory *read switch* is configuration: flipping it changes
       // the prompt section and the tool catalog, so the next prompt rebuilds

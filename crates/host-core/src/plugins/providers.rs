@@ -162,6 +162,7 @@ pub(crate) fn declared_providers(manifest: &PluginManifest) -> Vec<DeclaredPlugi
                                     .map(str::trim)
                                     .filter(|value| !value.is_empty())
                                     .map(str::to_string),
+                                system_prompt: None,
                                 context_window_source: None,
                                 max_tokens_source: None,
                                 context_window: model

@@ -53,7 +53,8 @@ pub(crate) use credentials::{
 pub(crate) use validation::{
     config_limit_f64, config_limit_u32, fold_fullwidth, header_value_fault,
     normalize_headers_input, normalize_one_header, normalize_thinking_levels, storable_headers,
-    valid_header_key, validate_model_aliases, MAX_HEADERS, MAX_MODEL_ALIAS_CHARS,
+    valid_header_key, validate_model_bindings, MAX_HEADERS, MAX_MODEL_ALIAS_CHARS,
+    MAX_MODEL_SYSTEM_PROMPT_CHARS,
 };
 
 #[cfg(test)]

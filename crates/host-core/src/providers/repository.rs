@@ -96,6 +96,7 @@ fn hydrate_dynamic_plugin_models(db: &Database, provider: &mut ProviderPublic) -
             ModelBinding {
                 id: model.model_id,
                 alias,
+                system_prompt: None,
                 context_window_source: None,
                 max_tokens_source: None,
                 context_window: model.context_window.unwrap_or(DEFAULT_CONTEXT_WINDOW),
@@ -137,7 +138,7 @@ pub fn create_provider(
     // Validate before any side effect: a rejected alias must not leave a
     // stored secret behind.
     if let Some(models) = input.models.as_deref() {
-        validate_model_aliases(models)?;
+        validate_model_bindings(models)?;
     }
     let secret_ref = secret_ref_for_provider(&id);
     let mut backend = None;
@@ -232,7 +233,7 @@ pub(crate) fn create_provider_with_id(
         bail!("PROVIDER_INVALID: provider already exists");
     }
     if let Some(models) = input.models.as_deref() {
-        validate_model_aliases(models)?;
+        validate_model_bindings(models)?;
     }
     let now = now_ms();
     let secret_ref = secret_ref_for_provider(id);
@@ -320,7 +321,7 @@ pub fn update_provider(
     // Validate before any side effect: a rejected alias must not replace the
     // stored secret.
     if let Some(models) = input.models.as_deref() {
-        validate_model_aliases(models)?;
+        validate_model_bindings(models)?;
     }
     let raw_config: String = db.conn().query_row(
         "SELECT config_json FROM providers WHERE id = ?1",

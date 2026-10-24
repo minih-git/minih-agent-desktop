@@ -175,6 +175,7 @@ function createRuntime(
     workspaceRoot: string;
     scratchDir: string;
     customSystemPrompt: import("./custom-system-prompt.js").CustomSystemPrompt;
+    modelSystemPrompt: string;
     projectInstructions: import("./project-instructions.js").ProjectInstructions;
     projectMemory: string;
     pluginTools: PluginToolDef[];
@@ -207,6 +208,7 @@ function createRuntime(
     workspaceRoot: overrides.workspaceRoot,
     scratchDir: overrides.scratchDir,
     customSystemPrompt: overrides.customSystemPrompt,
+    modelSystemPrompt: overrides.modelSystemPrompt,
     pluginTools: overrides.pluginTools,
     subagents: overrides.subagents,
     subagentProviders: overrides.subagentProviders,
@@ -263,6 +265,7 @@ function runtimeMatches(
     pluginSkills: (runtime as any).pluginSkills,
     projectInstructions: (runtime as any).baseProjectInstructions,
     customSystemPrompt: (runtime as any).customSystemPrompt,
+    modelSystemPrompt: (runtime as any).modelSystemPrompt,
     projectMemory: (runtime as any).projectMemory,
     projectPath: (runtime as any).projectPath,
     workspaceRoot: (runtime as any).workspaceRoot,
@@ -453,6 +456,53 @@ describe("custom system prompt files (issue #542)", () => {
       runtimeMatches(runtime, { customSystemPrompt: { replace: persona } }),
     ).toBe(false);
 
+    await runtime.dispose();
+  });
+});
+
+describe("per-model system prompt", () => {
+  const modelPrompt = "MARKER-MODEL-1 Always answer with a table first.";
+  const appendix = "MARKER-APPEND-2 Prefer short sentences.";
+
+  function promptOf(runtime: DesktopAgentRuntime): string {
+    return (runtime as any).agent.state.systemPrompt as string;
+  }
+
+  it("appends the active model's instructions after APPEND_SYSTEM.md and before project instructions", async () => {
+    const runtime = createRuntime({
+      modelSystemPrompt: modelPrompt,
+      customSystemPrompt: { append: appendix },
+      projectInstructions: {
+        entries: [{ source: "AGENTS.md", content: "Run unit tests." }],
+      },
+    });
+    const prompt = promptOf(runtime);
+
+    expect(prompt).toContain(modelPrompt);
+    // The product persona and its operational rules survive: this is an
+    // addition, never a replacement.
+    expect(prompt).toContain("You are Minih-Agent-Desktop");
+    // The narrower, model-specific rule reads after the user's global appendix
+    // and before the workspace's own instructions.
+    expect(prompt.indexOf(modelPrompt)).toBeGreaterThan(prompt.indexOf(appendix));
+    expect(prompt.indexOf("Run unit tests.")).toBeGreaterThan(
+      prompt.indexOf(modelPrompt),
+    );
+
+    await runtime.dispose();
+  });
+
+  it("composes no section for an empty model prompt", async () => {
+    const runtime = createRuntime({ modelSystemPrompt: "   " });
+    expect(promptOf(runtime)).not.toContain("MARKER-MODEL-1");
+    await runtime.dispose();
+  });
+
+  it("retires the runtime when the model prompt changes", async () => {
+    const runtime = createRuntime({ modelSystemPrompt: modelPrompt });
+    expect(runtimeMatches(runtime, { modelSystemPrompt: modelPrompt })).toBe(true);
+    expect(runtimeMatches(runtime, { modelSystemPrompt: "Different text." })).toBe(false);
+    expect(runtimeMatches(runtime, { modelSystemPrompt: undefined })).toBe(false);
     await runtime.dispose();
   });
 });

@@ -10,6 +10,7 @@
  */
 import { useTranslation } from "react-i18next";
 import {
+  MODEL_SYSTEM_PROMPT_MAX_CHARS,
   THINKING_LEVELS,
   bindingDefaultThinkingMenuLevels,
   modelMatchesFilter,
@@ -26,7 +27,7 @@ import {
   MAX_OUTPUT_PRESETS,
   matchPresetIndex,
 } from "../../lib/model-limit-presets";
-import { HelpIcon, Input, Tooltip, TooltipButton, cx } from "../ui";
+import { HelpIcon, Input, Textarea, Tooltip, TooltipButton, cx } from "../ui";
 import { IconHelp } from "../icons";
 import { ReasoningEffortSelect } from "./ReasoningEffortSelect";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
@@ -50,6 +51,15 @@ export function publishedModelLimit(
     return undefined;
   }
   return field === "contextWindow" ? info.contextWindow : info.maxTokens;
+}
+
+/**
+ * The patch one keystroke in the model prompt box stores. An emptied box
+ * writes the absence instead of a blank prompt, so clearing the field really
+ * stops the model from carrying a section it no longer needs.
+ */
+export function modelSystemPromptPatch(value: string): Partial<ModelBinding> {
+  return { systemPrompt: value || undefined };
 }
 
 export type ModelBindingFieldsProps = {
@@ -428,6 +438,25 @@ export function ModelBindingFields({
           </span>
         </div>
       </div>
+      {/* A per-model instruction block: it applies only while this model is the
+          session's main model, and an emptied box clears it instead of sending
+          a blank section. */}
+      <label className="provider-chosen-field">
+        <span className="provider-chosen-field-label">
+          {t("settings.modelSystemPrompt")}
+          <HelpIcon label={t("settings.modelSystemPromptHint")} />
+        </span>
+        <Textarea
+          value={binding.systemPrompt ?? ""}
+          placeholder={t("settings.modelSystemPromptPlaceholder")}
+          rows={4}
+          disabled={busy}
+          maxLength={MODEL_SYSTEM_PROMPT_MAX_CHARS}
+          onChange={(event) =>
+            onChange(modelSystemPromptPatch(event.target.value))
+          }
+        />
+      </label>
     </div>
   );
 }

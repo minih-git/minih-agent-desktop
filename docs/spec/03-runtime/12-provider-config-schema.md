@@ -89,6 +89,11 @@ Tables (canonical DDL in [04-data-storage](04-data-storage.md) §4.3–4.4, §4.
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "alias": { "type": "string", "maxLength": 60 },
+          "systemPrompt": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "Instruction block appended to the system prompt while this model is the session's main model; a blank value is stored as absent."
+          },
           "contextWindow": { "type": "integer", "minimum": 0 },
           "contextWindowSource": { "enum": ["catalog", "user"] },
           "maxTokens": { "type": "integer", "minimum": 0 },
@@ -287,6 +292,15 @@ Host read/write and normalization preserve `true`; records created before this
 field existed remain disabled by default. This flag is what Electron main uses
 to build the delegation model catalog, so changing it survives provider edits
 and application restarts.
+
+`systemPrompt` is an optional, persisted instruction block per model binding
+(Settings → Models → Advanced). Host write paths reject more than 8,000
+characters, normalization trims the edges and stores a whitespace-only value as
+absent, and the cross-host provider sync carries it as a multi-line string.
+Electron main resolves the binding of the model a launch lands on and sends it
+as `modelSystemPrompt`; the runtime appends it to the composed system prompt
+(see `02-agent-runtime.md` §7.0.2). The block follows the model, not the
+provider row: switching to another model on the same row drops it.
 
 `apiStyle: "opencode_go"` is a first-class OpenCode Go preset layered on the
 OpenAI-compatible provider type. It persists as its own style so the UI can

@@ -1,5 +1,5 @@
 import { HEADER_VALUE_ALLOWED } from "./header-value.js";
-import { THINKING_LEVELS, type ModelBinding } from "./types/models.js";
+import { MODEL_SYSTEM_PROMPT_MAX_CHARS, THINKING_LEVELS, type ModelBinding } from "./types/models.js";
 import type { ProviderCreateInput, ProviderPublic } from "./types/providers.js";
 
 /** This document is secret-bearing: SSH stdin / owner-only admin socket only. */
@@ -25,7 +25,7 @@ const MODEL_API_STYLES = new Set(["chat_completions", "responses", "anthropic_me
 const EXCLUDED_VENDORS = new Set(["claude-cli", "codex", "openai-codex", "github-copilot", "google-antigravity", "google-gemini-cli", "ollama", "lmstudio", "lm-studio", "local"]);
 const RESERVED_HEADERS = new Set(["authorization", "proxy-authorization", "x-api-key", "api-key", "x-goog-api-key", "cookie", "set-cookie", "host", "content-type", "content-length", "connection", "transfer-encoding", "te", "trailer", "upgrade", "keep-alive", "chatgpt-account-id", "x-opencode-session"]);
 const INPUT_FIELDS = ["name", "vendorKey", "type", "protocol", "baseUrl", "authKind", "models", "defaultModelId", "secretValue", "apiStyle", "headers", "supportsReasoning", "supportedThinkingLevels", "contextWindow", "maxOutputTokens", "temperature"];
-const MODEL_FIELDS = ["id", "alias", "contextWindow", "contextWindowSource", "maxTokens", "maxTokensSource", "thinkingLevels", "defaultThinkingLevel", "thinkingProtocol", "supportsReasoningEffort", "supportsImages", "supportsDocuments", "availableForSubagents", "nativeWebSearch", "apiStyle"];
+const MODEL_FIELDS = ["id", "alias", "systemPrompt", "contextWindow", "contextWindowSource", "maxTokens", "maxTokensSource", "thinkingLevels", "defaultThinkingLevel", "thinkingProtocol", "supportsReasoningEffort", "supportsImages", "supportsDocuments", "availableForSubagents", "nativeWebSearch", "apiStyle"];
 
 function invalid(): never {
   // Never include input values, unknown field names, parser diagnostics or causes.
@@ -39,6 +39,11 @@ function fields(value: unknown, allowed: readonly string[]): asserts value is Re
 }
 function text(value: unknown, max = 256): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= max && value.trim() === value && !/[\x00-\x1f\x7f]/.test(value);
+}
+/** A model instruction block: multi-line, bounded, and never NUL-bearing. */
+function modelPrompt(value: unknown): boolean {
+  return typeof value === "string" && value.length > 0
+    && value.length <= MODEL_SYSTEM_PROMPT_MAX_CHARS && !value.includes("\u0000");
 }
 function nonnegative(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
@@ -78,6 +83,7 @@ function validateModel(value: unknown): ModelBinding {
   if (!text(value.id) || !nonnegative(value.contextWindow) || !Number.isSafeInteger(value.contextWindow)
     || !nonnegative(value.maxTokens) || !Number.isSafeInteger(value.maxTokens) || !levels(value.thinkingLevels)) invalid();
   if (value.alias !== undefined && !text(value.alias, 60)) invalid();
+  if (value.systemPrompt !== undefined && !modelPrompt(value.systemPrompt)) invalid();
   for (const key of ["contextWindowSource", "maxTokensSource"] as const) {
     if (value[key] !== undefined && value[key] !== "catalog" && value[key] !== "user") invalid();
   }

@@ -350,6 +350,9 @@ type ModelBinding = {
   thinkingLevels: ThinkingLevel[]
   defaultThinkingLevel: SessionThinkingLevel | null
   thinkingProtocol?: "legacy" | "adaptive"
+  /** Appended to the system prompt while this model is the session's main
+   * model; absent when the user left it blank. */
+  systemPrompt?: string
   availableForSubagents?: boolean // opt-in for AI-driven delegation
 }
 
@@ -397,6 +400,15 @@ opted-in account uses its exact provider ID as the override key. Selection prior
 → session model (D278; ADR subagent-model-opt-in). The opt-in governs every entry point that lets the AI pick a model
 for delegated work, not only `Task.model`: a `session/collaboration/spawn` `modelKey` naming a model without it is
 refused with `PERMISSION_DENIED`, while omitting the key, or naming the default model's own key, still inherits.
+
+`ModelBinding.systemPrompt` is the model's own instruction block. It is part of
+the binding, so it survives provider edits and restarts, is capped at 8,000
+characters, and is stored as absent when blank. Electron main resolves the
+binding of the model a launch lands on and passes it to the runtime, which
+appends it to the composed system prompt after `APPEND_SYSTEM.md` and before
+the project instruction chain (`02-agent-runtime.md` §7.0.2). Only the session's
+main model is affected: delegated subagent runs keep their own prompt, and
+switching to another model on the same row drops the block.
 
 ## 8. Secrets
 
