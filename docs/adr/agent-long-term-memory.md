@@ -280,9 +280,13 @@ restoring) until it is updated.
 
 Embeddings or vector search; a per-turn model call to select memories;
 periodic consolidation passes; automatic promotion of suggestions; memory in
-subagents; writing memory into `AGENTS.md` or any workspace file; a Plugin SDK
-surface for learned memory; dedicated remote-web or mobile memory UI (those
-clients show the tools as generic tool rows).
+subagents; writing memory into `AGENTS.md` or any workspace file; dedicated
+remote-web or mobile memory UI (those clients show the tools as generic tool
+rows).
+
+Amendment (D682; [plugin learned-memory read ADR](plugin-learned-memory-read.md): a
+read-only listing of active notes is allowed through `memory.read`. Plugin
+writes, suggestion APIs, and detailed provenance remain out of scope.
 
 ## Consequences
 

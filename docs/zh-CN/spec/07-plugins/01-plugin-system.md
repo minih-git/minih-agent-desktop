@@ -290,6 +290,7 @@ Host Main (Minih-Agent-Desktop)
 - `pi.session.rename()` // `session.update.own`
 - `pi.session.delete()` // `session.delete.own`
 - `pi.usage.listTurns()` // `usage.read`；只读已完成回合事实，不含消息正文
+- `pi.memory.list()` // `memory.read`；仅只读列出活跃长期记忆，结果有界
 - `pi.agent.complete(input)` // `agent.complete`；宿主代发一次性补全
 
 技能以声明方式贡献（`contributes.skills` + `agent.prompt.inject`），

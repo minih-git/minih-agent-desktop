@@ -540,6 +540,53 @@ pi.usage.listTurns(input?: {
   `null`。
 - `usage_json` 缺失或畸形时 cache/reasoning 计数记 0——绝不返回残缺行。
 
+### 长期记忆（需要 `memory.read`）
+
+`pi.memory.list` 以只读、有界的投影列出学习记忆。它只返回用户范围或插件
+指定的单个项目路径中的活跃笔记，不会暴露内部 `MemoryEntryRecord` 结构。
+
+```ts
+pi.memory.list(input: {
+  scope: "user" | "project"
+  path?: string      // project 范围必填：非空绝对文件夹路径
+  kind?: "preference" | "feedback" | "fact" | "reference"
+  limit?: number     // 1..=200，默认 50
+  offset?: number    // >= 0，默认 0
+}): Promise<{
+  readEnabled: boolean
+  entries: Array<{
+    id: string
+    scope: "user" | "project"
+    kind: "preference" | "feedback" | "fact" | "reference"
+    content: string
+    rationale: string | null
+    origin: "explicit" | "user_ui" | "extracted"
+    evidence: "user_stated" | "verified" | "inferred"
+    createdAt: number  // epoch ms
+    updatedAt: number  // epoch ms
+  }>
+  nextOffset: number | null
+}>
+```
+
+语义：
+
+- 主机只筛选 `status = 'active'`。响应绝不包含建议或归档笔记、删除标记、
+  `superseded_by`、`source_session_id`、`source_message_ids`、`fingerprint`、
+  `revision`、`use_count` 或 `last_used_at`。
+- 项目路径由现有长期记忆范围解析器解析。已存项目组的根路径映射到组范围；
+  其他路径映射到其规范路径。没有长期记忆的路径返回空列表。API 不枚举项目，
+  也不泄露范围键。
+- 当 `settings.learnedMemoryRead` 为 `false` 时，Electron main 返回
+  `{ readEnabled: false, entries: [], nextOffset: null }`，且不调用
+  `plugin.memory.list` 主机 RPC。该设置缺省时默认开启。
+- 列表操作没有副作用：不会更新 `use_count` 或 `last_used_at`，也不会记录索引捕获。
+- 行按管理器顺序 `updated_at DESC, id ASC` 排列。主机多取一行作为前瞻；有更多行时，
+  `nextOffset` 为 `offset + entries.length`，否则为 `null`。
+- Electron main 校验范围、绝对路径、种类和边界；主机再次校验，错误码为 1002
+  （`INVALID_PARAMS`），且不回显无效输入。
+- 现有插件 API 审计记录调用、结果和条目数，但不记录笔记内容。
+
 ### 会话协作（需要 `desktop.control`）
 
 官方 Session Orchestrator 组合了已审查的 desktop-control 目录；这不是第二套 session API，

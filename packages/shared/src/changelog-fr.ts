@@ -28,6 +28,7 @@ export const frEntries: ChangelogEntry[] = [
       "Les détails du téléphone sont corrigés : l’archive liste aussi les conversations d’images, deux questions en attente conservent des choix distincts, l’application suit le thème du système et la réduction des animations, et le focus reste utilisable au clavier.",
       "Les réglages du bureau sont regroupés en sept catégories dans une seule feuille inférieure, ce qui raccourcit la navigation.",
       "Le bureau gagne un plugin de terminal intégré facultatif, et les sessions longues consomment moins de mémoire : les caches du moteur de rendu sont plafonnés, tandis que les environnements d’exécution de sessions inactives et les connexions MCP inactives sont récupérés.",
+      "Les plugins peuvent demander un accès en lecture seule aux notes actives de mémoire apprise via pi.memory.list ; la vérification à l’installation précise les portées utilisateur et des projets indiqués, et l’interrupteur de lecture existant reste appliqué.",
     ],
   },
   {

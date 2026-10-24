@@ -2917,6 +2917,7 @@ sklm: {
       "bus.subscribe": "Nachrichten von anderen Plugins empfangen",
       "browser.cdp": "Den Arbeitspanel-Browser steuern",
       "usage.read": "Nutzungsstatistiken lesen",
+      "memory.read": "Gelerntes Gedächtnis lesen",
       "session.autoTitle": "Kontext des ersten Durchlaufs lesen und automatische Titel ändern"
     },
     "permissionHelp": {
@@ -2960,6 +2961,8 @@ sklm: {
       "browser.cdp": "Kann im Arbeitsbereichsbrowser navigieren, die Seite lesen, JavaScript ausführen und auf der Zulassungsliste stehende Chrome DevTools-Befehle senden. Cookies und Speichermethoden sind blockiert.",
       "usage.read":
         "Listet Nutzungsdaten abgeschlossener Runden auf (Token-Zähler pro Runde, seitenweise). Nachrichteninhalte sind nicht enthalten.",
+      "memory.read":
+        "Listet aktive Notizen aus dem erlernten Gedächtnis (Einstellungen, Feedback, Fakten und Referenzen) für den Benutzerbereich und vom Plugin benannte Projektpfade auf. Keine Vorschläge, archivierten Notizen oder Herkunftsinformationen; nur lesend.",
       "session.autoTitle":
         "Kann nur die erste Eingabe und Antwort geeigneter Sitzungen lesen und den Titel ändern, sofern er nicht manuell geändert wurde. Das vollständige Transkript bleibt unzugänglich.",
     }

@@ -75,6 +75,8 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "composer.transform": "medium",
   // Per-turn counters and session titles only, per the usage.read matrix row.
   "usage.read": "medium",
+  // Learned-memory text is more sensitive than usage counters; review it as high risk.
+  "memory.read": "high",
   // Two capabilities that reach outside Minih-Agent-Desktop's own window or read its
   // live audio stream sit at the top tier with the other outbound paths.
   "net.websocket": "high",

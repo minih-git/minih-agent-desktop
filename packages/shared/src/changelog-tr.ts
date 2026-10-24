@@ -28,6 +28,7 @@ export const trEntries: ChangelogEntry[] = [
       "Telefon ayrıntıları düzeltildi: arşiv artık görsel konuşmaları da listeliyor, bekleyen iki soru seçimlerini birbirinden ayrı tutuyor, uygulama sistem temasını ve azaltılmış hareket ayarını izliyor, klavyeyle odak kullanılabilir kalıyor.",
       "Masaüstü Ayarları tek bir alt panelde yedi kategori altında toplanıyor, böylece gezinme kısalıyor.",
       "Masaüstüne isteğe bağlı gömülü bir terminal eklentisi geliyor ve uzun süre çalışan oturumlar daha az bellek tutuyor: renderer önbellekleri sınırlandırılıyor, boşta kalan oturum çalışma zamanları ve boşta kalan MCP bağlantıları geri kazanılıyor.",
+      "Eklentiler pi.memory.list üzerinden etkin öğrenilmiş bellek notlarına salt okunur erişim isteyebilir; kurulum incelemesi kullanıcı ve belirtilen proje kapsamlarını açıklar, mevcut bellek okuma anahtarı da geçerliliğini korur.",
     ],
   },
   {

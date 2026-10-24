@@ -28,6 +28,7 @@ export const enEntries: ChangelogEntry[] = [
       "Phone details are fixed: the archive also lists image conversations, two pending questions keep separate choices, the app follows the system theme and reduced motion, and focus stays usable from a keyboard.",
       "Desktop Settings collapses into seven categories behind one bottom sheet, so the navigation is shorter.",
       "Desktop gains an optional embedded terminal plugin, and long-running sessions hold less memory: renderer caches are bounded, while idle session runtimes and idle MCP connections are reclaimed.",
+      "Plugins can request read-only access to active learned-memory notes through pi.memory.list; the install review explains the user and named-project scopes, and the existing memory-read switch still applies.",
     ],
   },
   {

@@ -670,6 +670,60 @@ Semantics:
 - A missing or malformed `usage_json` yields zero cache/reasoning counters —
   never a partial row.
 
+### memory (requires `memory.read`)
+
+`pi.memory.list` is a read-only, bounded projection of learned memory. It
+returns active notes for the user scope or for one project path supplied by the
+plugin; it never exposes the internal `MemoryEntryRecord` shape.
+
+```ts
+pi.memory.list(input: {
+  scope: "user" | "project"
+  path?: string      // required for project scope; an absolute, non-empty folder path
+  kind?: "preference" | "feedback" | "fact" | "reference"
+  limit?: number     // 1..=200, default 50
+  offset?: number    // >= 0, default 0
+}): Promise<{
+  readEnabled: boolean
+  entries: Array<{
+    id: string
+    scope: "user" | "project"
+    kind: "preference" | "feedback" | "fact" | "reference"
+    content: string
+    rationale: string | null
+    origin: "explicit" | "user_ui" | "extracted"
+    evidence: "user_stated" | "verified" | "inferred"
+    createdAt: number  // epoch ms
+    updatedAt: number  // epoch ms
+  }>
+  nextOffset: number | null
+}>
+```
+
+Semantics:
+
+- The host filters `status = 'active'`. The response never includes suggested
+  or archived notes, tombstones, `superseded_by`, `source_session_id`,
+  `source_message_ids`, `fingerprint`, `revision`, `use_count`, or
+  `last_used_at`.
+- A project path is resolved with the existing learned-memory scope resolver.
+  A stored project-group root maps to its group scope; other paths map to their
+  canonical path. A path with no learned memory returns an empty list. The API
+  does not enumerate projects or reveal scope keys.
+- When `settings.learnedMemoryRead` is false, Electron main returns
+  `{ readEnabled: false, entries: [], nextOffset: null }` without calling the
+  `plugin.memory.list` host RPC. The switch defaults to on when absent.
+- Listing has no side effects: it does not update `use_count` or
+  `last_used_at` and does not record an index capture.
+- Rows use manager order, `updated_at DESC, id ASC`. The host fetches one
+  lookahead row; `nextOffset` is `offset + entries.length` when more rows exist,
+  otherwise `null`.
+- Electron main validates scope, absolute path, kind, and bounds. The host
+  repeats validation and returns error code 1002 (`INVALID_PARAMS`) without
+  echoing the invalid input.
+- The existing plugin API audit records the call, result, and entry count,
+  never note content.
+
 ### session collaboration (requires `desktop.control`)
 
 The official Session Orchestrator composes the reviewed desktop-control

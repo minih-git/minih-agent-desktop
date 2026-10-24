@@ -2917,6 +2917,7 @@ sklm: {
       "bus.subscribe": "Recevoir des messages d'autres plugins",
       "browser.cdp": "Contrôler le navigateur du panneau de travail",
       "usage.read": "Lire les statistiques d'utilisation",
+      "memory.read": "Lire la mémoire apprise",
       "session.autoTitle": "Lire le contexte du premier tour et modifier les titres automatiques"
     },
     "permissionHelp": {
@@ -2960,6 +2961,8 @@ sklm: {
       "browser.cdp": "Peut naviguer dans le navigateur du panneau de travail, lire la page, exécuter JavaScript et envoyer des commandes Chrome DevTools sur liste autorisée. Les cookies et les méthodes de stockage sont bloqués.",
       "usage.read":
         "Liste les données d'utilisation des tours terminés (compteurs de tokens par tour, paginés). Aucun contenu de message n'est inclus.",
+      "memory.read":
+        "Liste les notes actives de mémoire apprise (préférences, retours, faits et références) pour la portée utilisateur et les chemins de projet indiqués par le plugin. Aucune suggestion, note archivée ni information de provenance ; lecture seule.",
       "session.autoTitle":
         "Peut lire uniquement le premier message et la première réponse des sessions admissibles, puis modifier le titre s'il n'a pas été changé manuellement. Ne peut pas lire la transcription complète.",
     }

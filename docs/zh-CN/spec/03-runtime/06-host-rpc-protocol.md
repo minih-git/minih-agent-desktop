@@ -443,6 +443,8 @@ ids 和非负 `tokensBefore`；它不会插入 message/search 行
 - `plugin.usage.listTurns` — 未删除会话的已完成 turn 事实页（标识符与 token
   计数，绝不含消息正文）。由 Electron main 用 `usage.read` 鉴权。增量方法，
   不升协议版本。
+- `plugin.memory.list` — 仅返回活跃长期记忆的有界投影，按用户范围或插件指定的单个项目路径读取。
+  Electron main 通过 `memory.read` 权限和 `learnedMemoryRead` 设置把关；无写入路径，不升协议版本。
 - 插件会话变更成功后，Electron main 发送一次 `sessionsChanged` 渲染器事件，
   渲染器刷新会话列表；插件不发送此 UI 同步事件
 

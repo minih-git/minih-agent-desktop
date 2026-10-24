@@ -1,6 +1,6 @@
 # ADR plugin-learned-memory-read: Read-only learned-memory listing for plugins
 
-- Status: Proposed (decision id assigned on acceptance)
+- Status: Accepted (2026-10-24, decision D682)
 - Date: 2026-10-24
 - Amends: [ADR agent-long-term-memory](agent-long-term-memory.md) (D668) §8,
   for read access only

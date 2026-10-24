@@ -28,6 +28,7 @@ export const ptBREntries: ChangelogEntry[] = [
       "Os detalhes do telefone foram corrigidos: o arquivo também lista conversas de imagens, duas perguntas pendentes mantêm escolhas separadas, o app segue o tema do sistema e a redução de movimento, e o foco continua utilizável pelo teclado.",
       "As configurações do desktop foram reduzidas a sete categorias em um único painel inferior, deixando a navegação mais curta.",
       "O desktop ganha um plugin de terminal integrado opcional, e sessões de longa duração usam menos memória: os caches do renderizador têm limites, enquanto runtimes de sessões ociosas e conexões MCP ociosas são recuperados.",
+      "Plugins podem solicitar acesso somente para leitura às notas ativas da memória aprendida por meio de pi.memory.list; a revisão da instalação explica os escopos do usuário e dos projetos informados, e o controle de leitura existente continua valendo.",
     ],
   },
   {

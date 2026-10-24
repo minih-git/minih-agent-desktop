@@ -332,6 +332,10 @@ function buildApi() {
     usage: {
       listTurns: (input) => call("usage.listTurns", [input ?? {}]),
     },
+    // Learned-memory rows are read only through the permission-gated host API.
+    memory: {
+      list: (input) => call("memory.list", [input ?? {}]),
+    },
     /**
      * Resident background workers (spec 07 §3). Registration is local: the
      * manifest already declared the service, and the broker starts it only when

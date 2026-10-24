@@ -720,6 +720,7 @@ describe("PLUGIN_PERMISSIONS", () => {
       "session.read",
       "session.autoTitle",
       "usage.read",
+      "memory.read",
       "fs.read",
       "fs.write",
       "fs.delete",
@@ -739,6 +740,19 @@ describe("PLUGIN_PERMISSIONS", () => {
     for (const legacy of Object.keys(LEGACY_FS_PERMISSIONS)) {
       expect(PLUGIN_PERMISSIONS).not.toContain(legacy);
     }
+  });
+});
+
+describe("validateManifest memory.read", () => {
+  it("accepts the permission with its minimum Desktop engine", () => {
+    const result = validateManifest({
+      ...base,
+      permissions: ["memory.read"],
+      engines: { minihAgent: ">=0.26.0" },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.permissions).toContain("memory.read");
+    expect(result.manifest?.engines?.minihAgent).toBe(">=0.26.0");
   });
 });
 

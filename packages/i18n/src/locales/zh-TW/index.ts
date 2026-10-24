@@ -2906,6 +2906,7 @@ sklm: {
       "bus.subscribe": "接收其他外掛的訊息",
       "browser.cdp": "控制工作面板瀏覽器",
       "usage.read": "讀取用量統計",
+      "memory.read": "讀取長期記憶",
       "session.autoTitle": "讀取首輪標題內容並更新自動標題",
     },
     permissionHelp: {
@@ -2951,6 +2952,8 @@ sklm: {
         "可導航工作面板瀏覽器、讀取頁面、執行 JavaScript，併發送白名單內的 Chrome DevTools 命令。Cookie 與儲存相關方法會被拒絕。",
       "usage.read":
         "分頁列出已完成回合的用量事實（每回合的 token 計數）。不包含任何訊息內容。",
+      "memory.read":
+        "列出使用者範圍與外掛指定專案路徑下的活躍長期記憶（偏好、回饋、事實、參考）；不含建議、封存內容或來源資訊，僅供讀取。",
       "session.autoTitle":
         "僅能讀取符合條件工作階段的首則提示和首則回覆，並只在標題未被手動修改時更新；無法讀取完整對話記錄。",
     },

@@ -21,6 +21,16 @@ const runtimeSrc = readFileSync(
   "utf8",
 );
 const pluginsUiSrc = readPluginsSourceSync();
+const pluginDialogsSrc = readFileSync(
+  join(desktopRoot, "src/features/plugins/PluginDialogs.tsx"),
+  "utf8",
+);
+const pluginModelSrc = readFileSync(
+  join(desktopRoot, "src/features/plugins/model.ts"),
+  "utf8",
+);
+const enLocaleSrc = readFileSync(join(repoRoot, "packages/i18n/src/locales/en/index.ts"), "utf8");
+const zhCNLocaleSrc = readFileSync(join(repoRoot, "packages/i18n/src/locales/zh-CN/index.ts"), "utf8");
 const sharedTypesSrc = readSharedTypesSourceSync();
 const protocolSrc = readFileSync(
   join(repoRoot, "packages/shared/src/protocol.ts"),
@@ -185,4 +195,20 @@ test("the review contract is shared, not re-declared on each side", () => {
   assert.match(sharedTypesSrc, /kind: "load" \| "reload"/);
   assert.match(protocolSrc, /pluginLoadDevConfirm: "minih-agent-desktop\/plugin\/loadDevConfirm"/);
   assert.match(protocolSrc, /pluginReloadConfirm: "minih-agent-desktop\/plugin\/reloadConfirm"/);
+});
+
+test("memory.read install review shows localized labels and boundary text", () => {
+  assert.match(pluginModelSrc, /"memory\.read": "high"/);
+  assert.match(pluginDialogsSrc, /permissionLabel\(permission, t\)/);
+  assert.match(pluginDialogsSrc, /plugins\.permissionHelp\.\$\{permission\}/);
+  assert.match(enLocaleSrc, /"memory\.read": "Read learned memory"/);
+  assert.match(
+    enLocaleSrc,
+    /"memory\.read":\s*"Lists active learned-memory notes[\s\S]*?No suggestions, archived notes, or provenance; read-only\./,
+  );
+  assert.match(zhCNLocaleSrc, /"memory\.read": "读取长期记忆"/);
+  assert.match(
+    zhCNLocaleSrc,
+    /"memory\.read":\s*"列出用户范围与插件指定项目路径下的活跃长期记忆[\s\S]*?不含建议、归档与来源信息，只读。"/,
+  );
 });

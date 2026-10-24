@@ -13,6 +13,7 @@ import { open as openFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pluginNetFetch, parseFetchRedirect, type PluginFetchTransport } from "./plugin-net-fetch";
+import { normalizePluginMemoryListInput, type PluginMemoryReadHostService } from "./plugin-memory-read";
 import type { LoadedSkillDocument } from "./skill-document";
 import { getModuleDirectory } from "./module-path";
 import {
@@ -510,7 +511,7 @@ export type PluginHostServices = {
   usage?: {
     listTurns: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
   };
-};
+} & PluginMemoryReadHostService;
 
 export type PluginOAuthProvider = {
   pluginId: string;
@@ -604,7 +605,7 @@ const HOST_API_ALLOWLIST = new Set([
   "session.importBatch",
   "session.rename",
   "session.delete",
-  "usage.listTurns",
+  "memory.list",
   "agent.complete",
   "providers.oauth.prompt",
   "providers.oauth.notify",
@@ -3237,6 +3238,14 @@ export class PluginRuntime {
           throw apiError("UNSUPPORTED", "host api not available: usage.listTurns");
         }
         return this.services.usage.listTurns(loaded.manifest.id, input);
+      }
+      case "memory.list": {
+        this.assertPermission(loaded, "memory.read");
+        const input = normalizePluginMemoryListInput(args[0]);
+        if (!this.services.memory?.list) {
+          throw apiError("UNSUPPORTED", "host api not available: memory.list");
+        }
+        return this.services.memory.list(loaded.manifest.id, input);
       }
       case "agent.complete": {
         return this.runAgentComplete(loaded, (args[0] ?? {}) as PluginCompleteInput);

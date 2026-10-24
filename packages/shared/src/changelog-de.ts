@@ -28,6 +28,7 @@ export const deEntries: ChangelogEntry[] = [
       "Die Details auf dem Telefon sind korrigiert: Das Archiv listet jetzt auch Bildunterhaltungen, zwei offene Fragen behalten getrennte Auswahlen, die App folgt Systemdesign und reduzierter Bewegung, und der Fokus bleibt per Tastatur nutzbar.",
       "Die Desktop-Einstellungen werden in sieben Kategorien innerhalb eines einzigen unteren Panels zusammengefasst, sodass die Navigation kürzer ausfällt.",
       "Der Desktop erhält ein optionales eingebettetes Terminal-Plugin, und Sitzungen mit langer Laufzeit belegen weniger Speicher: Renderer-Caches sind begrenzt, ungenutzte Sitzungs-Runtimes und MCP-Verbindungen werden zurückgefordert.",
+      "Plugins können über pi.memory.list schreibgeschützt auf aktive Einträge des erlernten Gedächtnisses zugreifen; die Installationsprüfung erklärt Benutzer- und benannte Projektbereiche, und der vorhandene Schalter zum Lesen des Gedächtnisses gilt weiterhin.",
     ],
   },
   {

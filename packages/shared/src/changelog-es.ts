@@ -28,6 +28,7 @@ export const esEntries: ChangelogEntry[] = [
       "Se corrigen los detalles del teléfono: el archivo también incluye conversaciones de imágenes, dos preguntas pendientes mantienen sus opciones separadas, la aplicación sigue el tema del sistema y la reducción de movimiento, y el foco sigue siendo utilizable con el teclado.",
       "Los ajustes del escritorio se agrupan en siete categorías dentro de una sola hoja inferior, para que la navegación sea más corta.",
       "El escritorio incorpora un plugin de terminal integrado opcional, y las sesiones de larga duración consumen menos memoria: las cachés del renderizador tienen límites y se recuperan los tiempos de ejecución de sesiones inactivas y las conexiones MCP inactivas.",
+      "Los plugins pueden solicitar acceso de solo lectura a las notas activas de memoria aprendida mediante pi.memory.list; la revisión de instalación explica los ámbitos de usuario y de los proyectos indicados, y sigue aplicándose el interruptor de lectura existente.",
     ],
   },
   {

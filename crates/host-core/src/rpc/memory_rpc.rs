@@ -4,17 +4,24 @@
 //! rules themselves live in `crate::memory`, so the desktop manager, the explicit
 //! remember tool, and the optional extractor cannot each invent their own.
 
+use std::path::Path;
+
 use super::{json, rpc_err, AppState, JsonRpcError, Value};
 use crate::db::{now_ms, Database};
+use serde::Serialize;
 
+#[cfg(test)]
+#[path = "plugin_memory_rpc_tests.rs"]
+mod plugin_tests;
 #[cfg(test)]
 #[path = "memory_rpc_tests.rs"]
 mod tests;
 use crate::memory::{
-    is_known, CreateMemoryOutcome, CreateMemoryRequest, MemoryScope, SearchMemoryRequest,
-    StatusMemoryOutcome, SuggestionOutcome, UpdateMemoryOutcome, UpdateMemoryRequest, EVIDENCES,
-    EVIDENCE_USER_STATED, EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS,
-    ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
+    is_known, CreateMemoryOutcome, CreateMemoryRequest, MemoryEntryRecord, MemoryScope,
+    SearchMemoryRequest, StatusMemoryOutcome, SuggestionOutcome, UpdateMemoryOutcome,
+    UpdateMemoryRequest, EVIDENCES, EVIDENCE_USER_STATED, EXTRACTION_LEASE_MS, KINDS,
+    MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER,
+    STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
 };
 
 pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value, JsonRpcError> {
@@ -67,6 +74,110 @@ fn list(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
         "entries": entries,
         "scope": { "kind": scope.kind, "key": scope.key }
     }))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginMemoryEntryProjection {
+    id: String,
+    scope: String,
+    kind: String,
+    content: String,
+    rationale: Option<String>,
+    origin: String,
+    evidence: String,
+    created_at: i64,
+    updated_at: i64,
+}
+
+impl From<MemoryEntryRecord> for PluginMemoryEntryProjection {
+    fn from(entry: MemoryEntryRecord) -> Self {
+        Self {
+            id: entry.id,
+            scope: entry.scope_kind,
+            kind: entry.kind,
+            content: entry.content,
+            rationale: entry.rationale,
+            origin: entry.origin,
+            evidence: entry.evidence,
+            created_at: entry.created_at,
+            updated_at: entry.updated_at,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginMemoryListResult {
+    read_enabled: bool,
+    entries: Vec<PluginMemoryEntryProjection>,
+    next_offset: Option<i64>,
+}
+
+/// Bounded active-only projection for plugins; internal memory fields never cross this boundary.
+pub(super) fn plugin_list_page(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope_name = required_str(params, "scope")?;
+    if !is_known(scope_name, &SCOPES) {
+        return Err(invalid_params("scope is not a supported value"));
+    }
+    let path = optional_str(params, "path")?;
+    if let Some(path) = path {
+        if path.trim().is_empty() || !Path::new(path).is_absolute() {
+            return Err(invalid_params("path must be a non-empty absolute path"));
+        }
+    }
+    let scope = if scope_name == SCOPE_USER {
+        MemoryScope::user()
+    } else {
+        let path = path.ok_or_else(|| invalid_params("path is required for project scope"))?;
+        db.learned_memory_scope_for_path(path)
+            .map_err(invalid_params)?
+    };
+    let kind = optional_str(params, "kind")?;
+    if let Some(kind) = kind {
+        if !is_known(kind, &KINDS) {
+            return Err(invalid_params("kind is not a supported value"));
+        }
+    }
+    let limit = optional_i64(params, "limit")?.unwrap_or(50);
+    if !(1..=MAX_LIST_LIMIT).contains(&limit) {
+        return Err(invalid_params("limit must be an integer between 1 and 200"));
+    }
+    let offset = optional_i64(params, "offset")?.unwrap_or(0);
+    if offset < 0 {
+        return Err(invalid_params("offset must be a non-negative integer"));
+    }
+
+    let mut entries = db
+        .list_memory_entries(&scope, Some(STATUS_ACTIVE), kind, limit + 1, offset)
+        .map_err(internal)?;
+    let has_more = if entries.len() > limit as usize {
+        true
+    } else if limit == MAX_LIST_LIMIT && entries.len() == limit as usize {
+        // The manager query caps at 200 rows; probe the one lookahead row separately at the cap.
+        !db.list_memory_entries(
+            &scope,
+            Some(STATUS_ACTIVE),
+            kind,
+            1,
+            offset.saturating_add(limit),
+        )
+        .map_err(internal)?
+        .is_empty()
+    } else {
+        false
+    };
+    entries.truncate(limit as usize);
+    let next_offset = has_more.then(|| offset.saturating_add(entries.len() as i64));
+    let page = PluginMemoryListResult {
+        read_enabled: true,
+        entries: entries
+            .into_iter()
+            .map(PluginMemoryEntryProjection::from)
+            .collect(),
+        next_offset,
+    };
+    serde_json::to_value(page).map_err(internal)
 }
 
 fn search(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {

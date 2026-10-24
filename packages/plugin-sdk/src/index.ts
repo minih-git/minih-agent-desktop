@@ -383,6 +383,38 @@ export type PluginUsageTurnPage = {
   nextCursor: string | null;
 };
 
+/** Input to the read-only learned-memory listing (`memory.read`). */
+export type PluginMemoryListInput = {
+  scope: "user" | "project";
+  /** Required when `scope` is `project`; an absolute folder path. */
+  path?: string;
+  kind?: "preference" | "feedback" | "fact" | "reference";
+  /** 1..=200 rows; default 50. */
+  limit?: number;
+  /** Non-negative row offset; default 0. */
+  offset?: number;
+};
+
+/** Explicit plugin-facing fields for one active learned-memory note. */
+export type PluginMemoryEntry = {
+  id: string;
+  scope: "user" | "project";
+  kind: "preference" | "feedback" | "fact" | "reference";
+  content: string;
+  rationale: string | null;
+  origin: "explicit" | "user_ui" | "extracted";
+  evidence: "user_stated" | "verified" | "inferred";
+  createdAt: number;
+  updatedAt: number;
+};
+
+/** A bounded learned-memory page; the host can disable reads without an error. */
+export type PluginMemoryListResult = {
+  readEnabled: boolean;
+  entries: PluginMemoryEntry[];
+  nextOffset: number | null;
+};
+
 export type PluginSessionMessageResult = {
   id: string;
   role: "user" | "assistant" | "tool";
@@ -1332,6 +1364,13 @@ export type PluginHostApi = {
       limit?: number;
     }) => Promise<PluginUsageTurnPage>;
   };
+  /**
+   * Read-only active learned-memory notes (`memory.read`). The host returns a
+   * bounded projection and never includes detailed source metadata or a write path.
+   */
+  memory: {
+    list: (input: PluginMemoryListInput) => Promise<PluginMemoryListResult>;
+  };
   services: {
     /**
      * Register a resident service declared in `contributes.services`. Local
@@ -1481,6 +1520,8 @@ export const PLUGIN_PERMISSIONS = [
   // Read-only usage facts (pi.usage.listTurns):
   // completed-turn counters and session titles, never message bodies.
   "usage.read",
+  // Active learned-memory notes only; no suggestion review or write access.
+  "memory.read",
   // Install-time escape hatch from the net.domains allowlist (issue #1201):
   // user-typed endpoints, e.g. a self-hosted server, that no manifest written
   // ahead of time can name. Enforced by net-policy's grant-aware checks.
