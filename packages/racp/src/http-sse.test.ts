@@ -408,3 +408,71 @@ describe("command profile", () => {
     expect(attempt).toBe(delays.length);
   });
 });
+
+describe("stream ownership across overlapping runs", () => {
+  it("never aborts a newer stream when a stale run unwinds", async () => {
+    // Two `stream()` runs can overlap: the screen reopens while the previous run
+    // is still waiting on a dead socket. The older run's cleanup used to abort
+    // whatever controller the shared variable held — the newer run's — leaving a
+    // live-looking client that received nothing and a `close()` that aborted a
+    // stream nobody was reading.
+    const signals: AbortSignal[] = [];
+    let failFirst: ((reason: Error) => void) | null = null;
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const client = createHttpSseClient({
+      ...baseOptions,
+      reconnect: { enabled: false },
+      fetchImpl: ((_: string, init: RequestInit) => {
+        signals.push(init.signal as AbortSignal);
+        if (signals.length === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            failFirst = reject;
+          });
+        }
+        // The second run is the healthy stream: it stays open.
+        return new Promise<Response>(() => undefined);
+      }) as unknown as typeof fetch,
+    });
+
+    void client.stream();
+    await tick();
+    void client.stream();
+    await tick();
+    expect(signals).toHaveLength(2);
+
+    // The stale run unwinds now, while the second stream is live.
+    failFirst?.(new Error("socket died"));
+    await tick();
+
+    expect(signals[1]?.aborted).toBe(false);
+    // And `close()` still reaches the stream that is actually in use.
+    client.close();
+    expect(signals[1]?.aborted).toBe(true);
+  });
+
+  it("aborts the abandoned generation so its fetch cannot hang on the server", async () => {
+    // A stream left open is exactly the slot the Gateway counts a device for, and
+    // the server has no way to tell an abandoned fetch from a live reader.
+    const signals: AbortSignal[] = [];
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const client = createHttpSseClient({
+      ...baseOptions,
+      reconnect: { enabled: false },
+      fetchImpl: ((_: string, init: RequestInit) => {
+        signals.push(init.signal as AbortSignal);
+        return new Promise<Response>(() => undefined);
+      }) as unknown as typeof fetch,
+    });
+
+    void client.stream();
+    await tick();
+    void client.stream();
+    await tick();
+
+    expect(signals).toHaveLength(2);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+    client.close();
+    expect(signals[1]?.aborted).toBe(true);
+  });
+});
