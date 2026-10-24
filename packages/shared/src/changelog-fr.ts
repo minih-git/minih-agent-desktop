@@ -2,7 +2,8 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
-    version: "0.28.0",
+    version: "1.0.0",
+    date: "2026-10-24",
     highlights: [
       "Les plugins peuvent demander un accès en lecture seule aux notes actives de mémoire apprise via pi.memory.list ; la vérification à l’installation précise les portées utilisateur et des projets indiqués, et l’interrupteur de lecture existant reste appliqué.",
     ],
