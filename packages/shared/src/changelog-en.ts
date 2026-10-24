@@ -2,6 +2,21 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.27.0",
+    date: "2026-10-24",
+    highlights: [
+      "The theme is one click away in the sidebar footer: the button cycles system, light and dark, and its icon and accessible name say which theme is current and which comes next.",
+      "Text added from a selection lands as a compact attachment chip — the same shape a large paste becomes — and clicking the chip opens it back as text.",
+      "When a turn settles, the composer offers one suggested next message as grey text in the placeholder: clicking sends it, and the first typed character removes it.",
+      "A conversation that kept running in the background no longer restores a reading position from the middle of its history; the stale bookmark snaps to the newest turn.",
+      "A session header shows the real project as a breadcrumb with inline rename and carries a per-turn usage capsule; Browser pages keep running after the panel is hidden or the renderer reloads, and background tasks belong to their session under per-session and global caps.",
+      "Your account's computers appear again: desktop sign-in used a client type the gateway rejected, so the roster was never read. A failed join now states its reason and retries with backoff, and a phone approved twice keeps one live record.",
+      "Thinking effort is selectable on the phone: a remote session follows the levels the host publishes for that model, a direct chat follows the gateway's own levels, and both lock with a stated reason while a turn runs or a decision is pending.",
+      "The phone's model catalog refreshes on its own — returning to the foreground, opening the model panel, or entering the chat and studio roots, at most once a minute — so a model the gateway retired stops being offered, and \"no available route\" reads differently from \"temporarily busy\".",
+      "Phone details: HTML previews size to their content and scroll inside the frame, the \"Other\" group can start a session, images you sent finally render, and a foreground notice is a centered alert that stays only when it needs an answer.",
+    ],
+  },
+  {
     version: "0.26.0",
     date: "2026-10-24",
     highlights: [

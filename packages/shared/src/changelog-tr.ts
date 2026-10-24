@@ -2,6 +2,21 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.27.0",
+    date: "2026-10-24",
+    highlights: [
+      "Tema artık kenar çubuğunun altından tek tıkla değişiyor: düğme sistemi izle, açık ve koyu arasında döner; simgesi ve erişilebilir adı hem geçerli temayı hem de sıradaki temayı söyler.",
+      "Seçimden eklenen metin, büyük bir yapıştırmanın aldığı biçimle aynı kompakt ek çipine dönüşüyor; çipe tıklamak onu yeniden metin olarak açar.",
+      "Bir tur normal bittiğinde yazma alanı gri metinle tek bir sonraki ileti önerisi sunar; tıklamak gönderir, yazılan ilk karakter öneriyi kaldırır.",
+      "Arka planda yeni bir tur daha tamamlayan sohbete döndüğünüzde okuma konumu geçmişin ortasından geri yüklenmez; eskimiş yer imi en yeni tura yapışır.",
+      "Oturum başlığı gerçek projeyi kırıntı yolu olarak gösterir, satır içi yeniden adlandırma sunar ve tur başına kullanım kapsülü taşır; Browser sayfaları panel gizlense ya da işleyici yeniden yüklense de çalışmayı sürdürür, arka plan görevleri ise oturumlarına bağlı olup oturum başına ve genel üst sınırlarla sınırlanır.",
+      "Hesabınızın bilgisayarları yeniden görünüyor: masaüstü oturum açma işlemi ağ geçidinin reddettiği bir istemci türü kullanıyordu, bu yüzden liste hiç okunmuyordu. Başarısız katılma artık nedenini yazar ve artan aralıklarla yeniden dener; iki kez onaylanan bir telefon tek geçerli kayıt tutar.",
+      "Telefonda düşünme düzeyi seçilebilir: uzak oturum ana makinenin o model için yayımladığı düzeyleri, doğrudan sohbet ağ geçidinin kendi düzeylerini izler; bir tur sürerken ya da karar beklerken ikisi de kilitlenir ve nedeni yazılır.",
+      "Telefonun model kataloğu kendi kendine yenilenir — ön plana dönüşte, model panelini açarken veya sohbet ve stüdyo köklerine girerken, dakikada en fazla bir kez — böylece ağ geçidinin kapattığı model artık sunulmaz ve \"kullanılabilir hat yok\" ile \"geçici olarak meşgul\" ayrı okunur.",
+      "Telefon ayrıntıları: HTML önizlemeleri içeriğe göre boyutlanıp çerçeve içinde kayar, \"Diğer\" grubu oturum başlatabilir, gönderdiğiniz görseller nihayet görünür ve ön plan bildirimi yalnızca yanıt gerektiğinde kalan ortalanmış bir uyarıya dönüştü.",
+    ],
+  },
+  {
     version: "0.26.0",
     date: "2026-10-24",
     highlights: [

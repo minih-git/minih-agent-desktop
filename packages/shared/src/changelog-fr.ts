@@ -2,6 +2,21 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.27.0",
+    date: "2026-10-24",
+    highlights: [
+      "Le thème se change depuis le pied de la barre latérale : un bouton fait défiler système, clair et sombre, et son icône comme son nom accessible indiquent le thème actif et le suivant.",
+      "Le texte ajouté depuis une sélection arrive sous forme de puce de pièce jointe compacte — la même forme qu'un gros collage — et un clic sur la puce le rouvre en texte.",
+      "Quand un tour se termine, la zone de saisie propose en gris une suggestion de message suivant : un clic l'envoie, le premier caractère saisi la retire.",
+      "Une conversation qui a continué en arrière-plan ne restaure plus une position de lecture au milieu de l'historique ; le signet périmé se cale sur le tour le plus récent.",
+      "L'en-tête de session affiche le vrai projet en fil d'Ariane avec renommage sur place et ajoute une pastille d'usage par tour ; les pages du navigateur continuent de s'exécuter quand le panneau est masqué ou que le renderer recharge, et les tâches d'arrière-plan appartiennent à leur session avec des plafonds par session et globaux.",
+      "Les ordinateurs de votre compte réapparaissent : la connexion de bureau utilisait un type de client que la passerelle refusait, si bien que la liste n'était jamais lue. Un rattachement en échec indique désormais son motif et réessaie avec un délai croissant, et un téléphone approuvé deux fois ne garde qu'un enregistrement valide.",
+      "Le niveau de réflexion est sélectionnable sur le téléphone : une session distante suit les niveaux publiés par l'hôte pour ce modèle, un chat direct ceux de la passerelle, et les deux se verrouillent avec leur motif pendant qu'un tour tourne ou qu'une décision est en attente.",
+      "Le catalogue de modèles du téléphone se rafraîchit seul — au retour au premier plan, à l'ouverture du panneau des modèles ou à l'entrée dans les racines chat et studio, au plus une fois par minute — si bien qu'un modèle retiré par la passerelle n'est plus proposé et que \"aucun itinéraire disponible\" se lit autrement que \"temporairement occupé\".",
+      "Détails du téléphone : les aperçus HTML s'adaptent à leur contenu et défilent dans le cadre, le groupe \"Autres\" peut démarrer une session, les images que vous avez envoyées s'affichent enfin, et une notification au premier plan devient une alerte centrée qui ne reste que lorsqu'une réponse est nécessaire.",
+    ],
+  },
+  {
     version: "0.26.0",
     date: "2026-10-24",
     highlights: [

@@ -2,6 +2,21 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.27.0",
+    date: "2026-10-24",
+    highlights: [
+      "El tema se cambia desde el pie de la barra lateral: un botón recorre sistema, claro y oscuro, y su icono y su nombre accesible indican el tema actual y el siguiente.",
+      "El texto añadido desde una selección llega como un chip de adjunto compacto —la misma forma que toma un pegado grande— y al pulsarlo se abre de nuevo como texto.",
+      "Cuando un turno termina, el cuadro de escritura ofrece en gris una sugerencia de siguiente mensaje: al pulsarla se envía y el primer carácter escrito la elimina.",
+      "Una conversación que siguió avanzando en segundo plano ya no restaura una posición de lectura en mitad del historial; el marcador caducado salta al turno más reciente.",
+      "La cabecera de la sesión muestra el proyecto real como ruta con renombrado en línea y añade una cápsula de uso por turno; las páginas del navegador siguen ejecutándose al ocultar el panel o recargar el renderer, y las tareas en segundo plano pertenecen a su sesión con límites por sesión y globales.",
+      "Los ordenadores de tu cuenta vuelven a aparecer: el inicio de sesión de escritorio usaba un tipo de cliente que la pasarela rechazaba, así que nunca se leía la lista. Un ingreso fallido ahora indica su motivo y reintenta con espera creciente, y un teléfono aprobado dos veces conserva un solo registro válido.",
+      "El nivel de razonamiento es seleccionable en el teléfono: una sesión remota sigue los niveles que el host publica para ese modelo, un chat directo los del propio gateway, y ambos se bloquean con su motivo mientras un turno corre o hay una decisión pendiente.",
+      "El catálogo de modelos del teléfono se actualiza solo —al volver al primer plano, al abrir el panel de modelos o al entrar en las raíces de chat y estudio, como mucho una vez por minuto—, de modo que un modelo retirado por la pasarela deja de ofrecerse y \"sin ruta disponible\" se lee distinto de \"temporalmente ocupado\".",
+      "Detalles del teléfono: las vistas previas HTML se ajustan a su contenido y se desplazan dentro del marco, el grupo \"Otros\" puede iniciar una sesión, las imágenes que enviaste por fin se muestran y un aviso en primer plano es una alerta centrada que solo permanece cuando necesita respuesta.",
+    ],
+  },
+  {
     version: "0.26.0",
     date: "2026-10-24",
     highlights: [
