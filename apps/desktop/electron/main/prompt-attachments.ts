@@ -185,7 +185,14 @@ async function hashFile(path: string): Promise<string> {
   return hash.digest("hex");
 }
 
-async function ensureAttachmentBlobFromFile(
+/**
+ * Copy a file into the content-addressed attachment store and return its ref.
+ *
+ * Shared with the image tool: an image the agent generated is media a remote
+ * client has to be able to read back, and the only ref shape
+ * `session/mediaRead` accepts is `attachments/<sha256>`.
+ */
+export async function ensureAttachmentBlobFromFile(
   dataRoot: string,
   source: string,
 ): Promise<string> {

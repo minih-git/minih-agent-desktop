@@ -588,12 +588,18 @@ export function ChatTimeline({
             const hasTools = burst.some(isToolItem);
             if (hasTools) {
               const topGap = rowIndex === 0 ? "" : prevIsToolRun ? "mt-0 " : prevIsUser ? "mt-2 " : "mt-0.5 ";
+              // A generated image is reported by a tool, so its thumbnail belongs
+              // under the tool run rather than on a message row.
+              const runMedia = burst.flatMap((entry) => entry.mediaIds ?? []);
               return (
                 <li
                   key={`run-${burst[0]?.id ?? row.start}`}
                   className={`${topGap}flex flex-col self-start max-w-[95%]`}
                 >
                   <ToolRun items={burst} active={burst.some((entry) => entry.status === "streaming")} />
+                  {runMedia.length > 0 ? (
+                    <MediaThumbnails mediaIds={runMedia} resolveMedia={resolveMedia} onOpenViewer={handleOpenViewer} />
+                  ) : null}
                 </li>
               );
             }

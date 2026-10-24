@@ -18,6 +18,7 @@
  */
 import {
   isVisibleMessage,
+  withSessionMediaIds,
   type AgentEvent,
   type RacpEventEnvelope,
   type RacpItemSummary,
@@ -175,6 +176,16 @@ export function messageFields(message: UiMessage): Pick<TimelineItem, "role" | "
   };
 }
 
+/** The readable media a row carries, taken from its projected attachments. */
+function mediaIdsOf(message: UiMessage): string[] | undefined {
+  const ids = Array.isArray(message.attachments)
+    ? message.attachments
+        .map((att) => (att as { mediaId?: unknown })?.mediaId)
+        .filter((mediaId): mediaId is string => typeof mediaId === "string" && mediaId.length > 0)
+    : [];
+  return ids.length > 0 ? ids : undefined;
+}
+
 /**
  * One message as a timeline row, or `undefined` when the desktop would not show
  * it either.
@@ -185,10 +196,15 @@ export function messageFields(message: UiMessage): Pick<TimelineItem, "role" | "
  * are what the card renderer (package B) reads instead of parsing text.
  */
 export function projectMessage(
-  message: UiMessage,
+  rawMessage: UiMessage,
   options: { id?: string; turnId?: string; status?: TimelineItem["status"] } = {},
 ): TimelineItem | undefined {
-  if (!isVisibleMessage(message)) return undefined;
+  if (!isVisibleMessage(rawMessage)) return undefined;
+  // The Host names readable media on a history row; the live path and any Host
+  // older than that do not. The id is derived from the message id and the row's
+  // position, which the Host's own reader computes the same way, so the phone can
+  // name the image itself — a just-sent photo stays a picture, not a file name.
+  const message = withSessionMediaIds(rawMessage);
   const id = options.id ?? message.id;
   const turnId = options.turnId ?? "";
   if (message.role === "tool") {
@@ -197,6 +213,7 @@ export function projectMessage(
     const result = plainText(message.toolResult);
     const running = toolStatus === "running" || (toolStatus === undefined && options.status === "streaming");
     const shown = running ? args : result;
+    const mediaIds = mediaIdsOf(message);
     return {
       id,
       turnId,
@@ -210,14 +227,12 @@ export function projectMessage(
       ...(message.toolResult !== undefined ? { toolResult: message.toolResult } : {}),
       ...(toolStatus === "error" || toolStatus === "denied" || message.error ? { isError: true } : {}),
       ...(shown.truncated ? { truncated: true } : {}),
+      // An image the tool generated travels the same way a user's photo does.
+      ...(mediaIds ? { mediaIds } : {}),
     };
   }
   const attachments = attachmentsOf(message);
-  const mediaIds = Array.isArray(message.attachments)
-    ? message.attachments
-        .map((att) => (att as { mediaId?: unknown })?.mediaId)
-        .filter((mediaId): mediaId is string => typeof mediaId === "string" && mediaId.length > 0)
-    : undefined;
+  const mediaIds = mediaIdsOf(message);
   const providerId = typeof message.providerId === "string" && message.providerId.trim() ? message.providerId.trim() : undefined;
   const modelId = typeof message.modelId === "string" && message.modelId.trim() ? message.modelId.trim() : undefined;
   return {
