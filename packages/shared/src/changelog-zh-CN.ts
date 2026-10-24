@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    highlights: [
+      "插件可通过 pi.memory.list 只读访问活跃长期记忆；安装审核会说明用户范围与插件指定项目范围，现有的长期记忆读取开关仍然生效。",
+    ],
+  },
+  {
     version: "0.27.0",
     date: "2026-10-24",
     highlights: [
@@ -28,7 +34,6 @@ export const zhCNEntries: ChangelogEntry[] = [
       "手机详情页修复：归档也会列出图片会话；两个待处理问题各自保留选择；应用会跟随系统主题和减少动态效果设置；用键盘操作时焦点仍然可用。",
       "桌面端设置收拢为七个分类，统一放进一个底部面板，导航更短。",
       "桌面端新增可选的内嵌终端插件，长时间运行的会话占用更少内存：渲染器缓存有上限，闲置的会话运行时和闲置的 MCP 连接会被回收。",
-      "插件可通过 pi.memory.list 只读访问活跃长期记忆；安装审核会说明用户范围与插件指定项目范围，现有的长期记忆读取开关仍然生效。",
     ],
   },
   {

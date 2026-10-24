@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    highlights: [
+      "外掛可透過 pi.memory.list 以唯讀方式存取活躍長期記憶；安裝審查會說明使用者範圍與外掛指定的專案範圍，現有的長期記憶讀取開關仍會生效。",
+    ],
+  },
+  {
     version: "0.27.0",
     date: "2026-10-24",
     highlights: [
@@ -28,7 +34,6 @@ export const zhTWEntries: ChangelogEntry[] = [
       "手機詳情頁已修正：歸檔也會列出圖像工作階段；兩個待處理問題各自保留選擇；應用程式會跟隨系統主題與減少動態效果設定；使用鍵盤操作時焦點仍然可用。",
       "桌面設定收納成七個分類，統一放進一個底部面板，讓導覽更短。",
       "桌面新增可選的內嵌終端機外掛，長時間執行的工作階段佔用更少記憶體：渲染器快取設有上限，閒置的工作階段執行環境與閒置的 MCP 連線會被回收。",
-      "外掛可透過 pi.memory.list 以唯讀方式存取活躍長期記憶；安裝審查會說明使用者範圍與外掛指定的專案範圍，現有的長期記憶讀取開關仍會生效。",
     ],
   },
   {

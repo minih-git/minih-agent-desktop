@@ -141,7 +141,9 @@ Following the `usage.read` precedent:
 - A plugin that declares `memory.read` must require the first Desktop
   release that ships it (`engines.minihAgent`), because older hosts refuse
   the manifest. `minih.personal-knowledge` ships the consumer as 0.3.0 after
-  that release.
+  that release. The first shipping release is 0.28.0: 0.26.0 and 0.27.0
+  shipped without the permission (their catalogs are already released), so
+  the `memory.read` highlight moved into the unreleased 0.28.0 entry.
 - D668 §8 gets an amendment note: a read-only listing of active notes is
   allowed through `memory.read`. Write access, suggestions, and provenance
   for plugins stay out of scope.
