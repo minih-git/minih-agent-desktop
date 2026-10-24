@@ -25,7 +25,9 @@ export type EdgeSwipeOptions = {
 };
 
 function modalOpen(): boolean {
-  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+  // Any modal, whatever its role: a sheet is a dialog and a foreground notice is
+  // an alertdialog, and neither may let a swipe reach the screen underneath.
+  return document.querySelector('[aria-modal="true"]') !== null;
 }
 
 /**

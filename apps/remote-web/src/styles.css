@@ -297,11 +297,22 @@ body {
   .rm-has-tabbar .rm-dock {
     padding-bottom: 8px;
   }
-  .rm-has-tabbar .rm-scroll-end {
-    padding-bottom: 24px;
-  }
+  /*
+   * The same rule for a scrolling page, plus the room a floating action needs:
+   * `.rm-scroll-under-fab` adds it. A `pb-*` utility cannot do that job — this
+   * block is emitted after Tailwind's own utilities, so it wins on order and the
+   * utility is silently lost.
+   */
   .rm-scroll-end {
-    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    --rm-scroll-extra: 0px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom) + var(--rm-scroll-extra));
+  }
+  .rm-has-tabbar .rm-scroll-end {
+    padding-bottom: calc(24px + var(--rm-scroll-extra));
+  }
+  /* A 52 px button 16 px above the screen's edge, plus 8 px of air. */
+  .rm-scroll-under-fab {
+    --rm-scroll-extra: 76px;
   }
 
   /* Interactive minimum tap target */
@@ -397,14 +408,19 @@ body {
     background: var(--rm-bg-surface-2);
     transition: transform 0.5s var(--rm-ease-spring);
   }
+  /*
+   * A short bar inside the pill, clear of the label: it used to sit on the
+   * pill's lower edge, touching the text above it.
+   */
   .rm-tabbar-indicator::after {
     content: "";
     position: absolute;
-    left: 30%;
-    right: 30%;
-    bottom: -1px;
+    left: 50%;
+    bottom: 5px;
+    width: 18px;
     height: 3px;
     border-radius: 2px;
+    transform: translateX(-50%);
     background: var(--rm-aurora);
   }
   .rm-seg-slider {
@@ -541,7 +557,14 @@ body {
     transition: none;
   }
 
-  /* 8. Status pulse */
+  /*
+   * 8. Status pulse
+   *
+   * The halo grows to the size of the slot `StatusDot` reserves for it (a dot of
+   * 8 px inside a 16 px slot), never further: the containers that carry a dot
+   * clip their overflow to keep long names from wrapping, so a wider halo was
+   * cut into a wedge. `rm-pulse` below follows the same budget.
+   */
   .rm-status-pulse {
     position: relative;
     display: inline-block;
@@ -598,8 +621,9 @@ body {
   to { background-position: -100% 0; }
 }
 
+/* Grows to 1.8x: an 8 px dot fills the 16 px slot, no more. */
 @keyframes rm-status-pulse {
-  to { transform: scale(3); opacity: 0; }
+  to { transform: scale(1.8); opacity: 0; }
 }
 
 @keyframes rm-decision-glow {
@@ -615,9 +639,10 @@ body {
   50% { opacity: 0.35; }
 }
 
+/* A 3.5 px ring: an 8 px dot plus both sides stays inside the 16 px slot. */
 @keyframes rm-pulse {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--rm-decision) 55%, transparent); }
-  70% { box-shadow: 0 0 0 7px transparent; }
+  70% { box-shadow: 0 0 0 3.5px transparent; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 

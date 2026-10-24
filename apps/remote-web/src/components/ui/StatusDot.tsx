@@ -24,7 +24,14 @@ export interface StatusDotProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 export function StatusDot({ status, size = "small", className = "", ...rest }: StatusDotProps) {
-  const sizeClasses = size === "large" ? "w-2.5 h-2.5" : "w-2 h-2";
+  const dotSize = size === "large" ? "h-2.5 w-2.5" : "h-2 w-2";
+  /**
+   * The dot sits in a slot wider than itself because its halo grows past the
+   * dot, and the containers it is placed in — a navigation subtitle, a row
+   * title — clip what leaves them. The slot is the room the halo needs, so the
+   * ring reads as a ring instead of a sliced wedge.
+   */
+  const slotSize = size === "large" ? "h-5 w-5" : "h-4 w-4";
 
   let statusStyles = "";
   if (status === "online") {
@@ -44,10 +51,9 @@ export function StatusDot({ status, size = "small", className = "", ...rest }: S
   }
 
   return (
-    <span
-      className={`inline-block shrink-0 rounded-full ${sizeClasses} ${statusStyles} ${className}`}
-      {...rest}
-    />
+    <span className={`inline-grid shrink-0 place-items-center ${slotSize} ${className}`} {...rest}>
+      <span className={`rounded-full ${dotSize} ${statusStyles}`} />
+    </span>
   );
 }
 
