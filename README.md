@@ -24,7 +24,7 @@ Local-first · Model-agnostic · Plugin-powered · macOS / Windows / Linux
 <br />
 </div>
 
-> **Current release line: 0.26.x (Early Preview).**
+> **Current release line: 0.27.x (Early Preview).**
 
 ---
 

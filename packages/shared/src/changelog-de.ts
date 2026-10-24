@@ -2,6 +2,21 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.27.0",
+    date: "2026-10-24",
+    highlights: [
+      "Das Theme lässt sich jetzt direkt in der Seitenleiste umschalten: eine Schaltfläche wechselt zwischen System, Hell und Dunkel, und Symbol wie Barrierefreiheitsname nennen das aktuelle und das nächste Theme.",
+      "Aus einer Auswahl hinzugefügter Text landet als kompakter Anhang-Chip — dieselbe Form, die ein großes Einfügen erhält — und ein Klick auf den Chip öffnet ihn wieder als Text.",
+      "Wenn ein Zug abgeschlossen ist, schlägt das Eingabefeld in grauer Schrift eine nächste Nachricht vor: ein Klick sendet sie, das erste getippte Zeichen entfernt sie.",
+      "Ein Gespräch, das im Hintergrund weitergelaufen ist, stellt keine Leseposition aus der Mitte des Verlaufs mehr wieder her; das veraltete Lesezeichen springt an den neuesten Zug.",
+      "Die Sitzungsleiste zeigt das echte Projekt als Breadcrumb mit Inline-Umbenennung und trägt eine Nutzungs-Pille pro Zug; Browser-Seiten laufen weiter, wenn das Panel ausgeblendet wird oder der Renderer neu lädt, und Hintergrundaufgaben gehören zu ihrer Sitzung, begrenzt pro Sitzung und global.",
+      "Die Computer Ihres Kontos erscheinen wieder: die Desktop-Anmeldung nutzte einen Client-Typ, den das Gateway ablehnte, sodass die Liste nie gelesen wurde. Ein fehlgeschlagener Beitritt nennt jetzt seinen Grund und wiederholt sich mit Backoff; ein zweimal bestätigtes Telefon behält einen gültigen Eintrag.",
+      "Die Denkstufe ist auf dem Telefon wählbar: eine Fernsitzung folgt den Stufen, die der Host für dieses Modell veröffentlicht, ein Direktgespräch den Stufen des Gateways, und beide werden gesperrt und begründet, solange ein Zug läuft oder eine Entscheidung offen ist.",
+      "Der Modellkatalog des Telefons aktualisiert sich selbst — bei Rückkehr in den Vordergrund, beim Öffnen des Modellpanels oder beim Betreten der Chat- und Studio-Wurzeln, höchstens einmal pro Minute — sodass ein vom Gateway eingestelltes Modell nicht mehr angeboten wird und \"keine verfügbare Route\" anders klingt als \"vorübergehend ausgelastet\".",
+      "Telefon-Details: HTML-Vorschauen passen sich ihrem Inhalt an und scrollen im Rahmen, die Gruppe \"Andere\" kann eine Sitzung starten, selbst gesendete Bilder werden endlich angezeigt, und eine Vordergrund-Benachrichtigung ist ein zentrierter Hinweis, der nur bleibt, wenn eine Antwort nötig ist.",
+    ],
+  },
+  {
     version: "0.26.0",
     date: "2026-10-24",
     highlights: [

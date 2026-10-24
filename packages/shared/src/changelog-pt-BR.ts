@@ -2,6 +2,21 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.27.0",
+    date: "2026-10-24",
+    highlights: [
+      "O tema agora muda direto no rodapé da barra lateral: um botão alterna entre sistema, claro e escuro, e o ícone e o nome acessível dizem qual é o tema atual e qual vem em seguida.",
+      "O texto adicionado a partir de uma seleção entra como um chip de anexo compacto — a mesma forma que um colar grande assume — e clicar no chip abre o texto novamente.",
+      "Quando um turno termina, o campo de escrita oferece em cinza uma sugestão de próxima mensagem: clicar envia, e o primeiro caractere digitado a remove.",
+      "Uma conversa que continuou rodando em segundo plano não restaura mais uma posição de leitura no meio do histórico; o marcador desatualizado passa para o turno mais recente.",
+      "O cabeçalho da sessão mostra o projeto real como trilha, com renomeação em linha, e traz uma cápsula de uso por turno; as páginas do navegador continuam rodando quando o painel fica oculto ou o renderer recarrega, e as tarefas em segundo plano pertencem à sessão, com limites por sessão e global.",
+      "Os computadores da sua conta voltam a aparecer: o login do desktop usava um tipo de cliente que o gateway recusava, então a lista nunca era lida. Um ingresso que falha agora informa o motivo e tenta de novo com espera crescente, e um celular aprovado duas vezes mantém um único registro válido.",
+      "O nível de raciocínio é selecionável no celular: uma sessão remota segue os níveis que o host publica para aquele modelo, um chat direto segue os do próprio gateway, e ambos ficam travados com o motivo enquanto um turno roda ou uma decisão está pendente.",
+      "O catálogo de modelos do celular se atualiza sozinho — ao voltar para o primeiro plano, ao abrir o painel de modelos ou ao entrar nas raízes de chat e estúdio, no máximo uma vez por minuto — então um modelo retirado pelo gateway deixa de ser oferecido, e \"sem rota disponível\" aparece diferente de \"temporariamente ocupado\".",
+      "Detalhes do celular: as prévias HTML se ajustam ao conteúdo e rolam dentro do quadro, o grupo \"Outros\" pode iniciar uma sessão, as imagens que você enviou finalmente aparecem, e um aviso em primeiro plano virou um alerta centralizado que só permanece quando precisa de resposta.",
+    ],
+  },
+  {
     version: "0.26.0",
     date: "2026-10-24",
     highlights: [
