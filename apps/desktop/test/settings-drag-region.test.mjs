@@ -51,18 +51,21 @@ test("no decorative band may paint over the head", async () => {
   assert.match(head[1], /align-items:\s*center;/);
 });
 
-test("the sheet geometry leaves the window controls and a drag target visible", async () => {
-  const sheet = /\n\.settings-sheet\s*\{([^}]*)\}/s.exec(globalStyles);
-  assert.ok(sheet, "expected a .settings-sheet rule");
-  assert.match(sheet[1], /height:\s*90%;/);
-  assert.match(sheet[1], /border-radius:\s*var\(--settings-sheet-radius\)/);
-  assert.match(sheet[1], /width:\s*calc\(100% - 2 \* var\(--settings-sheet-gutter\)\);/);
-  assert.match(globalStyles, /--settings-sheet-gutter:\s*clamp\(16px, 2vw, 24px\);/);
-  assert.match(globalStyles, /--settings-sheet-radius:\s*19px;/);
-  // The sheet starts below the window's own controls: it is bottom-anchored and
-  // never taller than the window, so nothing is drawn over them.
-  const overlay = /\n\.settings-overlay\s*\{([^}]*)\}/s.exec(globalStyles);
-  assert.ok(overlay, "expected a .settings-overlay rule");
-  assert.match(overlay[1], /justify-content:\s*flex-end;/);
-  assert.match(overlay[1], /z-index:\s*35;/);
+test("the full-window page leaves the window controls and a drag target visible", () => {
+  const page = /(?:^|\n)\.settings-page\s*\{([^}]*)\}/s.exec(globalStyles);
+  assert.ok(page, "expected a .settings-page rule");
+  // Full client area: one page, no floating plate.
+  assert.match(page[1], /width:\s*100%;/);
+  assert.match(page[1], /height:\s*100%;/);
+  assert.match(page[1], /background:\s*var\(--ds-bg-primary\);/);
+  // The content reserves the native titlebar band before its own header.
+  const content = /(?:^|\n)\.settings-page-content\s*\{([^}]*)\}/s.exec(globalStyles);
+  assert.ok(content, "expected a .settings-page-content rule");
+  assert.match(content[1], /padding-top:\s*var\(--ds-toolbar-height\);/);
+  assert.match(globalStyles, /--ds-toolbar-height:\s*46px;/);
+  // The retired plate, its scrim, and their motion are gone.
+  assert.doesNotMatch(globalStyles, /\.settings-sheet\s*\{/);
+  assert.doesNotMatch(globalStyles, /\.settings-overlay\s*\{/);
+  assert.doesNotMatch(globalStyles, /@keyframes settings-(?:scrim|sheet)-/);
+  assert.doesNotMatch(globalStyles, /--settings-sheet-(?:radius|gutter)/);
 });

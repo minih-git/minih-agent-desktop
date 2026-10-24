@@ -1,12 +1,12 @@
 # 06. Settings Information Architecture
 
-## 1. Settings root (bottom sheet over the running app)
+## 1. Settings root (full-window page)
 
-Settings is a **sheet that rises from the window bottom over the still-mounted
-app**. It is not a full-window takeover: the chat shell keeps its layout behind
-the panel (inert, dimmed by the scrim), so a draft, the transcript scroll, the
-sidebar fold, and a running task all survive the visit. The runner deletes
-nothing about the app behind it.
+Settings is a **normal full-window page with seven top categories**, not a
+modal or bottom sheet. Opening it directly replaces the visible chat chrome.
+The chat shell remains mounted, hidden, and inert, preserving its draft,
+transcript scroll, sidebar fold, and running tasks. Returning restores that
+same shell immediately without an entrance or exit slide.
 
 - **Seven fixed categories**, as a short text bar under the head: General / 常规,
   AI, Models / 模型, Capabilities / 能力, Accounts / 账户, Projects / 项目, and
@@ -20,39 +20,32 @@ nothing about the app behind it.
   window, a long language, a 150% type scale) it renders the same choice as the
   shared `SettingsMenuSelect` instead of a row the user has to scroll sideways.
   It re-measures on resize and on a language change.
-- **Container.** Anchored to the window bottom, about 90% of the available
-  height, 16–24px side gutters (`--settings-sheet-gutter`), 18–20px top corners
-  (`--settings-sheet-radius`), using the existing elevated surface, border, and
-  dialog shadow. No large-area background blur, no background scaling.
-- **Motion.** Rise from below in about 240ms, leave downward in about 180ms, no
-  spring and no bounce. Switching category or destination never replays the
-  entrance. Under `prefers-reduced-motion: reduce` the travel is removed
-  (animation duration ≈ 0.01ms, never `animation: none`) so the exit animation
-  still ends and unmounts the sheet.
-- **Small windows.** At 720px wide or less, or 560px tall or less, the sheet
-  takes the full width and the full height and squares its top corners.
-- **Head.** Panel title, the always-visible **Search settings…** field, and a
-  close button on the right. The head itself is the native window drag region
-  and its controls stay explicitly non-draggable; no decorative band is painted
-  over it, so the title, search field, and close button are always the top-most
-  pixels at their own centers. The sheet starts below the window controls and
-  the macOS traffic lights, so neither is ever covered.
+- **Container.** Fill the available window width and height with the existing
+  primary surface. There is no settings backdrop, floating border or shadow,
+  rounded outer corners, side gutter, or 90%-height plate. The normal page
+  is not exposed as a modal dialog and does not trap focus like one.
+- **Motion.** Enter and leave by direct page switching. There is no upward or
+  downward translation, delayed unmount, or animation-completion dependency.
+  Reduced motion uses the same immediate navigation.
+- **Small windows.** Keep the same full-page layout; reduce content padding
+  where necessary and use the existing overflow-aware category selector.
+- **Head.** Page title, the always-visible **Search settings…** field, and a
+  return/close control. Reserve the native toolbar safety band above these
+  controls on every platform. The real header provides dragging; its controls
+  are explicitly non-draggable. No decorative layer may obscure them, and
+  neither the macOS traffic lights nor Windows/Linux controls may overlap them.
 - **Fixed and scrolling regions.** The head, the category bar, the optional
   second level, and the close button stay fixed; only the content area scrolls.
-- **Closing.** The close button, Escape, and — with nothing to lose — the scrim.
-  Escape closes only the top-most surface: an open menu, select, or editor
-  dialog closes first (the panel asks the live DOM, because a portaled editor
-  bubbles its Escape back through the React tree), and while a text field holds
-  the keyboard the first Escape leaves the field instead of the sheet.
-  - A form that saves only on an explicit action (today: the global instruction
-    file) registers its `dirty` / `saving` state with the sheet. Every exit —
-    scrim, Escape, close button, category, destination, search result — asks the
-    registry first: with nothing registered the action happens immediately, a
-    dirty form opens a confirmation (keep editing / discard changes), and an
-    in-flight save cannot be discarded until it settles.
-  - Automatically saved rows register nothing and gain no global save button.
-  - Closing returns focus to the control that opened Settings.
-- **No** drag-to-resize, snap height, or swipe-to-close gesture.
+- **Returning.** The return/close control and Escape leave Settings. There is
+  no outer backdrop to dismiss. Escape first belongs to the top-most actual
+  menu or editor dialog; a focused text field retains its existing first-Escape
+  behavior. Actual inner dialogs keep their own modal semantics.
+  - Forms with explicit saves register `dirty` / `saving`. Close, Escape,
+    category, destination, and search-result navigation consult the same guard.
+    Dirty forms require keep-editing/discard confirmation; saving blocks discard
+    until it settles. Automatically saved rows gain no global save button.
+  - Returning restores focus to the opening control after the chat is visible.
+  - There is no resize handle, snap height, swipe dismissal, or delayed exit.
 - Switching to a different destination starts the content pane at the top,
   including plugin destinations. Re-selecting the current destination or
   updating settings in place preserves the current scroll position. Global
@@ -1173,7 +1166,7 @@ system while preserving their different data ownership:
 
 ## 3. Navigation rules
 
-- Profile footer / command palette open the Settings sheet; a plain entry keeps
+- Profile footer / command palette open the full-window Settings page; a plain entry keeps
   the last destination, while an explicit entry (models, cloud sync, voice)
   deep-links to its own page
 - The category bar selects a category; re-selecting the category that is already
@@ -1203,9 +1196,9 @@ system while preserving their different data ownership:
 
 ## 4. Acceptance
 
-1. Opening Settings leaves the chat shell mounted and inert behind a sheet
-   anchored to the window bottom: about 90% height, 16–24px side gutters,
-   18–20px top corners, and a scrim that never takes a dismiss click
+1. Opening Settings directly displays a full-window page while the chat stays
+   mounted, hidden, and inert. No settings backdrop, floating outer geometry,
+   bottom translation, modal page semantics, or delayed exit remains.
 2. The panel has exactly seven categories in this order — General / 常规, AI,
    Models / 模型, Capabilities / 能力, Accounts / 账户, Projects / 项目,
    System / 系统 — and no rail, no cited grouping headers, and no
@@ -1239,12 +1232,11 @@ system while preserving their different data ownership:
    card surface in both light and dark themes. A row's live value (the pinned
    default model) is data rather than prose and stays visible, and a form
    field's hint follows the same rule as a row's explanation
-10. Dragging the sheet's head band moves the native window without blocking the
-    close button, the search field, or the category bar
-11. Resizing the window expands or contracts the content cards with the
-    available width; the sheet keeps its gutters and the page does not gain
-    horizontal overflow. Short windows give the sheet the full height and the
-    category bar stays one row
+10. Dragging the real page header moves the native window without blocking its
+    return control, search, navigation, or native window controls.
+11. Content uses the available page width without horizontal overflow at wide,
+    narrow, or short sizes. The category bar stays one row while it fits and
+    becomes the existing selector when it does not; native chrome stays clear.
 12. Project archive always exposes archived records and can restore them without
     duplicating the index in the app shell
 13. Project archive renders no description line — no hero, banner, or page-level
@@ -1314,15 +1306,15 @@ the current window width:
 
 | Token | Value |
 |---|---|
-| Sheet height | 90% of the window, anchored to the bottom edge |
-| Sheet gutters | `--settings-sheet-gutter: clamp(16px, 2vw, 24px)` |
-| Top corners | `--settings-sheet-radius: 19px` |
-| Sheet surface | `--ds-bg-primary` plate with `--ds-border-subtle` border and `--ds-shadow-dialog` |
-| Motion | rise 240ms / leave 180ms; ≈0.01ms with reduced motion |
-| Drag band | the sheet head, `var(--ds-toolbar-height)` tall, across the sheet |
+| Page height | Full available window height |
+| Outer gutters | None; padding belongs to the page content |
+| Outer corners | Square, with no floating border or shadow |
+| Page surface | Existing `--ds-bg-primary` surface |
+| Motion | Immediate page switch; no slide or delayed unmount |
+| Drag band | Real header, with `var(--ds-toolbar-height)` native safety clearance |
 | Active nav pill | category and second level share `.settings-nav-item`; selected uses `--ds-settings-nav-active` |
 | Section title | 28px / 560 |
-| Content width | Full available sheet width after its gutters |
+| Content width | Full available page width after content padding |
 | Card radius | ~14px elevated stroke |
 | Toggle | **32×20** thumb 16, neutral accent on (not green) |
 | Open-target pill | leading VS Code glyph |

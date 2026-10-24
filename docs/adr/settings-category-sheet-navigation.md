@@ -1,90 +1,59 @@
-# ADR: Settings categories in a bottom sheet
+# ADR: Seven-category settings as a full-window page
 
-- Status: Accepted for implementation
-- Date: 2026-10-23
-- Supersedes in part: ADR 0013 (four-destination compact directory) and the
-  rail-specific navigation rows of the settings specs it points at
+- Status: Accepted; bottom-sheet presentation superseded by the full-window page
+- Original decision: 2026-10-23
+- Amendment: 2026-10-24, explicit user request to remove the bottom sheet
+- Supersedes in part: ADR 0013's rail navigation; preserves the seven-category
+  information architecture introduced by this decision
 
 ## Context
 
-Settings had grown a fixed left rail with fourteen first-level destinations in
-four titled groups. The rail cost ~275px of width on every screen, carried
-duplicate surfaces (the cloud-sync form was both its own destination and
-embedded in the accounts page), and mixed three different kinds of choice on
-one axis: what the app looks like, what the agent may do, and which account or
-machine it belongs to.
-
-The rail was itself a frozen decision (D063/D070, then ADR 0013/0015/0026), so
-changing it needs a record rather than an edit. Nothing about persistence,
-ownership, or the plugin/security boundary changes here: the same destinations,
-the same settings data, and the same single writers stay in place.
+The original redesign reduced fourteen first-level destinations to seven
+category roots and eliminated the duplicate cloud-sync configuration surface.
+It also introduced a bottom-anchored modal presentation. The user subsequently
+rejected that presentation: entering Settings from below felt inappropriate
+for a desktop configuration page. This correction changes the container, not
+the category structure or the application's settings data.
 
 ## Decision
 
-1. **Seven fixed categories, at most two levels**: General / 常规, AI, Models /
-   模型, Capabilities / 能力, Accounts / 账户, Projects / 项目, System / 系统.
-   The second level holds the destinations that used to be rail rows:
-   appearance, usage habits and shortcuts; chat experience, execution and
-   permissions, instructions and memory, and voice; skills, MCP and subagents;
-   accounts, devices, cloud sync and advanced; network, storage, and about &
-   updates. Models and projects have a single page each, so they render no
-   second level.
-2. **The container is a bottom sheet, not a full-window takeover.** The panel is
-   anchored to the window bottom at about 90% height with 16–24px side gutters
-   and 18–20px top corners, rises in about 240ms, and leaves in about 180ms. The
-   chat shell stays mounted and inert behind it. There is no drag-to-resize, no
-   snap height, and no swipe-to-close.
-3. **One configuration surface per capability.** Cloud sync is a page in the
-   accounts category and nothing else embeds it; SSH hosts and the self-hosted
-   gateway are that category's advanced page; plugin theme destinations hang off
-   appearance instead of adding an eighth category.
-4. **One navigation index, two-level search.** `lib/settings-search.ts` owns the
-   category → destination → row map. Both the panel's search and the global
-   search dialog read it, and a row hit carries its path
-   (`System › Network › Proxy`). Destination ids are a contract: `remoteHosts`
-   resolves to `advanced`, `remoteGateway` to `accounts`, and unknown ids fall
-   back to appearance.
-5. **Closing protects pending edits.** The close button, Escape, and a scrim
-   click may close an untouched sheet. Escape first yields to the top-most
-   menu or dialog. Dirty forms require an explicit discard decision, and an
-   in-flight save blocks leaving until it settles. Focus returns to the entry
-   that opened Settings. Background isolation lasts through the exit animation.
+1. Settings is a normal full-window page. It switches directly into the
+   available client area without an outer backdrop, floating corners, shadow,
+   bottom translation, or delayed unmount. There is no alternative sheet mode.
+2. Preserve General, AI, Models, Capabilities, Accounts, Projects and System,
+   with at most two navigation levels and the existing overflow-aware selector.
+   Do not restore the old left settings rail.
+3. Keep the chat shell mounted but hidden and inert while Settings is visible.
+   Returning immediately restores its draft, transcript position and layout;
+   running tasks are not stopped.
+4. Reserve native toolbar clearance. The real page header provides dragging
+   without overlapping native controls or obscuring search and return actions.
+5. Preserve explicit-save draft protection, search retention and anchor
+   expansion, legacy destination resolution, one cloud-sync configuration
+   surface, plugin theme ownership and all existing permission boundaries.
+6. The whole page is not a modal dialog and does not trap focus. Actual editors
+   and unsaved-change confirmation remain dialogs with their existing Escape
+   and focus behavior. There is no outside-click dismissal for the page.
 
 ## Consequences
 
-- The app keeps its full width while settings are open, and a conversation,
-  draft, or running task stays visible behind the sheet.
-- Duplicated surfaces disappear: one cloud-sync page, one advanced page for SSH
-  and the self-hosted gateway, one appearance page that also hosts plugin theme
-  entries.
-- Existing deep links, automation calls, and plugins keep working through the
-  legacy id map; the Host settings format is untouched.
-- The rail, its four group headings, its footer action, and the
-  `--ds-settings-nav-width` token are removed rather than kept behind a switch:
-  no two shells coexist.
-- Settings tests that asserted rail geometry, rail order, or the back-to-app
-  action are rewritten as behaviour assertions about categories, the sheet, and
-  closing; the focus, layering, and state-restoration protections they guarded
-  stay covered.
-- Component-level dialogs (model, skill, MCP, subagent editors) keep their
-  centered modal form; only the settings container changed.
+- Configuration behaves like a desktop page rather than a temporary mobile
+  sheet, while retaining the navigation simplification.
+- Remove sheet-only animation state, keyframes, geometry tokens and backdrop
+  handlers rather than leaving a dormant implementation.
+- Existing form and capability editors remain unchanged; no Host API, storage
+  format, migration, credential policy or feature capability changes.
+- Regression tests retain draft, nested-editor, search and state-restoration
+  coverage but assert full-page geometry and immediate navigation instead of
+  bottom-sheet animation and scrim behavior.
 
 ## Alternatives
 
-### Keep the rail and regroup it
-
-Rejected: the width cost and the duplicate surfaces were the problem, not the
-grouping.
-
-### Bottom half-screen sheet or a right drawer
-
-Rejected: a half-screen sheet runs out of vertical space for long lists and
-editors, and a right drawer is tight for model forms and instruction editing.
-
-### Turn every settings destination into its own route
-
-Rejected: it multiplies navigation chrome and makes "where am I" harder, without
-removing the duplicate surfaces that motivated the change.
+Keeping the sheet but disabling its animation was rejected: the user rejected
+the bottom-overlay presentation itself. Restoring the old sidebar was not
+requested and would undo the accepted category consolidation. A right-side
+drawer would introduce a new interaction without addressing the user's wish
+to remove the popup presentation.
 
 ## References
 

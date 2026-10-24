@@ -1,75 +1,28 @@
-/*
-  The settings sheet: a near full-height panel anchored to the window bottom,
-  with a fixed head (title, search, close), one row of seven categories, an
-  optional second level, and a scrolling content area.
-
-  The app stays mounted behind it — the scrim dims it, the shell marks it inert,
-  and nothing here touches the conversation surfaces.
-*/
-
-.settings-overlay {
-  position: fixed;
-  inset: 0;
-  /* Above the shell's own surfaces (30) and below the dialog host (40), so a
-     settings dialog or a toast still paints over this sheet. */
-  z-index: 35;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  overflow: hidden;
-  background: color-mix(in oklab, #000 32%, transparent);
-  animation: settings-scrim-in 240ms var(--motion-ease-out);
-}
-
-.settings-overlay.is-exiting {
-  /* The page already changed but the sheet is still on screen: the scrim keeps
-     swallowing pointers until the sheet unmounts, so no click reaches the app
-     behind it. */
-  animation: settings-scrim-out 180ms var(--motion-ease-in);
-}
-
-.settings-sheet.is-exiting {
-  /* Leaving: the plate itself takes no clicks, the scrim still does. */
-  pointer-events: none;
-}
-
-.settings-sheet {
+/* Full-window settings. Only inner editors and draft confirmation are modal. */
+.settings-page {
   position: relative;
   display: flex;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
-  height: 90%;
-  max-height: 90%;
-  width: calc(100% - 2 * var(--settings-sheet-gutter));
-  flex-direction: column;
-  margin-inline: auto;
-  border: 1px solid var(--ds-border-subtle);
-  border-bottom: 0;
-  border-radius: var(--settings-sheet-radius) var(--settings-sheet-radius) 0 0;
-  background: var(--ds-bg-primary);
-  box-shadow: var(--ds-shadow-dialog);
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  animation: settings-sheet-in 240ms var(--motion-ease-out);
+  background: var(--ds-bg-primary);
 }
 
-.settings-sheet.is-exiting {
-  animation: settings-sheet-out 180ms var(--motion-ease-in);
-}
-
-@keyframes settings-scrim-in {
-  from { opacity: 0; }
-}
-
-@keyframes settings-scrim-out {
-  to { opacity: 0; }
-}
-
-/* Rise from below the window edge, settle flat: no spring, no bounce. */
-@keyframes settings-sheet-in {
-  from { transform: translateY(100%); }
-}
-
-@keyframes settings-sheet-out {
-  to { transform: translateY(100%); }
+.settings-page-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  flex-direction: column;
+  /* Keep native traffic lights and window controls outside interactive rows. */
+  padding-top: var(--ds-toolbar-height);
+  overflow: hidden;
 }
 
 .settings-panel-head {
@@ -118,9 +71,7 @@
   flex-wrap: nowrap;
   gap: 2px;
   padding: 0 14px 8px;
-  /* Hidden, not scrolled: when the seven labels do not fit, the panel swaps in
-     a category selector instead of a row the user has to scroll sideways. The
-     measurement that decides it reads scrollWidth against clientWidth. */
+  /* Overflow is measured before swapping to the shared category selector. */
   overflow-x: hidden;
   border-bottom: 1px solid var(--ds-border-subtle);
 }
@@ -155,6 +106,8 @@
   align-items: center;
   gap: 4px;
   padding: 10px 20px 0;
+  /* Keep separation from the scrolling content even after its padding scrolls away. */
+  margin-bottom: 16px;
   overflow-x: auto;
 }
 
@@ -165,8 +118,7 @@
   font-size: var(--text-sm-plus);
 }
 
-/* The content area and the results layer share one box, so a search never
-   unmounts the page underneath it. */
+/* Search must not unmount the destination holding a draft. */
 .settings-content-area {
   position: relative;
   display: flex;
@@ -186,7 +138,6 @@
   background: var(--ds-bg-primary);
 }
 
-/* Search results: the matched row and the path that leads to it. */
 .settings-results {
   display: flex;
   flex-direction: column;
@@ -217,8 +168,7 @@
   font-size: var(--text-sm-plus);
 }
 
-/* Leaving a page with unsaved edits asks first; an in-flight save is never
-   overtaken. */
+/* This backdrop belongs only to an explicit unsaved-change confirmation. */
 .settings-draft-scrim {
   position: absolute;
   z-index: 20;
@@ -261,19 +211,7 @@
   gap: 8px;
 }
 
-/*
-  A short or narrow window takes the whole width and the whole height: the
-  gutter and the top inset exist to show the app behind, which a small window
-  cannot spare. The category bar keeps scrolling; the head keeps its search.
-*/
 @media (max-width: 720px), (max-height: 560px) {
-  .settings-sheet {
-    height: 100%;
-    max-height: 100%;
-    width: 100%;
-    border-radius: 0;
-  }
-
   .settings-panel-head {
     padding: 10px 14px 8px;
   }
@@ -285,15 +223,5 @@
 
   .settings-subnav {
     padding: 8px 14px 0;
-  }
-}
-
-/* The sheet's own motion is positional; without it, cross-fade in place. */
-@media (prefers-reduced-motion: reduce) {
-  .settings-overlay,
-  .settings-sheet,
-  .settings-sheet.is-exiting,
-  .settings-overlay.is-exiting {
-    animation-duration: 0.01ms !important;
   }
 }

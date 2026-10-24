@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
  * Settings navigation in isolated Electron, with the production
- * component/store/CSS. Covers the seven-category sheet: real clicks, search
- * paths, nested Escape, draft-safe closing, focus return, scroll retention, and
- * the layout under narrow/roomy/short windows in both locales, both themes, a
- * 150% type scale, and reduced motion. Screenshots are written next to the
- * session scratch directory so the layout can be inspected afterwards.
+ * component/store/CSS. Covers the seven-category full-window page: real clicks,
+ * search paths, nested Escape, draft-safe closing, immediate close and focus
+ * return, scroll retention, and the layout under narrow/roomy/short windows in
+ * both locales, both themes, a 150% type scale, and reduced motion.
+ * Screenshots are written next to the session scratch directory so the layout
+ * can be inspected afterwards.
  */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";

@@ -6,30 +6,29 @@ import { loadStyles } from "./helpers/styles.mjs";
 
 const idle = (collapsed = false, presented = true) => ({ collapsed, presented, phase: "idle" });
 
-test("Settings keeps the mounted chat shell inert and its portal layers out of view", async () => {
+test("Settings hides and inerts the mounted chat shell until the route returns", async () => {
   const [appShell, styles, portalVisibility] = await Promise.all([
     readFile(new URL("../src/features/app/AppShell.tsx", import.meta.url), "utf8"),
     loadStyles(),
     readFile(new URL("../src/lib/portal-visibility.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(appShell, /<PortalVisibilityProvider visible=\{page !== "settings"\}>/);
-  // The shell stays mounted and laid out behind the sheet, so a draft, the
-  // transcript scroll, and the sidebar fold survive; it is inert instead.
-  // Inert while the sheet is open *or still leaving*: the app must not take a
-  // click during the exit animation either.
-  assert.match(appShell, /const settingsSheet = useSettingsSheetPresence\(settingsOpen\);/);
-  assert.match(appShell, /const backgroundBlocked = settingsOpen \|\| settingsSheet\.mounted;/);
-  assert.match(appShell, /inert=\{backgroundBlocked \? true : undefined\}/);
-  const chatShell = appShell.match(/<div\s+className=\{cx\("app-chat-shell"[\s\S]*?>/)?.[0];
+  // The shell stays mounted so a draft, the transcript scroll, and the sidebar
+  // fold survive; it is hidden and inert instead of replaced.
+  assert.doesNotMatch(appShell, /useSettingsSheetPresence/);
+  assert.doesNotMatch(appShell, /settingsSheet/);
+  assert.match(appShell, /hidden=\{settingsOpen\}/);
+  assert.match(appShell, /inert=\{settingsOpen[^}]*\}/);
+  const chatShell = appShell.match(/<div\s+className=(?:"app-chat-shell"|\{cx\("app-chat-shell")[\s\S]*?>/)?.[0];
   assert.ok(chatShell, "chat shell must exist");
   assert.doesNotMatch(chatShell, /aria-hidden/);
-  assert.doesNotMatch(chatShell, /hidden=/);
-  assert.match(appShell, /className=\{cx\("app-chat-shell"[\s\S]*?<ChatSurface visible=\{page === "chat"\} \/>/);
-  // The sheet outlives the page change by its exit animation.
-  assert.match(
-    appShell,
-    /\{settingsSheet\.mounted \? \([\s\S]*?<SettingsPage[\s\S]*?exiting=\{settingsSheet\.exiting\}/,
-  );
+  assert.match(chatShell, /hidden=\{settingsOpen\}/);
+  assert.match(chatShell, /inert=\{settingsOpen[^}]*\}/);
+  assert.match(appShell, /className=(?:"app-chat-shell"|\{cx\("app-chat-shell")[\s\S]*?<ChatSurface visible=\{page === "chat"\} \/>/);
+  // The page is mounted straight from the open flag: no exit animation, no
+  // delayed unmount, no props that keep it alive after the route changed.
+  assert.match(appShell, /settingsOpen\s*(?:\?|&&)[\s\S]{0,200}?<SettingsPage\s*\/>/);
+  assert.doesNotMatch(appShell, /<SettingsPage[\s\S]{0,200}?exiting=/);
   assert.match(appShell, /<ChatSurface visible=\{page === "chat"\} \/>/);
   assert.match(appShell, /<SearchDialog open=\{searchOpen\}/);
   assert.match(styles, /\.app-chat-shell\s*\{\s*display:\s*contents;/);
@@ -69,24 +68,24 @@ test("settings interrupts either phase and rapid return cannot replay it", () =>
   assert.deepEqual(nextSidebarTransition(idle(true, false), false, true), idle());
 });
 
-test("the settings sheet is an opaque plate over the same material as the app", async () => {
+test("the settings page is an opaque plate over the same material as the app", async () => {
   const [styles, sidebar, settings] = await Promise.all([
     loadStyles(),
     readFile(new URL("../src/components/Sidebar.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/features/settings/SettingsPage.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(sidebar, /cx\("sidebar", "sidebar-surface", className\)/);
-  // The settings rail is gone: the sheet carries its own surface, and the app
+  // The settings rail is gone: the page carries its own surface, and the app
   // behind it keeps the sidebar tone it had.
   assert.doesNotMatch(settings, /settings-nav sidebar-surface/);
   assert.doesNotMatch(styles, /\.settings-shell-full \.settings-nav/);
   assert.match(styles, /\.sidebar-surface,\s*\.sidebar-rail\s*\{[^}]*background-color:\s*var\(--ds-bg-sidebar[^}]*background-image:\s*var\(--ds-bg-sidebar-image/);
   assert.match(styles, /:root\[data-platform="darwin"\] \.sidebar-surface,/);
   assert.match(styles, /:root\[data-platform="darwin"\] \.app-shell\s*\{\s*background:\s*transparent;/);
-  for (const selector of ["settings-sheet", "settings-content", "settings-results-panel"]) {
+  assert.match(styles, /\.settings-page(?:-content)?[^{}]*\{[^}]*background:\s*var\(--ds-bg-primary\);/s);
+  for (const selector of ["settings-content", "settings-results-panel"]) {
     assert.match(styles, new RegExp(`\\.${selector}\\s*\\{[^}]*background:\\s*var\\(--ds-bg-primary\\);`));
   }
-  assert.match(styles, /\.route-surface,\s*\.settings-content-enter\s*\{[^}]*animation:\s*route-surface-in/);
   assert.doesNotMatch(styles, /\.route-surface,\s*\.settings-shell-full\s*\{/);
   assert.match(styles, /--ds-bg-sidebar:\s*var\(--ds-settings-rail-bg, var\(--ds-bg-under\)\)/);
   assert.match(styles, /--ds-bg-sidebar:\s*var\(--ds-settings-rail-bg, #f3f3f3\)/);

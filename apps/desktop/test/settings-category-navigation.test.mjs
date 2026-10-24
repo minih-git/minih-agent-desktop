@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { register } from "node:module";
 import test from "node:test";
+import { loadStyles } from "./helpers/styles.mjs";
 import {
   SETTINGS_CATEGORIES,
   SETTINGS_NAV,
@@ -87,10 +88,8 @@ test("the categories fall back to a selector when seven labels do not fit", asyn
   assert.match(settingsPage, /bar\.scrollWidth > bar\.clientWidth \+ 1/);
   assert.match(settingsNavigation, /className="settings-category-select"/);
   assert.match(settingsNavigation, /<SettingsMenuSelect/);
-  const results = await readFile(
-    new URL("../src/styles/settings-sheet.css", import.meta.url),
-    "utf8",
-  );
+  // The stylesheet moved with the page; the cascade keeps the rule either way.
+  const results = await loadStyles();
   assert.match(results, /\.settings-categories \{[^}]*overflow-x: hidden;/s);
 });
 

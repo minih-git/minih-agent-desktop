@@ -31,7 +31,6 @@ import { PluginViewPage } from "../plugins/PluginViewPage";
 import { LiveVoiceStatusHost } from "../voice/live/LiveVoiceStatusHost";
 import { CollapsedTitlebarActions, RoutePending } from "./chrome";
 import { useAppShellRuntime } from "./useAppShellRuntime";
-import { useSettingsSheetPresence } from "./settings-sheet-presence";
 
 const SettingsPage = lazy(() =>
   import("../../pages/SettingsPage").then((module) => ({
@@ -104,11 +103,7 @@ export function AppShell() {
     requestedWorkPanelWidth,
   } = useAppShellRuntime();
   const [toastAnchor, setToastAnchor] = useState<HTMLElement | null>(null);
-  // The sheet outlives the page change by its exit animation, so the app behind
-  // it stays inert and covered until the sheet is really gone.
   const settingsOpen = page === "settings";
-  const settingsSheet = useSettingsSheetPresence(settingsOpen);
-  const backgroundBlocked = settingsOpen || settingsSheet.mounted;
   useCopyTex();
   useEffect(() => {
     void loadChatSurface().catch((error: unknown) => {
@@ -150,13 +145,12 @@ export function AppShell() {
     shell = (
       <>
         <PortalVisibilityProvider visible={page !== "settings"}>
-          {/* The chat shell stays mounted and laid out behind the settings
-              panel, so a draft, the transcript scroll, the sidebar fold, and a
-              running task all survive a visit. It is inert, so nothing behind
-              the panel takes a click or a key. */}
+          {/* Keep the chat mounted but hidden while the full-window settings
+              page is active, preserving drafts, scroll and running tasks. */}
           <div
-            className={cx("app-chat-shell", backgroundBlocked && "is-behind-settings")}
-            inert={backgroundBlocked ? true : undefined}
+            className="app-chat-shell"
+            hidden={settingsOpen}
+            inert={settingsOpen ? true : undefined}
           >
             {!sidebarCollapsed || sidebarExiting ? (
               <Sidebar
@@ -362,12 +356,9 @@ export function AppShell() {
             </TooltipButton>
           </div>
         </PortalVisibilityProvider>
-        {settingsSheet.mounted ? (
+        {settingsOpen ? (
           <Suspense fallback={<RoutePending />}>
-            <SettingsPage
-              exiting={settingsSheet.exiting}
-              onExited={settingsSheet.onExited}
-            />
+            <SettingsPage />
           </Suspense>
         ) : null}
         <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />

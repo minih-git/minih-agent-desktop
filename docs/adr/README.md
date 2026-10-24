@@ -20,7 +20,7 @@ Each ADR includes:
 
 | ID | Title | Status |
 |---|---|---|
-| settings-category-sheet-navigation | [Settings: seven fixed categories in a bottom sheet](settings-category-sheet-navigation.md) | Accepted for implementation |
+| settings-category-sheet-navigation | [Seven-category settings as a full-window page](settings-category-sheet-navigation.md) | Accepted; bottom-sheet presentation superseded |
 | mobile-experience-completeness | [Mobile daily-use completeness and image workflows](mobile-experience-completeness.md) | Ready for bounded implementation; no device acceptance claimed |
 | optional-terminal-plugin | [Optional embedded terminal plugin](optional-terminal-plugin.md) | Accepted for implementation |
 | mobile-direct-gateway-chat | [Mobile direct gateway chat alongside remote computers](mobile-direct-gateway-chat.md) | Accepted |
