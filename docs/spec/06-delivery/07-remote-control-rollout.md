@@ -550,7 +550,12 @@ Scope notes:
   records **no local project group**: a group would bind this desktop's
   workspace to a folder on another machine and turn the account computer back
   into the SSH shape. The session reference is what this desktop keeps, and the
-  sidebar groups it under the computer it runs on. A computer that is offline or
+  sidebar groups it under the computer it runs on. Only sessions this desktop
+  started on that computer (or forked from one) are listed; that computer's own
+  conversations are not synchronized here. The record is
+  `<dataDir>/remote-account-sessions.json` (session ids per host key); a missing
+  file lists nothing from account computers, and SSH or direct Hosts still list
+  every session. A computer that is offline or
   behind this release is still listed and says why, because hiding a machine the
   user knows about explains nothing;
 - the account computer list and the SSH host list never overlap: only an

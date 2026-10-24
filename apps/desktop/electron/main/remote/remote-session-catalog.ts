@@ -11,6 +11,13 @@ export type RemoteCatalogHost = {
   label: string;
   client: RemoteRacpClient;
   connection: Pick<RemoteHostConnection, "ensureSession">;
+  /**
+   * Whether this desktop lists a Host session. An account computer answers its
+   * own user's sessions too; only the ones this desktop started are listed.
+   */
+  visible: (hostSessionId: string) => boolean;
+  /** Record a session this desktop just created, so `visible` admits it. */
+  adopt: (hostSessionId: string) => Promise<void>;
 };
 
 function unavailable(): Error {
@@ -41,7 +48,7 @@ export function createRemoteSessionCatalog(options: {
     const task = (async () => {
       const result = await host.client.request<{ sessions: RacpSession[] }>("session/list");
       stillCurrent(host);
-      const rows = result.sessions.map((session) => summary(host, session));
+      const rows = result.sessions.filter((session) => host.visible(session.id)).map((session) => summary(host, session));
       cache.set(hostKey, rows);
       return rows;
     })();
@@ -90,6 +97,9 @@ export function createRemoteSessionCatalog(options: {
         ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
       });
       stillCurrent(host);
+      // Adopt before the Host's `session.created` event can trigger a listing
+      // refresh that would otherwise drop the new row.
+      await host.adopt(result.session.id);
       await host.connection.ensureSession(result.session.id);
       stillCurrent(host);
       const row = summary(host, result.session);

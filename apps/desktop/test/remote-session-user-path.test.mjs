@@ -44,7 +44,7 @@ function fixture() {
     },
   };
   const backend = createRemoteBackend({ hostKey: "h1", hostLabel: "Linux host", client, onSnapshot: (value) => snapshots.push(value) });
-  const host = { hostKey: "h1", label: "Linux host", client, connection: {
+  const host = { hostKey: "h1", label: "Linux host", client, visible: () => true, adopt: async () => {}, connection: {
     async ensureSession(id) { router.registerBackend(`remote:h1:${id}`, backend); },
   } };
   const catalog = createRemoteSessionCatalog({ getHost: (key) => key === "h1" && online ? host : undefined });
@@ -120,7 +120,7 @@ test("remote model selection reaches the Host while invalid paths are rejected b
 
 test("late session list after host removal cannot resurrect cached rows", async () => {
   let finish;
-  let host = { hostKey: "h", label: "H", client: { request: () => new Promise((resolve) => { finish = resolve; }) }, connection: { ensureSession: async () => {} } };
+  let host = { hostKey: "h", label: "H", client: { request: () => new Promise((resolve) => { finish = resolve; }) }, connection: { ensureSession: async () => {} }, visible: () => true, adopt: async () => {} };
   const catalog = createRemoteSessionCatalog({ getHost: () => host });
   const listing = catalog.sessions("h");
   host = undefined;
@@ -179,7 +179,7 @@ test("remote folder selection crosses IPC, registers on the Host, and creates a 
 test("remote folder browse rejects malformed Host data and stale connection results", async () => {
   let result;
   let finish;
-  let host = { hostKey: "h", label: "H", client: { request: async () => result }, connection: { ensureSession: async () => {} } };
+  let host = { hostKey: "h", label: "H", client: { request: async () => result }, connection: { ensureSession: async () => {} }, visible: () => true, adopt: async () => {} };
   const catalog = createRemoteSessionCatalog({ getHost: () => host });
   for (result of [null, { path: "local", entries: [] }, { path: "/home", parent: "relative", entries: [] }, { path: "/home", entries: Array(501).fill({ name: "app", path: "/home/app" }) }, { path: "/home", entries: [{ name: "../secret", path: "/secret" }] }, { path: "/home", entries: [{ name: "secret", path: "/elsewhere/secret" }] }, { path: "/home", entries: [{ name: "bad\0name", path: "/home/bad" }] }]) {
     await assert.rejects(catalog.browseProjects("h"), { errorCode: "INVALID_ARGUMENT" });

@@ -24,6 +24,15 @@ export type RemoteHostConnectionOptions = {
   newRequestId?: () => string;
   /** Reserve one subscription for host scope. Excess sessions remain routable. */
   maxSessionSubscriptions?: number;
+  /**
+   * Sessions this desktop lists. Only these are watched automatically; every
+   * listed Host session stays routable. Defaults to all.
+   */
+  visible?: (hostSessionId: string) => boolean;
+  /** A session this desktop forked; it becomes visible before it is read. */
+  onSessionForked?: (hostSessionId: string) => Promise<void>;
+  /** A session this desktop deleted on the Host. */
+  onSessionDeleted?: (hostSessionId: string) => void;
   log?: (level: "warn" | "error", message: string, data?: unknown) => void;
 };
 export interface RemoteHostConnection {
@@ -38,6 +47,7 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
   const { hostKey, client, router, emit } = options;
   const log = options.log ?? (() => undefined);
   const limit = Math.max(1, Math.min(RACP_DEFAULT_LIMITS.maxSubscriptionsPerConnection - 1, options.maxSessionSubscriptions ?? 7));
+  const visible = options.visible ?? (() => true);
   let generation = 0;
   let current: ReturnType<typeof start> | undefined;
   const disconnected = () => Object.assign(new Error("remote connection closed or replaced"), { code: "HOST_DISCONNECTED", errorCode: "HOST_DISCONNECTED" });
@@ -67,7 +77,7 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
       if (event.kind === "session.created") {
         register(event.hostSessionId);
         // Peers do not steal the selected session or evict its stream.
-        if (watched.size < limit) background(ensure(event.hostSessionId));
+        if (watched.size < limit && visible(event.hostSessionId)) background(ensure(event.hostSessionId));
       } else if (event.kind === "session.archived") {
         unregister(event.hostSessionId);
         background(enqueue(() => subscriptions.remove(event.hostSessionId)));
@@ -85,6 +95,7 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
       } },
       ...(options.hostLabel ? { hostLabel: options.hostLabel } : {}),
       ...(options.newRequestId ? { newRequestId: options.newRequestId } : {}),
+      ...(options.onSessionForked ? { onSessionForked: options.onSessionForked } : {}),
       onSnapshot(snapshot: RacpSessionSnapshot) {
         if (!alive() || !registered.has(snapshot.session.id)) return;
         bridge.restoreSnapshot(snapshot);
@@ -94,6 +105,7 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
         // The Host publishes no delete event, so the confirmed delete is the
         // only signal that the row must leave every list on this desktop.
         unregister(hostSessionId);
+        options.onSessionDeleted?.(hostSessionId);
         background(enqueue(() => subscriptions.remove(hostSessionId)));
         emit(IPC.event.sessionsChanged, { reason: "remote.session.deleted" });
       },
@@ -291,7 +303,7 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
       if (alive()) subscriptions.closed(notice.subscriptionId);
     }));
     const opened = enqueue(async () => {
-      const sessions = await host();
+      const sessions = (await host()).filter((session) => visible(session.id));
       // Active sessions first, then recently updated idle sessions, within the
       // protocol's fixed subscription budget. All listed sessions are routable.
       sessions.sort((a, b) => Number(b.status !== "idle") - Number(a.status !== "idle") || b.updatedAt.localeCompare(a.updatedAt));

@@ -35,6 +35,7 @@ import {
   transportOf,
 } from "../remote/remote-host-metadata.js";
 import { createRemoteSessionCatalog } from "../remote/remote-session-catalog.js";
+import { createRemoteSessionOwnership } from "../remote/remote-session-ownership.js";
 import { syncRemoteProviders } from "../remote/remote-provider-transfer.js";
 import { workspaceExecutionError } from "../remote/remote-workspace-outcome.js";
 export { sshMetadataOf, sshHostRecord, transportOf } from "../remote/remote-host-metadata.js";
@@ -115,6 +116,8 @@ export function getActiveRemoteHostsBoot(): RemoteHostsBoot | null { return acti
 type OpenHost = {
   hostKey: string; label: string; url: string;
   adapter: RacpRemoteHostClient; connection: RemoteHostConnection;
+  /** Whether this desktop lists a Host session; see `visibleOn`. */
+  visible: (hostSessionId: string) => boolean;
 };
 function unavailable(): Error {
   return Object.assign(new Error("remote host is unavailable"), { errorCode: "AGENT_UNAVAILABLE" });
@@ -186,10 +189,23 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
     const host = opened.get(key);
     return host?.adapter.state() === "connected" ? host : undefined;
   };
+  /**
+   * An account computer is another desktop of this account: its `session/list`
+   * includes its own user's conversations, which are not this desktop's. Only
+   * sessions this desktop created there (or forked from one) are listed. SSH
+   * and direct Hosts exist only for this desktop, so they list everything.
+   */
+  const ownership = createRemoteSessionOwnership({ dataDir: options.dataDir, log });
+  const visibleOn = (record: RemoteHostRecord) => transportOf(record) === "account"
+    ? (id: string) => ownership.has(record.hostKey, id)
+    : () => true;
   const catalog = createRemoteSessionCatalog({
     getHost: (key) => {
       const host = connectedHost(key);
-      return host ? { hostKey: key, label: host.label, client: host.adapter.client, connection: host.connection } : undefined;
+      return host ? {
+        hostKey: key, label: host.label, client: host.adapter.client, connection: host.connection,
+        visible: host.visible, adopt: (id: string) => ownership.add(key, id),
+      } : undefined;
     },
   });
   const changed = () => options.emit(IPC.event.sessionsChanged, { reason: "remote.host.changed" });
@@ -318,7 +334,10 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
       ? (await tunnels.open(record.hostKey, expected, record.sshSecret)).url
       : record.url;
     if (closed) { await tunnels.close(record.hostKey); throw unavailable(); }
+    await ownership.load();
+    if (closed) { await tunnels.close(record.hostKey); throw unavailable(); }
     const adapter = buildAdapter({ ...record, url });
+    const visible = visibleOn(record);
       // The capability requirement differs per transport: an SSH host is asked
       // for the owner tool surface, an account computer for the remote-host
       // profile (see the comment on `assertWorkspaceCapabilities`).
@@ -329,9 +348,18 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
         if (channel === IPC.event.sessionsChanged) void refresh(record.hostKey);
         else options.emit(channel, payload);
       },
+      visible,
+      onSessionForked: async (id) => {
+        await ownership.add(record.hostKey, id);
+        if (!closed) void refresh(record.hostKey);
+      },
+      onSessionDeleted: (id) => {
+        void ownership.remove(record.hostKey, id).catch((error: unknown) =>
+          log("warn", "remote session ownership cleanup failed", { error: String(error) }));
+      },
       log,
     });
-    const live = { hostKey: record.hostKey, label: record.label, adapter, connection, url };
+    const live = { hostKey: record.hostKey, label: record.label, adapter, connection, url, visible };
     openingHosts.add(live);
     try {
       assertOpen();
@@ -716,7 +744,7 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
         try {
           const result = await host.adapter.client.request<{ sessions: RacpSession[] }>("session/list");
           if (connectedHost(host.hostKey) !== host) return [];
-          return result.sessions.map((session): RemoteLiveSessionSummary => ({
+          return result.sessions.filter((session) => host.visible(session.id)).map((session): RemoteLiveSessionSummary => ({
             id: makeRemoteSessionId(host.hostKey, session.id), title: session.title,
             mode: session.mode, permissionMode: session.permissionMode, status: session.status,
             ...(session.activeTurnId ? { activeTurnId: session.activeTurnId } : {}),

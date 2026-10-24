@@ -642,3 +642,52 @@ test("a disconnected computer reports no capabilities rather than a verdict", as
     await cleanup();
   }
 });
+
+test("an account computer lists only the sessions this desktop started there, across restarts", async () => {
+  const { dir, cleanup } = await tmpDir();
+  const encryption = reversibleEncryption();
+  const registry = createRemoteHostRegistry({ dataDir: dir, encryption });
+  await registry.upsert({
+    hostKey: "account-host_sibling", label: "Sibling", url: "wss://gateway.example.com/v1/hosts/host_sibling/ws", deviceToken: "t",
+    metadata: { transport: "account", account: { hostId: "host_sibling", publicOrigin: "https://gateway.example.com" } },
+  });
+  await registry.upsert({ hostKey: "direct", label: "Direct", url: "wss://direct", deviceToken: "t-d" });
+  // The sibling already has its own user's conversations; the direct Host's
+  // sessions all belong to this desktop.
+  const hostSessions = { "account-host_sibling": [makeSession("theirs")], direct: [makeSession("d1")] };
+  const adapterFor = (record) => {
+    const sessions = hostSessions[record.hostKey];
+    const adapter = fakeAdapter({ sessions });
+    adapter.workspaceCapabilities = () => ({ remoteHostProfile: true, workspaceRead: true, workspaceTools: true, workspaceFiles: true });
+    const request = adapter.client.request;
+    adapter.client.request = async (method, params, timeoutMs) => {
+      if (method !== "session/create") return request(method, params, timeoutMs);
+      const created = { ...makeSession(`mine-${sessions.length}`), projectId: params.projectId };
+      sessions.push(created);
+      return { session: created };
+    };
+    return adapter;
+  };
+  const bootOnce = () => createRemoteHostsBoot({ dataDir: dir, encryption, router: createBackendRouter(), emit: () => {},
+    clientInfo: { name: "test", version: "0.15.0" }, buildAdapter: adapterFor });
+  const listed = (boot) => boot.sessionSummaries().map((row) => row.id).sort();
+
+  const first = bootOnce();
+  try {
+    await first.open();
+    assert.deepEqual(listed(first), [makeRemoteSessionId("direct", "d1")]);
+    const created = await first.createSession({ hostKey: "account-host_sibling", projectId: "p1" });
+    assert.equal(created.id, makeRemoteSessionId("account-host_sibling", "mine-1"));
+    await first.sessions("account-host_sibling");
+    assert.deepEqual(listed(first), [makeRemoteSessionId("account-host_sibling", "mine-1"), makeRemoteSessionId("direct", "d1")]);
+  } finally { await first.closeAll(); }
+
+  // A restarted desktop still lists its own session and still hides theirs.
+  hostSessions["account-host_sibling"].push(makeSession("theirs-later"));
+  const second = bootOnce();
+  try {
+    await second.open();
+    assert.deepEqual(listed(second), [makeRemoteSessionId("account-host_sibling", "mine-1"), makeRemoteSessionId("direct", "d1")]);
+    assert.deepEqual((await second.listSessions()).map((row) => row.id).sort(), listed(second));
+  } finally { await second.closeAll(); await cleanup(); }
+});
