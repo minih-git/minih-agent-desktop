@@ -1166,6 +1166,22 @@ client that does not understand `mediaId` still renders what it did before. A
 row that is not raster media (a workspace PDF, a session link, an SVG, a legacy
 absolute path) or that the Host has no message id for carries no `mediaId`.
 
+The derivation is deterministic and public (a function of the message id and the
+row's position), so a client MAY compute the same id for a raster attachment
+whose row the Host left unannotated — the live event path in an older Host, for
+example. The id is a name, not a capability: the Host resolves it against the
+session's own transcript on every read, so a computed id grants no access the
+client did not already have. A client that computes one for a ref the Host would
+not serve simply receives the same refusal as a wrong id.
+
+An image the agent generated is media by the same rule. The generation tool
+writes the picture into the session's scratch directory and reports it by path,
+which only that computer can open; when it also stores the bytes as
+`attachments/<sha256>`, the projection synthesizes the attachment row from the
+tool's own `generated-images` result, with the row id `img-<n>` — the image's
+position in that result. The stored message gains no attachment for it, so the
+desktop renders exactly what it rendered before.
+
 **Request and response.**
 
 ```ts

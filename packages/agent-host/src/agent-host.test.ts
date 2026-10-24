@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
-  AgentEvent,
-  AgentEventEnvelope,
-  AskToolResolution,
-  RacpEventEnvelope,
-  RacpItemSummary,
-  UiMessage,
+import {
+  encodeSessionMediaId,
+  type AgentEvent,
+  type AgentEventEnvelope,
+  type AskToolResolution,
+  type RacpEventEnvelope,
+  type RacpItemSummary,
+  type UiMessage,
 } from "@minih-agent/shared";
 
 import { AgentHost, type NotifyEvent } from "./agent-host.js";
@@ -237,6 +238,34 @@ describe("AgentHost ingest", () => {
     expect((received[0]!.payload as { event: AgentEvent }).event).toEqual({ type: "agent_start" });
     expect(received.every((event) => event.epoch === received[0]!.epoch)).toBe(true);
     expect(host.getTurn("rt_1").status).toBe("completed");
+  });
+
+  it("names readable media on the live item, exactly as the history read does", () => {
+    // A client that received this item never refetches history, so an image sent
+    // from the phone has to arrive with the id it can read back — otherwise it
+    // stays a file name for the rest of the session.
+    const { host, received } = build();
+    host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
+    host.ingest(envelope("s1", "rt_1", { type: "turn_start" }));
+    host.ingest(
+      envelope("s1", "rt_1", {
+        type: "message_end",
+        message: {
+          ...message("m1", "", "complete"),
+          attachments: [
+            { kind: "image", name: "cat.png", ref: `attachments/${"a".repeat(64)}`, mimeType: "image/png" },
+            { kind: "file", name: "notes.pdf", ref: "/tmp/notes.pdf" },
+          ],
+        },
+      }),
+    );
+
+    const completed = received.find((event) => event.kind === "item.completed")!;
+    const emitted = (completed.payload as { event: AgentEvent }).event;
+    if (emitted.type !== "message_end") throw new Error("expected a message_end payload");
+    expect(emitted.message.attachments?.[0]).toMatchObject({ mediaId: encodeSessionMediaId("m1", "idx-0") });
+    // A ref the Host cannot read back keeps its plain shape: no id to refuse.
+    expect(emitted.message.attachments?.[1]).not.toHaveProperty("mediaId");
   });
 
   it("keeps active items for the snapshot while streaming and clears them at the end", async () => {

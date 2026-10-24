@@ -40,6 +40,7 @@ import {
   isDesktopClassDevice,
   racpKindForAgentEvent,
   rolesAllowOperation,
+  withSessionMediaIds,
 } from "@minih-agent/shared";
 
 import { ApprovalBroker, type ApprovalPort } from "./approvals.js";
@@ -426,7 +427,7 @@ export class AgentHost {
       case "compaction_start": {
         const item = this.itemFromEvent(event, envelope, turnId, "streaming", mapping.itemType!);
         state.activeItems.set(item.id, item);
-        this.emit(state, mapping.kind, { itemType: mapping.itemType, itemId: item.id, event }, meta2);
+        this.emit(state, mapping.kind, { itemType: mapping.itemType, itemId: item.id, event: this.forClients(event) }, meta2);
         return;
       }
       case "message_update":
@@ -439,7 +440,7 @@ export class AgentHost {
               ? applyMessageUpdate(item.content as UiMessage | undefined, event)
               : { ...(item.content as object), partialResult: event.partialResult };
         }
-        this.emit(state, mapping.kind, { itemType: mapping.itemType, itemId, event }, meta2);
+        this.emit(state, mapping.kind, { itemType: mapping.itemType, itemId, event: this.forClients(event) }, meta2);
         return;
       }
       case "user_message_persisted": {
@@ -447,7 +448,7 @@ export class AgentHost {
         if (!optimistic || optimistic.turnId !== turnId ||
             (optimistic.content as UiMessage)?.role !== "user" || event.message.role !== "user") return;
         state.activeItems.delete(event.optimisticMessageId);
-        this.emit(state, mapping.kind, { itemType: "message", itemId: event.message.id, event }, meta2);
+        this.emit(state, mapping.kind, { itemType: "message", itemId: event.message.id, event: this.forClients(event) }, meta2);
         return;
       }
       case "message_end":
@@ -455,7 +456,7 @@ export class AgentHost {
       case "compaction_end": {
         const item = this.itemFromEvent(event, envelope, turnId, "completed", mapping.itemType!);
         state.activeItems.delete(item.id);
-        this.emit(state, mapping.kind, { itemType: mapping.itemType, itemId: item.id, event }, meta2);
+        this.emit(state, mapping.kind, { itemType: mapping.itemType, itemId: item.id, event: this.forClients(event) }, meta2);
         // A manual compaction occupies the runtime without a turn; let the
         // queue run once it ends.
         if (event.type === "compaction_end") void this.drain(state.id);
@@ -1500,6 +1501,25 @@ export class AgentHost {
     };
   }
 
+  /**
+   * The event as a remote client receives it.
+   *
+   * A message carrying readable images gains their `mediaId`s here, with the same
+   * helper the history projection uses. Without this the live item is the one the
+   * phone keeps — it never refetches history — and an image the user just sent
+   * would render as a file name for the rest of the session.
+   */
+  private forClients(event: AgentEvent): AgentEvent {
+    if (
+      event.type === "message_start" ||
+      event.type === "message_end" ||
+      event.type === "message_update" ||
+      event.type === "user_message_persisted"
+    ) {
+      return { ...event, message: withSessionMediaIds(event.message) };
+    }
+    return event;
+  }
   private itemFromEvent(
     event: AgentEvent,
     envelope: AgentEventEnvelope,
@@ -1513,7 +1533,7 @@ export class AgentHost {
       case "message_start":
       case "message_end":
         id = event.message.id;
-        content = event.message;
+        content = withSessionMediaIds(event.message);
         break;
       case "tool_start":
         id = event.toolCallId;

@@ -229,3 +229,59 @@ it("still resolves a media id minted from an old, id-bearing attachment", async 
   const read = await reader.read({ sessionId: media.sessionId, mediaId: media.mediaId, offset: 0, length: 16 });
   expect(read.totalBytes).toBe(media.bytes.length);
 });
+
+it("serves an image a tool generated, which the transcript stores as a result", async () => {
+  // GenerateImages reports `path` for the desktop to render; when it also stored
+  // the bytes as `attachments/<sha256>`, that ref is what a phone reads back, and
+  // the row id is the image's position in the result.
+  const dataDir = await tempDir("pi-session-media-generated-");
+  const bytes = Buffer.from("a generated png, stored byte for byte");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  await mkdir(join(dataDir, "attachments"), { recursive: true });
+  await writeFile(join(dataDir, "attachments", sha256), bytes);
+
+  const stored = {
+    id: "call-1",
+    role: "tool",
+    content: "",
+    createdAt: "2026-10-24T00:00:00.000Z",
+    status: "complete",
+    toolName: "GenerateImages",
+    toolResult: {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            kind: "generated-images",
+            results: [
+              {
+                index: 0,
+                status: "succeeded",
+                path: "/tmp/generated.png",
+                ref: `attachments/${sha256}`,
+                mimeType: "image/png",
+                name: "generated.png",
+                size: bytes.length,
+              },
+            ],
+          }),
+        },
+      ],
+    },
+  } as unknown as UiMessage;
+
+  const item = toRacpItem(stored);
+  const mediaId = (item.content as { attachments?: Array<{ mediaId?: string }> }).attachments?.[0]?.mediaId;
+  expect(mediaId).toBe(encodeSessionMediaId("call-1", "img-0"));
+
+  const host: HostRpc = {
+    async call<T>(method: string): Promise<T> {
+      if (method !== "session.get") throw new Error(`unexpected ${method}`);
+      return { session: { id: "s-generated", messages: [stored] } } as T;
+    },
+  };
+  const reader = createSessionMediaAccess({ getHost: () => host, dataDir });
+  const read = await reader.read({ sessionId: "s-generated", mediaId: mediaId!, offset: 0, length: 1024 });
+  expect(Buffer.from(read.data, "base64").toString()).toBe(bytes.toString());
+  expect(read.sha256).toBe(sha256);
+});

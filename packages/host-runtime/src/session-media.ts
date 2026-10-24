@@ -35,7 +35,7 @@ import { join, resolve } from "node:path";
 
 import { RacpError } from "@minih-agent/agent-host";
 import type { RacpSessionMediaAccess, RacpSessionMediaReadResult } from "@minih-agent/racp";
-import type { MessageAttachment, UiMessage } from "@minih-agent/shared";
+import { SESSION_MEDIA_ID_PREFIX, sessionAttachmentRowId, withSessionMediaIds, type UiMessage } from "@minih-agent/shared";
 
 import { toRacpHostError } from "./host-catalog-reads.js";
 import type { HostRpc, HostSessionRecord } from "./host-ports.js";
@@ -66,26 +66,18 @@ export type SessionMediaOptions = {
 type MediaRow = { id: string; name: string; mimeType: string; sha256: string };
 
 /**
- * The opaque media id.
+ * The row identity and the opaque id built from it.
  *
- * The row id belongs to one message, so it is unique inside a session (the
- * desktop mints `att-<uuid>` / `a-<n>` row ids), but scoping it to the message
- * makes a collision across two sessions structurally unable to resolve: the id
- * is only ever matched in the transcript the caller named.
- *
- * The id is base64url of `<messageId>/<rowId>` with a `media_` prefix. Both
- * halves are literal strings, so the separator is unambiguous.
+ * Both live in `@minih-agent/shared` because the history read and the live event
+ * stream build the same item, and the phone bundles the encoder; two copies of
+ * this format would drift into media ids one side cannot resolve.
  */
-const MEDIA_ID_PREFIX = "media_";
-
-export function encodeSessionMediaId(messageId: string, rowId: string): string {
-  return `${MEDIA_ID_PREFIX}${Buffer.from(`${messageId}/${rowId}`, "utf8").toString("base64url")}`;
-}
+export { encodeSessionMediaId, sessionAttachmentRowId } from "@minih-agent/shared";
 
 /** The `{ messageId, rowId }` an id names, or `null` when it is not one. */
 export function decodeSessionMediaId(mediaId: string): { messageId: string; rowId: string } | null {
-  if (!mediaId.startsWith(MEDIA_ID_PREFIX)) return null;
-  const encoded = mediaId.slice(MEDIA_ID_PREFIX.length);
+  if (!mediaId.startsWith(SESSION_MEDIA_ID_PREFIX)) return null;
+  const encoded = mediaId.slice(SESSION_MEDIA_ID_PREFIX.length);
   // The id arrives from an untrusted client: bound it before decoding, and only
   // accept the base64url alphabet so a path-looking value can never be built.
   if (!encoded || encoded.length > 512 || !/^[A-Za-z0-9_-]+$/.test(encoded)) return null;
@@ -99,23 +91,6 @@ export function decodeSessionMediaId(mediaId: string): { messageId: string; rowI
 }
 
 /**
- * The identity of one attachment row inside its message.
- *
- * The desktop mints row ids for attachments it stores itself (`att-<uuid>`,
- * `a-<n>`), and an attachment that carries one keeps using it. A message read
- * back from a Host session record has no such field — the Rust
- * `MessageAttachment` is kind/name/ref/mimeType/size and nothing to address it
- * by — so the row's position in the message is the identity that always exists.
- * It is stable: the transcript hands the same array back on every read, and both
- * the writer (`withSessionMediaIds`) and the reader (`mediaRows`) walk it in the
- * same order.
- */
-export function sessionAttachmentRowId(attachment: MessageAttachment, index: number): string {
-  const explicit = String((attachment as { id?: unknown }).id ?? "").trim();
-  return explicit || `idx-${index}`;
-}
-
-/**
  * The readable media of one attachment list.
  *
  * A row is media only when it is an image, its MIME is an allowlisted raster
@@ -126,7 +101,10 @@ export function sessionAttachmentRowId(attachment: MessageAttachment, index: num
 function mediaRows(messages: readonly UiMessage[]): Array<MediaRow & { messageId: string }> {
   const rows: Array<MediaRow & { messageId: string }> = [];
   for (const message of messages) {
-    const attachments = message.attachments;
+    // A generated image is reported by the tool result rather than stored as an
+    // attachment, so the projection that clients use synthesizes its rows here
+    // too: a phone must be able to read back what the agent drew.
+    const attachments = withSessionMediaIds(message).attachments;
     if (!Array.isArray(attachments) || attachments.length === 0) continue;
     for (const [index, attachment] of attachments.entries()) {
       if (attachment.kind !== "image") continue;
