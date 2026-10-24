@@ -2001,7 +2001,6 @@ sheet classes.
   (`--rm-glass`, `--rm-glass-strong`) with hairline borders, and the status
   tokens (`--rm-running`, `--rm-decision`, `--rm-success`, `--rm-error`) with
   re-tuned values, so state keeps its meaning without the old grey palette.
-  `--rm-error`) so state still reads as it does on the desktop.
 - **Dark first, with a real light theme.** `:root` carries the dark palette;
   `prefers-color-scheme: light` flips it, and `data-theme` on `<html>` lets an
   explicit choice in Settings ▸ Appearance win over the OS. `color-scheme` is

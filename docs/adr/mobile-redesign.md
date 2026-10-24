@@ -74,7 +74,7 @@ Paths relative to `apps/remote-web/src`.
 Typecheck and the 773 existing unit tests pass on the baseline; none of the
 above is covered by a test.
 
-## 2. Decisions
+## 2. Decision
 
 ### D1. Capability comes from per-model output modalities
 
