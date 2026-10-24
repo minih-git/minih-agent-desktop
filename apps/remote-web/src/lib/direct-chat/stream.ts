@@ -23,6 +23,7 @@
 import type { MinihRouterModel } from "@minih-agent/shared";
 
 import type { DirectProtocol } from "./catalog.js";
+import { classifyGatewayRefusal, parseGatewayRefusal } from "./gateway-error.js";
 import { SseDecoder } from "./sse.js";
 
 /**
@@ -56,6 +57,13 @@ export type DirectRequestInput = {
   message: string;
   /** Images attached to that message, in the order the user added them. */
   images?: readonly DirectImageAttachment[];
+  /**
+   * How hard the model should think, as the gateway declared it.
+   *
+   * Absent means "send nothing": the gateway's own default applies. The screen
+   * passes a value only when the model declared that level (`reasoningLevelFor`).
+   */
+  reasoningLevel?: string;
 };
 
 /**
@@ -82,6 +90,10 @@ export type DirectStreamFailureKind =
   | "network-range"
   | "transport"
   | "gateway"
+  /** No route can serve this model right now: another model is the remedy. */
+  | "no-route"
+  /** The gateway is deliberately holding requests for this model. */
+  | "upstream-busy"
   /** The conversation no longer fits the model; retrying it unchanged cannot help. */
   | "context-overflow";
 
@@ -154,6 +166,8 @@ export function streamBody(input: DirectRequestInput): Record<string, unknown> {
     return {
       model: input.model.id,
       stream: true,
+      // Responses names the effort as an object; "default" sends nothing at all.
+      ...(input.reasoningLevel ? { reasoning: { effort: input.reasoningLevel } } : {}),
       input: [
         ...input.history.map((turn) => ({
           role: turn.role,
@@ -169,6 +183,8 @@ export function streamBody(input: DirectRequestInput): Record<string, unknown> {
   return {
     model: input.model.id,
     stream: true,
+    // Chat Completions names the same choice as a flat string.
+    ...(input.reasoningLevel ? { reasoning_effort: input.reasoningLevel } : {}),
     messages: [
       ...input.history.map((turn) => ({
         role: turn.role,
@@ -334,9 +350,27 @@ function looksLikeContextOverflow(detail: string): boolean {
 }
 
 /** The failure kinds the data plane distinguishes, from an HTTP status. */
-function streamFailure(status: number, message: string) {
+function streamFailure(status: number, message: string, code: string | null = null) {
   const detail = message.trim();
   const suffix = detail ? `: ${detail.slice(0, 300)}` : "";
+  // The gateway's code decides two cases the status alone gets wrong: a 503 with
+  // no candidate is not a generic failure, and a 429 while it holds requests for
+  // a cooling upstream is not the key's quota.
+  const refusal = classifyGatewayRefusal(code);
+  if (refusal === "no-route") {
+    return {
+      kind: "no-route" as const,
+      message: `the gateway has no available route for this model (${status})${suffix}`,
+      status,
+    };
+  }
+  if (refusal === "upstream-busy") {
+    return {
+      kind: "upstream-busy" as const,
+      message: `the gateway is holding requests for this model (${status})${suffix}`,
+      status,
+    };
+  }
   if (status === 429 || status === 402) {
     return { kind: "quota" as const, message: `the model gateway refused this request (${status})${suffix}`, status };
   }
@@ -423,19 +457,14 @@ export async function streamDirectReply(
     });
 
     if (!response.ok || !response.body) {
-      // A refusal is JSON, not a stream: read the reason without echoing the key.
+      // A refusal is JSON, not a stream: read the reason and the gateway's code
+      // without echoing the key.
       const raw = await response.text().catch(() => "");
-      let message = "";
-      try {
-        const parsed = JSON.parse(raw) as unknown;
-        if (isRecord(parsed)) {
-          const error = isRecord(parsed.error) ? parsed.error : parsed;
-          message = text(error.message);
-        }
-      } catch {
-        message = raw.slice(0, 300);
-      }
-      return { ok: false, failure: streamFailure(response.status, message.replaceAll(key, "[redacted]")) };
+      const refusal = parseGatewayRefusal(raw, key);
+      return {
+        ok: false,
+        failure: streamFailure(response.status, refusal.message, refusal.code),
+      };
     }
 
     const reader = response.body.getReader();

@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next";
 import type { MinihRouterModel, RacpInlineAttachment } from "@minih-agent/shared";
 
 import { ModelSheet } from "../components/ModelSheet.js";
-import { ChatComposer } from "../components/chat/ChatComposer.js";
+import { type AttachmentBlockReason, ChatComposer } from "../components/chat/ChatComposer.js";
 import { ChatTimeline } from "../components/chat/ChatTimeline.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
@@ -25,10 +25,18 @@ import { EmptyState } from "../components/ui/EmptyState.js";
 import { ModelPill, NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { Sheet } from "../components/ui/Sheet.js";
+import { Toast } from "../components/ui/Toast.js";
 import { watchVisibility } from "../lib/app-state.js";
 import { checkModelVisionCapability, isImageModel, resolveDirectModel } from "../lib/direct-chat/catalog.js";
+import {
+  gatewayDefaultLevel,
+  reasoningLevelFor,
+  reasoningLevelsOf,
+  reasoningLevelSurvives,
+} from "../lib/direct-chat/reasoning.js";
 
 import { copyText } from "../lib/clipboard.js";
+import { readAccountDraft } from "../lib/direct-chat/account-draft.js";
 import { IMAGE_PROTOCOL, resolveSendTarget, type SendTarget } from "../lib/direct-chat/target.js";
 import type {
   DirectChatAttempt,
@@ -111,10 +119,25 @@ export function DirectChatScreen({
    * until the first message saves the record.
    */
   const [draftModel, setDraftModel] = useState<string | null>(draftModelId ?? null);
+  /**
+   * The thinking level this conversation sends with.
+   *
+   * Seeded from the saved record; kept in state because a draft has no record
+   * yet and its first message is what creates one. `null` is "default": send no
+   * reasoning parameter and let the gateway decide.
+   */
+  const [reasoningLevel, setReasoningLevel] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  /**
+   * Two channels on purpose (C): a failure the user must read stays in the red
+   * callout under the timeline, while a confirmation or a hint ("switched to X",
+   * "a reply is running") leaves on its own as a toast. Everything used to go
+   * through `notice`, so a successful model switch arrived in error red.
+   */
   const [notice, setNotice] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string; index: number } | null>(null);
   const [editText, setEditText] = useState("");
@@ -143,17 +166,31 @@ export function DirectChatScreen({
   const hasRecordRef = useRef(false);
   hasRecordRef.current = transcript !== null;
 
+  /**
+   * The account draft a new conversation starts from; null while it is read.
+   * The composer waits for it, so every path must settle: a failed read or a
+   * missing scope starts empty (and says why in the log) instead of leaving
+   * the screen without an input for good, which made a new chat unusable and
+   * its suggestion cards appear dead.
+   */
   const [accountDraft, setAccountDraft] = useState<string | null>(null);
+  const awaitingAccountDraft = loaded && transcript === null;
+  // `directChatScope()` builds a new object on every render; the key is stable.
+  const scopeId = scope ? scopeKey(scope) : null;
 
   useEffect(() => {
-    if (loaded && transcript === null && scope) {
-      void history.accountDraft(scope).then((d: string | null) => {
-        setAccountDraft(d);
-      });
-    } else if (transcript !== null) {
+    if (!awaitingAccountDraft) {
       setAccountDraft(null);
+      return undefined;
     }
-  }, [loaded, transcript, scope, history]);
+    let stale = false;
+    void readAccountDraft(history, directChatScope()).then((draft) => {
+      if (!stale) setAccountDraft(draft);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [awaitingAccountDraft, scopeId, history]);
 
   const persistDraft = useCallback(
     (text: string) => {
@@ -257,6 +294,45 @@ export function DirectChatScreen({
   const catalog: MinihRouterModel[] = connection?.models ?? [];
   const wantedModelId = conversation?.nextModelId ?? draftModel ?? connection?.lastModelId ?? null;
   const nextModel = catalog.find((model) => model.id === wantedModelId) ?? null;
+
+  /** What the chosen model declared; empty means the section is not shown. */
+  const reasoningLevels = reasoningLevelsOf(nextModel);
+  /**
+   * The picker follows the saved record. A draft has no record, so choosing a
+   * level there leaves this effect's dependencies unchanged and the choice
+   * survives until `beginTurn` stores it.
+   */
+  useEffect(() => {
+    setReasoningLevel(conversation?.reasoningLevel ?? null);
+  }, [conversationId, conversation?.reasoningLevel]);
+
+  /**
+   * The level that will actually be sent.
+   *
+   * A record written before the gateway's vocabulary existed can hold `off`, and
+   * a level can outlive the model that declared it. Neither is sent and neither
+   * is shown as a choice: both read as "default", which sends nothing.
+   */
+  const effectiveReasoningLevel = reasoningLevelFor(nextModel, reasoningLevel);
+
+  /**
+   * Choose how hard the model thinks for this conversation.
+   *
+   * `null` is "default" and removes the field rather than storing a blank, so
+   * an old record and this choice are the same state. A draft has no record to
+   * write to yet; the level rides along with its first message instead.
+   */
+  const selectReasoningLevel = useCallback(
+    (level: string | null) => {
+      setReasoningLevel(level);
+      if (!conversation) return;
+      void history
+        .setReasoningLevel(conversationId, level, new Date().toISOString())
+        .then(reload)
+        .then(() => onChanged?.());
+    },
+    [conversation, conversationId, history, reload, onChanged],
+  );
   /** True for a conversation opened before its first message exists. */
   const isNew = loaded && transcript === null;
   /**
@@ -272,6 +348,18 @@ export function DirectChatScreen({
    * model when the user started here (D1, "the entry point chooses").
    */
   const nextChoice = nextModel ? resolveDirectModel(nextModel) : null;
+  /**
+   * Why the chosen model cannot carry a conversation, in the user's words.
+   *
+   * A model the operator kept off phones says exactly that — the reader can go
+   * ask for it to be opened — while a model that is gone or cannot chat keeps
+   * the general line. Neither case switches models: the choice stays, and the
+   * composer offers "choose model".
+   */
+  const unavailableModelText =
+    nextChoice && !nextChoice.usable && nextChoice.reason === "not-enabled-for-mobile"
+      ? t("directChat.mobileDisabled")
+      : t("directChat.modelUnavailable");
   const isImage = transcript
     ? isImageConversation(transcript.conversation, transcript.attempts)
     : nextModel !== null && nextChoice !== null && !nextChoice.usable && isImageModel(nextModel);
@@ -285,8 +373,18 @@ export function DirectChatScreen({
     : isImage
       ? IMAGE_PROTOCOL
       : "openai-completions";
+  /**
+   * Whether the composer can accept a picture. No reason means the model
+   * declared image input; otherwise the paperclip explains on a tap — including
+   * `unknown`, because a gateway that never declared its modalities has not
+   * refused, and the phone cannot tell "no" from "not yet".
+   */
   const visionCap = nextModel ? checkModelVisionCapability(nextModel) : "unsupported";
-  const supportsImages = visionCap === "supported" && !isImage;
+  const attachmentBlocked: AttachmentBlockReason | undefined = isImage
+    ? "unsupported"
+    : visionCap === "supported"
+      ? undefined
+      : visionCap;
 
   const resolveMedia = useCallback(async (mediaId: string) => {
     const store = directChatStore();
@@ -310,7 +408,7 @@ export function DirectChatScreen({
     if (!connection || !scope) return false;
     if (!nextModel || !usable) {
       // Saying nothing here was the bug: the composer merely did not react.
-      setNotice(t(modelGap === "none" ? "directChat.noModel" : "directChat.modelUnavailable"));
+      setToast(modelGap === "none" ? t("directChat.noModel") : unavailableModelText);
       setModelsOpen(true);
       return false;
     }
@@ -376,6 +474,9 @@ export function DirectChatScreen({
       operation: isImage ? "image-generation" : undefined,
       imageModel: isImage ? true : undefined,
       mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
+      // An image job takes no reasoning parameter: the image plane has its own
+      // request shape and no thinking budget to spend.
+      reasoningLevel: isImage ? undefined : (effectiveReasoningLevel ?? undefined),
       modelId: nextModel.id,
       modelLabel: nextModel.id,
       protocol: activeProtocol,
@@ -396,13 +497,15 @@ export function DirectChatScreen({
       }
       // Nothing was written, so the draft stays and nothing is sent.
       setSending(false);
-      setNotice(
-        saved.reason === "busy"
-          ? t("directChat.busy")
-          : saved.reason === "archived"
-            ? t("directChat.archivedHint")
-            : t("directChat.saveFailed"),
-      );
+      // A refusal the user can act on is a hint, not a failure: only a store
+      // failure earns the red callout.
+      if (saved.reason === "busy" || saved.reason === "archived") {
+        setToast(
+          saved.reason === "busy" ? t("directChat.busy") : t("directChat.archivedHint"),
+        );
+      } else {
+        setNotice(t("directChat.saveFailed"));
+      }
       return false;
     }
     // `beginTurn` stored an empty draft with the message; the text in hand is
@@ -424,13 +527,8 @@ export function DirectChatScreen({
     });
     setSending(false);
     if (!started.ok) {
-      setNotice(
-        started.reason === "busy"
-          ? t("directChat.busy")
-          : started.reason === "foreign-scope"
-            ? t("directChat.foreignScope")
-            : null,
-      );
+      if (started.reason === "foreign-scope") setNotice(t("directChat.foreignScope"));
+      else if (started.reason === "busy") setToast(t("directChat.busy"));
       return false;
     }
     // The new conversation now exists: read it back under its own id.
@@ -466,12 +564,12 @@ export function DirectChatScreen({
     // conversation is the image endpoint — the old guard asked the chat
     // classifier first and always got "unusable" (bug B3).
     if (!scope) {
-      setNotice(t("chats.connect"));
+      setToast(t("chats.connect"));
       return;
     }
     const blocked = refusalNotice(target);
     if (blocked !== null || !nextModel || !target.ok) {
-      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      setToast(blocked ?? t("directChat.modelUnavailable"));
       return;
     }
     const key = await createDirectChatSecret(secureStore()).read();
@@ -487,7 +585,8 @@ export function DirectChatScreen({
       authKey: key,
     });
     if (!outcome.ok) {
-      setNotice(outcome.reason === "foreign-scope" ? t("directChat.foreignScope") : t("directChat.busy"));
+      if (outcome.reason === "foreign-scope") setNotice(t("directChat.foreignScope"));
+      else setToast(t("directChat.busy"));
     }
     await reload();
     onChanged?.();
@@ -504,12 +603,12 @@ export function DirectChatScreen({
 
   async function regenerateMessage(messageId: string): Promise<void> {
     if (!scope || !transcript) {
-      setNotice(t("directChat.modelUnavailable"));
+      setToast(t("directChat.modelUnavailable"));
       return;
     }
     const blocked = refusalNotice(target);
     if (blocked !== null || !nextModel || !target.ok) {
-      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      setToast(blocked ?? t("directChat.modelUnavailable"));
       return;
     }
     const msg = transcript.messages.find((m) => m.id === messageId);
@@ -531,7 +630,8 @@ export function DirectChatScreen({
       authKey: key,
     });
     if (!outcome.ok) {
-      setNotice(outcome.reason === "foreign-scope" ? t("directChat.foreignScope") : t("directChat.busy"));
+      if (outcome.reason === "foreign-scope") setNotice(t("directChat.foreignScope"));
+      else setToast(t("directChat.busy"));
     }
     await reload();
     onChanged?.();
@@ -549,12 +649,12 @@ export function DirectChatScreen({
 
   async function handleConfirmEditResend(): Promise<void> {
     if (!editingMessage || !scope || !transcript) {
-      setNotice(t("directChat.modelUnavailable"));
+      setToast(t("directChat.modelUnavailable"));
       return;
     }
     const blocked = refusalNotice(target);
     if (blocked !== null || !nextModel || !target.ok) {
-      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      setToast(blocked ?? t("directChat.modelUnavailable"));
       return;
     }
     const key = await createDirectChatSecret(secureStore()).read();
@@ -576,7 +676,8 @@ export function DirectChatScreen({
       protocol: activeProtocol,
     });
     if (!edited.ok) {
-      setNotice(edited.reason === "busy" ? t("directChat.busy") : t("directChat.saveFailed"));
+      if (edited.reason === "busy") setToast(t("directChat.busy"));
+      else setNotice(t("directChat.saveFailed"));
       return;
     }
     setEditingMessage(null);
@@ -589,7 +690,7 @@ export function DirectChatScreen({
       authKey: key,
     });
     if (!started.ok) {
-      setNotice(started.reason === "busy" ? t("directChat.busy") : null);
+      if (started.reason === "busy") setToast(t("directChat.busy"));
     }
     onChanged?.();
     if (onOpenConversation) {
@@ -734,24 +835,36 @@ export function DirectChatScreen({
                   : // A failure says what failed, not merely that it failed.
                     t(failureReasonKey(view.retryable.errorKind))}
             </span>
-            {isRetryableFailure(view.retryable.errorKind) ? (
-              <Button variant="secondary" size="small" disabled={!idle} onClick={() => void retry(view.retryable!)}>
-                <span className="inline-flex items-center gap-1">
-                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                  {t("directChat.retry")}
-                </span>
-              </Button>
-            ) : (
-              // The request is what is too big: another conversation is the fix.
-              <Button
-                variant="secondary"
-                size="small"
-                disabled={!idle || !nextModel}
-                onClick={() => nextModel && onNewConversation?.(nextModel.id)}
-              >
-                {t("directChat.newChat")}
-              </Button>
-            )}
+            <span className="flex shrink-0 items-center gap-1.5">
+              {/*
+                A model the gateway has no route for will keep failing: retrying
+                alone would only repeat it, so another model is offered beside
+                the retry (B).
+              */}
+              {view.retryable.errorKind === "no-route" ? (
+                <Button variant="secondary" size="small" onClick={() => setModelsOpen(true)}>
+                  {t("directChat.switchModel")}
+                </Button>
+              ) : null}
+              {isRetryableFailure(view.retryable.errorKind) ? (
+                <Button variant="secondary" size="small" disabled={!idle} onClick={() => void retry(view.retryable!)}>
+                  <span className="inline-flex items-center gap-1">
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t("directChat.retry")}
+                  </span>
+                </Button>
+              ) : (
+                // The request is what is too big: another conversation is the fix.
+                <Button
+                  variant="secondary"
+                  size="small"
+                  disabled={!idle || !nextModel}
+                  onClick={() => nextModel && onNewConversation?.(nextModel.id)}
+                >
+                  {t("directChat.newChat")}
+                </Button>
+              )}
+            </span>
           </Callout>
         ) : null}
 
@@ -790,7 +903,7 @@ export function DirectChatScreen({
           // sheet is the remedy, so sending is unavailable rather than silent.
           <div className="flex flex-col gap-2">
             <p className="text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
-              {modelGap === "none" ? t("directChat.noModel") : t("directChat.modelUnavailable")}
+              {modelGap === "none" ? t("directChat.noModel") : unavailableModelText}
             </p>
             <Button variant="secondary" size="large" onClick={() => setModelsOpen(true)}>
               {t("directChat.chooseModel")}
@@ -808,7 +921,7 @@ export function DirectChatScreen({
             disabled={false}
             archived={false}
             queued={false}
-            hideAttachments={!supportsImages}
+            attachmentBlocked={attachmentBlocked}
             placeholder={isImage ? t("imageGen.promptPlaceholder") : undefined}
             initialText={seededDraft ?? conversation?.draft ?? accountDraft ?? ""}
             onDraftChange={persistDraft}
@@ -850,7 +963,18 @@ export function DirectChatScreen({
               setDraftModel(model.id);
             }
             if (previous && previous !== model.id) {
-              setNotice(t("directChat.modelChanged", { model: model.id }));
+              // A successful switch is a confirmation, not an error (C).
+              // The new model may not declare the level the old one was set to;
+              // then the picker returns to "default" and says why, instead of
+              // sending a level the gateway never promised.
+              const levelLost =
+                Boolean(reasoningLevel) && !reasoningLevelSurvives(model, reasoningLevel);
+              if (levelLost) selectReasoningLevel(null);
+              setToast(
+                levelLost
+                  ? t("directChat.reasoningReset")
+                  : t("directChat.modelChanged", { model: model.id }),
+              );
             }
           }}
         />
@@ -888,6 +1012,10 @@ export function DirectChatScreen({
         open={infoOpen}
         onClose={() => setInfoOpen(false)}
         transcript={transcript}
+        reasoningLevels={isImage ? [] : reasoningLevels}
+        reasoningLevel={effectiveReasoningLevel}
+        defaultReasoningLevel={gatewayDefaultLevel(nextModel)}
+        onSelectReasoningLevel={selectReasoningLevel}
         onRename={async (title) => {
           await history.rename(conversationId, title, new Date().toISOString());
           await reload();
@@ -909,7 +1037,7 @@ export function DirectChatScreen({
           if (!outcome.ok) {
             // The sheet offers "stop and archive" instead, so this is the
             // path a caller that ignored `idle` ends up on (bug B6).
-            setNotice(t("directChat.stopFirst"));
+            setToast(t("directChat.stopFirst"));
             return;
           }
           await reload();
@@ -944,6 +1072,9 @@ export function DirectChatScreen({
         }}
         idle={idle}
       />
+
+      {/* A confirmation or a hint leaves on its own; `notice` keeps the errors. */}
+      <Toast message={toast} visible={toast !== null} onDismiss={() => setToast(null)} />
     </Screen>
   );
 }

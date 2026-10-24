@@ -54,6 +54,14 @@ export type DirectChatConversation = {
   nextProtocol: string | null;
   /** Per-conversation draft, so leaving D3 loses nothing typed. */
   draft: string;
+  /**
+   * The thinking level this conversation sends with, as the gateway declared it.
+   *
+   * Absent is the default and also every record written before this field
+   * existed: "send nothing, let the gateway decide". It is not a schema version
+   * bump — an old record reads as the default, which is what it was sending.
+   */
+  reasoningLevel?: string;
 };
 
 export type DirectChatMessageRole = "user" | "assistant";
