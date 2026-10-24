@@ -13,17 +13,27 @@ import {
 } from "../../lib/composer-attachments.js";
 import { createIdempotencyKey, createRequestId } from "../../lib/ids.js";
 
+/**
+ * Why the composer cannot take a picture right now.
+ *
+ * `unsupported` is the model saying it takes text only; `unknown` is a gateway
+ * that never declared its input modalities, which is not the same as a refusal.
+ */
+export type AttachmentBlockReason = "unsupported" | "unknown";
+
 export interface ChatComposerProps {
   sending: boolean;
   disabled: boolean;
   archived: boolean;
   queued: boolean;
   /**
-   * Direct chat hides attachments (`ADR` §5): the model gateway path has no
-   * attachment upload, and showing a control that cannot work would be worse
-   * than not showing it.
+   * Why the attachment button cannot open a picker right now: the chosen model
+   * takes text only, or the gateway never said whether it can see images.
+   *
+   * The button stays either way. Hiding it made a missing capability look like
+   * a missing feature, and a tap that explains itself is the honest version.
    */
-  hideAttachments?: boolean;
+  attachmentBlocked?: AttachmentBlockReason;
   /** The initial text, so a stored draft reopens where the user left it. */
   initialText?: string;
   /**
@@ -91,7 +101,7 @@ export function ChatComposer({
   disabled,
   archived,
   queued,
-  hideAttachments = false,
+  attachmentBlocked,
   initialText = "",
   placeholder,
   onDraftChange,
@@ -101,6 +111,7 @@ export function ChatComposer({
   const [text, setText] = useState(initialText);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [rejection, setRejection] = useState<AttachmentRejection | null>(null);
+  const [blockedHint, setBlockedHint] = useState<AttachmentBlockReason | null>(null);
   const attemptRef = useRef<ComposerSend | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -132,6 +143,16 @@ export function ChatComposer({
       : reason === "unsupported"
         ? t("composer.attachmentUnsupported")
         : t("composer.attachmentTooLarge");
+
+  /**
+   * What a tap on the blocked paperclip says. Not an error: nothing was sent and
+   * nothing was lost — the model this conversation is pinned to cannot read the
+   * picture, or the gateway has not said whether it can.
+   */
+  const blockedText = (reason: AttachmentBlockReason): string =>
+    reason === "unsupported"
+      ? t("composer.attachmentModelUnsupported")
+      : t("composer.attachmentModelUnknown");
 
   const addFiles = async (files: readonly File[]): Promise<void> => {
     setRejection(null);
@@ -225,6 +246,10 @@ export function ChatComposer({
         <div className="flex items-center gap-1.5 px-2 text-[12px] text-[var(--rm-error)]">
           <span>{rejectionText(rejection)}</span>
         </div>
+      ) : blockedHint ? (
+        <div className="flex items-center gap-1.5 px-2 text-[12px] text-[var(--rm-text-muted)]">
+          <span>{blockedText(blockedHint)}</span>
+        </div>
       ) : queued && !isBlank ? (
         <div className="flex items-center gap-1.5 px-2 text-[12px] text-[var(--rm-text-muted)]">
           <Clock size={13} />
@@ -268,29 +293,34 @@ export function ChatComposer({
 
       {/* Pill field */}
       <div className="flex items-end gap-1.5 rounded-[26px] border border-[var(--rm-hair)] bg-[var(--rm-glass-strong)] p-1.5 pl-2 shadow-[var(--rm-shadow)] backdrop-blur-[22px] transition-colors focus-within:border-[var(--rm-accent)]">
-        {hideAttachments ? null : (
-          <>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              accept="image/png,image/jpeg,image/webp,image/gif,text/*,application/json,.md,.txt,.ts,.tsx,.js,.jsx,.py,.go,.rs,.json,.yaml,.yml,.toml,.css,.html,.sh,.log,.csv"
-              onChange={handleFiles}
-              className="hidden"
-              aria-hidden="true"
-              tabIndex={-1}
-            />
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => fileRef.current?.click()}
-              aria-label={t("composer.attach")}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--rm-text-muted)] transition-opacity disabled:opacity-25 active:opacity-60"
-            >
-              <Paperclip size={18} />
-            </button>
-          </>
-        )}
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          accept="image/png,image/jpeg,image/webp,image/gif,text/*,application/json,.md,.txt,.ts,.tsx,.js,.jsx,.py,.go,.rs,.json,.yaml,.yml,.toml,.css,.html,.sh,.log,.csv"
+          onChange={handleFiles}
+          className="hidden"
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (attachmentBlocked) {
+              // The control is real, the capability is not: say which, and leave
+              // the draft untouched.
+              setBlockedHint(attachmentBlocked);
+              return;
+            }
+            setBlockedHint(null);
+            fileRef.current?.click();
+          }}
+          aria-label={t("composer.attach")}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--rm-text-muted)] transition-opacity disabled:opacity-25 active:opacity-60"
+        >
+          <Paperclip size={18} />
+        </button>
         <textarea
           ref={textareaRef}
           value={text}

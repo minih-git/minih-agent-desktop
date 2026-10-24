@@ -8,6 +8,12 @@ import remarkGfm from "remark-gfm";
 
 import { groupConsecutiveToolRuns } from "@minih-agent/shared";
 
+import {
+  clampFrameHeight,
+  HTML_FRAME_DEFAULT_HEIGHT,
+  readFrameHeight,
+  withHeightReporting,
+} from "../../lib/html-frame.js";
 import type { TimelineFailure, TimelineItem } from "../../lib/timeline-types.js";
 import { describeTurnFailure } from "../../lib/turn-failure.js";
 import { ToolRun } from "./ToolRun.js";
@@ -244,6 +250,24 @@ function HtmlPreviewCard({
   const [showSource, setShowSource] = useState(false);
   const frameHtml = useMemo(() => prepareHtmlForFrame(code), [code]);
   const title = useMemo(() => extractHtmlTitle(frameHtml) ?? "HTML", [frameHtml]);
+  /**
+   * The preview measures itself and posts its height, because the sandbox gives
+   * this window no readable document to measure. Only this card's own frame may
+   * set the height, and only inside bounds chosen here.
+   */
+  const srcDoc = useMemo(() => withHeightReporting(frameHtml), [frameHtml]);
+  const [frameHeight, setFrameHeight] = useState<number | null>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== frameRef.current?.contentWindow) return;
+      const reported = readFrameHeight(event.data);
+      if (reported === null) return;
+      setFrameHeight(clampFrameHeight(reported, window.innerHeight));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
   return (
     <div className="my-2 w-full overflow-hidden rounded-2xl border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] shadow-[var(--rm-shadow)]">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--rm-separator)] bg-[var(--rm-bg-inset)] px-3 py-2 text-[12px] text-[var(--rm-text-secondary)]">
@@ -284,10 +308,12 @@ function HtmlPreviewCard({
         </pre>
       ) : (
         <iframe
+          ref={frameRef}
           title={title}
           sandbox="allow-scripts"
-          srcDoc={frameHtml}
-          className="block h-[420px] w-full border-0 bg-[var(--rm-bg-surface)]"
+          srcDoc={srcDoc}
+          style={{ height: `${frameHeight ?? HTML_FRAME_DEFAULT_HEIGHT}px` }}
+          className="block w-full border-0 bg-[var(--rm-bg-surface)]"
           loading="lazy"
         />
       )}
@@ -635,17 +661,32 @@ export function ChatTimeline({
                   onOpenViewer={handleOpenViewer}
                 />
                 {(() => {
-                  const nonImage = item.attachments?.filter(
-                    (att) => att.kind !== "image",
+                  const attachments = item.attachments ?? [];
+                  // An image with no media id cannot be fetched, so it has no
+                  // thumbnail: name it instead of dropping it silently.
+                  const unreadable = attachments.filter(
+                    (att) => att.kind === "image" && !att.mediaId,
                   );
-                  if (!nonImage || nonImage.length === 0) return null;
+                  const nonImage = attachments.filter((att) => att.kind !== "image");
+                  if (unreadable.length === 0 && nonImage.length === 0) return null;
                   return (
-                    <div className={`${item.text ? "mt-1.5 " : ""}text-[12px] leading-[16px] text-[var(--rm-text-secondary)]`}>
-                      {t("timeline.attachments", {
-                        count: nonImage.length,
-                        names: nonImage.map((attachment) => attachment.name).join(", "),
-                      })}
-                    </div>
+                    <>
+                      {unreadable.length > 0 ? (
+                        <div className={`${item.text ? "mt-1.5 " : ""}text-[12px] leading-[16px] text-[var(--rm-text-secondary)]`}>
+                          {t("timeline.imageAttachments", {
+                            names: unreadable.map((attachment) => attachment.name).join(", "),
+                          })}
+                        </div>
+                      ) : null}
+                      {nonImage.length > 0 ? (
+                        <div className={`${item.text || unreadable.length > 0 ? "mt-1.5 " : ""}text-[12px] leading-[16px] text-[var(--rm-text-secondary)]`}>
+                          {t("timeline.attachments", {
+                            count: nonImage.length,
+                            names: nonImage.map((attachment) => attachment.name).join(", "),
+                          })}
+                        </div>
+                      ) : null}
+                    </>
                   );
                 })()}
                 {isPending ? (

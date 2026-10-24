@@ -151,6 +151,16 @@ describe("mutations", () => {
     expect(calls).toEqual([{ method: "session/create", params: { projectId: "p1" } }]);
   });
 
+  it("creates a session with no project by leaving the field out", async () => {
+    // What the "Other" group starts: `session/create` accepts a missing
+    // projectId, and an empty string would name a project that does not exist.
+    const session = { id: "s_new", title: "New session" };
+    const { client, calls } = recordingClient({ session });
+
+    expect(await createSession(client, {})).toEqual({ ok: true, value: session });
+    expect(calls).toEqual([{ method: "session/create", params: {} }]);
+  });
+
   it("sends a title only when one was given", async () => {
     const titled = recordingClient({ session: { id: "s1" } });
     await createSession(titled.client, { projectId: "p1", title: "  " });

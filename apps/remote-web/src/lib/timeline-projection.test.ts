@@ -120,6 +120,27 @@ describe("projectMessage", () => {
     ]);
   });
 
+  it("keeps a fetchable image's media id and leaves an unfetchable one bare", () => {
+    // A Host that serves media says so on the attachment; a row without the id
+    // has no thumbnail, and the row must be able to tell the two apart.
+    const item = projectMessage(
+      message({
+        role: "user",
+        content: "look",
+        attachments: [
+          { kind: "image", name: "IMG_3516.jpeg", mediaId: "media_bTEvaWR4LTA" } as never,
+          { kind: "image", name: "IMG_3517.jpeg" } as never,
+        ],
+      }),
+    );
+
+    expect(item?.attachments).toEqual([
+      { name: "IMG_3516.jpeg", kind: "image", mediaId: "media_bTEvaWR4LTA" },
+      { name: "IMG_3517.jpeg", kind: "image" },
+    ]);
+    expect(item?.mediaIds).toEqual(["media_bTEvaWR4LTA"]);
+  });
+
   it("marks a side note", () => {
     expect(projectMessage(message({ role: "user", content: "hi", sideNote: true }))?.sideNote).toBe(true);
   });

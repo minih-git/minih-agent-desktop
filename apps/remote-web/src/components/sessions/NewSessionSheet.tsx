@@ -6,11 +6,18 @@
  * computer defaults to", and a session started on the wrong model is the
  * failure this screen exists to prevent.
  */
-import type { RacpModelSummary, RacpProjectSummary } from "@minih-agent/shared";
+import type { RacpModelSummary, RacpProjectSummary, ThinkingLevel } from "@minih-agent/shared";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { describeModel, modelKey, resolveNewSessionModel, type ModelChoice } from "../../lib/model-choice.js";
+import {
+  describeModel,
+  isThinkingLevel,
+  modelKey,
+  orderedThinkingLevels,
+  resolveNewSessionModel,
+  type ModelChoice,
+} from "../../lib/model-choice.js";
 import { Button } from "../ui/Button.js";
 import { Sheet } from "../ui/Sheet.js";
 
@@ -18,9 +25,12 @@ export type NewSessionMode = "agent" | "plan" | "goal";
 export type NewSessionPermission = "ask" | "accept-edits" | "auto";
 
 export type NewSessionChoice = {
-  projectId: string;
+  /** Absent for a session that belongs to no project — the "Other" group. */
+  projectId?: string;
   providerId?: string;
   modelId?: string;
+  /** Absent lets the Host use the model's own default. */
+  thinkingLevel?: string;
   mode: NewSessionMode;
   permissionMode: NewSessionPermission;
 };
@@ -39,6 +49,13 @@ export type NewSessionSheetProps = {
    * the row then reads as a value, not as a chooser.
    */
   projectLocked?: boolean;
+  /**
+   * Whether a session with no project may be started from here. The "Other"
+   * group lists exactly those sessions, so starting another one there is the
+   * natural action and the project row says "no project" instead of offering a
+   * folder the user did not ask for.
+   */
+  allowNoProject?: boolean;
   creating: boolean;
   failure?: string | null;
   onCancel: () => void;
@@ -56,6 +73,7 @@ export function NewSessionSheet({
   modelsFailure,
   initialProjectId,
   projectLocked = false,
+  allowNoProject = false,
   creating,
   failure,
   onCancel,
@@ -64,16 +82,42 @@ export function NewSessionSheet({
 }: NewSessionSheetProps) {
   const { t } = useTranslation();
   const usable = projects.filter((project) => !project.archived);
+  // `""` is "no project" — a session that belongs to no folder, which the
+  // "Other" group on the sessions screen lists.
   const [projectId, setProjectId] = useState<string>(
-    initialProjectId ?? usable[0]?.id ?? "",
+    initialProjectId ?? (allowNoProject ? "" : usable[0]?.id ?? ""),
   );
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   const [mode, setMode] = useState<NewSessionMode>("agent");
   const [permission, setPermission] = useState<NewSessionPermission>("ask");
-  const [picking, setPicking] = useState<"project" | "model" | "mode" | "permission" | null>(null);
+  const [picking, setPicking] = useState<
+    "project" | "model" | "thinking" | "mode" | "permission" | null
+  >(null);
+  /** `null` means "whatever the chosen model defaults to". */
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
 
   const choice: ModelChoice = resolveNewSessionModel(models, chosenModel);
-  const selectedProject = usable.find((project) => project.id === projectId) ?? usable[0] ?? null;
+  const noProject = allowNoProject && projectId === "";
+  const selectedProject = noProject
+    ? null
+    : (usable.find((project) => project.id === projectId) ?? usable[0] ?? null);
+
+  /**
+   * The thinking levels the model about to be used offers, and the one the new
+   * session starts on. A model that publishes none gets no row at all: the Host
+   * would have nothing to apply such a choice to.
+   */
+  const chosenSummary = choice.kind === "model" ? choice.model : null;
+  const levels = chosenSummary ? orderedThinkingLevels(chosenSummary) : [];
+  const defaultLevel = chosenSummary?.defaultThinkingLevel;
+  const level: ThinkingLevel | null =
+    thinkingLevel && levels.includes(thinkingLevel)
+      ? thinkingLevel
+      : isThinkingLevel(defaultLevel) && levels.includes(defaultLevel)
+        ? defaultLevel
+        : (levels[0] ?? null);
+
+  const levelLabel = (value: ThinkingLevel) => t(`thinkingLevel.${value}`);
 
   const picker = (title: string, rows: React.ReactNode) => (
     <>
@@ -142,6 +186,12 @@ export function NewSessionSheet({
         ? picker(
             t("sessions.new.project"),
             <div className="flex flex-col">
+              {allowNoProject
+                ? option(t("sessions.noProject"), null, noProject, () => {
+                    setProjectId("");
+                    setPicking(null);
+                  })
+                : null}
               {usable.map((project) => option(project.label, null, project.id === selectedProject?.id, () => {
                 setProjectId(project.id);
                 setPicking(null);
@@ -172,10 +222,27 @@ export function NewSessionSheet({
                     choice.kind === "model" && modelKey(choice.model) === modelKey(model),
                     () => {
                       setChosenModel(modelKey(model));
+                      // Keep a level the new model also offers; otherwise the new
+                      // model's own default applies to this session.
+                      setThinkingLevel(
+                        level && orderedThinkingLevels(model).includes(level) ? level : null,
+                      );
                       setPicking(null);
                     },
                   ),
                 ),
+          )
+        : null}
+
+      {picking === "thinking"
+        ? picker(
+            t("sessions.new.thinking"),
+            levels.map((candidate) =>
+              option(levelLabel(candidate), null, candidate === level, () => {
+                setThinkingLevel(candidate);
+                setPicking(null);
+              }),
+            ),
           )
         : null}
 
@@ -212,11 +279,15 @@ export function NewSessionSheet({
         <>
           {row(
             t("sessions.new.project"),
-            selectedProject?.label ?? t("sessions.noProjects"),
+            selectedProject?.label ??
+              (allowNoProject ? t("sessions.noProject") : t("sessions.noProjects")),
             () => (usable.length > 0 ? setPicking("project") : onAddProject()),
             projectLocked,
           )}
           {row(t("sessions.new.model"), modelValue, () => setPicking("model"))}
+          {levels.length > 0 && level
+            ? row(t("sessions.new.thinking"), levelLabel(level), () => setPicking("thinking"))
+            : null}
           {row(t("sessions.new.mode"), t(`mode.${mode}.title`), () => setPicking("mode"))}
           {row(t("sessions.new.permission"), t(`permission.${permission}.title`), () => setPicking("permission"))}
           {failure ? (
@@ -226,13 +297,14 @@ export function NewSessionSheet({
             <Button
               variant="primary"
               size="large"
-              disabled={creating || !selectedProject}
+              disabled={creating || (!selectedProject && !noProject)}
               onClick={() =>
                 onCreate({
-                  projectId: selectedProject?.id ?? "",
+                  ...(selectedProject ? { projectId: selectedProject.id } : {}),
                   ...(choice.kind === "model"
                     ? { providerId: choice.model.providerId, modelId: choice.model.modelId }
                     : {}),
+                  ...(level ? { thinkingLevel: level } : {}),
                   mode,
                   permissionMode: permission,
                 })

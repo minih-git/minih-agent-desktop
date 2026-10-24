@@ -142,14 +142,23 @@ function toolStatusOf(message: UiMessage): TimelineItem["toolStatus"] {
     : undefined;
 }
 
-/** Attachment names, bounded, so a phone still shows that a turn carried files. */
+/**
+ * Attachment names, bounded, so a phone still shows that a turn carried files.
+ *
+ * An image keeps its `mediaId` when it has one: the row draws a thumbnail only
+ * for the ids it can fetch, and names the rest instead of dropping them.
+ */
 function attachmentsOf(message: UiMessage): TimelineItem["attachments"] {
   const attachments = message.attachments;
   if (!Array.isArray(attachments) || attachments.length === 0) return undefined;
-  const named = attachments.slice(0, MAX_ITEM_ATTACHMENTS).map((attachment) => ({
-    name: attachment.name || attachment.kind,
-    kind: attachment.kind,
-  }));
+  const named = attachments.slice(0, MAX_ITEM_ATTACHMENTS).map((attachment) => {
+    const mediaId = (attachment as { mediaId?: unknown }).mediaId;
+    return {
+      name: attachment.name || attachment.kind,
+      kind: attachment.kind,
+      ...(typeof mediaId === "string" && mediaId.length > 0 ? { mediaId } : {}),
+    };
+  });
   return named.length > 0 ? named : undefined;
 }
 
