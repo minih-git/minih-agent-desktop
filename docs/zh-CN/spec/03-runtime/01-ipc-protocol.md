@@ -1782,6 +1782,20 @@ prompt/enhance({
 提供商/模型和凭据，因此渲染器永远拿不到密钥。空草稿、斜杠命令草稿、缺失模型
 以及提供商失败都返回通用的 `Result` 错误包络。
 
+### composer/followUpSuggestion
+
+```ts
+composer/followUpSuggestion({ sessionId }) -> { text: string | null }
+```
+
+渲染器驱动的一次性补全，作用于已 settle 的本地会话。Electron main 从 host 读取
+最近持久化的消息，向配置的（或会话自身的）模型请求一条以用户口吻、用户语言表述
+的后续提示，并返回归一化后的文本；`null` 表示「无建议」，涵盖所有跳过或失败的
+情形（功能关闭、native/remote 会话、无可用模型、同会话已有生成在进行、提供商
+失败）。该调用从不抛错、也绝不阻塞输入框；失败只记日志随即丢弃。是否发起询问
+（回合成功结束且草稿为空之后）以及是否展示答案由渲染层决定；文本只有在用户
+显式点击后才会作为 prompt 发送。
+
 ### speech/getStatus、speech/transcribe、speech/synthesize
 ```ts
 speech/getStatus() -> SpeechStatus
