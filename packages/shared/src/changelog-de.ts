@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.26.0",
+    date: "2026-10-24",
+    highlights: [
+      "Die Telefon-App wurde rund um drei Hauptbereiche neu gestaltet — Computer, Chats und das neue Studio — mit einem einheitlichen Aurora Glass-Design; der Zustand jedes Computers und die möglichen Aktionen einer Sitzung sind auf einen Blick erkennbar.",
+      "Die Bildbearbeitung ist ins Studio umgezogen: Die Unterhaltungsliste des Telefons enthält nur noch Textunterhaltungen, und erzeugte Bilder werden nach Tagen gruppiert und können einzeln bearbeitet, erneut versucht oder gelöscht werden.",
+      "Der Kanal eines Modells richtet sich jetzt nach den Ausgaben, die es laut eigener Beschreibung erzeugen kann; dadurch beeinflussen sich Chat- und Bildauswahl nicht mehr gegenseitig, und ein Bildmodell erscheint nicht länger als defekte Chat-Option.",
+      "Der Kopf einer Telefonsitzung zeigt Modell, Denkstufe, Modus und Berechtigung und hält all diese Angaben auch auf einem schmalen Bildschirm lesbar.",
+      "Die Einstellungen auf dem Telefon greifen jetzt auf den echten Zustand zu: Push-Registrierung, Erscheinungsbild (System, hell, dunkel) und Standardmodelle funktionieren, die Platzhalterzeilen sind verschwunden.",
+      "Die Details auf dem Telefon sind korrigiert: Das Archiv listet jetzt auch Bildunterhaltungen, zwei offene Fragen behalten getrennte Auswahlen, die App folgt Systemdesign und reduzierter Bewegung, und der Fokus bleibt per Tastatur nutzbar.",
+      "Die Desktop-Einstellungen werden in sieben Kategorien innerhalb eines einzigen unteren Panels zusammengefasst, sodass die Navigation kürzer ausfällt.",
+      "Der Desktop erhält ein optionales eingebettetes Terminal-Plugin, und Sitzungen mit langer Laufzeit belegen weniger Speicher: Renderer-Caches sind begrenzt, ungenutzte Sitzungs-Runtimes und MCP-Verbindungen werden zurückgefordert.",
+    ],
+  },
+  {
     version: "0.25.0",
     date: "2026-10-22",
     highlights: [

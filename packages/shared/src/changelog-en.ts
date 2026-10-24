@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.26.0",
+    date: "2026-10-24",
+    highlights: [
+      "The phone app is redesigned around three roots — Computers, Chats and a new Studio — on one Aurora Glass visual system, with each computer's state and what a session may do visible at a glance.",
+      "Image work moved to Studio: the phone's conversation list holds text conversations only, and generated images group by day, where they can be edited, retried or deleted one at a time.",
+      "A model's channel now follows what it declares it can output, so chat and image selections stop interfering and an image model no longer appears as a broken chat choice.",
+      "A phone session's header shows its model with the thinking level, the mode and the permission, and keeps all three readable on a narrow screen.",
+      "Settings on the phone is wired to real state: push registration, appearance (system, light, dark) and the default models, with the placeholder rows gone.",
+      "Phone details are fixed: the archive also lists image conversations, two pending questions keep separate choices, the app follows the system theme and reduced motion, and focus stays usable from a keyboard.",
+      "Desktop Settings collapses into seven categories behind one bottom sheet, so the navigation is shorter.",
+      "Desktop gains an optional embedded terminal plugin, and long-running sessions hold less memory: renderer caches are bounded, while idle session runtimes and idle MCP connections are reclaimed.",
+    ],
+  },
+  {
     version: "0.25.0",
     date: "2026-10-22",
     highlights: [
