@@ -4,6 +4,10 @@ export const ko = {
   sidebarPluginView: {
     back: "대화로 돌아가기",
   },
+  themeToggle: {
+    hint: "테마: {{current}}. 클릭하면 {{next}} 테마로 전환됩니다.",
+    saveFailed: "테마를 저장하지 못했습니다.",
+  },
   userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "새 격리 세션",

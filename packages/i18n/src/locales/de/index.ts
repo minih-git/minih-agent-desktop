@@ -4,6 +4,10 @@ export const de = {
   sidebarPluginView: {
     back: "Zurück zum Gespräch",
   },
+  themeToggle: {
+    hint: "Design: {{current}}. Klicken, um zu {{next}} zu wechseln.",
+    saveFailed: "Das Design konnte nicht gespeichert werden.",
+  },
   userMenu: en.userMenu,
   "worktree": {
     "newIsolatedSession": "Neue isolierte Sitzung",

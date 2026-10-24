@@ -79,6 +79,7 @@ import {
 import { BrandLogo } from "./BrandLogo";
 import { NotificationCenter } from "./NotificationCenter";
 import { SidebarUserMenu } from "./SidebarUserMenu";
+import { SidebarThemeToggle } from "./SidebarThemeToggle";
 import { ProjectEditDialog } from "./ProjectEditDialog";
 import {
   WorktreeBadge,
@@ -2829,6 +2830,7 @@ export function Sidebar({
         <div className="sidebar-footer no-drag">
           <SidebarUserMenu onBeforeOpen={() => closeMenus(false)} />
           <div className="footer-actions">
+            <SidebarThemeToggle />
             <NotificationCenter onBeforeOpen={() => closeMenus(false)} />
           </div>
 

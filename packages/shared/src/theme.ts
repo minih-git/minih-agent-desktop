@@ -63,3 +63,22 @@ export function isBuiltinThemePreference(value: unknown): value is BuiltinThemeP
 export function builtinWindowBackground(scheme: ThemeColorScheme): string {
   return BUILTIN_THEME_BY_ID[scheme].windowBackground;
 }
+
+/**
+ * The preference one click of the sidebar footer switch selects.
+ *
+ * It walks the same options the Settings picker lists — `system → light →
+ * dark → system` — so a click never lands on a preference the picker cannot
+ * show. A contributed theme is not part of that order; it steps back to
+ * `system` so the following clicks stay inside the cycle.
+ */
+export function nextBuiltinThemePreference(
+  current: ThemePreference | undefined,
+): BuiltinThemePreference {
+  // Settings not loaded yet: the shell paints `system`, so the first click
+  // moves on from there instead of skipping a step.
+  if (current === undefined) return "light";
+  if (!isBuiltinThemePreference(current)) return "system";
+  const index = BUILTIN_THEME_PREFERENCES.indexOf(current);
+  return BUILTIN_THEME_PREFERENCES[(index + 1) % BUILTIN_THEME_PREFERENCES.length] ?? "system";
+}

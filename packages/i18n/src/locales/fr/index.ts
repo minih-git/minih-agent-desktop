@@ -4,6 +4,10 @@ export const fr = {
   sidebarPluginView: {
     back: "Retour à la conversation",
   },
+  themeToggle: {
+    hint: "Thème : {{current}}. Cliquer pour passer à {{next}}.",
+    saveFailed: "Impossible d'enregistrer le thème.",
+  },
   userMenu: en.userMenu,
   "worktree": {
     "newIsolatedSession": "Nouvelle session isolée",

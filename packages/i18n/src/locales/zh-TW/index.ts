@@ -4,6 +4,10 @@ export const zhTW = {
   sidebarPluginView: {
     back: "返回對話",
   },
+  themeToggle: {
+    hint: "主題：{{current}}，點擊切換到{{next}}。",
+    saveFailed: "無法儲存主題設定。",
+  },
   userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "新增隔離工作階段",

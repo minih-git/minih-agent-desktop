@@ -40,8 +40,9 @@ destination, chat as the home surface, tools and permissions inline.
   Quotas are read only while the popover is open; loading and recoverable errors
   remain visible, and stale replies never cross account changes or unmount.
   Escape restores trigger focus; outside pointer/focus and navigation dismiss
-  the non-modal popover. The footer retains notifications and the update/version
-  chip, not duplicate settings or task icons. Each retained
+  the non-modal popover. The footer retains the built-in theme switch,
+  notifications, and the update/version chip, not duplicate settings or task
+  icons. Each retained
   project is a
   path-keyed tab/group that can be
   collapsed independently. Project and conversation rows expose
