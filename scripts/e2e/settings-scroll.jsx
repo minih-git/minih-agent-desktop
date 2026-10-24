@@ -1,6 +1,7 @@
 // Mounted production SettingsPage; only the preload boundary uses fixture data.
-// A one-button host mirrors the shell: settings opens over it, and closing must
-// give the keyboard back to that button.
+// A one-button host mirrors the shell: settings is a full-window route over a
+// mounted chat surface, and closing it must give the keyboard back to that
+// button on the next frame.
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import i18n from "i18next";
@@ -8,7 +9,6 @@ import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { SettingsPage } from "../../apps/desktop/src/features/settings/SettingsPage";
-import { useSettingsSheetPresence } from "../../apps/desktop/src/features/app/settings-sheet-presence";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import { initLanguageSync } from "../../apps/desktop/src/lib/app-language";
 
@@ -111,17 +111,29 @@ useAppStore.setState({ settings, settingsTab: "general", page: "chat" });
 initLanguageSync();
 
 /**
- * The host stands in for the shell: the settings sheet mounts over it and the
- * chat surface itself is the shell's concern, not the panel's.
+ * The host stands in for the shell: the chat surface itself stays mounted but
+ * hidden and inert while the route is Settings, and the page is mounted only
+ * while the route says so. The entry control sits outside the shell so it does
+ * not take page space.
  */
 function Host() {
   const page = useAppStore((state) => state.page);
   const open = page === "settings";
-  // The production mount lifecycle: the sheet outlives the page change by its
-  // exit animation, and the app behind stays inert until it is gone.
-  const sheet = useSettingsSheetPresence(open);
   return (
-    <div className="fixture-host">
+    <>
+      <div className="app-shell">
+        <div
+          className="fixture-chat"
+          data-testid="behind"
+          hidden={open || undefined}
+          inert={open ? true : undefined}
+        >
+          <button id="behind-action" type="button" onClick={() => { window.behindClicks = (window.behindClicks ?? 0) + 1; }}>
+            Behind action
+          </button>
+        </div>
+        {open ? <SettingsPage /> : null}
+      </div>
       <button
         id="open-settings"
         type="button"
@@ -129,20 +141,7 @@ function Host() {
       >
         Open settings
       </button>
-      <div
-        className="fixture-chat"
-        data-testid="behind"
-        aria-hidden="true"
-        inert={open || sheet.mounted ? true : undefined}
-      >
-        <button id="behind-action" type="button" onClick={() => { window.behindClicks = (window.behindClicks ?? 0) + 1; }}>
-          Behind action
-        </button>
-      </div>
-      {sheet.mounted ? (
-        <SettingsPage exiting={sheet.exiting} onExited={sheet.onExited} />
-      ) : null}
-    </div>
+    </>
   );
 }
 
@@ -158,35 +157,27 @@ async function until(condition, message) {
   }
 }
 function assert(value, message) { if (!value) throw new Error(message); }
-const sheet = () => document.querySelector(".settings-sheet");
-const overlay = () => document.querySelector(".settings-overlay");
+const pageRoot = () => document.querySelector(".settings-page");
+const content = () => document.querySelector(".settings-page-content");
+const legacy = () => document.querySelector(".settings-overlay, .settings-sheet");
 const pane = () => document.querySelector(".settings-content");
 const categoryButton = (label) => [...document.querySelectorAll(".settings-category")]
   .find((node) => node.textContent.trim() === label);
 const subnavButton = (label) => [...document.querySelectorAll(".settings-subnav-item")]
   .find((node) => node.querySelector(".settings-nav-label")?.textContent?.trim() === label);
 const title = () => document.querySelector(".settings-section-title")?.textContent?.trim() ?? "";
-/** Wait for the entrance animation instead of sleeping through it. */
-async function waitForSettled(node) {
-  const animations = node?.getAnimations?.() ?? [];
-  await Promise.all(animations.map((animation) => animation.finished.catch(() => undefined)));
-  await settle();
-}
 async function openSettings() {
   await settle();
-  const current = sheet();
-  // A sheet still playing its exit is not open: the entry click cancels it.
-  if (!current || current.classList.contains("is-exiting")) {
-    // A real click focuses the entry too; the panel must give focus back to it.
+  if (!pageRoot()) {
+    // A real click focuses the entry too; the page must give focus back to it.
     flushSync(() => {
       const entry = document.getElementById("open-settings");
-      entry.focus();
+      entry.focus({ preventScroll: true });
       entry.click();
     });
     await settle();
   }
-  await waitForSettled(sheet());
-  assert(sheet(), "the settings sheet must open");
+  assert(pageRoot(), "the settings page must open");
 }
 async function chooseCategory(label) {
   const button = categoryButton(label);
@@ -212,7 +203,7 @@ async function chooseCategory(label) {
 }
 
 async function rows(labels) {
-  if (!sheet()) await openSettings();
+  if (!pageRoot()) await openSettings();
   await chooseCategory(labels[0]);
   if (labels.length > 1) {
     const label = labels[labels.length - 1];
@@ -238,7 +229,7 @@ function pressKey(target, key) {
   flushSync(() => { target.dispatchEvent(event); });
 }
 
-/** Sheet geometry: the plan's starter values, measured in a real window. */
+/** Page geometry: a full-window route, measured in a real window. */
 function centerOf(node) {
   const box = node.getBoundingClientRect();
   return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
@@ -247,7 +238,7 @@ function centerOf(node) {
 /** Nothing may paint over the head: a control in the DOM proves nothing. */
 function headerChecks() {
   const head = document.querySelector(".settings-panel-head");
-  const title = document.querySelector(".settings-panel-title");
+  const titleNode = document.querySelector(".settings-panel-title");
   const close = document.querySelector(".settings-close");
   const search = document.querySelector(".settings-search");
   const visible = (node) => {
@@ -260,32 +251,68 @@ function headerChecks() {
     return { background: style.backgroundColor, zIndex: style.zIndex };
   });
   const region = getComputedStyle(head).getPropertyValue("-webkit-app-region").trim();
-  assert(visible(title), "the title must be the top-most pixel at its center");
+  const headBox = head.getBoundingClientRect();
+  const titleBox = titleNode.getBoundingClientRect();
+  const contentBox = content().getBoundingClientRect();
+  const titlebarSpace = Math.max(headBox.top, titleBox.top) - contentBox.top;
+  assert(visible(titleNode), "the title must be the top-most pixel at its center");
   assert(visible(close), "the close button must be the top-most pixel at its center");
   assert(visible(search), "the search field must be the top-most pixel at its center");
   assert(bands.length === 0, `no decorative band may cover the head: ${JSON.stringify(bands)}`);
+  assert(titlebarSpace >= 46,
+    `the head must reserve the 46px native titlebar band: ${JSON.stringify({ titlebarSpace })}`);
   assert(region === "drag", `the head must be the window drag region: ${region}`);
   return {
-    title: visible(title), close: visible(close), search: visible(search),
-    dragRegion: region, headHeight: Math.round(head.getBoundingClientRect().height),
+    title: visible(titleNode), close: visible(close), search: visible(search),
+    dragRegion: region, titlebarSpace, headHeight: Math.round(headBox.height),
   };
 }
 
 function geometryChecks() {
-  const box = sheet().getBoundingClientRect();
-  const heightRatio = box.height / innerHeight;
-  const radius = Number.parseFloat(getComputedStyle(sheet()).borderTopLeftRadius);
-  const left = box.left;
-  const right = innerWidth - box.right;
-  const summary = { heightRatio, radius, left, right, width: box.width, innerWidth, innerHeight };
-  assert(heightRatio > 0.86 && heightRatio <= 0.92, `sheet height must be ~90% of the window: ${JSON.stringify(summary)}`);
-  assert(box.bottom >= innerHeight - 1, `the sheet must sit on the window bottom: ${JSON.stringify(summary)}`);
-  assert(left >= 15 && left <= 25 && right >= 15 && right <= 25,
-    `side gutters must stay in the 16-24px range: ${JSON.stringify(summary)}`);
-  assert(radius >= 17 && radius <= 21, `top corners must stay 18-20px: ${JSON.stringify(summary)}`);
-  const content = pane().getBoundingClientRect();
-  assert(content.bottom <= innerHeight + 1 && content.top >= box.top,
-    "the content area must stay inside the sheet");
+  const page = pageRoot();
+  assert(page && content(), "the settings page and its content must render");
+  assert(legacy() === null, "no settings sheet or overlay may remain");
+  const box = page.getBoundingClientRect();
+  const contentBox = content().getBoundingClientRect();
+  const style = getComputedStyle(page);
+  const contentStyle = getComputedStyle(content());
+  const clientWidth = document.documentElement.clientWidth;
+  const clientHeight = document.documentElement.clientHeight;
+  const zero = (value) => Number.parseFloat(value) === 0;
+  const summary = {
+    box: { left: box.left, top: box.top, width: box.width, height: box.height },
+    content: { left: contentBox.left, top: contentBox.top, width: contentBox.width, height: contentBox.height },
+    clientWidth, clientHeight, innerWidth, innerHeight,
+    radius: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius],
+    margin: [style.marginTop, style.marginRight, style.marginBottom, style.marginLeft],
+    shadow: style.boxShadow, transform: style.transform,
+    animationName: style.animationName, animationDuration: style.animationDuration,
+    role: page.getAttribute("role"), ariaModal: page.getAttribute("aria-modal"),
+    contentRole: content().getAttribute("role"),
+    contentTransform: contentStyle.transform, contentAnimation: contentStyle.animationName,
+  };
+  assert(Math.abs(box.left) <= 1 && Math.abs(box.top) <= 1,
+    `the page must start at the client origin: ${JSON.stringify(summary.box)}`);
+  assert(Math.abs(box.width - clientWidth) <= 1 && Math.abs(box.height - clientHeight) <= 1,
+    `the page must fill the client area: ${JSON.stringify(summary)}`);
+  assert(Math.abs(contentBox.left) <= 1 && Math.abs(contentBox.top) <= 1 &&
+    Math.abs(contentBox.width - clientWidth) <= 1 && Math.abs(contentBox.height - clientHeight) <= 1,
+    `the page content must fill the client area: ${JSON.stringify(summary.content)}`);
+  assert(summary.radius.every(zero), `the page must have no corner radius: ${JSON.stringify(summary)}`);
+  assert(summary.margin.every(zero), `the page must have no margin: ${JSON.stringify(summary)}`);
+  assert(summary.shadow === "none", `the page must have no shadow: ${JSON.stringify(summary)}`);
+  assert(summary.transform === "none", `the page must not be transformed: ${JSON.stringify(summary)}`);
+  assert(summary.animationName === "none", `the page must not animate: ${JSON.stringify(summary)}`);
+  assert((style.animationDuration || "0s").split(",").every(zero),
+    `the page must have no animation duration: ${JSON.stringify(summary)}`);
+  assert(summary.contentRole === "main", `the content must be the main landmark: ${JSON.stringify(summary)}`);
+  assert(summary.role !== "dialog" && summary.ariaModal === null,
+    `the page must not be a modal dialog: ${JSON.stringify(summary)}`);
+  assert(summary.contentTransform === "none" && summary.contentAnimation === "none",
+    `the content must not animate or transform: ${JSON.stringify(summary)}`);
+  const paneBox = pane().getBoundingClientRect();
+  assert(paneBox.bottom <= clientHeight + 1 && paneBox.top >= box.top,
+    "the scroll pane must stay inside the page");
   return summary;
 }
 function categoryBarChecks() {
@@ -432,18 +459,17 @@ async function nestedEscapeChecks() {
     await settle();
     const afterFirst = {
       editor: Boolean(document.querySelector(".ext-sheet")),
-      sheet: Boolean(sheet()),
-      page: useAppStore.getState().page,
+      page: Boolean(pageRoot()),
+      route: useAppStore.getState().page,
     };
     assert(afterFirst.editor === false, `Escape must close the ${item.name} editor: ${JSON.stringify(afterFirst)}`);
-    assert(afterFirst.sheet === true, `Escape must not close the sheet for ${item.name}: ${JSON.stringify(afterFirst)}`);
-    assert(afterFirst.page === "settings", `the page must stay on settings for ${item.name}`);
-    // The next Escape, with nothing on top, closes the sheet.
+    assert(afterFirst.page === true, `Escape must not close the page for ${item.name}: ${JSON.stringify(afterFirst)}`);
+    assert(afterFirst.route === "settings", `the route must stay on settings for ${item.name}`);
+    // The next Escape, with nothing on top, closes the page.
     await rows(["Capabilities", item.destination]);
     pressKey(document.querySelector(".settings-search"), "Escape");
     await settle();
-    await waitForSettled(sheet());
-    await until(() => !sheet(), "the second Escape must close the sheet");
+    await until(() => !pageRoot(), "the second Escape must close the page");
     results.push({ name: item.name, afterFirst });
   }
   return results;
@@ -467,12 +493,12 @@ async function draftAndCloseChecks() {
   await setSettingsSearch("");
   assert(editor()?.value === "UNSAVED_E2E_DRAFT", "clearing the search must keep the draft");
 
-  // The scrim asks instead of discarding.
-  flushSync(() => overlay().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  // The close button asks instead of discarding.
+  flushSync(() => document.querySelector(".settings-close").click());
   await settle();
   const confirm = document.querySelector(".settings-draft-confirm");
   assert(confirm, "a dirty page must ask before leaving");
-  assert(sheet(), "the sheet must stay open until the user decides");
+  assert(pageRoot(), "the page must stay open until the user decides");
   const keep = [...confirm.querySelectorAll("button")]
     .find((node) => node.textContent.trim() === i18n.t("settings.draftKeepEditing"));
   assert(keep, "the confirmation must offer to keep editing");
@@ -480,67 +506,106 @@ async function draftAndCloseChecks() {
   await settle();
   assert(editor()?.value === "UNSAVED_E2E_DRAFT", "keeping must leave the draft in place");
 
-  // The close button asks too; discarding is explicit.
+  // Discarding is explicit, and it closes without waiting for an exit.
   flushSync(() => document.querySelector(".settings-close").click());
   await settle();
   const discard = [...document.querySelectorAll(".settings-draft-confirm button")]
     .find((node) => node.textContent.trim() === i18n.t("settings.draftDiscard"));
   assert(discard, "the confirmation must offer an explicit discard");
   flushSync(() => discard.click());
+  assert(!pageRoot(), "discarding must close the page synchronously");
   await settle();
-  await waitForSettled(sheet());
-  assert(!sheet(), "discarding must close the sheet");
 
-  // An untouched sheet closes from the scrim.
+  // An untouched page closes from its close button.
   await openSettings();
   await rows(["AI", "Instructions & memory"]);
   assert(editor()?.value === "saved instructions", "the discarded draft must not persist");
-  flushSync(() => overlay().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  flushSync(() => document.querySelector(".settings-close").click());
+  assert(!pageRoot(), "the close button must close a page with no draft synchronously");
   await settle();
-  await waitForSettled(sheet());
-  assert(!sheet(), "the scrim must close a sheet with no draft");
-  return { confirmShown: true, explicitDiscard: true, scrimClosesUntouched: true };
+  assert(!pageRoot(), "the closed page must stay gone");
+  return { confirmShown: true, explicitDiscard: true, closeClosesUntouched: true };
 }
 
-async function exitChecks() {
+async function immediateCloseChecks() {
   await openSettings();
-  const behind = document.querySelector('[data-testid="behind"]');
-  const box = behind.getBoundingClientRect();
-  const point = { x: box.left + Math.min(30, box.width / 2), y: box.top + Math.min(30, box.height / 2) };
+  const chat = document.querySelector('[data-testid="behind"]');
+  const openState = {
+    pagePresent: Boolean(pageRoot()),
+    chatHidden: chat.hidden,
+    chatInert: chat.hasAttribute("inert"),
+    route: useAppStore.getState().page,
+  };
 
   flushSync(() => document.querySelector(".settings-close").click());
-  await frame();
-  const top = document.elementFromPoint(point.x, point.y);
-  const duringExit = {
-    sheetPresent: Boolean(sheet()),
-    exiting: Boolean(sheet()?.classList.contains("is-exiting")),
-    chatInert: behind.hasAttribute("inert"),
-    covered: Boolean(top?.closest(".settings-overlay")),
+  const immediate = {
+    pagePresent: Boolean(pageRoot()),
+    legacyPresent: Boolean(legacy()),
+    route: useAppStore.getState().page,
+    chatHidden: chat.hidden,
+    chatInert: chat.hasAttribute("inert"),
   };
-  const before = window.behindClicks ?? 0;
-  flushSync(() => top?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
-  await settle();
-  const after = window.behindClicks ?? 0;
 
-  // Reopening during the exit must survive the stale exit callback.
-  await openSettings();
+  await settle();
+  const box = chat.getBoundingClientRect();
+  const hit = box.width > 1
+    ? document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    : null;
+  const afterFrame = {
+    pagePresent: Boolean(pageRoot()),
+    chatHidden: chat.hidden,
+    chatInert: chat.hasAttribute("inert"),
+    chatDisplay: getComputedStyle(chat).display,
+    chatBox: { width: box.width, height: box.height },
+    hitInsideChat: Boolean(hit && chat.contains(hit)),
+    focus: document.activeElement === document.getElementById("open-settings")
+      ? "open-settings" : (document.activeElement?.id || document.activeElement?.tagName || null),
+  };
+
+  // No delayed callback may resurrect the page or re-block the app.
   await new Promise((resolve) => setTimeout(resolve, 450));
   await settle();
-  const reopened = { sheetPresent: Boolean(sheet()), exiting: Boolean(sheet()?.classList.contains("is-exiting")) };
+  const afterDelay = {
+    pagePresent: Boolean(pageRoot()),
+    legacyPresent: Boolean(legacy()),
+    chatHidden: chat.hidden,
+    chatInert: chat.hasAttribute("inert"),
+  };
 
+  // Opening again, and closing again, both stay synchronous.
+  await openSettings();
+  const reopened = {
+    pagePresent: Boolean(pageRoot()),
+    searchFocused: document.activeElement === document.querySelector(".settings-search"),
+    chatHidden: chat.hidden,
+    chatInert: chat.hasAttribute("inert"),
+  };
   flushSync(() => document.querySelector(".settings-close").click());
-  await waitForSettled(sheet());
-  await until(() => !sheet(), "the sheet must unmount after its exit");
-  const settled = { chatInert: document.querySelector('[data-testid="behind"]').hasAttribute("inert") };
+  const closedAgain = { pagePresent: Boolean(pageRoot()), route: useAppStore.getState().page };
+  await settle();
 
-  assert(duringExit.sheetPresent && duringExit.exiting, `the exit must still be running: ${JSON.stringify(duringExit)}`);
-  assert(duringExit.chatInert, `the background must stay inert during the exit: ${JSON.stringify(duringExit)}`);
-  assert(duringExit.covered, `the scrim must still cover the app during the exit: ${JSON.stringify(duringExit)}`);
-  assert(after === before, `a click during the exit must not reach the app: ${before} -> ${after}`);
-  assert(reopened.sheetPresent && !reopened.exiting,
-    `reopening during the exit must not be undone by the stale exit: ${JSON.stringify(reopened)}`);
-  assert(settled.chatInert === false, "the background must be released once the sheet is gone");
-  return { duringExit, clickedBehind: after - before, reopened, settled };
+  const report = { openState, immediate, afterFrame, afterDelay, reopened, closedAgain };
+  assert(openState.pagePresent && openState.chatHidden && openState.chatInert && openState.route === "settings",
+    `the open page must own the window while the chat stays blocked: ${JSON.stringify(report)}`);
+  assert(immediate.pagePresent === false && immediate.legacyPresent === false,
+    `closing must remove the page synchronously: ${JSON.stringify(report)}`);
+  assert(immediate.route === "chat", `closing must change the route at once: ${JSON.stringify(report)}`);
+  assert(immediate.chatHidden === false && immediate.chatInert === false,
+    `the background must be released in the same commit: ${JSON.stringify(report)}`);
+  assert(afterFrame.chatHidden === false && afterFrame.chatInert === false &&
+    afterFrame.chatDisplay !== "none" && afterFrame.chatBox.width > 1 && afterFrame.chatBox.height > 1 &&
+    afterFrame.hitInsideChat,
+    `the chat must be visible and take its own clicks after closing: ${JSON.stringify(report)}`);
+  assert(afterFrame.focus === "open-settings",
+    `focus must return to the entry on the next frame: ${JSON.stringify(report)}`);
+  assert(afterDelay.pagePresent === false && afterDelay.legacyPresent === false &&
+    afterDelay.chatHidden === false && afterDelay.chatInert === false,
+    `no delayed exit may re-block the app: ${JSON.stringify(report)}`);
+  assert(reopened.pagePresent && reopened.searchFocused && reopened.chatHidden && reopened.chatInert,
+    `opening again must work like the first time: ${JSON.stringify(report)}`);
+  assert(closedAgain.pagePresent === false && closedAgain.route === "chat",
+    `a second close must be synchronous as well: ${JSON.stringify(report)}`);
+  return report;
 }
 async function scrollChecks() {
   for (const theme of ["light", "dark"]) {
@@ -650,7 +715,7 @@ async function updatePreferenceChecks() {
     await settle();
     assert(settings.updatePreference === value, `${label} preference must persist through settings IPC`);
     assert(updateState.preference === value, `${label} preference must update the shared update state`);
-    assert(sheet(), `${label} must leave the sheet open`);
+    assert(pageRoot(), `${label} must leave the settings page open`);
   }
 
   await choosePreference("Manual", "manual");
@@ -674,25 +739,25 @@ window.settingsScrollProbe = async () => {
   checks.push(await foldedAnchorChecks());
   checks.push(await nestedEscapeChecks());
   checks.push(await draftAndCloseChecks());
-  checks.push(await exitChecks());
+  checks.push(await immediateCloseChecks());
   checks.push(await scrollChecks());
   checks.push(await brazilianPortugueseChecks());
   checks.push(await updatePreferenceChecks());
-  const stillOpen = Boolean(sheet());
+  const stillOpen = Boolean(pageRoot());
   return { ok: true, geometry, header, categories, stillOpen, checks };
 };
 
-/** Used by the screenshot pass: open the sheet and settle it. */
+/** Used by the screenshot pass: open the page and settle it. */
 window.settingsOpenProbe = async () => {
   await openSettings();
-  return { open: Boolean(sheet()) };
+  return { open: Boolean(pageRoot()) };
 };
 window.settingsCloseProbe = async () => {
   const close = document.querySelector(".settings-close");
   if (close) flushSync(() => close.click());
   await settle();
-  await until(() => !sheet(), "the sheet must close after a screenshot");
-  return { open: Boolean(sheet()) };
+  assert(!pageRoot(), "the page must close after a screenshot");
+  return { open: Boolean(pageRoot()) };
 };
 
 /** Layout under a narrow/roomy window, both locales, and a 150% type scale. */
@@ -730,7 +795,7 @@ window.settingsSegmentProbe = async (language, fontScale) => {
     assert(bounds.top < copy.getBoundingClientRect().bottom, "Wide rows must retain the inline title/control layout");
   }
 
-  // The sheet keeps its shape in this window: the categories are reachable —
+  // The page keeps its shape in this window: the categories are reachable —
   // as a bar that fits, or as the selector the narrow layout swaps in.
   const bar = document.querySelector(".settings-categories");
   const categories = bar
@@ -752,18 +817,30 @@ window.settingsSegmentProbe = async (language, fontScale) => {
   } else {
     assert(categories.select, `${language}/${innerWidth}: the categories must be reachable`);
   }
-  const sheetBox = sheet().getBoundingClientRect();
-  assert(sheetBox.width <= innerWidth + 1 && sheetBox.left >= -1 && sheetBox.right <= innerWidth + 1,
-    `${language}/${innerWidth}: the sheet must stay inside the window`);
+  const pageBox = pageRoot().getBoundingClientRect();
+  const clientWidth = document.documentElement.clientWidth;
+  const clientHeight = document.documentElement.clientHeight;
+  assert(Math.abs(pageBox.width - clientWidth) <= 1 && Math.abs(pageBox.height - clientHeight) <= 1,
+    `${language}/${innerWidth}: the page must fill the window: ${JSON.stringify({ width: pageBox.width, height: pageBox.height, clientWidth, clientHeight })}`);
   assert(pane().scrollWidth <= pane().clientWidth + 1,
     `${language}/${innerWidth}: the content area must not overflow horizontally`);
+  const pageRadius = Number.parseFloat(getComputedStyle(pageRoot()).borderTopLeftRadius);
+  assert(pageRadius === 0, `${language}/${innerWidth}: the page must stay square (${pageRadius})`);
 
-  const narrow = innerWidth <= 720 || innerHeight <= 560;
-  if (narrow) {
-    assert(Math.abs(sheetBox.width - innerWidth) <= 1, `${language}/${innerWidth}: a small window takes the full width`);
-    assert(Number.parseFloat(getComputedStyle(sheet()).borderTopLeftRadius) === 0,
-      `${language}/${innerWidth}: a small window squares the corners`);
-  }
+  const subnav = document.querySelector(".settings-subnav");
+  assert(subnav, "the chat-experience page must keep its second-level navigation");
+  const navigationGap = () => pane().getBoundingClientRect().top - subnav.getBoundingClientRect().bottom;
+  const gapBeforeScroll = navigationGap();
+  assert(Math.abs(gapBeforeScroll - 16) <= 1,
+    `${language}/${innerWidth}: second-level navigation needs 16px of fixed spacing, got ${gapBeforeScroll}`);
+  const previousScroll = pane().scrollTop;
+  pane().scrollTop = previousScroll + 80;
+  await settle();
+  const gapAfterScroll = navigationGap();
+  assert(Math.abs(gapAfterScroll - 16) <= 1,
+    `${language}/${innerWidth}: scrolling must retain the navigation gap, got ${gapAfterScroll}`);
+  pane().scrollTop = previousScroll;
+  await settle();
 
   for (const [index, value] of ["compact", "standard", "detailed"].entries()) {
     flushSync(() => buttons[index].click());
@@ -772,29 +849,29 @@ window.settingsSegmentProbe = async (language, fontScale) => {
     assert(buttons[index].getAttribute("aria-checked") === "true", "The saved density must be visibly selected");
   }
   return { language, fontScale, width: innerWidth, height: innerHeight,
-    sheetWidth: Math.round(sheetBox.width), sheetHeight: Math.round(sheetBox.height),
+    pageWidth: Math.round(pageBox.width), pageHeight: Math.round(pageBox.height),
     categories: categories.mode,
+    navigationGap: gapBeforeScroll, navigationGapAfterScroll: gapAfterScroll,
     controlWidth: Math.round(bounds.width),
     optionRows: new Set(buttons.map((button) => Math.round(button.getBoundingClientRect().top))).size };
 };
 
 /**
- * Reduced motion: the sheet must stop moving without skipping the exit that
- * unmounts it (duration near zero, not `animation: none`).
+ * Reduced motion: a page that never animates behaves the same with or without
+ * the media query, and closing still removes it immediately.
  */
 window.settingsReducedMotionProbe = async () => {
   await settle();
   await openSettings();
-  const style = getComputedStyle(sheet());
-  const durations = style.animationDuration.split(",").map((value) => Number.parseFloat(value));
+  const style = getComputedStyle(pageRoot());
+  const durations = style.animationDuration.split(",").map((value) => Number.parseFloat(value) || 0);
   const measured = { duration: durations[0], animationName: style.animationName };
+  assert(style.animationName === "none",
+    `the page must not animate: ${JSON.stringify(measured)}`);
   assert(durations.every((value) => value <= 0.001),
-    `reduced motion must remove the travel: ${JSON.stringify(measured)}`);
-  assert(style.animationName !== "none",
-    `reduced motion must keep an animation end for the exit: ${JSON.stringify(measured)}`);
+    `the page must have no animation duration: ${JSON.stringify(measured)}`);
   flushSync(() => document.querySelector(".settings-close").click());
+  assert(!pageRoot(), "closing must remove the page synchronously under reduced motion");
   await settle();
-  // The near-zero exit still has to end and unmount the sheet.
-  await until(() => !sheet(), "closing must still unmount the sheet under reduced motion");
   return measured;
 };

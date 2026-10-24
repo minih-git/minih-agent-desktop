@@ -3,19 +3,10 @@
   shortcut recorder, toggles, and the appearance theme/language pickers.
 */
 
-/* Settings covers the app with a sheet instead of replacing the window, so
- * nothing repaints the shell background for it. */
-
-:root[data-plugin-theme^="plugin:io.github.akshayxkill.nexus-scenic-themes:"] .settings-sheet,
-:root[data-plugin-theme^="plugin:io.github.akshayxkill.nexus-scenic-themes:"] .settings-content,
-:root[data-plugin-theme^="plugin:io.github.akshayxkill.nexus-scenic-themes:"] .settings-content-inner {
-  background: transparent !important;
-}
-
 /* Scenic plugin themes own the image canvas. Keep the host Settings page as
  * transparent compositing surfaces so the single root scenic layer remains
  * visible beneath it; ordinary themes never match this attribute. */
-:root[data-plugin-theme^="plugin:io.github.akshayxkill.nexus-scenic-themes:"] .settings-sheet,
+:root[data-plugin-theme^="plugin:io.github.akshayxkill.nexus-scenic-themes:"] .settings-page,
 :root[data-plugin-theme^="plugin:io.github.akshayxkill.nexus-scenic-themes:"] .settings-content,
 :root[data-plugin-theme^="plugin:io.github.akshayxkill.nexus-scenic-themes:"] .settings-content-inner {
   background: transparent !important;

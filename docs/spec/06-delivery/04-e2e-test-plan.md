@@ -3512,35 +3512,35 @@ identify the platform validation still needed.
 - **Milestone**: M4
 - **Status**: Documented
 
-#### E2E-039: Settings sheet head drags the window
+#### E2E-039: Settings page header drags the window
 
-- **Preconditions**: App running windowed on macOS with the settings sheet open.
-- **Steps**: 1) Record the window position. 2) Drag the sheet's head band. 3) Use the close button, the search field, the category bar, and the second level.
-- **Expected**: Dragging the head moves the native window; the close button, search field, and every navigation control stay interactive and never initiate a window drag. The sheet starts below the window controls and the macOS traffic lights, so neither is covered. The title, the search field, and the close button are the top-most pixels at their own centers — no decorative band paints over them — which the isolated probe checks with `elementFromPoint` and the captured-pixel pass checks on the screenshots.
+- **Preconditions**: Isolated window with the full-window Settings page open.
+- **Steps**: 1) Record window position. 2) Drag the real page header. 3) Use return, search, categories, and inner editors at normal and short window heights.
+- **Expected**: The header is draggable and controls are not. Native toolbar clearance keeps title, search, and return controls separate from traffic lights and Windows/Linux controls. The page has no decorative occluding band; its controls remain visible and hit-testable.
 - **Specs linked**: `04-ux/06-settings-ia.md`, `04-ux/01-ui-ia.md`
 - **Acceptance**: Quality (key operations feel polished)
 - **Milestone**: M5
 - **Status**: Unit-covered (`settings-drag-region.test.mjs`); scenario Documented
 
-#### E2E-043: Settings sheet content follows window width
+#### E2E-043: Settings page content follows window width
 
-- **Preconditions**: App running windowed on macOS with the settings sheet open.
-- **Steps**: 1) Open Appearance at the default window width and record the content-card width. 2) Expand the window to 1600px wide. 3) Open Models, Skills, MCP, and Projects. 4) Shrink the window to the supported 800px minimum, then to a short window (≈520px tall).
-- **Expected**: The content cards expand and contract with the available sheet width at every tested width; the 16–24px gutters and the rounded top corners stay stable; the seven categories stay on one row while they fit, and a 640×560 window at a 150% type scale swaps in the category selector; controls remain visible without clipping or horizontal page scrolling. In a short or narrow window the sheet takes the full width and height and squares its corners.
+- **Preconditions**: Isolated window with the full-window Settings page open.
+- **Steps**: Open Appearance, Models, Skills, MCP and Projects at compact, narrow, regular, wide and short dimensions. Repeat in English/Chinese at 100%/150% font scale.
+- **Expected**: The page fills the available client area at every size without floating gutters, rounded outer corners or shadow. Header safety clearance remains intact. Categories remain in one row while they fit and use the shared selector otherwise. Content and controls resize without horizontal page overflow.
 - **Specs linked**: `04-ux/06-settings-ia.md`, `04-ux/07-ui-design-system.md`
 - **Acceptance**: Quality (key operations feel polished)
 - **Milestone**: M5
 - **Status**: Unit-covered (`settings-responsive-layout.test.mjs`) and E2E-covered (`pnpm test:e2e:settings-scroll` segments); scenario Documented
 
-#### E2E-SETTINGS-category-sheet-navigation: Seven categories, one sheet, one sync surface
+#### E2E-SETTINGS-category-page-navigation: Seven categories in a normal page
 
-- **Preconditions**: Isolated Electron window with the production SettingsPage, production store and CSS, and a fixture IPC bridge. No real account, no paid model, no connection to the running desktop.
-- **Steps**: 1) Open Settings from a focused entry control. 2) Measure the sheet (height ratio, side gutters, top corners) and read the category bar and the head. 3) Enter a single-page category (Models, Projects) and a multi-page one (System → Network, Accounts → Devices, Capabilities → Skills and MCP). 4) Type a draft into AI → Instructions & memory, type `proxy` in the settings search, clear it, then close via the scrim, keep editing, and discard explicitly. 5) Open each capability editor (Skills, MCP, Subagents) from its add action and press Escape inside it; press Escape again with nothing on top. 6) Close the sheet and click the app behind it during the exit, then reopen during the exit. 7) Repeat destination switching and re-selection in light and dark themes. 8) Re-run the layout probe at compact (640×560), narrow (760), regular (1000), wide (1440) and short (1000×520) windows, in English and Chinese, at 100% and 150% type scale, and with `prefers-reduced-motion: reduce`. 9) Capture a screenshot per size and assert the head controls and category row are painted (luminance spread and tone count in the captured pixels), not merely present in the DOM.
-- **Expected**: The chat shell stays mounted and inert behind a sheet anchored to the window bottom: ~90% height, 16–24px gutters, 18–20px top corners, bottom flush with the window. Exactly seven categories appear in the order General, AI, Models, Capabilities, Accounts, Projects, System, on one row while they fit; a window that cannot fit them shows the category selector instead. Models and Projects render no second level; every other category lists its destinations and selects the clicked one. Search lists concrete rows with their path (`System › Network › Proxy`), never unmounts the page under it, and choosing a result switches category, destination, and scroll position, then flashes the row. A dirty instruction page survives searching and clearing, opens a confirmation on the scrim, the close button, and Escape, keeps the draft when the user chooses to keep editing, and only loses it on an explicit discard. Each capability editor owns its Escape: the first Escape closes the editor, the second closes the sheet, and the page never drops to chat under an open editor. During the exit the app behind stays inert and the scrim keeps taking clicks; reopening during the exit is not undone by the stale exit. Switching destination starts at the top, re-selecting keeps the position, and in-place updates keep the scroll. Under reduced motion the sheet still unmounts, and no layout overflows horizontally at any tested width, locale, scale, or theme. There is exactly one cloud-sync configuration surface (Accounts → Cloud sync).
+- **Preconditions**: Isolated Electron with production SettingsPage, store, CSS and fixture IPC. No real account, paid model or running user Desktop.
+- **Steps**: Open Settings from a focused entry and verify full client-area geometry with no outer modal, backdrop or translation. Visit single- and multi-destination categories. Edit an instruction draft, search and clear, then return, keep editing and explicitly discard. Test saving-in-progress and all three capability editors' Escape ownership. Return and immediately reopen, checking retained chat draft, scroll and sidebar state. Repeat five viewport sizes, English/Chinese, 100%/150% typography, both themes and reduced motion. Capture header/layout screenshots and inspect visible controls.
+- **Expected**: Settings switches directly into a full-window page, with hidden/inert mounted chat and immediate restoration on return. There is no outer modal semantics, scrim dismissal, animation callback or delayed unmount. Seven categories and one sync surface remain. Search preserves draft state and expands/locates folded anchors. Return and destination navigation keep dirty/saving protection; inner editor Escape never closes the page. The header stays below native chrome and the category selector handles overflow. Existing destination scrolling and focus return remain correct.
 - **Specs linked**: `04-ux/06-settings-ia.md`, `04-ux/07-ui-design-system.md`, `adr/settings-category-sheet-navigation.md`
 - **Acceptance**: Quality (key operations feel polished)
 - **Milestone**: M5
-- **Status**: E2E-covered (`pnpm test:e2e:settings-scroll`); screenshots captured per window size
+- **Status**: Covered by the targeted settings tests and `pnpm test:e2e:settings-scroll` when run for this candidate; retain screenshot evidence.
 
 #### E2E-040: Nested tool activity survives transcript reload
 - **Preconditions**: Provider configured; project open; a turn can contain

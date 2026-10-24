@@ -106,16 +106,16 @@ test("scenic plugins use the normal full-window shell for compositing", () => {
   // context and pin route overlays underneath the window chrome.
   assert.doesNotMatch(baseSrc, /\.app-shell\s*>\s*:not\(\.app-scenic-backdrop\)/);
   assert.match(settingsSrc, /data-plugin-theme\^="plugin:io\.github\.akshayxkill\.nexus-scenic-themes:/);
-  // The sheet's own surfaces composite over the scenic layer now that the
-  // settings page is a panel instead of a full-window takeover.
-  assert.match(settingsSrc, /\.settings-sheet[^}]*background:\s*transparent\s*!important/s);
+  // The page's own surfaces composite over the scenic layer now that Settings
+  // takes the whole window.
+  assert.match(settingsSrc, /\.settings-page[^}]*background:\s*transparent\s*!important/s);
   assert.match(settingsSrc, /\.settings-content[^}]*background:\s*transparent\s*!important/s);
 });
 
 test("scenic plugin themes expose a settings-surface compositing hook", () => {
   const settingsCss = readFileSync(join(desktopRoot, "src/styles/settings.css"), "utf8");
   assert.match(settingsCss, /data-plugin-theme\^="plugin:io\.github\.akshayxkill\.nexus-scenic-themes:/);
-  assert.match(settingsCss, /\.settings-sheet[^}]*background:\s*transparent\s*!important/s);
+  assert.match(settingsCss, /\.settings-page[^}]*background:\s*transparent\s*!important/s);
   assert.match(settingsCss, /\.settings-content[^}]*background:\s*transparent\s*!important/s);
   // Cards keep a translucent plate so the scenic image reads through them.
   assert.match(settingsCss, /\.settings-panel[^}]*background:\s*color-mix/s);

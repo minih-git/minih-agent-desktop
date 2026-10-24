@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppSettings, PluginScenicThemesDestinationMeta, ShortcutPlatform } from "@minih-agent/shared";
@@ -24,7 +23,7 @@ import {
   type VisibleSettingsCategory,
 } from "../../lib/settings-search";
 import { useBlockingOverlayActive } from "../../lib/blocking-overlay";
-import { Button, TooltipButton, cx } from "../../components/ui";
+import { Button, TooltipButton } from "../../components/ui";
 import { IconSearch, IconX } from "../../components/icons";
 import { LearnedMemoryDialog } from "../../components/LearnedMemoryDialog";
 import { SettingsDestination } from "./SettingsDestination";
@@ -41,22 +40,11 @@ function isEditable(node: EventTarget | null): node is Editable {
 }
 
 /**
- * The settings panel: a near full-height sheet that slides up from the window
- * bottom, with seven fixed categories and at most one second level.
- *
- * The chat shell stays mounted behind it (inert, in the shell), so drafts,
- * transcript scroll, sidebar collapse, and the work panel survive a visit. The
- * panel owns its own focus trap, protects explicitly saved forms, and closes
- * only the top-most surface.
+ * Full-window settings with seven categories. The chat shell stays mounted
+ * but hidden, so returning preserves drafts, scroll and running tasks.
+ * Only inner editors and unsaved-change confirmation are modal surfaces.
  */
-export function SettingsPage({
-  exiting = false,
-  onExited,
-}: {
-  /** The page already changed; the panel is playing its exit animation. */
-  exiting?: boolean;
-  onExited?: () => void;
-} = {}) {
+export function SettingsPage() {
   const { t, i18n } = useTranslation();
   const tab = useAppStore((s) => s.settingsTab);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
@@ -95,7 +83,7 @@ export function SettingsPage({
   const [learnedMemoryOpen, setLearnedMemoryOpen] = useState(false);
   const [categoryOverflow, setCategoryOverflow] = useState(false);
   // A leave that waits for the draft decision. Holding the action keeps every
-  // way out — category, tab, search result, scrim, Escape, close — identical.
+  // way out — category, tab, search result, Escape, close — identical.
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
   const draftRegistry = useSettingsDraftRegistry();
   const seenSettingsTabNonce = useRef(settingsTabNonce);
@@ -112,6 +100,7 @@ export function SettingsPage({
   const contentRef = useRef<HTMLDivElement>(null);
   const settingsSearchRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const draftDialogRef = useRef<HTMLDivElement>(null);
   const categoryBarRef = useRef<HTMLElement>(null);
   const panelTitleId = useId();
   const nestingActive = useBlockingOverlayActive();
@@ -123,8 +112,7 @@ export function SettingsPage({
     const previous = document.activeElement;
     settingsSearchRef.current?.focus({ preventScroll: true });
     return () => {
-      // The shell releases `inert` in the same commit that unmounts this sheet,
-      // so the restore waits one frame: focusing an inert element is a no-op.
+      // Restore after the shell has made the original entry visible again.
       window.requestAnimationFrame(() => {
         if (previous instanceof HTMLElement && previous.isConnected) {
           previous.focus({ preventScroll: true });
@@ -132,6 +120,17 @@ export function SettingsPage({
       });
     };
   }, []);
+
+  useLayoutEffect(() => {
+    if (!pendingLeave) return;
+    const previous = document.activeElement;
+    draftDialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) {
+        previous.focus({ preventScroll: true });
+      }
+    };
+  }, [pendingLeave]);
 
   useLayoutEffect(() => {
     // Reset before paint and before the search-anchor effect positions its row.
@@ -284,13 +283,12 @@ export function SettingsPage({
   const editingField = useCallback(() => {
     const node = document.activeElement;
     if (!isEditable(node) || node.classList.contains("settings-search")) return false;
-    return node.closest(".settings-sheet") !== null;
+    return node.closest(".settings-page") !== null;
   }, []);
 
   // Escape is listened for on the document, after every inner surface had its
   // chance to handle it: the panel only acts when nothing else is on top.
   useEffect(() => {
-    if (exiting) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       if (pendingLeave || innerSurfaceOpen()) return;
@@ -308,12 +306,11 @@ export function SettingsPage({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [closeSettings, editingField, exiting, innerSurfaceOpen, pendingLeave, query, requestLeave]);
+  }, [closeSettings, editingField, innerSurfaceOpen, pendingLeave, query, requestLeave]);
 
-  const onPanelKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (exiting) return;
+  const onDraftKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Tab") return;
-    const focusables = panelRef.current?.querySelectorAll<HTMLElement>(
+    const focusables = draftDialogRef.current?.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
     );
     if (!focusables || focusables.length === 0) return;
@@ -328,12 +325,6 @@ export function SettingsPage({
     }
   };
 
-  const onScrimPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (exiting || event.target !== event.currentTarget) return;
-    // A dirty or saving form decides; an untouched sheet closes on the scrim.
-    if (innerSurfaceOpen()) return;
-    requestLeave(closeSettings);
-  };
 
   const activeCategory: VisibleSettingsCategory | undefined =
     categories.find((category) => category.entries.some((entry) => entry.id === tab)) ??
@@ -416,21 +407,13 @@ export function SettingsPage({
 
   return (
     <SettingsDraftProvider value={draftRegistry}>
-      <div
-        className={cx("settings-overlay", exiting && "is-exiting")}
-        onPointerDown={onScrimPointerDown}
-      >
+      <div className="settings-page">
         <div
           ref={panelRef}
-          className={cx("settings-sheet", exiting && "is-exiting")}
-          role="dialog"
-          aria-modal="true"
+          className="settings-page-content"
+          role="main"
           aria-labelledby={panelTitleId}
-          onKeyDown={onPanelKeyDown}
-          onAnimationEnd={(event) => {
-            if (!exiting || event.target !== event.currentTarget) return;
-            onExited?.();
-          }}
+          inert={pendingLeave ? true : undefined}
         >
           {/* The head is the native drag region: no decorative plate is painted
               over it, so the title, search, and close stay visible. */}
@@ -563,11 +546,13 @@ export function SettingsPage({
         {pendingLeave ? (
           <div className="settings-draft-scrim">
             <div
+              ref={draftDialogRef}
               className="settings-draft-confirm"
               role="alertdialog"
               aria-modal="true"
               aria-labelledby={`${panelTitleId}-draft-title`}
               onKeyDown={(event) => {
+                onDraftKeyDown(event);
                 if (event.key !== "Escape") return;
                 event.preventDefault();
                 event.stopPropagation();

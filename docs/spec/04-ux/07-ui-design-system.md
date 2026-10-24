@@ -790,41 +790,34 @@ Notification cards keep the removal contract (`animationend` on `toast-out`)
 while sliding horizontally from/to the right edge with the motion tokens.
 Reduced motion retains near-zero duration so dismissal completes.
 
-### 8.4.1 Settings sheet
+### 8.4.1 Settings page
 
-Settings is a **bottom-anchored sheet**, not a full-window page and not a
-centered dialog. It reuses the existing surfaces and tokens instead of adding a
-second visual system:
+Settings uses a **normal full-window page** with the seven-category directory.
+The bottom sheet is retired; the shared surfaces, controls, and form dialogs
+remain unchanged.
 
-- Geometry: `--settings-sheet-gutter` (clamp 16–24px) on both sides, about 90%
-  of the window height, `--settings-sheet-radius` (19px) on the top corners,
-  `--ds-bg-primary` plate, `--ds-border-subtle` hairline, `--ds-shadow-dialog`.
-  No background blur and no background scaling.
-- Layers: the sheet sits on `z-index` 35 — above the shell's own surfaces (30)
-  and below the viewport overlay host (40), so a settings dialog, a leaf popup,
-  or a toast still paints over it. The scrim is a plain dim
-  (`color-mix(in oklab, #000 32%, transparent)`) that dismisses the sheet only
-  when no form holds unsaved work; during the exit it keeps taking the pointer
-  until the sheet unmounts, so no click lands on the app behind it.
-- The head is the window drag region and the only plate at the top of the
-  sheet: no absolutely positioned decorative band may paint over the title,
-  the search field, or the close button.
-- Motion: `settings-sheet-in` rises from below in ~240ms with
-  `--motion-ease-out`; `settings-sheet-out` leaves in ~180ms with
-  `--motion-ease-in`. No spring, no bounce, no drag handle. Switching category
-  or destination never replays the entrance.
-- Reduced motion keeps a near-zero duration (never `animation: none`) because
-  the exit animation is what unmounts the sheet.
-- Small windows (≤720px wide or ≤560px tall) take the full width and height and
-  square the corners. The category bar stays one row and, when its seven labels
-  no longer fit (measured against the bar, including a 150% type scale), the
-  panel swaps in the shared menu select as a category selector.
-- Navigation chrome: one row of seven category labels, then an optional row of
-  second-level labels, both using `.settings-nav-item`; selected state uses
-  `--ds-settings-nav-active`. There are no per-destination icons in the host
-  UI, and plugin theme entries are the only rows that keep a glyph.
-- Fixed head, category bar, second level, and close button; only the content
-  area scrolls.
+- Geometry: fill the available client area using `--ds-bg-primary`. Do not add
+  outer gutters, rounded floating corners, modal shadow, or an outer backdrop.
+  Content retains its existing responsive inner padding.
+- Chrome: reserve the native toolbar safety band before the page header, so
+  macOS traffic lights and Windows/Linux window controls remain separate from
+  the title, search, and return control. The real header owns dragging;
+  interactive controls are explicitly non-draggable. No decorative plate may
+  cover the controls.
+- Navigation: directly switch to and from Settings with no translate, slide,
+  retained exit surface, or animation-end unmount. Reduced motion follows the
+  same immediate transition. The page is not a modal dialog.
+- Chat: keep the prior shell mounted but hidden and inert while Settings is
+  active. Returning immediately restores the same draft, scroll, and layout.
+- Inner editors and dirty-form confirmation remain real dialogs. They retain
+  their stacking, Escape ownership, draft protection, and focus behavior.
+- Categories: keep seven top labels and at most one second-level row. When
+  labels overflow, use the existing shared category selector. Retain the
+  responsive typography behavior and selected `--ds-settings-nav-active` state.
+- Keep 16px of fixed space below the second-level navigation, outside the
+  content scroller, so scrolled content never touches the menu row.
+- Keep the header, navigation, and return control fixed while the content
+  scrolls. There is no height handle, snap position, or backdrop dismissal.
 
 ### 8.5 Reduced motion
 
