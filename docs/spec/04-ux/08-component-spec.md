@@ -1604,7 +1604,7 @@ storage but compose into one assistant turn until the next user message.
 
 | State | Behavior |
 |---|---|
-| Session activation | First activation re-pins and positions at the last record during layout, before the pane's first painted frame; a revisited pane restores its own retained scroll position instead |
+| Session activation | First activation re-pins and positions at the last record during layout, before the pane's first painted frame; a revisited pane restores its own retained scroll position instead. A bookmark taken before the session's transcript grew (the session ran while its pane was hidden) is stale: the reveal re-pins to the newest turn instead of restoring a mid-history position or showing the load-later pill |
 | Session transition | A warm destination pane is revealed immediately with its retained content and position. If it is running or still holds a not-yet-flushed completed reply, its live renderer snapshot survives the durable revalidation read. A cold destination leaves the visible pane on its own session under a thin progress track until it commits; nothing is dimmed, hidden panes stay mounted and inert, and current stream updates are not deferred |
 | Streaming | New tokens append; auto-scroll only while pinned to bottom |
 | Turn start | Send / retry / regenerate re-pins follow mode and jumps to bottom |

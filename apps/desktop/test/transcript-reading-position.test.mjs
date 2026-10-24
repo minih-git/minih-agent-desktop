@@ -6,6 +6,7 @@ const {
   captureTranscriptReadingPosition,
   getTranscriptReadingPosition,
   sessionReadingState,
+  transcriptReadingPositionIsStale,
 } = await import("../src/lib/transcript-reading-position.ts");
 const { TRANSCRIPT_REPIN_THRESHOLD_PX } = await import(
   "../src/lib/transcript-scroll.ts"
@@ -39,13 +40,15 @@ test("a session left at the bottom keeps a pinned bookmark even after follow was
     content,
     false,
     80,
+    "tail-1",
   );
-  assert.deepEqual(atBottom, { pinned: true, offset: 0, scrollTop: 1_500, windowSize: 80 });
+  assert.deepEqual(atBottom, { pinned: true, offset: 0, scrollTop: 1_500, windowSize: 80, tailMessageId: "tail-1" });
   const insideBand = captureTranscriptReadingPosition(
     scroller({ scrollTop: 1_500 - (TRANSCRIPT_REPIN_THRESHOLD_PX - 1) }),
     content,
     false,
     80,
+    "tail-1",
   );
   assert.equal(insideBand.pinned, true);
 });
@@ -56,6 +59,7 @@ test("a session actually scrolled up keeps its row and offset", () => {
     contentWithRow("row-42", 100),
     false,
     80,
+    "tail-1",
   );
   assert.deepEqual(position, {
     pinned: false,
@@ -63,7 +67,41 @@ test("a session actually scrolled up keeps its row and offset", () => {
     offset: 100,
     scrollTop: 400,
     windowSize: 80,
+    tailMessageId: "tail-1",
   });
+});
+
+test("#A100 a bookmark captured before the session grew is stale at reveal", () => {
+  const taken = captureTranscriptReadingPosition(
+    scroller({ scrollTop: 400 }),
+    contentWithRow("row-42", 100),
+    false,
+    80,
+    "m-old-tail",
+  );
+  assert.ok(taken, "an unpinned viewport must capture a bookmark");
+  assert.equal(taken.tailMessageId, "m-old-tail");
+  // The session kept running while the pane was hidden: its tail moved on.
+  assert.equal(transcriptReadingPositionIsStale(taken, "m-new-tail"), true);
+  // Reading a session that has not moved restores normally.
+  assert.equal(transcriptReadingPositionIsStale(taken, "m-old-tail"), false);
+  // A pinned bookmark is always current: the bottom is the newest turn.
+  const atBottom = captureTranscriptReadingPosition(
+    scroller({ scrollTop: 1_500 }),
+    contentWithRow("row-42", 100),
+    false,
+    80,
+    "m-old-tail",
+  );
+  assert.equal(atBottom?.pinned, true);
+  assert.equal(atBottom && transcriptReadingPositionIsStale(atBottom, "m-new-tail"), false);
+  // Bookmarks without a tail anchor (older in-memory state, tests) and
+  // transcripts without rows keep the previous restore behavior.
+  assert.equal(
+    transcriptReadingPositionIsStale({ ...taken, tailMessageId: undefined }, "m-new-tail"),
+    false,
+  );
+  assert.equal(transcriptReadingPositionIsStale(taken, undefined), false);
 });
 
 test("an unpinned bookmark owns reveal even when follow still reads pinned", async () => {
@@ -77,7 +115,7 @@ test("an unpinned bookmark owns reveal even when follow still reads pinned", asy
 
 test("a hidden or unmetered scroller never replaces a bookmark", () => {
   assert.equal(
-    captureTranscriptReadingPosition(scroller({ scrollTop: 0, clientHeight: 0 }), null, true, 80),
+    captureTranscriptReadingPosition(scroller({ scrollTop: 0, clientHeight: 0 }), null, true, 80, "tail-1"),
     undefined,
   );
   sessionReadingState("s").position = {

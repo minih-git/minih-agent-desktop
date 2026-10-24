@@ -6426,7 +6426,10 @@ selection already in place shows it without waiting for another event.
   latest page no longer contains the anchor. When the anchor is already loaded
   but outside the mounted row window, the saved absolute scroll offset is
   restored first and the lookup completes before alignment starts, so the
-  fallback deadline cannot cancel history reading. The cold selection's progress track
+  fallback deadline cannot cancel history reading. A bookmark taken before the
+  session's transcript grew while its pane was hidden is stale: reopening that
+  session follows the newest turn instead of restoring the outdated position
+  (#A100), and an up-to-date bookmark still restores. The cold selection's progress track
   model-input messages are unchanged, and real input or a new turn cancels
   automatic alignment. First visits and pinned revisits still follow latest. Nothing is
   dimmed at any point, hidden panes stay non-interactive and out of the

@@ -174,16 +174,21 @@ test("session activation pins a first visit and honors a runtime reading bookmar
   assert.doesNotMatch(chatSurface, /SessionLoadingSkeleton/);
 
   // Cold first visits still settle before paint; an evicted reading bookmark
-  // takes priority over initialization. Chromium covers the actual lifecycle.
+  // takes priority over initialization, and a stale one (#A100) re-pins like a
+  // first visit. Chromium covers the actual lifecycle.
   const activationEffect = transcript.match(
-    /useLayoutEffect\(\(\) => \{([\s\S]*?)\n  \}, \[cancelFollowScroll, releaseDisclosureAnchor, savedReadingPosition, scrollToBottom\]\);/,
+    /useLayoutEffect\(\(\) => \{([\s\S]*?)\n  \}, \[cancelFollowScroll, releaseDisclosureAnchor, savedPinned, scrollToBottom\]\);/,
   )?.[1];
   assert.ok(activationEffect);
   assert.match(activationEffect, /cancelFollowScroll\(\)/);
-  assert.match(activationEffect, /pinnedRef\.current = savedReadingPosition\?\.pinned \?\? true/);
+  assert.match(activationEffect, /pinnedRef\.current = savedPinned/);
   assert.match(activationEffect, /setShowJump\(!pinnedRef\.current\)/);
   assert.match(activationEffect, /if \(pinnedRef\.current\) scrollToBottom\(\)/);
   assert.doesNotMatch(activationEffect, /smooth/);
+  // A bookmark recorded before the session grew must not own the reveal.
+  assert.match(transcript, /const staleSavedBookmark = savedReadingPosition !== undefined &&/);
+  assert.match(transcript, /transcriptReadingPositionIsStale\(savedReadingPosition, tailMessageId\)/);
+  assert.match(transcript, /const savedPinned = staleSavedBookmark \? true : \(savedReadingPosition\?\.pinned \?\? true\)/);
 });
 
 test("a revealed pane restores its own scroll position in the layout phase", () => {
@@ -191,11 +196,13 @@ test("a revealed pane restores its own scroll position in the layout phase", () 
   // scroller can be clamped while its content grows off screen, and a passive
   // effect would leave one visible frame at the wrong offset (ADR 0137).
   const revealEffect = transcript.match(
-    /useLayoutEffect\(\(\) => \{([\s\S]*?)\n  \}, \[cancelFollowScroll, paneVisible, releaseDisclosureAnchor, scrollToBottom, sessionId\]\);/,
+    /useLayoutEffect\(\(\) => \{([\s\S]*?)\n  \}, \[cancelFollowScroll, paneVisible, releaseDisclosureAnchor, scrollToBottom, sessionId, tailMessageId\]\);/,
   )?.[1];
   assert.ok(revealEffect, "the reveal must restore position in a layout effect");
   assert.match(revealEffect, /retainedScrollTopRef\.current = lastLaidOutScrollTopRef\.current/);
-  assert.match(revealEffect, /transcriptRevealOwnership\(bookmark, Boolean\(readingPositionPendingRef\.current\), pinnedRef\.current\)/);
+  // A bookmark the session has outgrown (#A100) re-pins instead of restoring.
+  assert.match(revealEffect, /transcriptReadingPositionIsStale\(bookmark, tailMessageId\)/);
+  assert.match(revealEffect, /const ownership = staleBookmark\s*\n\s*\? "pinned"/);
   assert.match(revealEffect, /ownership === "reading-position"[\s\S]*?pinnedRef\.current = false/);
   assert.match(revealEffect, /ownership === "pinned"[\s\S]*?scrollToBottom\(\)/);
   assert.match(revealEffect, /el\.scrollTop = retained/);

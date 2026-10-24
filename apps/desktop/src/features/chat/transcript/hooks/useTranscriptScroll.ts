@@ -40,7 +40,7 @@ import { readScrollInputContext } from "../../../../lib/scroll-input";
 import { useDisclosureAnchor } from "../../../../hooks/use-disclosure-anchor";
 import type { TranscriptSearchTarget } from "../../../../lib/transcript-reading";
 import { useTranscriptSearchFocus } from "../../../../hooks/use-transcript-search-focus";
-import { getTranscriptReadingPosition, transcriptRevealOwnership } from "../../../../lib/transcript-reading-position";
+import { getTranscriptReadingPosition, transcriptRevealOwnership, transcriptReadingPositionIsStale } from "../../../../lib/transcript-reading-position";
 import { useTranscriptReadingPosition, type RestoreTranscriptReading } from "../../../../hooks/use-transcript-reading-position";
 
 type UseTranscriptScrollOptions = {
@@ -58,6 +58,14 @@ type UseTranscriptScrollOptions = {
   searchTarget: TranscriptSearchTarget | null;
   readingWindow: boolean;
   onRestoreReading?: RestoreTranscriptReading;
+  /**
+   * The session's canonical tail id — the live projection's last row, not the
+   * tail of a historical reading window. Staleness of a reading bookmark is
+   * judged against this session truth so a restored view (whose rendered tail
+   * sits inside history) still restores, while a session that grew after its
+   * bookmark was taken (#A100) re-pins to the newest turn.
+   */
+  canonicalTailMessageId?: string;
 };
 
 export function useTranscriptScroll({
@@ -75,6 +83,7 @@ export function useTranscriptScroll({
   searchTarget,
   readingWindow,
   onRestoreReading,
+  canonicalTailMessageId,
 }: UseTranscriptScrollOptions) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -82,6 +91,15 @@ export function useTranscriptScroll({
   const historyBoundaryRef = useRef<HTMLDivElement>(null);
   const [savedReadingPosition] = useState(() => getTranscriptReadingPosition(sessionId));
   const pinnedRef = useRef(savedReadingPosition?.pinned ?? true);
+  // The canonical tail this pane is compared against. A bookmark whose recorded
+  // tail differs was taken before the session grew (#A100); the reveal paths
+  // below and the restore hook drop it and follow the newest turn instead.
+  const tailMessageId = canonicalTailMessageId;
+  // A stale bookmark re-pins like a first visit: the position it names is
+  // history now, and hydration may bound its first commit again.
+  const staleSavedBookmark = savedReadingPosition !== undefined &&
+    transcriptReadingPositionIsStale(savedReadingPosition, tailMessageId);
+  const savedPinned = staleSavedBookmark ? true : (savedReadingPosition?.pinned ?? true);
   const lastScrollTopRef = useRef(0);
   // Last offset sampled while the scroller had a real layout box. A hidden
   // pane's `content-visibility: hidden` box reports `scrollTop === 0`, so the
@@ -95,8 +113,9 @@ export function useTranscriptScroll({
   const [showJump, setShowJump] = useState(false);
 
   // Steady-state cap on mounted history rows (D261). Grows when the user
-  // reaches the top of the window; reset per session below.
-  const [windowSize, setWindowSize] = useState(savedReadingPosition?.windowSize ?? TRANSCRIPT_WINDOW_MIN);
+  // reaches the top of the window; reset per session below. A stale bookmark's
+  // enlarged window belongs to a history page the reader is no longer taken to.
+  const [windowSize, setWindowSize] = useState(savedPinned ? savedReadingPosition?.windowSize ?? TRANSCRIPT_WINDOW_MIN : TRANSCRIPT_WINDOW_MIN);
   // Read by `reachTop`, which must stay referentially stable for the scroll
   // listener; the projection it describes is only known later in this render.
   const historyLengthRef = useRef(0);
@@ -136,7 +155,7 @@ export function useTranscriptScroll({
     cancel: cancelReadingPosition,
   } = useTranscriptReadingPosition({
     sessionId, scrollRef, contentRef, pinnedRef, visible: paneVisible,
-    windowSize, contentVersion: messages, onPosition: recordScrollPosition,
+    windowSize, contentVersion: messages, tailMessageId, onPosition: recordScrollPosition,
     onRestore: onRestoreReading, onMissing: readingPositionMissing,
   });
 
@@ -218,10 +237,10 @@ export function useTranscriptScroll({
   useLayoutEffect(() => {
     releaseDisclosureAnchor();
     cancelFollowScroll();
-    pinnedRef.current = savedReadingPosition?.pinned ?? true;
+    pinnedRef.current = savedPinned;
     setShowJump(!pinnedRef.current);
     if (pinnedRef.current) scrollToBottom();
-  }, [cancelFollowScroll, releaseDisclosureAnchor, savedReadingPosition, scrollToBottom]);
+  }, [cancelFollowScroll, releaseDisclosureAnchor, savedPinned, scrollToBottom]);
 
   // Revisits restore this pane's own position. A hidden scroller can be clamped
   // while its content grows off screen, so the offset is captured on the way out
@@ -249,7 +268,14 @@ export function useTranscriptScroll({
     }
     if (!becameVisible) return;
     const bookmark = getTranscriptReadingPosition(sessionId);
-    const ownership = transcriptRevealOwnership(bookmark, Boolean(readingPositionPendingRef.current), pinnedRef.current);
+    // A stale bookmark must not win the reveal (#A100): the session grew while
+    // this pane was hidden, so the position it names is history. Treat the
+    // reveal as pinned instead of restoring that offset or a history window.
+    const staleBookmark = bookmark !== undefined &&
+      transcriptReadingPositionIsStale(bookmark, tailMessageId);
+    const ownership = staleBookmark
+      ? "pinned"
+      : transcriptRevealOwnership(bookmark, Boolean(readingPositionPendingRef.current), pinnedRef.current);
     if (ownership === "reading-position") {
       if (bookmark?.pinned === false) {
         pinnedRef.current = false;
@@ -266,7 +292,7 @@ export function useTranscriptScroll({
     el.scrollTop = retained;
     lastScrollTopRef.current = retained;
     lastLaidOutScrollTopRef.current = retained;
-  }, [cancelFollowScroll, paneVisible, releaseDisclosureAnchor, scrollToBottom, sessionId]);
+  }, [cancelFollowScroll, paneVisible, releaseDisclosureAnchor, scrollToBottom, sessionId, tailMessageId]);
 
   // A hidden pane must not chase its stream: its scroller has no visible
   // viewport, and the measurements a follow scroll depends on are unreliable
@@ -536,8 +562,10 @@ export function useTranscriptScroll({
   // paged-in session used to end up with every row mounted for good, retaining
   // its Markdown and highlighting for rows nobody was looking at.
   const [hydrationTick, setHydrationTick] = useState(0);
+  // A stale bookmark re-pins the reveal, so its pane hydrates like a first
+  // visit: bounded commit first, expansion re-pinning the newest turn (#A100).
   const hydrationBounded =
-    !readingWindow && firstCommit && savedReadingPosition?.pinned !== false &&
+    !readingWindow && firstCommit && savedReadingPosition?.pinned !== false && !staleSavedBookmark &&
     allHistoryEntries.length > TRANSCRIPT_INITIAL_MOUNT;
   // The bounded commit and the expansion must show the transcript at the same
   // place. A spacer sized from a per-entry guess cannot match the rows it stands

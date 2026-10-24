@@ -6,6 +6,18 @@ export type TranscriptReadingPosition = {
   offset: number;
   scrollTop: number;
   windowSize: number;
+  /**
+   * The tail message of the transcript this position was captured in.
+   *
+   * #A100: a bookmark captured after the session's newest turn was recorded
+   * forever, even though the conversation kept growing while the pane was
+   * hidden. Reopening such a session restored a mid-history page and showed
+   * the "load later messages" pill. The tail anchor lets every reveal path
+   * detect that the session has moved on since the bookmark was taken and
+   * discard it instead of restoring a position in history that is no longer
+   * the place the reader left.
+   */
+  tailMessageId?: string;
 };
 export type TranscriptDisclosureChoice = { open: boolean; revealRequest?: number };
 type ReadingState = {
@@ -28,6 +40,25 @@ export function getTranscriptReadingPosition(sessionId: string | undefined) {
   return sessionId ? readingStates.get(sessionId)?.position : undefined;
 }
 export type TranscriptRevealOwnership = "reading-position" | "pinned" | "retained";
+
+/**
+ * Whether a bookmark still describes a position worth restoring.
+ *
+ * `tailMessageId` is the id of the transcript's last row at capture time. A
+ * reveal whose transcript ends at another row has appended content since the
+ * bookmark was taken (the session kept running while its pane was hidden), so
+ * the recorded position no longer means "where the reader left" — it means a
+ * point in history. Bookmarks without a tail anchor (in-memory states from an
+ * earlier renderer run, or tests) keep the previous behavior: the session
+ * cannot be proven to have moved on.
+ */
+export function transcriptReadingPositionIsStale(
+  position: TranscriptReadingPosition,
+  tailMessageId: string | undefined,
+): boolean {
+  if (position.pinned || !position.tailMessageId || !tailMessageId) return false;
+  return position.tailMessageId !== tailMessageId;
+}
 
 /** A recorded unpinned bookmark wins over a stale follow flag on pane reveal. */
 export function transcriptRevealOwnership(
@@ -59,10 +90,11 @@ export function captureTranscriptReadingPosition(
   content: HTMLElement,
   pinned: boolean,
   windowSize: number,
+  tailMessageId: string | undefined,
 ): TranscriptReadingPosition | undefined {
   if (!transcriptHasLayout(scroller)) return;
   if (pinned || transcriptSitsAtBottom(scroller)) {
-    return { pinned: true, offset: 0, scrollTop: scroller.scrollTop, windowSize };
+    return { pinned: true, offset: 0, scrollTop: scroller.scrollTop, windowSize, tailMessageId };
   }
   const viewport = scroller.getBoundingClientRect();
   // Prefer the outer message/turn: its offset also describes reading inside an
@@ -72,7 +104,7 @@ export function captureTranscriptReadingPosition(
     if (rect.bottom <= viewport.top || rect.top >= viewport.bottom || rect.height === 0) continue;
     const messageId = row.dataset.minimapId ?? row.dataset.messageId;
     if (messageId) return { pinned, messageId, offset: rect.top - viewport.top,
-      scrollTop: scroller.scrollTop, windowSize };
+      scrollTop: scroller.scrollTop, windowSize, tailMessageId };
   }
 }
 

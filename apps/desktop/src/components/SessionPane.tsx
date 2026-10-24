@@ -48,6 +48,15 @@ export const SessionPane = memo(function SessionPane({
     Boolean(headAsk(state.pendingAsks, sessionId)),
   );
   const planningState = useAppStore((state) => state.planningStates[sessionId]);
+  // The canonical transcript tail, not the tail of a historical reading window:
+  // a restored view renders a slice whose last row sits inside history, so
+  // bookmark staleness must be judged against the session's live projection
+  // (what the pane would show with no reading window) instead (ADR 0137).
+  const canonicalTailMessageId = useAppStore((state) =>
+    state.activeSessionId === sessionId
+      ? state.messages.at(-1)?.id
+      : state.retainedTranscripts[sessionId]?.at(-1)?.id,
+  );
   const searchTarget = useMemo(
     () =>
       transcript.focus && transcript.parentMessage
@@ -84,6 +93,7 @@ export const SessionPane = memo(function SessionPane({
           onLoadNewer={() => loadTranscriptPage(sessionId, "after")}
           onReturnToLatest={() => returnToLatest(sessionId)}
           navigationLoading={transcript.loading}
+          canonicalTailMessageId={canonicalTailMessageId}
           isRunning={isRunning}
           pendingPermission={transcript.historical ? undefined : pendingPermission}
           queuedPermissions={queuedPermissions}
