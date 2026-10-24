@@ -90,7 +90,7 @@ above is covered by a test.
   | contains `image` | — | image-capable: listed by the image picker, sent to `/v1/images/generations` |
   | contains `image`, no `text` | — | image-only (never offered for chat) |
   | undeclared | a chat protocol | chat-capable, and only that |
-  | undeclared | `openai-images` declared, no chat protocol | image "unconfirmed" — listed in a separate group of the image picker, selectable, labelled "gateway did not declare image output" |
+  | undeclared | `openai-images` declared, no chat protocol | neither: the channel union is not a declaration of output |
   | anything else | — | listed as unavailable with the reason |
 
 - Two rows of the proposed table changed while the classifier was written, and
@@ -100,10 +100,21 @@ above is covered by a test.
     stronger evidence, and the endpoint is fixed when the request is built, so
     the second condition decided nothing.
   - An undeclared row that already declares a chat protocol resolves to
-    chat-capable only, and is not also listed as a maybe-image model. The
+    chat-capable only, and is not also listed as a maybe-image model: the
     channel union declares `openai-images` for every model behind such a
     channel, so that group would have contained every text model — the bug this
     decision exists to remove.
+- Generation is decided by the gateway, not by the client (2026-10-24). The
+  attempt above to read an undeclared row as a maybe-image model was withdrawn:
+  a client that guesses cannot tell "the gateway serves this model for images"
+  from "the channel lists `openai-images`". `/api/models` now carries a
+  per-model `output_modalities`, the operator's own declaration, and the client
+  uses it whenever it is non-empty (falling back to the upstream catalog
+  reference when the field is empty or absent — an empty array means "cannot
+  assert", not "produces nothing"). An undeclared model is chat-only; the image
+  picker lists nothing but declared image models, and says so when the gateway
+  has declared none. This matches the desktop client, where an image model is
+  bound explicitly in settings and never inferred.
 - The reasons a listed model is unavailable are three, and the picker prints the
   matching one: `image-model` (declared image output, "use in Studio"),
   `not-chat` (only non-conversation protocols such as `openai-embeddings`,
@@ -307,11 +318,13 @@ with it.
 ## 5. Consequences
 
 - The model lists become correct for every Router channel type, at the cost
-  of depending on models.dev catalog references; models without one fall into
-  the explicit "undeclared" groups rather than being guessed. In practice an
-  OpenAI-compatible gateway whose models carry no catalog reference now shows
-  those models under the unconfirmed image heading instead of presenting them
-  as promised image models.
+  of depending on a per-model output declaration. That declaration is the
+  gateway's own (`output_modalities`), with models.dev catalog references as the
+  fallback for a declaration that is empty or absent; a model with neither is a chat
+  model when it declares a chat protocol and is never offered for image work.
+  In practice a gateway that publishes an image model without declaring it will
+  not show that model in Studio, which is the honest outcome: the client cannot
+  tell that model apart from a text model.
 - Stored connections and direct-chat history remain readable by the old and
   new app; the only persisted addition is `lastImageModelId`. A record written
   before the separation opens with its remembered chat model moved to the

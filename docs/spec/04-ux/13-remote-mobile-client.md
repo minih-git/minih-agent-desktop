@@ -1175,7 +1175,9 @@ notification rows of §17.6.5.
 - **"Other"** — sessions with no `projectId`, or whose project left the catalog —
   is one trailing card labelled "Other", subtitle "Sessions without a project". It
   is a real destination (its S5b lists them) and it never sorts upward, so one
-  stray session cannot push a real project down.
+  stray session cannot push a real project down. It can also start one: the
+  session is created with no `projectId`, and the new-session sheet's project row
+  reads "No project" instead of offering a folder.
 - **A project with no session is shown**, unlike §8.6's empty group, because it is
   now a destination with an action (start a session there) rather than a heading
   the user cannot act on. Archived projects stay hidden, as in §15.2.
@@ -1451,23 +1453,39 @@ decision dock (§8.7); and a notification whose approval was handled elsewhere s
 
 #### 17.6.4 Foreground: an in-app notice, not a system banner
 
-When the app is open, a notification must not cover the screen the user is working
-in. The iOS plugin's `willPresent` already returns no presentation options when the
+The iOS plugin's `willPresent` already returns no presentation options when the
 build configures none — `@capacitor/push-notifications` returns an empty set and
 still notifies JS — so nothing is shown by the system today, and what is missing is
-the JS listener. Therefore:
+the JS listener. The client therefore renders its own notice, as a centred dialog
+rather than a system banner. Therefore:
 
-- the app subscribes to `pushNotificationReceived` and renders a notice bar
-  directly under the navigation bar: state glyph, the kind as its title, the session
-  title as its line, "查看" and a dismiss button. It is `role="status"` with
-  `aria-live="polite"`, so a screen reader reads it once;
+- the app subscribes to `pushNotificationReceived` and renders a centred dialog
+  over a scrim, on `<body>` so no page stacking context can hide it: state glyph,
+  the kind as its title, the kind's own line as its body, "查看" as the primary
+  button and "关闭" as the secondary one. Tapping the scrim is the same decision as
+  "关闭". It is `role="alertdialog"` with `aria-modal="true"` and
+  `aria-labelledby`/`aria-describedby`, so a screen reader announces it once and
+  focus starts on "查看";
+- the payload carries no sentence and no session title (§11.6), so the body is the
+  kind's own line; the button opens the session, which is where the title is;
 - an attention notice (approval or answer) stays until the user opens or dismisses
   it, because it is the reason the phone spoke; completed and failed notices leave
   after 6 s;
 - "查看" pushes S6 with the same restored stack a tap builds, so the two paths
   cannot diverge;
-- no sound, no vibration, and no card over the decision dock: the user is already
-  there.
+- no sound and no vibration.
+- nothing is shown when the screen in front of the user already is that session:
+  the decision dock is the notice, and a dialog over it would hide the one thing
+  the user is there for (§8.7). The push is still consumed — an
+  `input.requested` notice still marks the session as waiting for an answer, and
+  the badge still updates.
+
+An A/B decision (2026-10-24) replaced the earlier bar under the navigation bar: it
+applied the safe-area inset twice, once through `.rm-nav` and again through its own
+fixed offset, which left a blank block above its text, and being a narrow strip it
+was easy to miss. A centred dialog is what the user asked for; it does cover the
+screen the notice is about, so its wording stays one line and either button clears
+it at once.
 
 #### 17.6.5 Settings switches, and where they live
 
@@ -1697,8 +1715,14 @@ to that root.
 ### 18.3 Images
 
 - Direct image-capable conversations offer real picker input, preview/remove,
-  and explicit camera capture where implemented. Unknown capability is not
-  permission to send. Refused MIME, size or permission preserves the draft.
+  and explicit camera capture where implemented. When the model takes text only,
+  or the gateway never declared its input modalities, the attachment control
+  stays and a tap says which of the two it is: hiding it read as a missing
+  feature. Unknown capability is not permission to send, and neither case sends
+  or loses the draft. Refused MIME, size or permission preserves the draft.
+- A user's own picture whose attachment carries no media id is named
+  ("Image · name") rather than left blank: the row could not be fetched, and
+  silence looked like the message never had an attachment.
 - Timeline images have bounded thumbnails and loading/unavailable/error
   states. Tap opens close, fit, zoom/pan, Save and Share; Back closes the viewer
   first. Keep the reader's scroll position as images load.
@@ -1768,18 +1792,19 @@ No implementation may weaken roles or replace credentials to make a UI pass.
 Every model list in the client is projected from one classifier
 (`modelCapability`, `resolveDirectModel`, `resolveDirectImageModel` in
 `src/lib/direct-chat/catalog.ts`). It reads two facts about a catalog row: what
-the model declares it produces (`outputModalities`, parsed from
-`upstream_models[].catalog_reference.model.modalities.output`) and which
-protocols the gateway lists.
+the model declares it produces (`outputModalities`: the gateway's non-empty
+per-model `output_modalities`, or
+`upstream_models[].catalog_reference.model.modalities.output` when the gateway
+sends an empty array or no field at all) and which protocols the gateway lists.
 
 | Declared output | Protocols listed | Chats picker | Studio picker |
 |---|---|---|---|
 | contains `text` | a chat protocol | usable, on `openai-completions` before `openai-responses` | not listed |
-| contains `image` | anything | not listed | usable, confirmed |
-| contains `image` and `text` | a chat protocol | usable | usable, confirmed |
-| contains `image`, no `text` | anything | listed as unavailable ("Image model — use in Studio") | usable, confirmed |
+| contains `image` | anything | not listed | usable |
+| contains `image` and `text` | a chat protocol | usable | usable |
+| contains `image`, no `text` | anything | listed as unavailable ("Image model — use in Studio") | usable |
 | nothing declared | a chat protocol | usable | not listed |
-| nothing declared | `openai-images`, no chat protocol | listed as unavailable | usable, under "gateway did not declare image output" |
+| nothing declared | `openai-images`, no chat protocol | listed as unavailable | not listed |
 | anything else | — | listed as unavailable, with its reason | not listed |
 
 - **The channel union is the trap this replaces.** Router does not declare
@@ -1803,11 +1828,21 @@ protocols the gateway lists.
   the shared parser derives it partly from the model's name for the desktop
   catalog's grouping, so a name such as `qwen-vl` would otherwise disable a
   model the gateway really serves over Chat Completions.
-- **Declared, or unconfirmed and said so.** A row whose image claim rests on
-  the channel union alone stays selectable but is listed apart and labelled
-  "gateway did not declare image output", because that is how such a gateway
-  publishes its image models in practice and hiding them would remove the only
-  working path.
+- **Generation is declared by the gateway, per model (2026-10-24).** A row is
+  offered for image work only when its output modalities contain `image`; the
+  operator sets that in the gateway (`output_modalities`), and the client falls
+  back to the upstream catalog reference when the gateway sends an empty array or
+  no field at all — an empty array means "cannot assert", never "produces
+  nothing". An undeclared row is a conversation model when it lists a chat
+  protocol, and nothing else: the channel union is not a claim about output, so
+  `openai-images` never makes a model an image model on its own. The desktop
+  client has always worked this way — image models are bound explicitly in
+  settings, never inferred — and the phone now matches it.
+- **The picker lists choices, not the catalog.** Chat mode lists what can hold a
+  conversation; image mode lists what the gateway declared for images. A row
+  that cannot do the current operation is not listed at all, and image mode with
+  nothing declared says so and points at the model profile in the gateway, which
+  is the only place that can fix it.
 - **No silent fallback.** A model that is gone, forbidden, or cannot hold a
   conversation resolves to "unavailable" and the sheet asks the user to choose;
   no request is retried on another model or protocol, because that would bill a
@@ -1921,18 +1956,17 @@ One sheet serves Chats, Studio and Settings (`components/ModelSheet.tsx` over
 
 - **A chat / image segmented control** at the top. The mode decides which
   classifier runs, so the same catalog produces two different lists: chat rows
-  grouped by vendor, or image rows with their unconfirmed group.
+  grouped by vendor, or the image rows the gateway declared.
 - **Search** over the model id and the vendor.
 - **Vendor grouping** with a two-letter monogram per vendor; a row without a
   declared vendor falls into "Other".
 - **Capability chips** on each row: chat, image, vision (from the gateway's
-  `inputModalities`), and the unconfirmed image chip. A row also shows its
-  context window and, when the gateway declared one, its input/output price.
-- **The unconfirmed group** for image modes: selectable rows whose image claim
-  comes from the channel union only, under the heading and the one-line
-  explanation that the gateway did not declare image output.
-- **Unavailable rows collapsed** behind a count, each with the reason it cannot
-  be used in the current mode.
+  `inputModalities`). A row also shows its context window and, when the gateway
+  declared one, its input/output price.
+- **Only choices.** A row that cannot do the current mode is not listed, and
+  there is no collapsed drawer of unavailable rows. Image mode with nothing
+  declared says the gateway has not declared a model that produces images and
+  points at the model profile in the gateway, which is where that is set.
 - **Star to set the default** for the active segment, with a toast naming the
   model; the star never changes the model of the conversation or generation in
   front of it.
@@ -2057,3 +2091,93 @@ sheet classes.
 - No device acceptance. Simulator and device runs of the three roots, the
   sheets with real keyboard and safe areas, and native appearance switching are
   still to be reported separately from Chromium validation.
+
+### 19.11 Catalog freshness and honest failures (2026-10-24)
+
+- **The catalog is refreshed, not frozen.** It used to be written once when the
+  account connected and never read again, so a model the gateway had withdrawn
+  stayed selectable and every request on it failed with no way to tell why. It is
+  now re-read when the app returns to the foreground, when a picker opens, and
+  when the Chats or Studio root is entered; one shared throttle keeps those
+  moments to at most one request a minute. A read that fails leaves the cached
+  catalog alone and says so in a toast, so the list is never silently stale. A
+  model that has left the catalog resolves to the existing "no model → choose a
+  model" path in both roots.
+- **Two gateway codes get their own words.** `no_available_candidate` (503) reads
+  as "this model has no available route right now — try another model", and
+  `upstream_cooldown` (429) as "this model is busy; try again in a moment". The
+  real quota codes (`access_key_rate_limited`, `access_key_cost_limit_exceeded`)
+  keep the quota wording. Both planes — chat and images — read the code out of
+  the refusal body; a stored failure whose kind this build does not know still
+  falls back to the gateway line.
+- **A refusal is a hint, not an error.** Only failures the user must read —
+  unauthorized, image validation, save, copy, a foreign account scope — use the
+  red callout under the timeline. Confirmations and hints (a model switch, a
+  reply already running, "stop first", "connect first", "no model yet") arrive as
+  a toast that leaves on its own. A "no route" failure offers "switch model"
+  beside the retry, because retrying the same model cannot help.
+- **Studio gives the unfinished cards the full width.** In each day, generating,
+  failed and stopped cards take a full-width slot at the top — the generating one
+  at 4:3 with a larger spinner and a two-line prompt, the failed one as a row with
+  the reason and prompt on the left and retry/delete on the right. Finished
+  artwork keeps the two-column masonry.
+
+### 19.12 Thinking effort (2026-10-24)
+
+A conversation can say how hard the model should think. Neither kind of
+conversation invents a level.
+
+- **Remote sessions.** The session-info sheet offers what the Host's
+  `model/list` publishes for the session's model (`thinkingLevels`), `off` → `max`,
+  and nothing at all when the model publishes none. The value shown is the
+  session's own `thinkingLevel`, or the model's `defaultThinkingLevel` when it
+  recorded none: `off` is never invented. A change is a `session/configure` with
+  `thinkingLevel`, and it is locked while a turn is running or a decision is
+  pending, with the same reason the model row gives. A new session chooses its
+  level in the new-session sheet, starting on the model's default; a model switch
+  keeps a level the new model also publishes and otherwise moves to that model's
+  default (or, when it declares none, the desktop's
+  `nearestSupportedThinkingLevel`). The header strip follows the Host's answer, so
+  `model · level` updates as soon as the Host replies.
+- **Direct chat.** The info sheet lists the levels the gateway declared for the
+  model (`reasoning_levels`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`,
+  `max`, `ultra`, `persistent` — runtime spec §5) with "Default" first. "Default"
+  sends no reasoning parameter, and can say which level the gateway itself uses
+  (`default_reasoning_level`). Only declared levels are listed. The choice is
+  stored on the conversation record, where a record written before the field
+  existed reads as "Default"; the request carries `reasoning_effort` (Chat
+  Completions) or `reasoning: { effort }` (Responses), and image generation
+  carries neither. A model change drops a level the new model does not declare,
+  and a toast says so. `none` is shown with the same word the desktop uses for
+  `off` — the same idea in two vocabularies — and a level stored before this
+  vocabulary existed (an old `off`, say) reads as "Default" and is never sent.
+- The two lists are the two vocabularies, each rendered verbatim: remote sessions
+  show the Host's ladder (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`,
+  `max`), direct chat the gateway's nine (`none` … `persistent`). Neither is
+  translated copy — only the words around them ("Thinking level", "Default",
+  "Not sent") are — and neither is mapped onto the other.
+
+### 19.13 Mobile chat is the operator's call (2026-10-24)
+
+The gateway can open each model to phones, and the phone obeys.
+
+- `GET /api/models` may carry `mobile_chat` per model. `false` removes the row
+  from conversations on this device whatever the model can do; `true` keeps the
+  rules of §19.1–19.5. A gateway that does not send the field at all predates the
+  switch, and its models keep working exactly as before: silence is not "nothing
+  is enabled", and reading it that way would empty every phone's chat list on the
+  day the switch shipped.
+- The chat picker lists only opened models. When the gateway opened none, the
+  sheet says so and names the switch to turn on ("Available on mobile" in the
+  model's profile) — distinct from "no search result" and from the studio's "no
+  image models".
+- A conversation whose model is no longer opened stays readable; its composer
+  offers "choose model" and says the model is not opened to mobile. Nothing is
+  switched automatically: another model is another paid request.
+- The flag gates conversations only. The studio keeps reading the declared
+  output (§19.1), so a model opened for images but closed to chat still appears
+  there.
+- The flag is a permission, not a capability. It never makes a text model look
+  like an image-only one, so turning it off cannot migrate a user's remembered
+  chat model into the image slot — a switch the operator may flip back must not
+  rewrite saved choices.

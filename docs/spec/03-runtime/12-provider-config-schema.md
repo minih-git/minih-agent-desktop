@@ -822,6 +822,79 @@ to `PROVIDER_ERROR`. A usage read failure leaves `usage: null` and still
 returns the balance. A response without `current_access_key` (an
 administrator key) is refused.
 
+### Model output modalities
+
+`GET /api/models` carries one field a client may read as a capability claim:
+`output_modalities` on each item — a string array whose elements are only
+`"text"` and `"image"`, deduplicated, with `"text"` first when both are present.
+`["image"]` alone is legal: a pure image model.
+
+A current gateway always sends the field, and never sends `null`. A non-empty
+array is the operator's explicit per-model declaration — set in the gateway's
+model profile, and otherwise derived from the upstream catalog reference. An
+empty array is the gateway saying it cannot assert, **not** a declaration that
+the model produces nothing: a client still falls back to
+`upstream_models[].catalog_reference.model.modalities.output` for it. A gateway
+too old to send the field is treated the same way, so the two paths agree.
+
+`protocols` is never a capability claim — it is the channel type's union, so an
+OpenAI-compatible channel lists `openai-images` for every model behind it.
+
+Deployment order matters here: the field does not exist until the gateway that
+serves it is deployed. After that, a model still appears in a client's image
+pickers only once an administrator sets its output type to image in the gateway
+console — the client has nothing to infer from an undeclared model.
+
+### Model reasoning levels
+
+`GET /api/models` carries `reasoning_levels` on each item: a string array whose
+elements come from the gateway's own vocabulary — `none`, `minimal`, `low`,
+`medium`, `high`, `xhigh`, `max`, `ultra`, `persistent` — deduplicated and in that
+order. The gateway says `none` where the desktop ladder says `off`, and `ultra`
+and `persistent` exist only here. `default_reasoning_level` is an optional
+companion naming one of them.
+
+A current gateway always sends `reasoning_levels`, never `null`. An empty array
+means the model declares no reasoning capability; a gateway too old to send the
+field is read the same way. Both leave the client without a picker and without a
+parameter — the absence of a declaration is not a declaration of `none`.
+"Unspecified" is deliberately not one of the levels: sending no parameter is
+always allowed, which is what a client's "default" row does.
+
+This is the gateway's own per-model capability claim, and the only basis a client
+has for sending a reasoning parameter:
+
+- Only listed levels may be requested. `default_reasoning_level` is a claim only
+  when it appears in the list (the gateway omits the key when the list is empty);
+  a default that is not listed is ignored, because it would put an unreachable
+  option first.
+- A client never invents a level, never re-maps one onto another vocabulary, and
+  never sends one that is not in the list. Values are sent verbatim: mapping
+  `none` to `off`, or dropping `ultra`, would ask for something the user did not
+  choose. A client may label `none` however it labels "no extra thinking"
+  elsewhere; the label never changes the value it sends.
+- When a client does send one, Chat Completions carries `reasoning_effort` and
+  Responses carries `reasoning: { effort }`. Image generation takes no reasoning
+  parameter at all.
+
+### Mobile chat availability
+
+`GET /api/models` may also carry `mobile_chat` on each item, a boolean.
+
+- `true` opens the model to mobile conversations. `false` keeps it off phones,
+  and a mobile client must not offer it for chat even when everything else about
+  the model would allow it.
+- A gateway that does not send the field is older than the switch. Its models
+  stay available: the field's absence is not "nothing is enabled", and reading it
+  that way would empty every phone's chat list.
+- The flag never describes image output. Image generation continues to depend on
+  `output_modalities` alone, so a model may be open to image work on phones and
+  closed to chat.
+
+When a client sends a conversation to a model the operator closed, the gateway
+may refuse it; a client that honours the flag never gets there, because it does
+not offer the model in the first place.
+
 ## 6. Security constraints
 
 1. raw secrets never returned by list/get provider APIs
