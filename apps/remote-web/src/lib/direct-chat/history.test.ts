@@ -6,9 +6,11 @@ import {
   isIdle,
   liveAttemptOf,
   type BeginTurnInput,
+  type DirectChatHistory,
 } from "./history.js";
 import { scopeDependency, scopeKey, titleFromMessage } from "./history-store.js";
 import { createMemoryDirectChatStore } from "./memory-store.js";
+import { studioCards } from "./studio.js";
 
 const SCOPE = { gatewayRoot: "https://models.example.test", accessKeyId: "42" };
 const OTHER_SCOPE = { gatewayRoot: "https://models.example.test", accessKeyId: "99" };
@@ -33,7 +35,7 @@ function harness() {
     ...ids(),
     ...overrides,
   });
-  return { store, history, turn };
+  return { store, history, turn, ids };
 }
 
 /**
@@ -752,5 +754,146 @@ describe("the value an effect may depend on for a scope", () => {
     expect(scopeDependency(mine)).not.toBe(scopeDependency(other));
     expect(scopeDependency(null)).toBeNull();
     expect(scopeDependency(undefined)).toBeNull();
+  });
+});
+
+/**
+ * Bug found on a phone: deleting a failed Studio card appeared to do nothing.
+ *
+ * The gallery shows one card per prompt while that prompt has no image, so the
+ * visible card stands in front of the failures before it. Removing only the
+ * newest attempt uncovered the one before it, and the card came straight back.
+ */
+describe("deleting a failed generation card", () => {
+  const IMAGE_MODEL = { modelId: "gpt-image-2.5", modelLabel: "GPT Image 2.5", protocol: "openai-images" };
+
+  /** One image prompt, retried `retries` times, with every attempt failing. */
+  async function failingImagePrompt(
+    history: DirectChatHistory,
+    turn: (overrides?: Partial<BeginTurnInput>) => BeginTurnInput,
+    ids: () => { newConversationId: string; newMessageId: string; newAttemptId: string },
+    input: { conversationId: string | null; prompt: string; retries: number },
+  ): Promise<{ conversationId: string; latest: DirectChatAttempt }> {
+    const started = await history.beginTurn(
+      turn({
+        conversationId: input.conversationId,
+        text: input.prompt,
+        operation: "image-generation",
+        imageModel: true,
+        ...IMAGE_MODEL,
+      }),
+    );
+    if (!started.ok) throw new Error(`beginTurn failed: ${started.reason}`);
+    const fail = (attempt: DirectChatAttempt) =>
+      history.finish(attempt, {
+        state: "failed",
+        text: "",
+        error: "the model gateway failed.",
+        errorKind: "gateway",
+        now: T0,
+      });
+    let latest = await fail(started.attempt);
+    for (let retry = 0; retry < input.retries; retry += 1) {
+      const next = await history.retry({ attempt: latest, scope: SCOPE, now: T0, ...IMAGE_MODEL, ...ids() });
+      if (!next.ok) throw new Error(`retry failed: ${next.reason}`);
+      latest = await fail(next.attempt);
+    }
+    return { conversationId: started.conversation.id, latest };
+  }
+
+  it("removes every failure the card was hiding, so it does not come back", async () => {
+    const { history, turn, ids } = harness();
+    // A text turn first, so the conversation outlives the removals and the
+    // assertion is about the cards rather than about the record disappearing.
+    const text = await history.beginTurn(turn({ text: "hello" }));
+    if (!text.ok) throw new Error("setup failed");
+    await history.finish(text.attempt, { state: "complete", text: "hi", now: T0 });
+
+    const { conversationId, latest } = await failingImagePrompt(history, turn, ids, {
+      conversationId: text.conversation.id,
+      prompt: "a blue heron",
+      retries: 2,
+    });
+    const before = studioCards([(await history.transcript(conversationId))!]);
+    // Three failed attempts, one card: that is exactly why deleting one attempt
+    // was not enough.
+    expect(before).toHaveLength(1);
+    expect(before[0]?.attemptId).toBe(latest.id);
+
+    expect(await history.removeFailedGeneration(conversationId, latest.id)).toEqual({
+      ok: true,
+      conversationRemoved: false,
+    });
+
+    const after = (await history.transcript(conversationId))!;
+    expect(after.attempts.map((attempt) => attempt.id)).toEqual([text.attempt.id]);
+    expect(studioCards([after])).toEqual([]);
+  });
+
+  it("keeps a generated image when the failures beside it are removed", async () => {
+    const { store, history, turn, ids } = harness();
+    const text = await history.beginTurn(turn({ text: "hello" }));
+    if (!text.ok) throw new Error("setup failed");
+    await history.finish(text.attempt, { state: "complete", text: "hi", now: T0 });
+
+    const done = await history.beginTurn(
+      turn({
+        conversationId: text.conversation.id,
+        text: "a red fox",
+        operation: "image-generation",
+        imageModel: true,
+        ...IMAGE_MODEL,
+      }),
+    );
+    if (!done.ok) throw new Error("setup failed");
+    await store.transact(async (tx) => {
+      await tx.putMedia({
+        id: "media-fox",
+        scope: SCOPE,
+        conversationId: done.conversation.id,
+        mime: "image/png",
+        byteLength: 3,
+        data: new Uint8Array([1, 2, 3]),
+        createdAt: T0,
+      });
+    });
+    await history.finish({ ...done.attempt, mediaIds: ["media-fox"] }, { state: "complete", text: "", now: T0 });
+
+    const { conversationId, latest } = await failingImagePrompt(history, turn, ids, {
+      conversationId: text.conversation.id,
+      prompt: "a blue heron",
+      retries: 1,
+    });
+    expect(studioCards([(await history.transcript(conversationId))!])).toHaveLength(2);
+
+    expect(await history.removeFailedGeneration(conversationId, latest.id)).toEqual({
+      ok: true,
+      conversationRemoved: false,
+    });
+
+    const after = (await history.transcript(conversationId))!;
+    const cards = studioCards([after]);
+    expect(cards.map((card) => card.status)).toEqual(["complete"]);
+    expect(cards[0]?.mediaId).toBe("media-fox");
+    // A chain removal must not sweep media it did not produce.
+    expect(after.media?.map((item) => item.id)).toEqual(["media-fox"]);
+  });
+
+  it("still refuses while a newer attempt for the prompt is arriving", async () => {
+    const { history, turn, ids } = harness();
+    const { conversationId, latest } = await failingImagePrompt(history, turn, ids, {
+      conversationId: null,
+      prompt: "a blue heron",
+      retries: 0,
+    });
+    const live = await history.retry({ attempt: latest, scope: SCOPE, now: T0, ...IMAGE_MODEL, ...ids() });
+    if (!live.ok) throw new Error("setup failed");
+    await history.checkpoint(live.attempt, "", T0);
+
+    expect(await history.removeFailedGeneration(conversationId, latest.id)).toEqual({
+      ok: false,
+      reason: "busy",
+    });
+    expect((await history.transcript(conversationId))?.attempts).toHaveLength(2);
   });
 });

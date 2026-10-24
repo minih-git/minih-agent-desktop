@@ -216,6 +216,17 @@ export type DirectChatHistory = {
    * only when nothing else is left in it.
    */
   removeImage(conversationId: string, attemptId: string): Promise<ImageRemovalResult>;
+  /**
+   * Delete a failed or stopped generation card, and the attempts it hides.
+   *
+   * The gallery shows one card per prompt while a generation has no image, so
+   * the visible failure stands in front of every earlier failure of the same
+   * prompt. Removing only the newest one would put the previous one back on
+   * screen, which reads as "delete did nothing"; the whole chain goes instead.
+   * Completed generations that did produce an image are separate cards and are
+   * left alone.
+   */
+  removeFailedGeneration(conversationId: string, attemptId: string): Promise<ImageRemovalResult>;
 
   /**
    * Delete every conversation of one account, or none of them.
@@ -321,6 +332,90 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
   /** Group a conversation's attempts, fetched once for a list. */
   async function attemptsOf(conversationId: string): Promise<DirectChatAttempt[]> {
     return store.attempts(conversationId);
+  }
+
+  /**
+   * Whether this attempt put an image in the gallery.
+   *
+   * A completed attempt that saved media is a card of its own; every other
+   * attempt is a slot that the newest attempt of its prompt stands in for.
+   */
+  function producedImage(attempt: DirectChatAttempt): boolean {
+    return attempt.state === "complete" && (attempt.mediaIds?.length ?? 0) > 0;
+  }
+
+  /**
+   * Remove one generation card, as the gallery shows it.
+   *
+   * `mode` is the kind of card, not a preference: a card holding an image is
+   * that image's own record, while a failed or stopped card stands in front of
+   * every earlier attempt of the same prompt. Deleting only the newest failure
+   * would uncover the one before it, so a chain is deleted as a chain.
+   */
+  async function removeAttempts(
+    conversationId: string,
+    attemptId: string,
+    mode: "one" | "chain",
+  ): Promise<ImageRemovalResult> {
+    const conversation = await store.conversation(conversationId);
+    if (!conversation) return { ok: false, reason: "missing" };
+    const attempts = await store.attempts(conversationId);
+    const target = attempts.find((attempt) => attempt.id === attemptId);
+    if (!target) return { ok: false, reason: "missing" };
+
+    const targets =
+      mode === "chain" && !producedImage(target)
+        ? attempts.filter((attempt) => attempt.userMessageId === target.userMessageId && !producedImage(attempt))
+        : [target];
+
+    // Deleting a generation that is still arriving would report success while
+    // the request keeps running and bills the user; stop it first. A newer
+    // attempt for the same prompt is part of the chain, so it counts too.
+    if (targets.some((attempt) => attempt.state === "pending" || attempt.state === "streaming")) {
+      return { ok: false, reason: "busy" };
+    }
+
+    const targetIds = new Set(targets.map((attempt) => attempt.id));
+    const remaining = attempts.filter((attempt) => !targetIds.has(attempt.id));
+    if (remaining.length === 0) {
+      // Nothing else lives in this conversation, so the record itself goes —
+      // which also takes its messages and media with it.
+      await store.transact(async (tx) => {
+        await tx.deleteConversation(conversationId);
+      });
+      return { ok: true, conversationRemoved: true };
+    }
+
+    // A prompt or reply still referenced by another attempt (a retry shares
+    // the prompt) stays; only the removed generations' own rows go.
+    const stillReferenced = new Set<string>();
+    for (const attempt of remaining) {
+      stillReferenced.add(attempt.userMessageId);
+      if (attempt.assistantMessageId) stillReferenced.add(attempt.assistantMessageId);
+    }
+    const orphanIds = new Set<string>();
+    for (const attempt of targets) {
+      for (const id of [attempt.userMessageId, attempt.assistantMessageId]) {
+        if (typeof id === "string" && id.length > 0) orphanIds.add(id);
+      }
+    }
+    for (const id of stillReferenced) orphanIds.delete(id);
+    for (const attempt of remaining) {
+      for (const mediaId of attempt.mediaIds ?? []) orphanIds.delete(mediaId);
+    }
+
+    const keptMedia = new Set(remaining.flatMap((attempt) => attempt.mediaIds ?? []));
+    const mediaToDelete = [...new Set(targets.flatMap((attempt) => attempt.mediaIds ?? []))].filter(
+      (id) => !keptMedia.has(id),
+    );
+
+    await store.transact(async (tx) => {
+      for (const attempt of targets) await tx.deleteAttempt(attempt.id);
+      for (const id of orphanIds) await tx.deleteMessage(id);
+      for (const id of mediaToDelete) await tx.deleteMedia(id);
+      await tx.putConversation({ ...conversation, updatedAt: new Date().toISOString() });
+    });
+    return { ok: true, conversationRemoved: false };
   }
 
   return {
@@ -910,57 +1005,14 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
     },
 
     async removeImage(conversationId, attemptId) {
-      const conversation = await store.conversation(conversationId);
-      if (!conversation) return { ok: false, reason: "missing" };
-      const attempts = await store.attempts(conversationId);
-      const target = attempts.find((attempt) => attempt.id === attemptId);
-      if (!target) return { ok: false, reason: "missing" };
-      // Deleting a generation that is still arriving would report success while
-      // the request keeps running and bills the user; stop it first.
-      if (target.state === "pending" || target.state === "streaming") {
-        return { ok: false, reason: "busy" };
-      }
+      // A card that holds an image is that image's own record: it goes alone.
+      return removeAttempts(conversationId, attemptId, "one");
+    },
 
-      const remaining = attempts.filter((attempt) => attempt.id !== attemptId);
-      if (remaining.length === 0) {
-        // Nothing else lives in this conversation, so the record itself goes —
-        // which also takes its messages and media with it.
-        await store.transact(async (tx) => {
-          await tx.deleteConversation(conversationId);
-        });
-        return { ok: true, conversationRemoved: true };
-      }
-
-      // A prompt or reply still referenced by another attempt (a retry shares
-      // the prompt) stays; only this generation's own rows are removed.
-      const stillReferenced = new Set<string>();
-      for (const attempt of remaining) {
-        stillReferenced.add(attempt.userMessageId);
-        if (attempt.assistantMessageId) stillReferenced.add(attempt.assistantMessageId);
-      }
-      const orphanIds = new Set(
-        [target.userMessageId, target.assistantMessageId].filter(
-          (id): id is string => typeof id === "string" && id.length > 0,
-        ),
-      );
-      for (const id of stillReferenced) orphanIds.delete(id);
-      for (const attempt of attempts) {
-        if (attempt.id === attemptId) continue;
-        for (const mediaId of attempt.mediaIds ?? []) orphanIds.delete(mediaId);
-      }
-
-      const mediaOfOthers = new Set(
-        remaining.flatMap((attempt) => attempt.mediaIds ?? []),
-      );
-      const mediaToDelete = (target.mediaIds ?? []).filter((id) => !mediaOfOthers.has(id));
-
-      await store.transact(async (tx) => {
-        await tx.deleteAttempt(attemptId);
-        for (const id of orphanIds) await tx.deleteMessage(id);
-        for (const id of mediaToDelete) await tx.deleteMedia(id);
-        await tx.putConversation({ ...conversation, updatedAt: new Date().toISOString() });
-      });
-      return { ok: true, conversationRemoved: false };
+    async removeFailedGeneration(conversationId, attemptId) {
+      // A failed or stopped card is the visible end of a chain: the attempts it
+      // hides have to go with it, or the previous failure takes its place.
+      return removeAttempts(conversationId, attemptId, "chain");
     },
   };
 }

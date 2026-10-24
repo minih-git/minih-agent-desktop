@@ -1942,6 +1942,12 @@ new generations; it is not a chat screen with a different model.
   again with the same prompt, delete), stop a running generation, retry a
   failed or stopped one on its own model, and delete the image with a
   confirmation; deleting stops a live generation first.
+  A card that holds an image is deleted alone. A failed or stopped card is
+  deleted together with the attempts it stands in front of — the earlier
+  failures of the same prompt that the gallery hides by showing only the newest
+  one — so deleting it cannot make the previous failure take its place. The
+  chain is removed in one transaction (`history.removeFailedGeneration`), and a
+  generation still arriving for that prompt refuses the whole deletion.
 - **What it deliberately does not offer.** No aspect-ratio, size, count or
   quality control: one image per request, exactly as the request adapter always
   worked, and no invented parameter. No editing of an existing image. No
