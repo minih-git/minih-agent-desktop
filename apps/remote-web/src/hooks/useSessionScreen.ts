@@ -330,6 +330,29 @@ export function useSessionScreen(options: {
 
   const activeTurnId = timeline.activeTurnId;
 
+  /**
+   * Stable across renders.
+   *
+   * `actions` is rebuilt on every render, so a method written inline in it was a
+   * new function each time — and a new resolver reads as "resolve everything
+   * again": each remote image was re-downloaded through `session/mediaRead` and
+   * its thumbnail flashed back to a skeleton. The client lives in a ref, so only
+   * the session id can change what this function does.
+   */
+  const readMedia = useCallback(
+    async (mediaId: string, name?: string): Promise<SessionMediaState> => {
+      const client = clientRef.current;
+      if (!client) {
+        return {
+          kind: "failed",
+          failure: { code: "UNAVAILABLE", message: "Client is not connected", retriable: true },
+        };
+      }
+      return readSessionMedia(client, { sessionId, mediaId, name });
+    },
+    [sessionId],
+  );
+
   const actions: SessionActions = {
     sendTurn: async (attempt) => {
       const client = clientRef.current;
@@ -443,16 +466,7 @@ export function useSessionScreen(options: {
       // session then keeps showing whatever model it already reported.
       if (result.ok) setModels(result.value);
     },
-    readMedia: async (mediaId: string, name?: string) => {
-      const client = clientRef.current;
-      if (!client) {
-        return {
-          kind: "failed",
-          failure: { code: "UNAVAILABLE", message: "Client is not connected", retriable: true },
-        };
-      }
-      return readSessionMedia(client, { sessionId, mediaId, name });
-    },
+    readMedia,
     reconnect: () => {
       setPending((current) => ({ ...current, "stream/reconnect": true }));
       supervisorRef.current?.start();
