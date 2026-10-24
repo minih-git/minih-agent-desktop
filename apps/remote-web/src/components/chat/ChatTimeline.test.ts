@@ -164,3 +164,19 @@ test("assistant message renders copy and regenerate buttons on latest completed 
   assert.match(html, /aria-label="Copy text"/);
   assert.match(html, /aria-label="Regenerate reply"/);
 });
+
+test("a failed turn shows the status and the provider's sentence, not its JSON body", async () => {
+  const html = await render([], {
+    lastFailure: {
+      kind: "turn.failed",
+      turnId: "turn-1",
+      code: "INVALID_ARGUMENT",
+      message:
+        '401: {"message":"Authentication Fails, Your api key: ****f073 is invalid (request_id: 595f21d0)","type":"authentication_error"}',
+    },
+  });
+  // The row reads as one sentence a person can act on...
+  assert.match(html, /Run failed: 401 · Authentication Fails, Your api key: \*\*\*\*f073 is invalid/);
+  // ...and carries neither the envelope nor the id that names the call.
+  assert.doesNotMatch(html, /request_id|authentication_error|\{&quot;message&quot;/);
+});
