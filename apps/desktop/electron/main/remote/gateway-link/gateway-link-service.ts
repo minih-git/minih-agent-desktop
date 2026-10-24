@@ -666,19 +666,24 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     },
     async listDevices() {
       await ensureOpen();
-      return (await options.store.listDevices()).map((device) => ({
-        deviceId: device.deviceId,
-        label: device.label,
-        roles: [...device.roles],
-        createdAt: device.createdAt,
-        ...(device.lastSeenAt ? { lastSeenAt: device.lastSeenAt } : {}),
-        ...(device.revokedAt ? { revokedAt: device.revokedAt } : {}),
-        // What the row is, for the accounts page's "My devices": a computer
-        // admitted with a verified proof, a phone paired through the Gateway,
-        // or an SSH pairing from before the Gateway existed.
-        ...(device.deviceClass ? { deviceClass: device.deviceClass === "desktop" ? "desktop" as const : "phone" as const } : {}),
-        ...(device.origin ? { origin: device.origin } : { origin: "ssh" as const }),
-      }));
+      // A revoked record is a tombstone, not a device: it stays in the store so a
+      // re-delivered grant cannot resurrect it (protocol §11.5), but it is not
+      // something the accounts page offers to revoke, and listing it made one
+      // phone look like several. Only live devices reach the renderer.
+      return (await options.store.listDevices())
+        .filter((device) => !device.revokedAt)
+        .map((device) => ({
+          deviceId: device.deviceId,
+          label: device.label,
+          roles: [...device.roles],
+          createdAt: device.createdAt,
+          ...(device.lastSeenAt ? { lastSeenAt: device.lastSeenAt } : {}),
+          // What the row is, for the accounts page's "My devices": a computer
+          // admitted with a verified proof, a phone paired through the Gateway,
+          // or an SSH pairing from before the Gateway existed.
+          ...(device.deviceClass ? { deviceClass: device.deviceClass === "desktop" ? "desktop" as const : "phone" as const } : {}),
+          ...(device.origin ? { origin: device.origin } : { origin: "ssh" as const }),
+        }));
     },
     revokeDevice(deviceId) {
       return revokeStoredDevice(deviceId);

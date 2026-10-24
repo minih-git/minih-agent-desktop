@@ -1443,6 +1443,8 @@ sklm: {
         kindComputer: "Bilgisayar",
         kindPhone: "Telefon",
         kindRoles: "{{roles}}",
+        joinFailed: "Bu hesabın diğer bilgisayarları yüklenemedi: {{reason}}. Kısa süre içinde yeniden denenecek.",
+        joinSkipped: "Bu hesabın diğer bilgisayarları yüklenmedi: {{reason}}.",
       },
     remoteGateway: {
       title: "Uzak ağ geçidi",

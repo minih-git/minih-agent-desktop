@@ -1442,6 +1442,8 @@ sklm: {
         kindComputer: "Ordinateur",
         kindPhone: "Téléphone",
         kindRoles: "{{roles}}",
+        joinFailed: "Les autres ordinateurs de ce compte n'ont pas pu être chargés : {{reason}}. Nouvelle tentative dans un instant.",
+        joinSkipped: "Les autres ordinateurs de ce compte n'ont pas été chargés : {{reason}}.",
       },
     "remoteGateway": {
       "title": "Passerelle distante",

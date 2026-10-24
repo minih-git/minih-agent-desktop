@@ -201,3 +201,190 @@ test("the self-hosted flow has no account to join and never calls out", async ()
     await cleanup();
   }
 });
+
+/** Poll until `predicate` holds; the wait is bounded and named, never a bare sleep. */
+async function waitFor(predicate, label, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail(`timed out waiting for ${label}`);
+}
+
+/** A bootstrap whose account join round reports whatever the test decides. */
+function accountJoinBootstrap(dir, port, { emitStatus, retryDelaysMs, onAccountLinkUp }) {
+  const host = buildHost();
+  return createGatewayLinkBootstrap({
+    dataDir: dir,
+    encryption: fakeEncryption(),
+    port,
+    getSettings: async () => ({ remoteGateway: { enabled: true, url: HOSTLINK_URL } }),
+    saveSettings: async () => undefined,
+    getHost: () => stubHost(),
+    getAgentHost: () => host.host,
+    serverVersion: "0.0.0-test",
+    emitStatus,
+    log: () => undefined,
+    now: () => Date.parse("2026-10-23T00:00:00.000Z"),
+    accountJoinRetryDelaysMs: retryDelaysMs,
+    onAccountLinkUp,
+  });
+}
+
+test("a failed round is reported on the status and retried while the link stays up", async () => {
+  // The round is the only thing that turns the account's other computers into
+  // remote hosts, and it used to run once per connection with its failure going
+  // nowhere but the log: the list stayed empty until the next restart. A failed
+  // round now names its reason on the status and gets a bounded retry.
+  const { dir, cleanup } = await tmpDir();
+  try {
+    await enrollOnDisk(dir, { accountMode: true });
+    const attempts = [];
+    const statuses = [];
+    const transport = connectedPort();
+    const bootstrap = accountJoinBootstrap(dir, transport.port, {
+      emitStatus: (status) => statuses.push(status),
+      retryDelaysMs: [5, 5],
+      onAccountLinkUp: async () => {
+        attempts.push(attempts.length + 1);
+        return { state: "failed", reason: "ACCOUNT_LOGIN_REFUSED", detail: "INVALID_ARGUMENT" };
+      },
+    });
+
+    await bootstrap.open();
+    await waitFor(() => attempts.length === 3, "the first round and its two retries");
+
+    const report = statuses.at(-1).accountComputers;
+    assert.equal(report.state, "failed");
+    assert.equal(report.reason, "ACCOUNT_LOGIN_REFUSED");
+    assert.equal(report.detail, "INVALID_ARGUMENT", "the Gateway's own code reaches the page");
+
+    // The backoff is bounded: past its last entry no further round is asked for.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(attempts.length, 3);
+
+    // A status read carries the same report, so the page never depends on a push
+    // arriving while it is mounted.
+    const pulled = await bootstrap.controller().status();
+    assert.equal(pulled.accountComputers?.reason, "ACCOUNT_LOGIN_REFUSED");
+
+    await bootstrap.dispose();
+  } finally {
+    await cleanup();
+  }
+});
+
+test("a successful round reports the computers it joined", async () => {
+  const { dir, cleanup } = await tmpDir();
+  try {
+    await enrollOnDisk(dir, { accountMode: true });
+    const statuses = [];
+    const transport = connectedPort();
+    const bootstrap = accountJoinBootstrap(dir, transport.port, {
+      emitStatus: (status) => statuses.push(status),
+      retryDelaysMs: [5],
+      onAccountLinkUp: async () => ({ state: "joined", computers: 2 }),
+    });
+
+    await bootstrap.open();
+    await waitFor(() => statuses.at(-1)?.accountComputers?.state === "joined", "the joined report");
+    assert.equal(statuses.at(-1).accountComputers.computers, 2);
+    assert.equal(
+      statuses.at(-1).accountComputers.nextRetryAt,
+      undefined,
+      "a round that succeeded queues nothing",
+    );
+
+    await bootstrap.dispose();
+  } finally {
+    await cleanup();
+  }
+});
+
+test("disposal cancels a queued retry", async () => {
+  const { dir, cleanup } = await tmpDir();
+  try {
+    await enrollOnDisk(dir, { accountMode: true });
+    const attempts = [];
+    const transport = connectedPort();
+    const bootstrap = accountJoinBootstrap(dir, transport.port, {
+      emitStatus: () => undefined,
+      retryDelaysMs: [40],
+      onAccountLinkUp: async () => {
+        attempts.push(attempts.length + 1);
+        return { state: "failed", reason: "ACCOUNT_ROSTER_UNAVAILABLE" };
+      },
+    });
+
+    await bootstrap.open();
+    await waitFor(() => attempts.length === 1, "the first round");
+    await bootstrap.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(attempts.length, 1, "nothing runs after disposal");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("a callback that throws synchronously reports once and does not re-enter", async () => {
+  // `emit` re-enters through the status push, so a synchronous throw used to
+  // start another round from inside the first one, and again from inside that —
+  // a stack overflow instead of a failure the page can show. One round, one
+  // report, and the reason survives.
+  const { dir, cleanup } = await tmpDir();
+  try {
+    await enrollOnDisk(dir, { accountMode: true });
+    let calls = 0;
+    const statuses = [];
+    const transport = connectedPort();
+    const bootstrap = accountJoinBootstrap(dir, transport.port, {
+      emitStatus: (status) => statuses.push(status),
+      retryDelaysMs: [],
+      onAccountLinkUp: () => {
+        calls += 1;
+        throw new Error("boom");
+      },
+    });
+
+    await bootstrap.open();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(calls, 1, "the failing round is not re-entered");
+    assert.equal(statuses.at(-1).accountComputers.state, "failed");
+    assert.equal(statuses.at(-1).accountComputers.reason, "boom");
+
+    await bootstrap.dispose();
+  } finally {
+    await cleanup();
+  }
+});
+
+test("a link that goes down drops the report and the retry it promised", async () => {
+  const { dir, cleanup } = await tmpDir();
+  try {
+    await enrollOnDisk(dir, { accountMode: true });
+    const statuses = [];
+    const transport = connectedPort();
+    const bootstrap = accountJoinBootstrap(dir, transport.port, {
+      emitStatus: (status) => statuses.push(status),
+      // Long enough that the retry is still queued when the link drops.
+      retryDelaysMs: [5000],
+      onAccountLinkUp: async () => ({ state: "failed", reason: "ACCOUNT_ROSTER_UNAVAILABLE" }),
+    });
+
+    await bootstrap.open();
+    await waitFor(() => statuses.at(-1)?.accountComputers?.nextRetryAt !== undefined, "the queued retry");
+
+    transport.report("backoff");
+
+    // The report described a connection that no longer exists; the page must not
+    // keep promising a retry for it.
+    assert.equal(statuses.at(-1).accountComputers, undefined);
+    const pulled = await bootstrap.controller().status();
+    assert.equal(pulled.accountComputers, undefined);
+
+    await bootstrap.dispose();
+  } finally {
+    await cleanup();
+  }
+});

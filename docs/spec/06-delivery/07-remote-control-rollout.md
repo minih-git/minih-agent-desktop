@@ -569,6 +569,19 @@ Scope notes:
   link and the rows already joined are untouched. Both halves are pinned by
   `apps/desktop/test/account-computers-join.test.mjs` and
   `apps/desktop/test/account-link-trigger.test.mjs`.
+- **one round is not enough on its own.** The round runs once per transition into
+  `connected`, so a single failure used to leave the list empty until the next
+  restart, with the reason going nowhere but the log. The desktop logs in as the
+  `desktop` client profile — the Gateway's login schema once accepted only
+  `web|ios|android`, so a computer could never obtain a session and the roster
+  was never readable. A failed round is now reported on the link status and
+  retried on that same link at 15s/60s/300s, at most three more times, and the
+  accounts page names the reason instead of showing an empty list. A phone's
+  duplicate admission collapses like a computer's: `approve` remembers this
+  Host's own device for both classes and `handleGrant` revokes it when the
+  account's surviving grant arrives, so one phone is one device. Revoked records
+  stay in the credential store as tombstones — a re-delivered grant must not
+  resurrect one — and are no longer listed as devices.
 
 Exit criteria:
 

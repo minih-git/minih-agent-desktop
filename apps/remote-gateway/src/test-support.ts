@@ -484,7 +484,7 @@ export async function enrollTestHostByKey(
 /** `POST /v1/account/login`, header profile or browser profile. */
 export async function accountLogin(
   gateway: TestGateway,
-  input: { accessKey: string; client: "web" | "ios" | "android"; label?: string; origin?: string },
+  input: { accessKey: string; client: "web" | "ios" | "android" | "desktop"; label?: string; origin?: string },
 ): Promise<{ status: number; payload: Record<string, unknown>; setCookie: string[]; retryAfter: string | null }> {
   const response = await fetch(`${gateway.clientBaseUrl}/v1/account/login`, {
     method: "POST",

@@ -63,7 +63,7 @@ function directoryFor(
     strictMode?: boolean;
     now?: number;
     desktopAutoAdmission?: boolean;
-    maxOwnDesktopDevices?: number;
+    maxOwnDevices?: number;
   } = {},
 ): HostDeviceDirectory {
   return new HostDeviceDirectory({
@@ -75,7 +75,7 @@ function directoryFor(
     ...(options.confirmer === undefined ? {} : { confirmer: options.confirmer }),
     ...(options.strictMode ? { strictMode: true } : {}),
     ...(options.desktopAutoAdmission === undefined ? {} : { desktopAutoAdmission: options.desktopAutoAdmission }),
-    ...(options.maxOwnDesktopDevices === undefined ? {} : { maxOwnDesktopDevices: options.maxOwnDesktopDevices }),
+    ...(options.maxOwnDevices === undefined ? {} : { maxOwnDevices: options.maxOwnDevices }),
     now: () => options.now ?? NOW,
     onNotice: (notice) => f.notices.push(notice),
   });
@@ -825,6 +825,105 @@ describe("Host device directory: desktop-class devices", () => {
     expect((await alpha.devices()).find((device) => device.deviceId === own.grant.deviceId)?.revokedAt).toBeTruthy();
   });
 
+  it("collapses a phone's duplicate admission the same way a computer's", async () => {
+    // The duplicate is not a desktop-only accident. A phone that asks while two
+    // computers of the account are online is approved on both, and each mints
+    // its own device; the Gateway keeps one grant, so the other record is a
+    // token nobody will ever present — and the accounts page showed it as a
+    // second phone of its own, with no way to revoke it from the client.
+    const f = await fixture();
+    const alphaSent: RacpDeviceGrantFrame[] = [];
+    const betaSent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const beta = directoryFor(f, "beta", { confirmer: { confirm: async () => "approved" } });
+    const phoneRequest = request({ client: "ios", deviceLabel: "iOS app" });
+
+    expect(await alpha.handleRequest(phoneRequest, (frame) => alphaSent.push(frame))).toBe("granted");
+    expect(await beta.handleRequest(phoneRequest, (frame) => betaSent.push(frame))).toBe("granted");
+    const own = alphaSent[0]!;
+    const survivor = betaSent[0]!;
+    expect(own.grant.deviceId).not.toBe(survivor.grant.deviceId);
+
+    // The Gateway relays only the survivor back to the other computer.
+    expect(await alpha.handleGrant(asRelayed(survivor))).toBe("adopted");
+
+    // One live device for one phone: the survivor's token works, this Host's own
+    // is revoked (not deleted, so a re-delivered grant cannot resurrect it).
+    expect(await authenticate(f.alphaStore, own.deviceToken!)).toBeNull();
+    expect(await authenticate(f.alphaStore, survivor.deviceToken!)).not.toBeNull();
+    const live = (await alpha.devices()).filter((device) => !device.revokedAt);
+    expect(live.map((device) => device.deviceId)).toEqual([survivor.grant.deviceId]);
+    expect((await alpha.devices()).find((device) => device.deviceId === own.grant.deviceId)?.revokedAt).toBeTruthy();
+  });
+
+  it("drops a local approval that finishes after the account already settled the request", async () => {
+    // The other order of the same race: the sibling's grant arrives while this
+    // Host's user is still deciding. Approving afterwards used to mint a second
+    // device for a request the Gateway had already settled, which is one more
+    // phone than the user paired.
+    const f = await fixture();
+    const alphaSent: RacpDeviceGrantFrame[] = [];
+    const betaSent: RacpDeviceGrantFrame[] = [];
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const alpha = directoryFor(f, "alpha", {
+      confirmer: {
+        confirm: async () => {
+          await gate;
+          return "approved";
+        },
+      },
+    });
+    const beta = directoryFor(f, "beta", { confirmer: { confirm: async () => "approved" } });
+    const phoneRequest = request({ requestId: "req_late", client: "ios" });
+
+    const pending = alpha.handleRequest(phoneRequest, (frame) => alphaSent.push(frame));
+    expect(await beta.handleRequest(phoneRequest, (frame) => betaSent.push(frame))).toBe("granted");
+    const survivor = asRelayed(betaSent[0]!);
+    expect(await alpha.handleGrant(survivor)).toBe("adopted");
+
+    release();
+    expect(await pending).toBe("granted");
+
+    // One live device for one phone: the account's. The late admission is kept
+    // for the frame it signed and revoked at once, so nothing can use it.
+    expect(alphaSent).toHaveLength(1);
+    const late = alphaSent[0]!.grant.deviceId;
+    expect(late).not.toBe(survivor.grant.deviceId);
+    const live = (await alpha.devices()).filter((device) => !device.revokedAt);
+    expect(live.map((device) => device.deviceId)).toEqual([survivor.grant.deviceId]);
+    expect((await alpha.devices()).find((device) => device.deviceId === late)?.revokedAt).toBeTruthy();
+  });
+
+  it("does not let a phone admission exempt a replayed proof", async () => {
+    // The nonce exemption exists for exactly one case: this Host admitted the
+    // same desktop request itself. A phone admission for the same request id says
+    // nothing about the proof's nonce, so it must not turn a replay into an
+    // adoption.
+    const f = await fixture();
+    const alphaSent: RacpDeviceGrantFrame[] = [];
+    const betaSent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const beta = directoryFor(f, "beta", { confirmer: { confirm: async () => "approved" } });
+
+    // Alpha spends the nonce on a different request.
+    const older = request({ client: "desktop", requestId: "req_older" });
+    older.hostProof = proofFor(f.beta, older, { nonce: "dn_nonce_shared" });
+    expect(await alpha.handleRequest(older, (frame) => alphaSent.push(frame))).toBe("granted");
+
+    // It also admits a phone for the request the grant below names.
+    expect(
+      await alpha.handleRequest(request({ requestId: "req_phone", client: "ios" }), (frame) => alphaSent.push(frame)),
+    ).toBe("granted");
+
+    // A sibling's desktop grant for that request reuses the spent nonce.
+    const disputed = request({ client: "desktop", requestId: "req_phone" });
+    disputed.hostProof = proofFor(f.beta, disputed, { nonce: "dn_nonce_shared" });
+    expect(await beta.handleRequest(disputed, (frame) => betaSent.push(frame))).toBe("granted");
+
+    expect(await alpha.handleGrant(asRelayed(betaSent[0]!))).toBe("refused");
+  });
+
   it("still refuses a nonce it spent on a different request", async () => {
     // The exemption is per request, not per nonce: the same proof presented for
     // another request this Host never admitted is still a replay.
@@ -854,7 +953,7 @@ describe("Host device directory: desktop-class devices", () => {
     const betaSent: RacpDeviceGrantFrame[] = [];
     const alpha = directoryFor(f, "alpha", {
       confirmer: { confirm: async () => "approved" },
-      maxOwnDesktopDevices: 2,
+      maxOwnDevices: 2,
     });
     const beta = directoryFor(f, "beta", { confirmer: { confirm: async () => "approved" } });
 

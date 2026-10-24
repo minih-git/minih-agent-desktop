@@ -1433,6 +1433,8 @@ sklm: {
         kindComputer: "電腦",
         kindPhone: "手機",
         kindRoles: "{{roles}}",
+        joinFailed: "帳號電腦沒能載入：{{reason}}。稍後會自動重試。",
+        joinSkipped: "帳號電腦沒有載入：{{reason}}。",
       },
     remoteGateway: {
       title: "遠端閘道",

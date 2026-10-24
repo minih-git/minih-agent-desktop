@@ -524,7 +524,9 @@ a usage tab.
   computer's own name, the **Allow remote devices** switch, the strict-mode
   switch, and the **Allow same-account computers to join automatically**
   switch) → **My devices** (the computers of the account and this desktop's
-  granted devices, with their kind, online state, and revoke action) →
+  granted devices, with their kind, online state, and revoke action; a revoked
+  device is not listed again, and when the account's computers could not be
+  read the section names why and retries on its own) →
   **Configuration sync** (the existing `ConfigSyncPage`, embedded, behavior
   unchanged, vault password entered once per device) → **Advanced** (folded:
   the SSH hosts entry — the Remote Hosts destination keeps its id — and the

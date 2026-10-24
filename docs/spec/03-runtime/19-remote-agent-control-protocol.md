@@ -1664,7 +1664,23 @@ written.
   Host's own private key.
 - **Account login.** `POST /v1/account/login` takes
   `Authorization: Bearer <AccessKey>` and a body
-  `{ client: "web" | "ios" | "android", label? }`, follows the pairing route's
+  `{ client: "web" | "ios" | "android" | "desktop", label? }`, follows the
+  pairing route's browser rules, and answers `{ result: { accountId, keyName?,
+  expiresAt, token?, csrfToken? } }` under the §11.2 command envelope. The
+  account is the Router `access_key_id` as a decimal string. The session
+  credential is a `rat1.`-prefixed bearer value with a twelve-hour bounded
+  lifetime; the Gateway stores only its SHA-256 hash, and revocation stays
+  server-side. A native or desktop client receives it in the body; a browser
+  receives it as an `HttpOnly; Secure; SameSite=Strict` cookie scoped to
+  `Path=/` with a `Max-Age` equal to the lifetime, plus a page-readable CSRF
+  cookie whose value is the same HMAC the pairing profile uses. `desktop` is
+  the header profile a computer asks for — the same client name it sends on
+  `POST /v1/account/devices` — and without it a desktop could never read its
+  account's Host list. A key that does not verify answers
+  `401 UNAUTHORIZED`, an unreachable Router answers
+  `503 AGENT_UNAVAILABLE` with `retriable: true`, and a caller the Router has
+  locked out answers `429 RATE_LIMITED` with `retriable: true` and a
+  `Retry-After` header carrying the Router's own delay.
   browser rules, and answers `{ result: { accountId, keyName?, expiresAt,
   token?, csrfToken? } }` under the §11.2 command envelope. The account is the
   Router `access_key_id` as a decimal string. The session credential is a

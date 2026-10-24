@@ -399,8 +399,15 @@ test("revoking a device closes its open connection and refuses the token", async
       undefined,
       "an open connection survives the revocation",
     );
-    const revoked = await desktop.service.listDevices();
-    assert.ok(revoked.find((candidate) => candidate.deviceId === paired.deviceId)?.revokedAt);
+    // A revoked device is a tombstone in the store, not a row on the page: the
+    // accounts page lists what can still reach this computer, and a revoked
+    // record made one phone look like several.
+    const listed = await desktop.service.listDevices();
+    assert.equal(
+      listed.some((candidate) => candidate.deviceId === paired.deviceId),
+      false,
+      "a revoked device is no longer listed",
+    );
 
     // A fresh connection with the same token is refused at authentication.
     const revokedClient = muxClient(mux, hostId, paired.deviceToken);

@@ -1442,6 +1442,8 @@ sklm: {
         kindComputer: "Computer",
         kindPhone: "Telefon",
         kindRoles: "{{roles}}",
+        joinFailed: "Die anderen Computer dieses Kontos konnten nicht geladen werden: {{reason}}. Es wird in Kürze erneut versucht.",
+        joinSkipped: "Die anderen Computer dieses Kontos wurden nicht geladen: {{reason}}.",
       },
     "remoteGateway": {
       "title": "Remote-Gateway",

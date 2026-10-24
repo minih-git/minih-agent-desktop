@@ -56,8 +56,8 @@ const TOMBSTONE_TOKEN_HASH = "revoked";
 export const DEFAULT_GRANT_DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** How many used desktop nonces one Host remembers before pruning the oldest. */
 const DEFAULT_MAX_REMEMBERED_NONCES = 4096;
-/** How many own desktop admissions one Host remembers before pruning the oldest. */
-const DEFAULT_MAX_OWN_DESKTOP_DEVICES = 1024;
+/** How many own admissions one Host remembers before pruning the oldest. */
+const DEFAULT_MAX_OWN_DEVICES = 1024;
 /** Clock tolerance when a sibling checks that a grant was not issued in the future. */
 const DEFAULT_MAX_CLOCK_SKEW_MS = 60_000;
 
@@ -103,6 +103,19 @@ export type DeviceRefusal =
   | "proof_replayed"
   | "proof_applicant_mismatch";
 
+/**
+ * One request this Host answered, in whichever order the two answers arrived:
+ * its own local admission, the account's surviving grant for it, or both.
+ */
+type RequestAdmission = {
+  /** The device this Host minted, while a sibling's grant could still replace it. */
+  minted?: { deviceId: string; deviceClass: "phone" | "desktop" };
+  /** The account's surviving device for this request, once a grant arrived. */
+  adopted?: string;
+  /** When a grant for this request could last arrive; also the prune deadline. */
+  deadline: number;
+};
+
 export type HostDeviceDirectoryOptions = {
   /** This Host's id; a grant signed for another Host is refused. */
   hostId: string;
@@ -133,12 +146,12 @@ export type HostDeviceDirectoryOptions = {
    */
   maxRememberedNonces?: number;
   /**
-   * How many own desktop admissions this Host remembers while waiting for the
-   * account's surviving grant. Pruned by the grant's delivery deadline and
-   * bounded like the nonce table, so an approving Host cannot accumulate one
-   * entry per request forever.
+   * How many own admissions this Host remembers while waiting for the account's
+   * surviving grant. Pruned by the grant's delivery deadline and bounded like
+   * the nonce table, so an approving Host cannot accumulate one entry per
+   * request forever.
    */
-  maxOwnDesktopDevices?: number;
+  maxOwnDevices?: number;
   /**
    * Tolerance for a sibling's clock when it checks that a grant was not issued
    * in the future. Defaults to 60 seconds, the same tolerance the Host link
@@ -179,7 +192,7 @@ export class HostDeviceDirectory {
    */
   private desktopAutoAdmission: boolean;
   private readonly maxRememberedNonces: number;
-  private readonly maxOwnDesktopDevices: number;
+  private readonly maxOwnDevices: number;
   private readonly maxClockSkewMs: number;
   /**
    * The desktop nonces this Host has already accepted, with the deadline of the
@@ -190,21 +203,28 @@ export class HostDeviceDirectory {
    */
   private readonly usedNonces = new Map<string, number>();
   /**
-   * The device this Host minted for a desktop request, by `requestId`, with the
-   * deadline of the grant it could still be replaced by.
+   * What this Host did for one device request, by `requestId`, with the deadline
+   * of the grant it could still be replaced by.
    *
    * Every computer of the account is asked the same request, so two of them can
    * admit it at the same moment — each minting its own token. The Gateway keeps
    * only the first grant and relays that one to the others, so this Host has to
    * converge on it: it revokes the token it minted for that request and adopts
-   * the one everybody else will hold. Without this, the computer that approved
-   * first would refuse the surviving grant as a replayed nonce and be the one
-   * machine where the account's device does not work.
+   * the one everybody else will hold. Without this, the account carries a second
+   * device nobody can use — one that a phone shows as a second phone of its own,
+   * and that no client can ever revoke because it never held its token. For a
+   * desktop request `minted.deviceClass` is also what decides the nonce rule
+   * above: the computer that approved first must not refuse the surviving grant
+   * as a replay, and only its own desktop admission counts as having approved.
+   *
+   * Both device classes are remembered, and both orders are covered: a grant that
+   * arrives after this Host minted replaces it here, and a confirmation that
+   * finishes after a grant was adopted does not mint a second device.
    *
    * Pruned by deadline and bounded: past `deliverUntil` no grant can arrive to
    * replace the entry, so keeping it would only grow the table.
    */
-  private readonly ownDesktopDevices = new Map<string, { deviceId: string; deadline: number }>();
+  private readonly admissions = new Map<string, RequestAdmission>();
 
   constructor(private readonly options: HostDeviceDirectoryOptions) {
     const accountId = readCertificateAccountBinding(options.signer.certificatePem);
@@ -221,7 +241,7 @@ export class HostDeviceDirectory {
     this.deliveryWindowMs = options.grantDeliveryWindowMs ?? DEFAULT_GRANT_DELIVERY_WINDOW_MS;
     this.desktopAutoAdmission = options.desktopAutoAdmission ?? true;
     this.maxRememberedNonces = options.maxRememberedNonces ?? DEFAULT_MAX_REMEMBERED_NONCES;
-    this.maxOwnDesktopDevices = options.maxOwnDesktopDevices ?? DEFAULT_MAX_OWN_DESKTOP_DEVICES;
+    this.maxOwnDevices = options.maxOwnDevices ?? DEFAULT_MAX_OWN_DEVICES;
     this.maxClockSkewMs = options.maxClockSkewMs ?? DEFAULT_MAX_CLOCK_SKEW_MS;
   }
 
@@ -392,21 +412,23 @@ export class HostDeviceDirectory {
     }
   }
   /**
-   * Remember the device this Host minted for a desktop request, pruned by the
-   * grant's delivery deadline and bounded like the nonce table. Past that
-   * deadline no sibling grant for the same request can still arrive, so the
-   * entry has nothing left to do.
+   * The record for one request, pruned by the grant's delivery deadline and
+   * bounded like the nonce table. Past that deadline no sibling grant for the
+   * request can still arrive, so an entry has nothing left to do.
    */
-  private rememberOwnDevice(requestId: string, deviceId: string, deliverUntil: string): void {
+  private admissionFor(requestId: string, deliverUntil: string): RequestAdmission {
     const now = this.now();
-    for (const [key, entry] of [...this.ownDesktopDevices]) if (entry.deadline <= now) this.ownDesktopDevices.delete(key);
-    this.ownDesktopDevices.set(requestId, { deviceId, deadline: Date.parse(deliverUntil) });
-    if (this.ownDesktopDevices.size > this.maxOwnDesktopDevices) {
-      const idle = [...this.ownDesktopDevices].sort((left, right) => left[1].deadline - right[1].deadline);
-      for (const [key] of idle.slice(0, this.ownDesktopDevices.size - this.maxOwnDesktopDevices)) {
-        this.ownDesktopDevices.delete(key);
+    for (const [key, entry] of [...this.admissions]) if (entry.deadline <= now) this.admissions.delete(key);
+    const existing = this.admissions.get(requestId);
+    const entry: RequestAdmission = existing ?? { deadline: Date.parse(deliverUntil) };
+    if (!existing) this.admissions.set(requestId, entry);
+    if (this.admissions.size > this.maxOwnDevices) {
+      const idle = [...this.admissions].sort((left, right) => left[1].deadline - right[1].deadline);
+      for (const [key] of idle.slice(0, this.admissions.size - this.maxOwnDevices)) {
+        this.admissions.delete(key);
       }
     }
+    return entry;
   }
 
   /**
@@ -438,11 +460,29 @@ export class HostDeviceDirectory {
       // ceiling-exempt and what a Host revocation cascades through (decision 4).
       ...(desktop && proof ? { deviceClass: "desktop" as const, applicantHostId: proof.applicantHostId } : {}),
     });
-    // Remembered so a sibling's grant for the same request can replace it: only
-    // one of the account's computers ends up holding the token the client got.
-    // The entry lives no longer than the grant itself could be delivered, and the
-    // table is bounded, so approving cannot grow it without limit.
-    if (desktop) this.rememberOwnDevice(request.requestId, deviceId, deliverUntil);
+    // The account may have settled this request already while this Host's user
+    // was still deciding: a sibling's grant arrived first. Minting a second
+    // device here would leave another phone in the list that nobody can use —
+    // the Gateway ignores a later grant anyway. The record is kept for the frame
+    // below, which is what the signature names, and revoked at once.
+    const admission = this.admissionFor(request.requestId, deliverUntil);
+    const settled = admission.adopted;
+    const dropped = settled !== undefined && settled !== deviceId;
+    if (dropped) {
+      await this.options.store.revokeDevice(deviceId, at);
+      this.options.log("info", "dropped a late local admission the account had already settled", {
+        requestId: request.requestId,
+        dropped: deviceId,
+        adopted: settled,
+      });
+    } else {
+      // Remembered so a sibling's grant for the same request can replace it: only
+      // one of the account's computers ends up holding the token the client got.
+      // Both classes are remembered — a phone approved on two computers leaves the
+      // same duplicate behind as a desktop. The entry lives no longer than the
+      // grant itself could be delivered, and the table is bounded.
+      admission.minted = { deviceId, deviceClass };
+    }
     const grant: RacpDeviceGrant = {
       grantId: `grant_${randomUUID()}`,
       requestId: request.requestId,
@@ -466,14 +506,16 @@ export class HostDeviceDirectory {
           }
         : {}),
     };
-    this.notice({
-      kind: "device.minted",
-      deviceId,
-      label: request.deviceLabel,
-      roles: [...roles],
-      at,
-      ...(desktop ? { deviceClass: "desktop" as const } : {}),
-    });
+    if (!dropped) {
+      this.notice({
+        kind: "device.minted",
+        deviceId,
+        label: request.deviceLabel,
+        roles: [...roles],
+        at,
+        ...(desktop ? { deviceClass: "desktop" as const } : {}),
+      });
+    }
     return {
       link: RACP_HOSTLINK_VERSION,
       type: "device.grant",
@@ -510,7 +552,12 @@ export class HostDeviceDirectory {
     // computer of the account receives the same request and the same proof, so
     // two of them admitting it is the normal case. The Gateway keeps only the
     // first grant and this Host converges on it in `handleGrant`.
-    if (this.usedNonces.has(grant.hostProofNonce) && !this.ownDesktopDevices.has(grant.requestId)) {
+    //
+    // Only this Host's own *desktop* admission earns the exemption. A phone
+    // admission for the same request proves nothing about a proof's nonce, so
+    // letting it exempt one would turn a replayed proof into an adoption.
+    const own = this.admissions.get(grant.requestId)?.minted;
+    if (this.usedNonces.has(grant.hostProofNonce) && own?.deviceClass !== "desktop") {
       return "proof_replayed";
     }
     // The grant's own window is the only thing that can expire by the time it
@@ -627,18 +674,22 @@ export class HostDeviceDirectory {
     // Gateway keeps only the first grant and the client receives only that
     // token, so this Host drops the device it minted and adopts the one
     // everybody else will hold — otherwise the account would carry a second
-    // device nobody can use.
-    if (desktop) {
-      const own = this.ownDesktopDevices.get(grant.requestId)?.deviceId;
-      if (own && own !== grant.deviceId) {
-        await this.options.store.revokeDevice(own, new Date(this.now()).toISOString());
-        this.ownDesktopDevices.delete(grant.requestId);
-        this.options.log("info", "replaced this Host's own admission with the account's", {
-          requestId: grant.requestId,
-          dropped: own,
-          adopted: grant.deviceId,
-        });
-      }
+    // device nobody can use, and a phone would show as two phones.
+    //
+    // The class makes no difference here: the duplicate is minted by `approve`
+    // the same way for a phone and for a computer of the account, so both are
+    // collapsed. A phone-class grant has no proof, so this is not a security
+    // decision — only the removal of a credential this Host can never see used.
+    const admission = this.admissionFor(grant.requestId, grant.deliverUntil);
+    const minted = admission.minted?.deviceId;
+    if (minted && minted !== grant.deviceId) {
+      await this.options.store.revokeDevice(minted, new Date(this.now()).toISOString());
+      admission.minted = undefined;
+      this.options.log("info", "replaced this Host's own admission with the account's", {
+        requestId: grant.requestId,
+        dropped: minted,
+        adopted: grant.deviceId,
+      });
     }
     const existing = await this.findDevice(grant.deviceId);
     if (existing) {
@@ -646,6 +697,9 @@ export class HostDeviceDirectory {
       // id, or a device this Host already revoked, is not.
       if (existing.revokedAt) return this.refuseGrant("device_revoked", grant.deviceId);
       if (existing.tokenHash !== grant.tokenHash) return this.refuseGrant("device_conflict", grant.deviceId);
+      // The account has settled this request with this device. Remembered so a
+      // local approval that finishes later cannot mint a second one.
+      admission.adopted = grant.deviceId;
       return "already-adopted";
     }
     await this.options.store.saveDevice({
@@ -659,6 +713,9 @@ export class HostDeviceDirectory {
         ? { deviceClass: "desktop" as const, applicantHostId: grant.applicantHostId }
         : {}),
     });
+    // The account has settled this request with this device, so a local approval
+    // that finishes later must not mint a second one.
+    admission.adopted = grant.deviceId;
     this.notice({
       kind: "device.adopted",
       deviceId: grant.deviceId,

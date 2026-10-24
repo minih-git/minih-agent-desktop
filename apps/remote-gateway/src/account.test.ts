@@ -423,7 +423,12 @@ describe("account mode", () => {
         body,
       });
     expect((await post(JSON.stringify({ client: "ios" }))).status).toBe(401);
-    expect((await post(JSON.stringify({ client: "desktop" }), `Bearer ${KEY_A}`)).status).toBe(400);
+    // A computer asks for the header profile: `desktop` is a valid client, and
+    // the session credential arrives in the body so it can be stored, never as a
+    // cookie a browser would read (rollout R8 package E).
+    const desktop = await accountLogin(gateway, { accessKey: KEY_A, client: "desktop", label: "mac" });
+    expect(desktop.status).toBe(200);
+    expect(typeof (desktop.payload.result as { token?: unknown } | undefined)?.token).toBe("string");
     expect((await post("not json", `Bearer ${KEY_A}`)).status).toBe(400);
     expect((await accountHosts(gateway, { authorization: "Bearer rat1.unknown" })).status).toBe(401);
     expect((await accountHosts(gateway, {})).status).toBe(401);

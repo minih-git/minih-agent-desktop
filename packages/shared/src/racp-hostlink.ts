@@ -832,9 +832,20 @@ export const RACP_ACCOUNT_ROUTES = {
  * Account login. The Router AccessKey travels only in the `Authorization`
  * header; the body says which credential profile the client wants, exactly like
  * the pairing route. The Gateway never stores the key and never echoes it.
+ *
+ * `desktop` is the header profile a computer asks for: the credential is
+ * returned in the body so it can be stored, never as a cookie a browser would
+ * read. It is the same client name this desktop sends on `POST
+ * /v1/account/devices`, and account-mode discovery needs it to read the
+ * account's computer roster at all (rollout R8 package E).
  */
 export const RacpAccountLoginRequestSchema = Type.Object({
-  client: Type.Union([Type.Literal("web"), Type.Literal("ios"), Type.Literal("android")]),
+  client: Type.Union([
+    Type.Literal("web"),
+    Type.Literal("ios"),
+    Type.Literal("android"),
+    Type.Literal("desktop"),
+  ]),
   label: Type.Optional(Type.String({ maxLength: 128 })),
 });
 export type RacpAccountLoginRequest = Static<typeof RacpAccountLoginRequestSchema>;

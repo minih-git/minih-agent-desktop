@@ -72,6 +72,34 @@ export type RemoteGatewayStatus = {
    * bundle. Only meaningful while the link is on.
    */
   desktopAutoAdmission?: boolean;
+  /**
+   * The last account-mode discovery round: how the other computers of this
+   * account were found, and why they were not (rollout R8 package E). Absent
+   * until the first round finishes, and on the self-hosted flow, which has no
+   * account to discover.
+   */
+  accountComputers?: RemoteGatewayAccountComputers;
+};
+
+/**
+ * What one account join round found, as the accounts page shows it.
+ *
+ * The roster is the Gateway's answer, so a failure here is the only thing that
+ * tells a user why their other computer never appeared. `reason` is a stable
+ * machine-readable code (`no-access-key`, `ACCOUNT_LOGIN_REFUSED`, …) and
+ * `detail` carries the Gateway's own error code when it named one; neither is
+ * ever a secret.
+ */
+export type RemoteGatewayAccountComputers = {
+  state: "joined" | "skipped" | "failed";
+  reason?: string;
+  detail?: string;
+  /** How many sibling computers the last round made reachable. */
+  computers?: number;
+  /** ISO timestamp of the round that produced this report. */
+  at: string;
+  /** When the scheduled retry is due; absent when none is pending. */
+  nextRetryAt?: string;
 };
 
 /** One device paired to this desktop through the Gateway (never a token hash). */
@@ -81,7 +109,6 @@ export type RemoteGatewayDeviceSummary = {
   roles: RacpRole[];
   createdAt: string;
   lastSeenAt?: string;
-  revokedAt?: string;
   /**
    * What was paired, when the record says so: `desktop` for a computer of the
    * account admitted with a verified proof, `phone` for everything else the

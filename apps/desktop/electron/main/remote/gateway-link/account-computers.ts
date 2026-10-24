@@ -69,10 +69,16 @@ export type AccountComputersOptions = {
   hostname?: () => string | undefined;
 };
 
+/**
+ * What one round found. `reason` is a stable code the page shows; `detail` is the
+ * Gateway's own error code behind a failure, when it named one — never a secret,
+ * and never a guess: the login refusal the user saw for weeks was
+ * `INVALID_ARGUMENT` and the page had no way to say it.
+ */
 export type AccountJoinOutcome =
   | { state: "joined"; computers: number }
   | { state: "skipped"; reason: "in-flight" | "no-access-key" | "self-only" }
-  | { state: "failed"; reason: string };
+  | { state: "failed"; reason: string; detail?: string };
 
 /** What one round is told about the link that just came up. */
 export type AccountJoinInput = {
@@ -89,8 +95,11 @@ export type AccountJoinInput = {
 const SESSION_REUSE_WINDOW_MS = 60_000;
 
 /**
- * One account join round. `run()` is single-flight: concurrent calls share the
- * round already in progress instead of minting a second device request.
+ * One account join round. `run()` is single-flight per account: concurrent calls
+ * for the same Gateway and computer share the round already in progress instead
+ * of minting a second device request, while a call about a *different* Gateway
+ * starts its own round — a reconnect to another origin must not be answered by
+ * the round the previous connection was running.
  */
 export function createAccountComputers(options: AccountComputersOptions): {
   run(input: AccountJoinInput): Promise<AccountJoinOutcome>;
@@ -100,15 +109,20 @@ export function createAccountComputers(options: AccountComputersOptions): {
   const doFetch = options.fetch;
   /** The Gateway session this module obtained, kept only in memory. */
   let session: { origin: string; token: string; expiresAt: number } | null = null;
-  let running: Promise<AccountJoinOutcome> | null = null;
+  /** Rounds in flight, keyed by what they are about. */
+  const running = new Map<string, Promise<AccountJoinOutcome>>();
 
   /**
-   * A session credential for `origin`, or `null` when the Gateway refuses the
-   * key. The AccessKey is presented once per window and never stored.
+   * A session credential for `origin`, or the Gateway's refusal code when it
+   * will not issue one. The AccessKey is presented once per window and never
+   * stored; the code is what the page needs to say why no computer was found.
    */
-  const sessionToken = async (origin: string, accessKey: string): Promise<string | null> => {
+  const sessionToken = async (
+    origin: string,
+    accessKey: string,
+  ): Promise<{ token: string } | { error: string }> => {
     if (session && session.origin === origin && session.expiresAt > now() + SESSION_REUSE_WINDOW_MS) {
-      return session.token;
+      return { token: session.token };
     }
     session = null;
     const answer = await loginAccount({
@@ -118,14 +132,14 @@ export function createAccountComputers(options: AccountComputersOptions): {
       log,
       ...(doFetch ? { fetch: doFetch } : {}),
     });
-    if ("error" in answer) return null;
+    if ("error" in answer) return { error: answer.error };
     const parsed = Date.parse(answer.expiresAt);
     session = {
       origin,
       token: answer.token,
       expiresAt: Number.isNaN(parsed) ? now() + 5 * 60_000 : parsed,
     };
-    return answer.token;
+    return { token: answer.token };
   };
 
   /** The token a sibling admits, reused from the registry when one exists. */
@@ -163,12 +177,15 @@ export function createAccountComputers(options: AccountComputersOptions): {
       log("info", "account computers were not joined: no Minih Router AccessKey");
       return { state: "skipped", reason: "no-access-key" };
     }
-    const session = await sessionToken(origin, account.accessKey);
-    if (!session) return { state: "failed", reason: "ACCOUNT_LOGIN_REFUSED" };
+    const login = await sessionToken(origin, account.accessKey);
+    if ("error" in login) {
+      log("warn", "account computers were not joined: the account login was refused", { reason: login.error });
+      return { state: "failed", reason: "ACCOUNT_LOGIN_REFUSED", detail: login.error };
+    }
 
     const roster = await listAccountHosts({
       publicOrigin: origin,
-      sessionToken: session,
+      sessionToken: login.token,
       log,
       validate: validateAccountHosts,
       ...(doFetch ? { fetch: doFetch } : {}),
@@ -192,34 +209,37 @@ export function createAccountComputers(options: AccountComputersOptions): {
       return { state: "skipped", reason: "self-only" };
     }
 
-    const token = await deviceToken(input, session);
-    if ("reason" in token) {
-      log("warn", "account computers were not joined: no device token", { reason: token.reason });
-      return { state: "failed", reason: token.reason };
+    const deviceTokenResult = await deviceToken(input, login.token);
+    if ("reason" in deviceTokenResult) {
+      log("warn", "account computers were not joined: no device token", { reason: deviceTokenResult.reason });
+      return { state: "failed", reason: deviceTokenResult.reason };
     }
 
     const joined = await options.join({
       computers: reachable,
       selfHostId: input.hostId,
       publicOrigin: origin,
-      deviceToken: token.token,
+      deviceToken: deviceTokenResult.token,
     });
     log("info", "account computers joined", { computers: String(joined.length) });
     return { state: "joined", computers: joined.length };
   };
 
   return {
-    async run(input) {
-      if (running) return running;
-      running = round(input)
+    run(input) {
+      const key = `${input.publicOrigin}|${input.hostId}`;
+      const inFlight = running.get(key);
+      if (inFlight) return inFlight;
+      const roundInFlight = round(input)
         .catch((error: unknown): AccountJoinOutcome => {
           log("warn", "the account join round failed", { error: String(error) });
           return { state: "failed", reason: error instanceof Error ? error.message : String(error) };
         })
         .finally(() => {
-          running = null;
+          if (running.get(key) === roundInFlight) running.delete(key);
         });
-      return running;
+      running.set(key, roundInFlight);
+      return roundInFlight;
     },
   };
 }

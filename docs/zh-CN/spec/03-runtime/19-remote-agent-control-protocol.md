@@ -517,17 +517,19 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
   每个用户可读，还会进入 shell 历史。key 只在 `POST /v1/enroll` 上提交一次且不落盘；
   `gateway-link.json` 只保存签发的证书与 Host 自己的私钥。
 - **账户登录**：`POST /v1/account/login` 以 `Authorization: Bearer <AccessKey>` 与
-  请求体 `{ client: "web" | "ios" | "android", label? }` 调用，沿用配对路由的浏览器
-  规则，并按上一节的命令信封返回
+  请求体 `{ client: "web" | "ios" | "android" | "desktop", label? }` 调用，沿用配对
+  路由的浏览器规则，并按上一节的命令信封返回
   `{ result: { accountId, keyName?, expiresAt, token?, csrfToken? } }`。账户是
   Router `access_key_id` 的十进制字符串。会话凭据是 `rat1.` 前缀的 bearer 值，有效期
-  有界，为十二小时；Gateway 只存其 SHA-256 哈希，撤销始终在服务端完成。原生客户端从
-  响应体取得凭据；浏览器收到 `HttpOnly; Secure; SameSite=Strict` 且
-  `Path=/`、`Max-Age` 等于有效期的 cookie，外加一个页面可读的 CSRF cookie，其值与配对
-  profile 使用同一个 HMAC。校验不通过的 key 返回 `401 UNAUTHORIZED`，Router 不可达返回
-  带 `retriable: true` 的 `503 AGENT_UNAVAILABLE`，被 Router 锁定的调用方返回带
-  `retriable: true` 的 `429 RATE_LIMITED`，并在 `Retry-After` 响应头里带上 Router
-  给出的延迟。
+  有界，为十二小时；Gateway 只存其 SHA-256 哈希，撤销始终在服务端完成。原生客户端与
+  **桌面**（`desktop`）从响应体取得凭据；浏览器收到 `HttpOnly; Secure;
+  SameSite=Strict` 且 `Path=/`、`Max-Age` 等于有效期的 cookie，外加一个页面可读的
+  CSRF cookie，其值与配对 profile 使用同一个 HMAC。`desktop` 是同一账户里一台电脑
+  使用的头信息 profile——与它在 `POST /v1/account/devices` 上发出的 client 同名——
+  缺了它，桌面端无法读取自己账户的主机列表。校验不通过的 key 返回 `401 UNAUTHORIZED`，
+  Router 不可达返回带 `retriable: true` 的 `503 AGENT_UNAVAILABLE`，被 Router 锁定的
+  调用方返回带 `retriable: true` 的 `429 RATE_LIMITED`，并在 `Retry-After` 响应头里
+  带上 Router 给出的延迟。
 - **账户主机列表**：`GET /v1/account/hosts` 以任一 profile 的账户会话凭据调用，只返回
   `accountId` 等于该会话账户的 Host 及其在线状态。该路由按账户作用域且不接受 hostId，
   因此其他账户的 Host 根本无法在这里被寻址。它不授权任何中继 Host 操作：

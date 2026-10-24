@@ -1268,6 +1268,8 @@ export const ptBR = {
         kindComputer: "Computador",
         kindPhone: "Telefone",
         kindRoles: "{{roles}}",
+        joinFailed: "Não foi possível carregar os outros computadores desta conta: {{reason}}. Nova tentativa em instantes.",
+        joinSkipped: "Os outros computadores desta conta não foram carregados: {{reason}}.",
       },
     remoteGateway: {
       title: "Gateway remoto",
