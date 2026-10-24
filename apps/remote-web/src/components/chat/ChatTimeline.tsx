@@ -9,6 +9,7 @@ import remarkGfm from "remark-gfm";
 import { groupConsecutiveToolRuns } from "@minih-agent/shared";
 
 import type { TimelineFailure, TimelineItem } from "../../lib/timeline-types.js";
+import { describeTurnFailure } from "../../lib/turn-failure.js";
 import { ToolRun } from "./ToolRun.js";
 import { MediaViewer, type MediaViewerItem } from "../ui/MediaViewer.js";
 import type { SessionMediaState } from "../../lib/session-media.js";
@@ -326,6 +327,26 @@ function isEmptyAssistantPlaceholder(item: TimelineItem): boolean {
   if (isToolItem(item)) return false;
   if (item.itemType === "compaction" || item.role === "system" || item.role === "user") return false;
   return !item.text.trim() && !item.thinking?.trim();
+}
+
+/**
+ * The one line a failed turn gets: the status and the provider's own sentence,
+ * never the JSON envelope it arrived in. Long reasons wrap and break inside the
+ * card, because a provider that answers with one unbroken token would otherwise
+ * push this row past the screen edge.
+ */
+function TurnFailureBanner({ failure }: { failure: TimelineFailure }) {
+  const { t } = useTranslation();
+  const display = describeTurnFailure(failure.message ?? "");
+  if (!display.reason) return null;
+  const reason = display.status === undefined ? display.reason : `${display.status} · ${display.reason}`;
+  return (
+    <li className="mt-2 min-w-0 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-[14px] leading-relaxed text-[var(--rm-error)]">
+      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+        {t("session.turn.failed", { reason })}
+      </p>
+    </li>
+  );
 }
 
 export function ChatTimeline({
@@ -754,11 +775,7 @@ export function ChatTimeline({
         ) : null}
 
         {/* Turn Failure banner */}
-        {lastFailure?.message ? (
-          <li className="mt-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-[14px] leading-relaxed text-[var(--rm-error)]">
-            {t("session.turn.failed", { reason: lastFailure.message })}
-          </li>
-        ) : null}
+        {lastFailure?.message ? <TurnFailureBanner failure={lastFailure} /> : null}
       </ul>
       {fullscreenModal}
       <MediaViewer

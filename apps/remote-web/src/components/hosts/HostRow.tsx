@@ -152,7 +152,7 @@ export function HostRow({
               }`}
             >
               <HostGlyph label={entry.label} />
-              <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--rm-bg-solid)]">
+              <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--rm-bg-surface)]">
                 <StatusDot status={dotStatus} size="small" />
               </span>
             </div>
@@ -171,7 +171,7 @@ export function HostRow({
                 ) : null}
               </div>
               <div
-                className={`mt-1 flex min-w-0 items-center gap-1.5 text-[13px] leading-[18px] ${
+                className={`mt-1 min-w-0 truncate text-[13px] leading-[18px] ${
                   status.kind === "revoked"
                     ? "font-medium text-[var(--rm-error)]"
                     : isOnline
@@ -179,7 +179,6 @@ export function HostRow({
                       : "text-[var(--rm-text-muted)]"
                 }`}
               >
-                <StatusDot status={dotStatus} size="small" />
                 <span className="truncate">{statusLine}</span>
               </div>
             </div>
