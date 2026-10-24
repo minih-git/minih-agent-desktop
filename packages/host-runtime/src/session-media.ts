@@ -35,7 +35,7 @@ import { join, resolve } from "node:path";
 
 import { RacpError } from "@minih-agent/agent-host";
 import type { RacpSessionMediaAccess, RacpSessionMediaReadResult } from "@minih-agent/racp";
-import type { UiMessage } from "@minih-agent/shared";
+import type { MessageAttachment, UiMessage } from "@minih-agent/shared";
 
 import { toRacpHostError } from "./host-catalog-reads.js";
 import type { HostRpc, HostSessionRecord } from "./host-ports.js";
@@ -99,6 +99,23 @@ export function decodeSessionMediaId(mediaId: string): { messageId: string; rowI
 }
 
 /**
+ * The identity of one attachment row inside its message.
+ *
+ * The desktop mints row ids for attachments it stores itself (`att-<uuid>`,
+ * `a-<n>`), and an attachment that carries one keeps using it. A message read
+ * back from a Host session record has no such field — the Rust
+ * `MessageAttachment` is kind/name/ref/mimeType/size and nothing to address it
+ * by — so the row's position in the message is the identity that always exists.
+ * It is stable: the transcript hands the same array back on every read, and both
+ * the writer (`withSessionMediaIds`) and the reader (`mediaRows`) walk it in the
+ * same order.
+ */
+export function sessionAttachmentRowId(attachment: MessageAttachment, index: number): string {
+  const explicit = String((attachment as { id?: unknown }).id ?? "").trim();
+  return explicit || `idx-${index}`;
+}
+
+/**
  * The readable media of one attachment list.
  *
  * A row is media only when it is an image, its MIME is an allowlisted raster
@@ -111,14 +128,13 @@ function mediaRows(messages: readonly UiMessage[]): Array<MediaRow & { messageId
   for (const message of messages) {
     const attachments = message.attachments;
     if (!Array.isArray(attachments) || attachments.length === 0) continue;
-    for (const attachment of attachments) {
+    for (const [index, attachment] of attachments.entries()) {
       if (attachment.kind !== "image") continue;
       const mimeType = String(attachment.mimeType ?? "").trim().toLowerCase();
       if (!RASTER_MIME.has(mimeType)) continue;
       const match = MEDIA_REF_PATTERN.exec(String(attachment.ref ?? "").trim().replace(/\\/g, "/"));
       if (!match?.[1]) continue;
-      const rowId = String((attachment as { id?: unknown }).id ?? "").trim();
-      if (!rowId) continue;
+      const rowId = sessionAttachmentRowId(attachment, index);
       rows.push({
         messageId: message.id,
         id: rowId,

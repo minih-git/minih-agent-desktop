@@ -56,6 +56,14 @@ export type MessageAttachment = {
   mimeType?: string;
   size?: number;
   /**
+   * Row id the desktop mints for an attachment it stored itself (`att-<uuid>`,
+   * `a-<n>`). It is **not** part of a Host session record: host-core's
+   * `MessageAttachment` has no such field, so a message read back from a session
+   * carries none. Anything that needs to address a row must fall back to its
+   * position in the message — see `sessionAttachmentRowId` in `@minih-agent/host-runtime`.
+   */
+  id?: string;
+  /**
    * Bounded excerpt of a referenced conversation, written by Electron main when
    * the prompt carries a `minih-agent-desktop://session/<id>` link. The model reads it
    * with the user's message; other attachment kinds never carry it.

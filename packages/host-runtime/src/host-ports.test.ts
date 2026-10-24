@@ -178,10 +178,16 @@ describe("host ports", () => {
       mediaId: encodeSessionMediaId("m-media", "att-1"),
     });
     expect(attachments[1]?.mediaId).toBe(encodeSessionMediaId("m-media", "att-2"));
-    for (const attachment of attachments.slice(2)) {
+    // Non-media rows still carry no media id: a document, an SVG, a path outside
+    // the attachments directory, a session link.
+    for (const attachment of attachments.slice(2, 6)) {
       expect(attachment).not.toHaveProperty("mediaId");
     }
     expect(attachments[2]).toEqual({ id: "att-3", kind: "file", name: "report.pdf", ref: "docs/report.pdf", mimeType: "application/pdf" });
+    // A row with no id of its own — every attachment read back from a Host
+    // session record — is addressed by its position in the message. Leaving it
+    // out is why a user's own photo never reached the phone.
+    expect(attachments[6]).toMatchObject({ mediaId: encodeSessionMediaId("m-media", "idx-6") });
   });
 
   it("leaves a message without raster media byte-for-byte as stored", () => {
