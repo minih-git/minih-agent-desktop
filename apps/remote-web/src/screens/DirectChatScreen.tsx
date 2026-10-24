@@ -14,7 +14,7 @@ import { Code2, Globe, Info, Lightbulb, Mail, RotateCcw, Square } from "lucide-r
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { MinihRouterModel, RacpInlineAttachment } from "@minih-agent/shared";
+import { decodeBase64ToBytes, type MinihRouterModel, type RacpInlineAttachment } from "@minih-agent/shared";
 
 import { ModelSheet } from "../components/ModelSheet.js";
 import { type AttachmentBlockReason, ChatComposer } from "../components/chat/ChatComposer.js";
@@ -22,6 +22,7 @@ import { ChatTimeline } from "../components/chat/ChatTimeline.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
 import { EmptyState } from "../components/ui/EmptyState.js";
+import { FailureDetail } from "../components/ui/FailureDetail.js";
 import { ModelPill, NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { Sheet } from "../components/ui/Sheet.js";
@@ -45,12 +46,7 @@ import type {
 } from "../lib/direct-chat/history-store.js";
 import { isIdle, isImageConversation } from "../lib/direct-chat/history.js";
 import { scopeKey } from "../lib/direct-chat/history-store.js";
-import {
-  base64ToBytes,
-  createMediaUrl,
-  probeImageDimensions,
-  validateRasterImageBytes,
-} from "../lib/direct-chat/media.js";
+import { createMediaUrl, probeImageDimensions, validateRasterImageBytes } from "../lib/direct-chat/media.js";
 import {
   failureReasonKey,
   isRetryableFailure,
@@ -429,7 +425,7 @@ export function DirectChatScreen({
     if (!isImage && attachments && attachments.length > 0) {
       for (const att of attachments) {
         if (!att.data) continue;
-        const bytes = base64ToBytes(att.data);
+        const bytes = decodeBase64ToBytes(att.data);
         if (!bytes) {
           setSending(false);
           setNotice(t("directChat.invalidImage"));
@@ -827,14 +823,19 @@ export function DirectChatScreen({
             tone={view.retryable.state === "failed" ? "error" : "warn"}
             className="mt-3 flex items-center gap-2"
           >
-            <span className="min-w-0 flex-1">
-              {view.retryable.state === "stopped"
-                ? t("directChat.state.stopped")
-                : view.retryable.state === "interrupted"
-                  ? t("directChat.state.interrupted")
-                  : // A failure says what failed, not merely that it failed.
-                    t(failureReasonKey(view.retryable.errorKind))}
-            </span>
+            <div className="min-w-0 flex-1">
+              <span className="block">
+                {view.retryable.state === "stopped"
+                  ? t("directChat.state.stopped")
+                  : view.retryable.state === "interrupted"
+                    ? t("directChat.state.interrupted")
+                    : // A failure says what failed, not merely that it failed.
+                      t(failureReasonKey(view.retryable.errorKind))}
+              </span>
+              {/* The sentence says what to do next; the reason the attempt stored
+                  is one tap away, for the day the failure is the client's own. */}
+              <FailureDetail reason={view.retryable.error} />
+            </div>
             <span className="flex shrink-0 items-center gap-1.5">
               {/*
                 A model the gateway has no route for will keep failing: retrying

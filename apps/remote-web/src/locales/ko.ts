@@ -535,6 +535,7 @@ export const ko: Record<TranslationKey, string> = {
   "directChat.reason.storage": "답변을 이 휴대폰에 저장하지 못했습니다.",
   "directChat.reason.contextOverflow": "이 대화가 모델의 컨텍스트를 넘었습니다. 새 대화를 시작하세요.",
   "directChat.reason.interrupted": "중단됨 · 위에는 도착한 내용입니다",
+  "directChat.failureDetail": "자세히",
   "directChat.reason.gateway": "모델 게이트웨이 오류입니다.",
   "directChat.reason.noRoute": "이 모델은 지금 사용 가능한 경로가 없습니다. 다른 모델을 사용해 보세요.",
   "directChat.reason.upstreamBusy": "이 모델은 지금 혼잡합니다. 잠시 후 다시 시도하세요.",

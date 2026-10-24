@@ -12,3 +12,4 @@ export * from "./Toast.js";
 export * from "./EmptyState.js";
 export * from "./Skeleton.js";
 export * from "./Fields.js";
+export * from "./FailureDetail.js";

@@ -535,6 +535,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "directChat.reason.storage": "这条回复没能保存到这台手机。",
   "directChat.reason.contextOverflow": "这个对话已超出模型的上下文长度。请新建对话。",
   "directChat.reason.interrupted": "已中断 · 上面是已收到的内容",
+  "directChat.failureDetail": "详情",
   "directChat.reason.gateway": "模型网关出错。",
   "directChat.reason.noRoute": "这个模型当前没有可用的线路，换个模型试试。",
   "directChat.reason.upstreamBusy": "这个模型暂时繁忙，请稍后再试。",

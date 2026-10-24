@@ -535,6 +535,7 @@ export const tr: Record<TranslationKey, string> = {
   "directChat.reason.storage": "Yanıt bu telefona kaydedilemedi.",
   "directChat.reason.contextOverflow": "Bu sohbet artık modelin bağlamına sığmıyor. Yeni bir sohbet başlatın.",
   "directChat.reason.interrupted": "Kesildi · yukarıda gelen metin var",
+  "directChat.failureDetail": "Ayrıntılar",
   "directChat.reason.gateway": "Model ağ geçidi başarısız oldu.",
   "directChat.reason.noRoute": "Bu model için şu anda kullanılabilir bir rota yok. Başka bir model deneyin.",
   "directChat.reason.upstreamBusy": "Bu model şu anda meşgul. Biraz sonra tekrar deneyin.",
