@@ -4,6 +4,10 @@ export const tr = {
   sidebarPluginView: {
     back: "Sohbete dön",
   },
+  themeToggle: {
+    hint: "Tema: {{current}}. {{next}} temasına geçmek için tıklayın.",
+    saveFailed: "Tema kaydedilemedi.",
+  },
   userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "Yeni yalıtılmış oturum",

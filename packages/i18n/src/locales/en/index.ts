@@ -2,6 +2,10 @@ export const en = {
   sidebarPluginView: {
     back: "Back to conversation",
   },
+  themeToggle: {
+    hint: "Theme: {{current}}. Click to switch to {{next}}.",
+    saveFailed: "Couldn't save the theme.",
+  },
   userMenu: {
     open: "Account menu for {{name}}",
     title: "Account and settings",

@@ -4,6 +4,10 @@ export const zhCN = {
   sidebarPluginView: {
     back: "返回会话",
   },
+  themeToggle: {
+    hint: "主题：{{current}}，点击切换到{{next}}。",
+    saveFailed: "无法保存主题设置。",
+  },
   userMenu: {
     open: "{{name}} 的账户菜单",
     title: "账户与设置",

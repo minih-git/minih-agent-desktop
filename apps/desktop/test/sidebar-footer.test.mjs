@@ -93,3 +93,39 @@ test("build chip surfaces the version and only dots an actionable update", () =>
   const dot = globalStyles.match(/\.footer-build-dot\s*\{[^}]+\}/)?.[0] ?? "";
   assert.match(dot, /background:\s*var\(--ds-accent\)/);
 });
+
+const themeToggleSource = await readFile(
+  new URL("../src/components/SidebarThemeToggle.tsx", import.meta.url),
+  "utf8",
+);
+
+test("the footer carries the one-click theme switch beside notifications", () => {
+  const cluster =
+    sidebarSource.match(/<div className="footer-actions">[\s\S]*?<\/div>/)?.[0] ?? "";
+  assert.match(cluster, /<SidebarThemeToggle \/>/);
+  assert.match(cluster, /<NotificationCenter/);
+  assert.match(themeToggleSource, /className="footer-action"/);
+});
+
+test("a click writes the next palette instead of opening Settings", () => {
+  assert.match(themeToggleSource, /nextBuiltinThemePreference\(pendingTarget\.current\)/);
+  assert.match(themeToggleSource, /await api\.setSettings\(nextSettings\)/);
+  assert.match(themeToggleSource, /useAppStore\.setState\(\{ settings: nextSettings \}\)/);
+  // The trigger names both ends of the step for pointer and screen-reader users.
+  assert.match(themeToggleSource, /tooltip=\{hint\}/);
+  assert.match(themeToggleSource, /ariaLabel=\{hint\}/);
+  // A rejected write stays visible rather than leaving the palette unchanged.
+  assert.match(themeToggleSource, /t\("themeToggle\.saveFailed"\)/);
+});
+
+test("every locale names the current and the next theme", async () => {
+  for (const locale of ["en", "zh-CN", "zh-TW", "de", "es", "fr", "ko", "pt-BR", "tr"]) {
+    const source = await readFile(
+      new URL(`../../../packages/i18n/src/locales/${locale}/index.ts`, import.meta.url),
+      "utf8",
+    );
+    const block = source.match(/themeToggle:\s*\{[\s\S]*?\n  \},/)?.[0] ?? "";
+    assert.match(block, /hint:\s*"[^"]*\{\{current\}\}[^"]*\{\{next\}\}[^"]*"/, locale);
+    assert.match(block, /saveFailed:\s*"/, locale);
+  }
+});

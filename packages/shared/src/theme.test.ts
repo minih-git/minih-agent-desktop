@@ -5,6 +5,7 @@ import {
   builtinWindowBackground,
   isBuiltinThemePreference,
   isThemeColorScheme,
+  nextBuiltinThemePreference,
 } from "./theme.js";
 
 describe("built-in themes", () => {
@@ -30,5 +31,21 @@ describe("built-in themes", () => {
     expect(isThemeColorScheme(undefined)).toBe(false);
     expect(isBuiltinThemePreference("system")).toBe(true);
     expect(isBuiltinThemePreference("plugin:demo.hello:midnight")).toBe(false);
+  });
+});
+
+describe("theme cycle", () => {
+  it("walks system → light → dark → system", () => {
+    expect(nextBuiltinThemePreference("system")).toBe("light");
+    expect(nextBuiltinThemePreference("light")).toBe("dark");
+    expect(nextBuiltinThemePreference("dark")).toBe("system");
+  });
+
+  it("starts the cycle at system when the preference is not known yet", () => {
+    expect(nextBuiltinThemePreference(undefined)).toBe("light");
+  });
+
+  it("steps a contributed theme back to system", () => {
+    expect(nextBuiltinThemePreference("plugin:demo.hello:midnight")).toBe("system");
   });
 });

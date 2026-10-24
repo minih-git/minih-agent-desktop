@@ -760,6 +760,7 @@ account, subscription, or collaboration backend.
 | Identity copy | Primary `Custom`; secondary `Local profile` or localized `本地配置`; two lines truncate independently |
 | Chevron | Trailing disclosure indicator; reflects the menu's open state without motion when reduced motion is requested |
 | Notification shortcut | Separate `32px` square Bell target with unread badge; opens the durable inbox above and to the right of the footer |
+| Theme switch | Separate `32px` square target beside the bell; one click advances system → light → dark → system and writes `settings.theme` immediately. A contributed theme is not part of that order and steps back to system. The accessible name states the current theme and the next one |
 | Profile menu | `280px` wide, bottom anchored `8px` above the footer; opaque elevated surface |
 | Identity header | Repeats the glyph and two-line local identity; non-interactive |
 | Menu actions | Divider, then Settings, Logs, and Theme in that order; Theme retains its current-value metadata |

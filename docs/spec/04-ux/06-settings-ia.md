@@ -124,6 +124,9 @@ to appearance.
     Light, and Dark at the top, then lists plugin themes after a divider with a
     "Provided by …" hint. Search matches labels, descriptions, ids, and plugin
     ids. Selection updates `settings.theme`.
+    The sidebar footer offers a one-click cycle through the same built-in
+    options; it never selects a plugin theme, which stays in this picker.
+    A rejected write is reported and leaves the previous preference in place.
   - **Language**: a searchable picker row (not a card grid). The closed trigger
     sizes to the current label, capped by the settings control column, and
     shows the current native name, or Match system. The menu pins Auto at the
