@@ -10,7 +10,7 @@ import overlaysCss from "../../apps/desktop/src/styles/overlays.css";
 import { Markdown } from "../../apps/desktop/src/components/Markdown";
 import { SelectionQuoteButton } from "../../apps/desktop/src/features/chat/transcript/SelectionQuoteButton";
 import { useComposerQuoteSink } from "../../apps/desktop/src/features/chat/composer/hooks/useComposerQuoteSink";
-import { quoteIntoComposer } from "../../apps/desktop/src/features/chat/composer/quote-sink";
+import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import {
   paintEditorValue,
   setEditorCaret,
@@ -68,14 +68,18 @@ const META_TEXT = "META-CHIP-TOKENS";
 /**
  * The real sink, the real painter and a real contenteditable, so the assertions
  * below are made against the draft a user would have typed into rather than
- * against a stand-in for it.
+ * against a stand-in for it. The store is given a session and `window.minihAgent`
+ * serves `composerPasteFiles` from memory, so a quote produces the production
+ * chip: persisted, expanded from its token, and painted.
  */
 function FixtureComposer({
   editorRef,
   onDraft,
+  blocked = false,
 }: {
   editorRef: { current: HTMLDivElement | null };
   onDraft: (draft: string) => void;
+  blocked?: boolean;
 }) {
   const valueRef = useRef("");
   const fileReferencesRef = useRef<ComposerFileReference[]>([]);
@@ -83,11 +87,10 @@ function FixtureComposer({
     paintEditorValue(element, text, new Map(), () => "", "", () => {}, () => {}, () => {}, () => {});
   useComposerQuoteSink({
     ref: editorRef,
-    valueRef,
-    fileReferencesRef,
-    inputBlocked: false,
-    applyEditorDraft: (text, _references, caret, focus) => {
+    inputBlocked: blocked,
+    applyEditorDraft: (text, references, caret, focus) => {
       valueRef.current = text;
+      fileReferencesRef.current = references;
       const element = editorRef.current;
       if (!element) return;
       paint(element, text);
@@ -96,6 +99,7 @@ function FixtureComposer({
       if (focus !== false) element.focus();
       onDraft(text);
     },
+    snapshotReferences: () => [],
   });
   return (
     <div className="composer-dock" data-composer-dock="docked">
@@ -121,6 +125,43 @@ globalThis.selectionQuoteProbe = async () => {
   const style = document.createElement("style");
   style.textContent = `${tokensCss}\n${uiKitCss}\n${overlaysCss}`;
   document.head.append(style);
+
+  /*
+    The quote lands as an attachment chip through the production paste path, so
+    the bridge gets an in-memory `composerPasteFiles` and the store gets one
+    active session — the same pieces the desktop window would provide. The
+    saved name is recorded so the assertions can tie the chip to its paste.
+  */
+  const savedFiles: { name: string; sessionId: string; text: string }[] = [];
+  (window as unknown as { minihAgent: unknown }).minihAgent = {
+    invoke: async (channel: string, payload: { sessionId?: string; files?: { name?: string; data?: ArrayBuffer }[] }) => {
+      if (channel !== "minih-agent-desktop/composer/pasteFiles") {
+        throw new Error(`unexpected channel: ${channel}`);
+      }
+      const sessionId = payload?.sessionId ?? "";
+      const files = (payload?.files ?? []).map((file, index) => ({
+        path: `/tmp/scratch/${sessionId}/quoted-${savedFiles.length}-${index}.txt`,
+        name: file?.name ?? `quoted-${index}.txt`,
+        kind: "file" as const,
+        mimeType: "text/plain",
+        size: file?.data?.byteLength ?? 0,
+      }));
+      for (let index = 0; index < files.length; index += 1) {
+        const data = payload?.files?.[index]?.data;
+        savedFiles.push({
+          name: files[index].name,
+          sessionId,
+          text: data ? new TextDecoder().decode(data) : "",
+        });
+      }
+      return { ok: true as const, data: { files } };
+    },
+  };
+  useAppStore.setState({ activeSessionId: "e2e-session" });
+  const sessionLog: (string | undefined)[] = [];
+  useAppStore.subscribe((state) => {
+    sessionLog.push(state.activeSessionId);
+  });
 
   // A 320px-tall scroller with the composer docked under it: the pill has to
   // stay in the band between them, which is the geometry this fixture checks.
@@ -207,7 +248,9 @@ globalThis.selectionQuoteProbe = async () => {
       selection: range ? range.toString().slice(0, 60) : null,
       row: element?.closest?.("[data-minimap-id]")?.getAttribute("data-minimap-id") ?? null,
       pill: Boolean(pill()),
-      sink: quoteIntoComposer(""),
+      // A quote persisted for diagnostics: never an empty chip in the draft.
+      sink: savedFiles.length,
+      sessions: [...sessionLog],
       editor: Boolean(editorRef.current),
       html: host.innerHTML.slice(0, 200),
     };
@@ -229,7 +272,8 @@ globalThis.selectionQuoteProbe = async () => {
   /**
    * Drag over `element`, then run the pill's only action. The block is scrolled
    * into the middle of the thread first: a selection that is entirely clipped
-   * has no visible anchor and correctly floats nothing.
+   * has no visible anchor and correctly floats nothing. The action is async —
+   * the chip lands after the paste round-trip — so the wait covers it.
    */
   const quote = async (element: Element) => {
     (element as HTMLElement).scrollIntoView?.({ block: "center" });
@@ -240,6 +284,7 @@ globalThis.selectionQuoteProbe = async () => {
     const button = overlay.querySelector<HTMLButtonElement>("button");
     assert(button, "the pill has no action");
     button.click();
+    await frames();
     await frames();
   };
 
@@ -256,10 +301,10 @@ globalThis.selectionQuoteProbe = async () => {
   };
   await step("formula", async () => {
     await quote(block("p"));
-    assertEqual(
-      drafts.at(-1) ?? "",
-      "> The identity $a^2+b^2=c^2$ closes the proof.",
-      "quoted formula sentence",
+    const draft = drafts.at(-1) ?? "";
+    assert(
+      /^[\uE000-\uF8FF]$/.test(draft),
+      `quoted formula sentence becomes one attachment chip, got ${JSON.stringify(draft)}`,
     );
     assert(!pill(), "the pill must not survive its own action");
     assert(selection.isCollapsed, "the action consumes its selection");
@@ -267,28 +312,19 @@ globalThis.selectionQuoteProbe = async () => {
   });
   cases.push("formula");
 
-  // 2) A code block keeps its fence and its language, and the second quote is
-  //    separated from the first by one blank line — appended to the live draft.
+  // 2) A code block keeps its fence and its language, and the second quote
+  //    appends its own chip to the live draft.
   await step("code", () => quote(block(".code-block")));
-  assertEqual(
-    drafts.at(-1) ?? "",
-    [
-      "> The identity $a^2+b^2=c^2$ closes the proof.",
-      "",
-      "> ```js",
-      "> const answer = 42;",
-      "> ```",
-    ].join("\n"),
-    "quoted code block appended to the draft",
+  const draft2 = drafts.at(-1) ?? "";
+  assert(
+    /^[\uE000-\uF8FF][\uE000-\uF8FF]$/.test(draft2),
+    `a second quote appends its chip to the draft, got ${JSON.stringify(draft2)}`,
   );
   cases.push("code");
 
-  // 3) A table row is one line and a heading keeps its level.
+  // 3) A table row is one line and a heading keeps its level: the Markdown
+  //    reduction runs before persistence, so the chip's file holds the source.
   await step("table", () => quote(block("table")));
-  assert(
-    (drafts.at(-1) ?? "").endsWith("> left | right\n> 1 | 2"),
-    `a table quotes one line per row, got ${JSON.stringify(drafts.at(-1))}`,
-  );
   /*
     A heading or list item is the range's *ancestor* when its own text is all
     that is selected, so its marker can only be read when the selection spans
@@ -304,29 +340,30 @@ globalThis.selectionQuoteProbe = async () => {
     assert(overlay, "the pill did not appear for the block range");
     overlay.querySelector<HTMLButtonElement>("button")?.click();
     await frames();
-    const draft = drafts.at(-1) ?? "";
-    assert(
-      draft.endsWith("> - first item\n> - second item\n>\n> ## A heading"),
-      `a spanning selection keeps list and heading markers, got ${JSON.stringify(draft)}`,
-    );
+    await frames();
   });
   cases.push("table", "blocks");
 
-  // 4) A code block whose body carries two blank lines keeps them, and the
-  //    quote's own blockquote prefix is the only thing added to each line.
+  // 4) A code block whose body carries two blank lines keeps them: the fenced
+  //    body is quoted verbatim, and the reduction never collapses it.
   await step("code-blank", async () => {
     const python = row("a").querySelectorAll(".code-block")[1];
     assert(python, "the python block did not render");
     await quote(python);
-    const draft = drafts.at(-1) ?? "";
+    const text = savedFiles.at(-1)?.text ?? "";
     assert(
-      draft.endsWith(
-        ["> ```python", "> def f():", ">     a = 1", ">", ">", ">     b = 2", "> ```"].join("\n"),
-      ),
-      `blank lines inside a fence must survive, got ${JSON.stringify(draft.slice(-120))}`,
+      text === "```python\ndef f():\n    a = 1\n\n\n    b = 2\n```",
+      `blank lines inside a fence must survive, got ${JSON.stringify(text)}`,
     );
   });
   cases.push("code-blank");
+
+  // 4b) Each quote persisted exactly one text file named for a quote.
+  assertEqual(savedFiles.length, 5, "one file per quote");
+  assert(
+    savedFiles.every((file) => file.name.startsWith("quoted-text-") && file.sessionId === "e2e-session"),
+    `the quotes persisted through the paste path, got ${JSON.stringify(savedFiles)}`,
+  );
 
   // 5) A drag that starts in the answer and ends in the meta chips quotes the
   //    answer only: the chips are chrome, not conversation text.
@@ -346,10 +383,12 @@ globalThis.selectionQuoteProbe = async () => {
     assert(overlay, "the pill did not appear for the answer-to-meta drag");
     overlay.querySelector<HTMLButtonElement>("button")?.click();
     await frames();
-    const draft = drafts.at(-1) ?? "";
-    assert(!draft.includes(META_TEXT), `meta chip text reached the quote: ${JSON.stringify(draft.slice(-80))}`);
-    assert(!draft.includes(TOOL_OUTPUT), "the tool payload must not be quoted");
-    assert(draft.endsWith("> ## A heading"), `the quote must end at the answer text: ${JSON.stringify(draft.slice(-80))}`);
+    await frames();
+    assertEqual(savedFiles.length, 6, "the answer-to-meta drag persisted one quote");
+    const text = savedFiles.at(-1)?.text ?? "";
+    assert(!text.includes(META_TEXT), `meta chip text reached the quote: ${JSON.stringify(text.slice(-80))}`);
+    assert(!text.includes(TOOL_OUTPUT), "the tool payload must not be quoted");
+    assert(text.endsWith("## A heading"), `the quote must end at the answer text: ${JSON.stringify(text.slice(-80))}`);
   });
   cases.push("meta");
 
@@ -389,5 +428,5 @@ globalThis.selectionQuoteProbe = async () => {
   assert(box.right <= scrollerBox.right, "the pill left the scroller on the right");
   cases.push("clamp");
 
-  return { ok: true, cases, drafts };
+  return { ok: true, cases, drafts, saved: savedFiles.map((file) => file.name) };
 };

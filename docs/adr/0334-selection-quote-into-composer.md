@@ -126,3 +126,18 @@ editor, keeps its caret and its chips.
 Rejected: the end of a long answer is the wrong end of the message to reach for,
 which is the whole reason the gesture is selection-anchored. The row's vocabulary
 also stays what ADR 0268 left it.
+
+## Amendment (D681, 2026-10-24)
+
+The quote lands as an attachment chip, not as blockquote text. The composer
+never rendered draft blockquotes — the excerpt reached the draft as one raw
+`> ` run, and the promised "visually distinct" rendering did not exist — so the
+quote and a large pasted text looked nothing alike. The pill now hands the
+excerpt to the same paste path a large clipboard text takes (`api.pasteFiles`
+into the session scratch), and the draft gains the same compact chip that
+expands back to text on click. Everything else in this ADR stands: the overlay,
+the single action, the 2000-character excerpt cap, the Markdown reduction, the
+async sink registration, and never sending or writing the transcript. The
+change is renderer-only; the paste path's own materialization of a home draft
+applies, and a persistence failure is reported through the toast host while the
+selection survives as the clipboard fallback.

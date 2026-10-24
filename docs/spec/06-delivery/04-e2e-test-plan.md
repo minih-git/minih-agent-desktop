@@ -5418,12 +5418,14 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 #### E2E-CHAT-selection-quote-into-composer: A quoted selection lands in the message box
 
 Selecting a passage in a message row floats one pill above it, and its single
-action writes that passage into the composer draft as a Markdown blockquote at
-the draft's caret instead of replacing what the user typed. The excerpt is the
-selection read back as source: formulas as their TeX, a code block as a fenced
-block that keeps its language, a table as one `a | b` line per row, a list item
-and a heading with their markers. The selection is consumed, the composer takes
-focus, the draft's chips survive, and nothing is sent.
+action puts that passage into the composer draft as the same attachment chip a
+large pasted text becomes: the excerpt rides the composer's paste path and
+lands as one compact chip at the draft's caret instead of replacing what the
+user typed. The chip's content is the selection read back as source: formulas
+as their TeX, a code block as a fenced block that keeps its language, a table
+as one `a | b` line per row, a list item and a heading with their markers. The
+selection is consumed, the composer takes focus, the draft's chips survive,
+and nothing is sent.
 
 The pill stays inside the transcript's visible band: a selection at the bottom
 of the thread places it above the docked composer rather than under it, a
@@ -5438,7 +5440,7 @@ selection already in place shows it without waiting for another event.
   composer that already holds text and at least one file-reference chip; a
   second session available so one pane can be hidden behind another.
 - **Steps**: 1) Drag-select one sentence of the paragraph and use the pill's
-  action. 2) Inspect the draft text and caret. 3) Select the code block and
+  action. 2) Inspect the draft's chip and caret. 3) Select the code block and
   quote it. 4) Select the table, the list, and the heading and quote each.
   5) Select from the middle of the inline formula to the end of its sentence
   and quote it; repeat for the display formula. 6) Select text across two rows
@@ -5451,30 +5453,34 @@ selection already in place shows it without waiting for another event.
   process disclosure and confirm no pill appears. 12) Drag from the answer's
   last paragraph to the end of the meta chips under it and quote it. 13) Quote a
   code block whose body carries two consecutive blank lines.
-- **Expected**: The draft gains one blockquote separated from the existing text
-  by a single blank line, the caret sits after it, chips are unchanged, and the
-  composer has focus. The formula is the TeX of the formula the selection
-  covered; the code block arrives fenced with its language and one fence longer
-  than any backtick run it contains; the table arrives as one line per row; a
-  selection that spans a list and the heading after it keeps both markers. A
-  block that is the range's own ancestor contributes its text — quoting a
-  heading's line alone quotes that line, not a heading. A code block's body is
-  quoted verbatim, so two blank lines inside it stay two. No pill appears for a
-  cross-row, composer, tool-row, process-disclosure, or start-in-meta selection,
-  and a drag from the answer into the tool row or the meta chips quotes the
-  answer alone — no tool payload and no model/token chip reaches the draft. The
-  pill never covers the docked composer,
+- **Expected**: Each quote persists exactly one text file named `quoted-text-*`
+  through the paste path and the draft gains one chip for it at the caret,
+  chips otherwise unchanged, and the composer has focus. The persisted text of
+  the formula quote is the TeX of the formula the selection covered; the code
+  block arrives fenced with its language and one fence longer than any backtick
+  run it contains; the table arrives as one line per row; a selection that
+  spans a list and the heading after it keeps both markers. A block that is the
+  range's own ancestor contributes its text — quoting a heading's line alone
+  quotes that line, not a heading. A code block's body is quoted verbatim, so
+  two blank lines inside it stay two. No pill appears for a cross-row,
+  composer, tool-row, process-disclosure, or start-in-meta selection, and a
+  drag from the answer into the tool row or the meta chips quotes the answer
+  alone — no tool payload and no model/token chip reaches the persisted text.
+  The pill never covers the docked composer,
   never leaves the pane horizontally, and follows the thread scroll. A hidden
   pane renders no pill. A blocked composer writes nothing and reports it, and no
-  step sends a prompt or adds a session.
+  step sends a prompt or adds a session beyond the paste path's own
+  materialization.
 - **Coverage**: `selection-quote.test.mjs` (geometry, reduction order, formula
   reading through `lib/selection-tex.ts`, overlay wiring, pill styles),
-  `chat-quotes.test.mjs` (excerpt and insertion rules, one write path, i18n
-  keys), and `scripts/e2e/selection-quote.tsx`, which mounts the production
-  `Markdown`, overlay, and composer sink in real Chromium, drags real `Range`s,
-  and clicks the pill's own button.
+  `chat-quotes.test.mjs` (excerpt cap, chip write path through
+  `api.pasteFiles`, one sink, i18n keys), and `scripts/e2e/selection-quote.tsx`,
+  which mounts the production `Markdown`, overlay, and composer sink in real
+  Chromium with an in-memory `composerPasteFiles` bridge, drags real `Range`s,
+  and clicks the pill's own button, asserting the persisted files and the
+  draft's chip tokens.
 - **Specs linked**: `04-ux/08-component-spec.md` §7.4 / §8.5, ADR 0334,
-  decisions-log D674
+  decisions-log D674, D681
 - **Acceptance**: C (chat stream), Quality
 - **Milestone**: M5
 - **Status**: Automated (`pnpm test:e2e:selection-quote`, real Chromium: nine
