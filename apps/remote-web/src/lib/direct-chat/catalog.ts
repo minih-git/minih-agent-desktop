@@ -18,6 +18,11 @@
  * The name is never evidence, and a failed request is never retried on another
  * model or protocol: a silent fallback would bill the user for a second attempt
  * on something they did not choose.
+ *
+ * One further gate belongs to the operator: `mobile_chat: false` keeps a model
+ * out of conversations on this device whatever it can do. `mobile_chat: true`
+ * and a gateway that does not send the field at all keep the rules above — the
+ * absence of the flag is an older gateway, not "nothing is enabled".
  */
 import type { MinihRouterModel } from "@minih-agent/shared";
 
@@ -38,9 +43,6 @@ const NON_CHAT_PROTOCOLS: ReadonlySet<string> = new Set([
   "ocr",
 ]);
 
-/** The gateway's declaration that a route accepts image generation. */
-const IMAGE_PROTOCOL = "openai-images";
-
 /** Modality names, lower-cased because the catalog source is not normalised. */
 const TEXT_MODALITY = "text";
 const IMAGE_MODALITY = "image";
@@ -58,7 +60,12 @@ function chatProtocolFor(protocols: readonly string[]): DirectProtocol | null {
 }
 
 /**
- * What one catalog row can do, and how sure the gateway lets this client be.
+ * What one catalog row can do, as far as the model itself goes.
+ *
+ * This answers "what is this model", never "may this device use it": the
+ * operator's `mobile_chat` switch is applied by `resolveDirectModel`, because a
+ * capability that moved with a switch would rewrite saved choices — a chat
+ * model kept off phones for an afternoon is still a chat model.
  *
  * A row can be both: a model whose declared output is `["text", "image"]` is
  * offered for chat and in the studio, and which operation runs is decided by
@@ -69,13 +76,16 @@ export type ModelCapability = {
   declared: boolean;
   /** Usable for a text conversation. */
   chat: boolean;
-  /** Usable for image generation. */
-  image: boolean;
   /**
-   * The image claim rests on the channel's protocol union rather than on a
-   * per-model output declaration, so the picker labels it as unconfirmed.
+   * Usable for image generation.
+   *
+   * Only the gateway's own per-model output declaration can say yes. The listed
+   * protocols cannot: Router fills them with the channel type's whole union, so
+   * every model behind an OpenAI-compatible channel declares `openai-images`,
+   * and reading that as "this makes images" put the whole catalog in the Studio
+   * picker. A name proves nothing either.
    */
-  imageUnconfirmed: boolean;
+  image: boolean;
 };
 
 export function modelCapability(model: MinihRouterModel): ModelCapability {
@@ -83,7 +93,6 @@ export function modelCapability(model: MinihRouterModel): ModelCapability {
   const outputs = normalised(model.outputModalities ?? []);
   const declared = outputs.length > 0;
   const declaresChat = chatProtocolFor(protocols) !== null;
-  const declaresImages = protocols.includes(IMAGE_PROTOCOL);
 
   if (declared) {
     return {
@@ -92,21 +101,19 @@ export function modelCapability(model: MinihRouterModel): ModelCapability {
       // lists under Chat Completions is not a conversation model.
       chat: declaresChat && outputs.includes(TEXT_MODALITY),
       image: outputs.includes(IMAGE_MODALITY),
-      imageUnconfirmed: false,
     };
   }
 
-  // Nothing declared. The chat claim keeps the gateway's word alone, which is
-  // what the client did before and is still the best available answer; the
-  // image claim would only rest on the channel union, so it is not offered as
-  // confirmed. A row that already works for chat is not also listed as a
-  // maybe-image model: the union would put every text model there.
-  const image = !declaresChat && declaresImages;
-  return { declared, chat: declaresChat, image, imageUnconfirmed: image };
+  // Nothing declared. The model holds a conversation when the gateway lists a
+  // chat protocol, and it is not offered for image work: the operator declares
+  // image output per model in the gateway, and the client does not guess.
+  return { declared, chat: declaresChat, image: false };
 }
 
 /** Why a listed model cannot be used for a conversation, as the sheet says it. */
 export type ModelUnavailableReason =
+  /** The operator did not open this model to mobiles (`mobile_chat: false`). */
+  | "not-enabled-for-mobile"
   /** The model's declared output is images, which is the studio's job. */
   | "image-model"
   /** The model declares only other non-conversation protocols. */
@@ -135,14 +142,27 @@ export function resolveDirectModel(model: MinihRouterModel): DirectModelChoice {
   const protocols = normalised(model.protocols);
   const capability = modelCapability(model);
   const protocol = chatProtocolFor(protocols);
-  if (capability.chat && protocol) {
+  /**
+   * The operator's "mobile chat" switch is a permission, not a capability.
+   *
+   * It is applied here rather than in `modelCapability` because that function
+   * also answers "is this an image-only model", which decides whether a saved
+   * chat model is migrated to the image slot: a switch the operator may flip
+   * back must never cause that permanent move.
+   */
+  if (model.mobileChat !== false && capability.chat && protocol) {
     return { usable: true, model, protocol, capability };
   }
-  const reason: ModelUnavailableReason = capability.image
-    ? "image-model"
-    : protocols.length > 0 && protocols.every((entry) => NON_CHAT_PROTOCOLS.has(entry))
-      ? "not-chat"
-      : "unsupported-protocol";
+  // The operator's own refusal is named first: it is the reason the user can
+  // act on ("ask for it to be enabled"), not a property of the model.
+  const reason: ModelUnavailableReason =
+    model.mobileChat === false
+      ? "not-enabled-for-mobile"
+      : capability.image
+        ? "image-model"
+        : protocols.length > 0 && protocols.every((entry) => NON_CHAT_PROTOCOLS.has(entry))
+          ? "not-chat"
+          : "unsupported-protocol";
   return { usable: false, model, reason, protocols };
 }
 
@@ -165,24 +185,20 @@ export function splitDirectModels(models: readonly MinihRouterModel[]): DirectMo
 
 /** A model that may be asked to generate an image. */
 export type DirectImageChoice =
-  | { usable: true; model: MinihRouterModel; confirmed: boolean }
+  | { usable: true; model: MinihRouterModel }
   | { usable: false; model: MinihRouterModel; reason: "not-image" };
 
 /**
  * Whether one catalog row can generate images.
  *
- * `confirmed` is false for a row whose image claim comes from the channel's
- * protocol union alone: the studio still offers it, because in practice that is
- * how such a gateway publishes its image models, but it is listed apart and
- * labelled rather than presented as a promise.
+ * The answer is the gateway's per-model output declaration and nothing else
+ * (see `modelCapability`): an undeclared model is not an image model, and the
+ * picker does not offer it as one.
  */
 export function resolveDirectImageModel(model: MinihRouterModel): DirectImageChoice {
-  const capability = modelCapability(model);
-  // An undeclared claim is not promoted to a confirmed one: `image` is true for
-  // both, and the picker has to tell them apart.
-  if (capability.imageUnconfirmed) return { usable: true, model, confirmed: false };
-  if (capability.image) return { usable: true, model, confirmed: true };
-  return { usable: false, model, reason: "not-image" };
+  return modelCapability(model).image
+    ? { usable: true, model }
+    : { usable: false, model, reason: "not-image" };
 }
 
 /** Whether this row is offered as an image model at all. */
@@ -191,35 +207,33 @@ export function isImageModel(model: MinihRouterModel): boolean {
 }
 
 export type DirectImageList = {
-  /** Declared image output: the studio's main list. */
+  /** Declared image output: the studio's list, and its only source. */
   usable: MinihRouterModel[];
-  /** Channel-union image rows, labelled as undeclared rather than promised. */
-  unconfirmed: MinihRouterModel[];
   disabled: Array<{ model: MinihRouterModel; reason: "not-image" }>;
 };
 
 export function splitDirectImageModels(models: readonly MinihRouterModel[]): DirectImageList {
   const usable: MinihRouterModel[] = [];
-  const unconfirmed: MinihRouterModel[] = [];
   const disabled: DirectImageList["disabled"] = [];
   for (const model of models) {
     const choice = resolveDirectImageModel(model);
-    if (!choice.usable) disabled.push({ model, reason: choice.reason });
-    else if (choice.confirmed) usable.push(model);
-    else unconfirmed.push(model);
+    if (choice.usable) usable.push(model);
+    else disabled.push({ model, reason: choice.reason });
   }
-  return { usable, unconfirmed, disabled };
+  return { usable, disabled };
 }
 
 /** What a picker row says about a model, as chips rather than prose. */
-export type ModelCapabilityChip = "chat" | "image" | "vision" | "imageUnconfirmed";
+export type ModelCapabilityChip = "chat" | "image" | "vision";
 
 export function capabilityChips(model: MinihRouterModel): ModelCapabilityChip[] {
   const capability = modelCapability(model);
   const chips: ModelCapabilityChip[] = [];
-  if (capability.chat) chips.push("chat");
+  // "chat" is a claim about this device, so a model the operator kept off
+  // phones does not wear it: the sheet would otherwise advertise an operation
+  // the reader cannot start here.
+  if (resolveDirectModel(model).usable) chips.push("chat");
   if (capability.image) chips.push("image");
-  if (capability.imageUnconfirmed) chips.push("imageUnconfirmed");
   if (checkModelVisionCapability(model) === "supported") chips.push("vision");
   return chips;
 }

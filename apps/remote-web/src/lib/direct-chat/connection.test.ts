@@ -153,4 +153,14 @@ describe("migrating the remembered model", () => {
       migrateLastModel({ lastModelId: "gpt-image-2", lastImageModelId: null, models: [image] }),
     ).toEqual({ lastModelId: null, lastImageModelId: "gpt-image-2", moved: true });
   });
+
+  it("does not move a chat model the operator merely closed to mobiles", () => {
+    // `mobile_chat` is a permission the operator can flip back; migrating on it
+    // would push the user's remembered chat model into the image slot for good,
+    // which is a persisted change caused by a temporary switch.
+    const both = model({ id: "gemini-3", outputModalities: ["text", "image"], mobileChat: false });
+    expect(
+      migrateLastModel({ lastModelId: "gemini-3", lastImageModelId: null, models: [both] }),
+    ).toEqual({ lastModelId: "gemini-3", lastImageModelId: null, moved: false });
+  });
 });

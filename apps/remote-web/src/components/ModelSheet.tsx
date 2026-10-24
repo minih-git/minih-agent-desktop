@@ -1,26 +1,31 @@
 /**
  * The model picker sheet (ADR mobile-redesign D1, D2, bug B13).
  *
- * Groups usable models by vendor, surfaces per-model capability chips from
- * `catalog.ts` (`capabilityChips`, `splitDirectModels`, `splitDirectImageModels`),
- * separates unconfirmed channel-union image models into their own labelled
- * section, lets the user star a model as the default for chat or Studio, and
- * collapses unavailable models with the reason they cannot be used.
+ * Groups the models the gateway allows for the current operation by vendor and
+ * surfaces per-model capability chips from `catalog.ts` (`capabilityChips`,
+ * `splitDirectModels`, `splitDirectImageModels`), and lets the user star a model
+ * as the default for chat or Studio.
+ *
+ * Chat mode lists only what can hold a conversation; image mode lists only what
+ * the gateway declared as image output. A row that cannot do the current
+ * operation is not listed at all: this sheet is a list of choices, not the whole
+ * catalog.
  */
-import { Check, ChevronDown, Search, Star } from "lucide-react";
+import { Check, Search, Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MinihRouterModel } from "@minih-agent/shared";
 
-import type { ModelCapabilityChip, ModelUnavailableReason } from "../lib/direct-chat/catalog.js";
+import type { ModelCapabilityChip } from "../lib/direct-chat/catalog.js";
+import { splitDirectModels } from "../lib/direct-chat/catalog.js";
 import {
   buildPickerView,
   vendorBadge,
   type PickerMode,
   type PickerModelRow,
 } from "../lib/direct-chat/model-picker.js";
-import { directChatService, notifyDirectChatChanged } from "../lib/runtime.js";
+import { directChatService, notifyDirectChatChanged, refreshDirectModels } from "../lib/runtime.js";
 import { Sheet } from "./ui/Sheet.js";
 import { Tag } from "./ui/StatusDot.js";
 
@@ -61,6 +66,12 @@ export function ModelSheet({
 
   useEffect(() => {
     if (!open) return;
+    /*
+     * Opening the picker is one of the moments the catalog may have changed: a
+     * model the gateway withdrew must not stay selectable (A). The throttle in
+     * `refreshDirectModels` is what keeps this from being a request per open.
+     */
+    void refreshDirectModels();
     setActiveMode(mode);
     setQuery("");
     const conn = directChatService().connection();
@@ -97,13 +108,6 @@ export function ModelSheet({
       return (
         <Tag key={chip} tone="gradient">
           {t("modelSheet.cap.image")}
-        </Tag>
-      );
-    }
-    if (chip === "imageUnconfirmed") {
-      return (
-        <Tag key={chip} tone="warn">
-          {t("modelSheet.cap.imageUnconfirmed")}
         </Tag>
       );
     }
@@ -191,7 +195,21 @@ export function ModelSheet({
     );
   };
 
-  const hasAnyUsable = view.vendorGroups.length > 0 || view.unconfirmedRows.length > 0;
+  const hasAnyUsable = view.vendorGroups.length > 0;
+  /**
+   * Whether the gateway has simply not opened any model to mobile chat.
+   *
+   * Only that gets the "turn it on in the gateway" copy: a catalog whose rows
+   * are all image models, or a search that matches nothing, keeps the wording
+   * it had. Without the distinction the reader would go looking for a switch
+   * that is not the problem.
+   */
+  const strictMobileEmpty =
+    activeMode === "chat" &&
+    query.trim() === "" &&
+    models.length > 0 &&
+    !hasAnyUsable &&
+    splitDirectModels(models).disabled.some((row) => row.reason === "not-enabled-for-mobile");
 
   return (
     <Sheet open={open} onClose={onClose} title={sheetTitle}>
@@ -248,10 +266,20 @@ export function ModelSheet({
         {t("modelSheet.starHint")}
       </p>
 
-      <div className="max-h-[52dvh] overflow-y-auto pr-0.5">
+      <div className="max-h-[52dvh] overflow-y-auto overscroll-contain pr-0.5">
         {!hasAnyUsable ? (
           <p className="px-1 py-6 text-center text-[15px] leading-[22px] text-[var(--rm-text-secondary)]">
-            {models.length === 0 ? t("modelSheet.empty") : t("modelSheet.noMatch")}
+            {models.length === 0
+              ? t("modelSheet.empty")
+              : strictMobileEmpty
+                ? // A strict switch, and nobody opened a model: the gateway is
+                  // where this is fixed, so the copy says so.
+                  t("modelSheet.noMobileChatModels")
+                : activeMode === "image" && query.trim() === ""
+                  ? // Nothing declared for images: the gateway decides this, so the
+                    // copy says where to fix it instead of blaming the search.
+                    t("modelSheet.noImageModels")
+                  : t("modelSheet.noMatch")}
           </p>
         ) : (
           <div className="space-y-3">
@@ -265,66 +293,9 @@ export function ModelSheet({
                 </div>
               </div>
             ))}
-
-            {view.unconfirmedRows.length > 0 ? (
-              <div>
-                <div className="mb-1 mt-3 px-1 text-[12px] font-bold tracking-[0.04em] text-[var(--rm-text-muted)]">
-                  {t("modelSheet.unconfirmedSection")}
-                </div>
-                <p className="mb-1.5 px-1 text-[12px] leading-[18px] text-[var(--rm-text-muted)]">
-                  {t("modelSheet.unconfirmedHint")}
-                </p>
-                <div className="divide-y divide-[var(--rm-hair)]">
-                  {view.unconfirmedRows.map((row) => renderRow(row))}
-                </div>
-              </div>
-            ) : null}
           </div>
         )}
-
-        {view.disabledRows.length > 0 ? (
-          <details className="mt-3 border-t border-[var(--rm-hair)] pt-2">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-1 py-2 text-[13px] font-medium text-[var(--rm-text-muted)] [&::-webkit-details-marker]:hidden">
-              <span>
-                {activeMode === "image"
-                  ? t("modelSheet.unavailableImageCount", { count: view.disabledRows.length })
-                  : t("modelSheet.unavailableCount", { count: view.disabledRows.length })}
-              </span>
-              <ChevronDown className="h-4 w-4 text-[var(--rm-text-faint)]" aria-hidden="true" />
-            </summary>
-            <ul className="divide-y divide-[var(--rm-hair)]">
-              {view.disabledRows.map(({ model, reason }) => (
-                <li
-                  key={model.id}
-                  className="flex items-center gap-3 px-1 py-2.5 opacity-55"
-                  aria-disabled="true"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[var(--rm-bg-surface-2)] text-[12px] font-bold text-[var(--rm-text-muted)]"
-                  >
-                    {vendorBadge(model.vendor, model.id).monogram}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-semibold leading-[20px] text-[var(--rm-text-primary)]">
-                      {model.id}
-                    </span>
-                    <span className="mt-0.5 block text-[12px] leading-[17px] text-[var(--rm-text-muted)]">
-                      {reasonLabel(t, reason)}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
       </div>
     </Sheet>
   );
-}
-
-function reasonLabel(t: (key: string) => string, reason: ModelUnavailableReason | string): string {
-  if (reason === "image-model") return t("modelSheet.reason.imageModel");
-  if (reason === "not-image") return t("modelSheet.reason.notImage");
-  return reason === "not-chat" ? t("modelSheet.reason.notChat") : t("modelSheet.reason.protocol");
 }

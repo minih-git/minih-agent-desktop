@@ -8,6 +8,7 @@ import {
   filterDirectModels,
   initialDirectModel,
   isImageModel,
+  modelCapability,
   resolveDirectImageModel,
   resolveDirectModel,
   resolveEffectiveChatModel,
@@ -97,13 +98,16 @@ describe("models that are not chat choices", () => {
     if (!choice.usable) expect(choice.reason).toBe("image-model");
   });
 
-  it("explains an undeclared image row as an image row, not as a protocol mismatch", () => {
-    // No per-model output declaration, and no chat protocol: the route is the
-    // only evidence, and it says images.
-    for (const protocols of [["openai-images"], ["anthropic", "openai-images"]]) {
-      const choice = resolveDirectModel(model({ id: "m", protocols }));
+  it("explains an undeclared row without a chat protocol as not a chat model", () => {
+    // No output declaration and no chat protocol. `openai-images` is the channel
+    // type's union, not a claim about what the model produces, so the row is
+    // neither a conversation model nor an image model.
+    for (const protocols of [["openai-images"], ["openai-images", "openai-embeddings"]]) {
+      const row = model({ id: "m", protocols });
+      const choice = resolveDirectModel(row);
       expect(choice.usable, protocols.join(",")).toBe(false);
-      if (!choice.usable) expect(choice.reason, protocols.join(",")).toBe("image-model");
+      if (!choice.usable) expect(choice.reason, protocols.join(",")).toBe("not-chat");
+      expect(isImageModel(row), protocols.join(",")).toBe(false);
     }
     // The same row with a declared image output stays an image row, however the
     // channel union also lists chat protocols (D1).
@@ -171,22 +175,36 @@ describe("capability from declared output modalities", () => {
     expect(capabilityChips(both)).toEqual(["chat", "image"]);
   });
 
-  it("reads an undeclared row as chat when the route declares a chat protocol", () => {
-    const undeclared = model({ id: "unlisted", protocols: channelUnion });
+  it("reads an undeclared row as chat, and never as an image model", () => {
+    // Two shapes of one rule. Image output is declared per model by the gateway,
+    // so neither row is offered for image work — the protocols are the channel's
+    // union, not a claim about what the model produces.
+    const undeclared = model({ id: "unlisted", protocols: ["openai-completions", "openai-responses"] });
     expect(resolveDirectModel(undeclared).usable).toBe(true);
-    // A working chat model is not also offered as a maybe-image model.
-    expect(splitDirectImageModels([undeclared]).unconfirmed).toEqual([]);
+    expect(isImageModel(undeclared)).toBe(false);
+
+    const unlisted = model({ id: "gpt-image-2.5", protocols: channelUnion });
+    expect(resolveDirectModel(unlisted).usable).toBe(true);
+    expect(isImageModel(unlisted)).toBe(false);
+    expect(capabilityChips(unlisted)).toEqual(["chat"]);
+    expect(splitDirectImageModels([unlisted])).toMatchObject({
+      usable: [],
+      disabled: [{ model: unlisted, reason: "not-image" }],
+    });
   });
 
-  it("lists an undeclared row that declares only openai-images as unconfirmed, not as chat", () => {
+  it("does not turn openai-images alone into an image model either", () => {
     const legacy = model({ id: "legacy-image", protocols: ["openai-images"] });
-    expect(splitDirectImageModels([legacy])).toMatchObject({
-      usable: [],
-      unconfirmed: [legacy],
-      disabled: [],
-    });
-    expect(resolveDirectImageModel(legacy)).toMatchObject({ usable: true, confirmed: false });
+    expect(resolveDirectImageModel(legacy)).toMatchObject({ usable: false, reason: "not-image" });
     expect(resolveDirectModel(legacy).usable).toBe(false);
+  });
+
+  it("offers a declared image model for generation, whatever the protocols say", () => {
+    const declared = model({ id: "declared-image", protocols: channelUnion, outputModalities: ["image"] });
+    expect(isImageModel(declared)).toBe(true);
+    expect(capabilityChips(declared)).toEqual(["image"]);
+    // Declared image and no text: not a conversation model.
+    expect(resolveDirectModel(declared).usable).toBe(false);
   });
 
   it("reads a declared embedding output as neither chat nor image", () => {
@@ -199,14 +217,13 @@ describe("capability from declared output modalities", () => {
     expect(isImageModel(embedding)).toBe(false);
   });
 
-  it("splits the studio's list into declared, undeclared and impossible rows", () => {
+  it("lists only the rows the gateway declared as image output", () => {
     const declared = model({ id: "gpt-image-2", outputModalities: ["image"] });
     const legacy = model({ id: "legacy-image", protocols: ["openai-images"] });
     const text = model({ id: "gpt-5", outputModalities: ["text"] });
     const list = splitDirectImageModels([declared, legacy, text]);
     expect(list.usable).toEqual([declared]);
-    expect(list.unconfirmed).toEqual([legacy]);
-    expect(list.disabled).toEqual([{ model: text, reason: "not-image" }]);
+    expect(list.disabled.map((entry) => entry.model.id)).toEqual(["legacy-image", "gpt-5"]);
   });
 });
 
@@ -302,7 +319,7 @@ describe("effective chat model resolution (ADR D2)", () => {
 describe("effective image model resolution (ADR D2)", () => {
   const models = [
     model({ id: "gpt-4.1" }),
-    model({ id: "dall-e-3", protocols: ["openai-images"] }),
+    model({ id: "dall-e-3", protocols: ["openai-images"], outputModalities: ["image"] }),
   ];
 
   it("recognizes image models", () => {
@@ -314,6 +331,14 @@ describe("effective image model resolution (ADR D2)", () => {
     expect(resolveEffectiveImageModel(models, "dall-e-3")?.id).toBe("dall-e-3");
     expect(resolveEffectiveImageModel(models, "gpt-4.1")).toBeNull();
     expect(resolveEffectiveImageModel(models, null)).toBeNull();
+  });
+
+  it("selects nothing when the remembered image model has left the catalog", () => {
+    // The catalog is refreshed now (A). A model the gateway withdrew must not be
+    // selected from a stale choice: every generation on it would fail, and the
+    // screen would look like the phone rather than the gateway was wrong.
+    const afterWithdrawal = [model({ id: "gpt-4.1" })];
+    expect(resolveStudioModel(afterWithdrawal, "gpt-image-2", "gpt-image-2")).toBeNull();
   });
 
 /**
@@ -347,4 +372,49 @@ describe("whether a model accepts images", () => {
     expect(checkModelVisionCapability(model({ id: "omni", category: "chat" }))).toBe("unknown");
   });
 });
+});
+
+/**
+ * The operator's "mobile chat" switch (spec §19.13).
+ *
+ * `false` is a deliberate decision and removes the model from conversations;
+ * missing is an older gateway that never had the concept, and must keep working
+ * exactly as before — reading silence as "nothing is enabled" would empty every
+ * phone's chat list.
+ */
+describe("mobile_chat", () => {
+  const chatReady = { id: "gpt-6-astra", outputModalities: ["text"] };
+
+  it("keeps a model the operator did not open out of conversations", () => {
+    const closed = model({ ...chatReady, mobileChat: false });
+    // The model is still a chat model — the switch is a permission, not a
+    // capability — but this device may not use it for a conversation.
+    expect(modelCapability(closed).chat).toBe(true);
+    expect(resolveDirectModel(closed)).toMatchObject({
+      usable: false,
+      reason: "not-enabled-for-mobile",
+    });
+    expect(splitDirectModels([closed]).usable).toEqual([]);
+  });
+
+  it("leaves an opened model, and a gateway that sends nothing, exactly as before", () => {
+    // `true` is the operator saying yes; `undefined` is an older gateway.
+    for (const mobileChat of [true, undefined]) {
+      const row = model({ ...chatReady, ...(mobileChat === undefined ? {} : { mobileChat }) });
+      expect(resolveDirectModel(row).usable).toBe(true);
+      expect(splitDirectModels([row]).usable).toHaveLength(1);
+    }
+  });
+
+  it("gates conversations only, never image work", () => {
+    // The flag is about phones' chat lists; the studio reads the declared
+    // output and nothing else.
+    const imageModel = model({ id: "gpt-image-2.5", outputModalities: ["image"], mobileChat: false });
+    expect(isImageModel(imageModel)).toBe(true);
+    expect(splitDirectImageModels([imageModel]).usable).toHaveLength(1);
+    expect(resolveDirectModel(imageModel)).toMatchObject({
+      usable: false,
+      reason: "not-enabled-for-mobile",
+    });
+  });
 });

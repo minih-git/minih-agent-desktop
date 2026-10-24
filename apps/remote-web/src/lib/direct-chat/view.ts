@@ -211,6 +211,10 @@ export function failureReasonKey(errorKind: string | null): string {
       return "directChat.reason.storage";
     case "context-overflow":
       return "directChat.reason.contextOverflow";
+    case "no-route":
+      return "directChat.reason.noRoute";
+    case "upstream-busy":
+      return "directChat.reason.upstreamBusy";
     case "interrupted":
       return "directChat.reason.interrupted";
     default:

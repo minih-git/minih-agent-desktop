@@ -68,7 +68,7 @@ describe("buildPickerView (ADR mobile-redesign D1, D2, B13)", () => {
     }),
   ];
 
-  it("groups chat-capable models by vendor with capability chips and puts image-only models into disabled", () => {
+  it("groups chat-capable models by vendor with capability chips", () => {
     const view = buildPickerView(catalog, "chat", "");
     expect(view.vendorGroups.map((g) => [g.vendor, g.rows.map((r) => r.model.id)])).toEqual([
       ["OpenAI", ["gpt-5.4"]],
@@ -85,27 +85,47 @@ describe("buildPickerView (ADR mobile-redesign D1, D2, B13)", () => {
     expect(geminiRow?.chips).toEqual(["chat", "image", "vision"]);
     expect(geminiRow?.contextBadge).toBe("1M");
 
-    expect(view.disabledRows.map((d) => [d.model.id, d.reason])).toEqual([
-      ["gpt-image-2", "image-model"],
-      ["flux-dev", "image-model"],
-    ]);
+    // An image-only model and an undeclared one are not choices for a chat, and
+    // the sheet lists only what can be chosen.
+    const listed = view.vendorGroups.flatMap((g) => g.rows.map((r) => r.model.id));
+    expect(listed).not.toContain("gpt-image-2");
+    expect(listed).not.toContain("flux-dev");
   });
 
-  it("separates confirmed and unconfirmed image models in image mode and includes dual-modality models", () => {
+  it("lists only the models the gateway declared as image output", () => {
     const view = buildPickerView(catalog, "image", "");
     expect(view.vendorGroups.map((g) => [g.vendor, g.rows.map((r) => r.model.id)])).toEqual([
       ["Google", ["gemini-3.1-flash-image"]],
       ["OpenAI", ["gpt-image-2"]],
     ]);
-    expect(view.unconfirmedRows.map((r) => r.model.id)).toEqual(["flux-dev"]);
-    expect(view.unconfirmedRows[0]?.chips).toContain("imageUnconfirmed");
-    expect(view.disabledRows.map((d) => d.model.id)).toEqual(["gpt-5.4", "deepseek-v4"]);
+    // `flux-dev` is undeclared: its protocols say `openai-images` only because
+    // that is the channel's union, and the client does not read it as a claim.
+    expect(view.vendorGroups.flatMap((g) => g.rows.map((r) => r.model.id))).not.toContain("flux-dev");
   });
 
   it("filters by model id or vendor name across groups", () => {
     const view = buildPickerView(catalog, "chat", "deepseek");
     expect(view.vendorGroups).toHaveLength(1);
     expect(view.vendorGroups[0]?.rows[0]?.model.id).toBe("deepseek-v4");
+  });
+
+  it("offers an undeclared model for chat only, and the declared one for images", () => {
+    // The gateway's own `output_modalities` is the only evidence. Under the
+    // channel union, `gpt-image-2.5` declares nothing, so it is a chat model and
+    // the Studio picker is empty; the same row with the gateway's declaration is
+    // what the Studio lists.
+    const union = ["openai-completions", "openai-responses", "anthropic-messages", "openai-images"];
+    const undeclared = buildPickerView([model({ id: "gpt-image-2.5", protocols: union })], "image", "");
+    expect(undeclared.vendorGroups).toEqual([]);
+
+    const declared = buildPickerView(
+      [model({ id: "gpt-image-2.5", protocols: union, outputModalities: ["image"] })],
+      "image",
+      "",
+    );
+    expect(declared.vendorGroups.flatMap((g) => g.rows.map((r) => [r.model.id, r.chips]))).toEqual([
+      ["gpt-image-2.5", ["image"]],
+    ]);
   });
 });
 
@@ -159,7 +179,7 @@ describe("TabBar and ModelSheet markup (ADR mobile-redesign D1, D2, D3, B13)", (
     expect(html).toContain("Studio");
   });
 
-  it("renders ModelSheet with chat/image segments, vendor groups, capability tags, star buttons, and collapsed unavailable rows", async () => {
+  it("renders ModelSheet with chat/image segments, vendor groups, capability tags and star buttons", async () => {
     const catalog: MinihRouterModel[] = [
       model({
         id: "gpt-5.4",
@@ -199,7 +219,11 @@ describe("TabBar and ModelSheet markup (ADR mobile-redesign D1, D2, D3, B13)", (
     expect(chatHtml).toContain("Vision");
     expect(chatHtml).toContain("400K");
     expect(chatHtml).toContain('aria-pressed="true"');
-    expect(chatHtml).toContain("Image model — use in Studio");
+    // No drawer of rows that cannot be chosen, and no language about capability
+    // the gateway did not declare: the list is what can be picked.
+    expect(chatHtml).not.toContain("Image model — use in Studio");
+    expect(chatHtml).not.toContain("Not available for chat");
+    expect(chatHtml).not.toContain("flux-dev");
 
     const imageHtml = await renderWithI18n(
       createElement(ModelSheet, {
@@ -213,8 +237,27 @@ describe("TabBar and ModelSheet markup (ADR mobile-redesign D1, D2, D3, B13)", (
       }),
     );
     expect(imageHtml).toContain("gpt-image-2");
-    expect(imageHtml).toContain("Unconfirmed by gateway");
-    expect(imageHtml).toContain("flux-dev");
-    expect(imageHtml).toContain("Gateway did not declare image output");
+    // `flux-dev` shows `openai-images` because that is the channel union, not a
+    // declaration, so it is not offered for image work.
+    expect(imageHtml).not.toContain("flux-dev");
+    expect(imageHtml).not.toContain("Unconfirmed by gateway");
+  });
+
+  it("says the gateway has not declared an image model instead of blaming the search", async () => {
+    const html = await renderWithI18n(
+      createElement(ModelSheet, {
+        open: true,
+        mode: "image",
+        models: [
+          model({ id: "gpt-5.4", outputModalities: ["text"] }),
+          model({ id: "flux-dev", protocols: ["openai-images"] }),
+        ],
+        selectedId: null,
+        onClose: () => undefined,
+        onSelect: () => undefined,
+      }),
+    );
+    expect(html).toContain("The gateway has not declared a model that produces images yet.");
+    expect(html).not.toContain("No model matches that search.");
   });
 });

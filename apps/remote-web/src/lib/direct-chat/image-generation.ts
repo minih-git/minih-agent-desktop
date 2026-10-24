@@ -28,6 +28,7 @@ import {
   type MinihRouterModel,
 } from "@minih-agent/shared";
 
+import { classifyGatewayRefusal, parseGatewayRefusal } from "./gateway-error.js";
 import { base64ToBytes, probeImageDimensions, validateRasterImageBytes } from "./media.js";
 
 /** What may be sent for one image: the prompt, and the model that answers it. */
@@ -67,6 +68,10 @@ export type DirectImageFailureKind =
   | "network-range"
   | "transport"
   | "gateway"
+  /** No route can serve this model right now: another model is the remedy. */
+  | "no-route"
+  /** The gateway is deliberately holding requests for this model. */
+  | "upstream-busy"
   /** The gateway answered, but what it returned is not a usable image. */
   | "output";
 
@@ -130,11 +135,31 @@ export function imageGenerationBody(input: Pick<DirectImageGenerationInput, "mod
  * Why the gateway refused, from its status and its own words.
  *
  * The same distinctions the chat plane makes: a rejected key is not a network
- * range, and a rate limit is the quota conversation the user can act on.
+ * range, and a rate limit is the quota conversation the user can act on. Two
+ * codes are decided first, because their status alone would say the wrong thing:
+ * `no_available_candidate` (503) is not a generic failure, and
+ * `upstream_cooldown` (429) is not the key's quota.
  */
-function imageFailure(status: number, detail: string): { kind: DirectImageFailureKind; message: string } {
+function imageFailure(
+  status: number,
+  detail: string,
+  code: string | null = null,
+): { kind: DirectImageFailureKind; message: string } {
   const reason = detail.trim();
   const suffix = reason ? `: ${reason.slice(0, 300)}` : "";
+  const refusal = classifyGatewayRefusal(code);
+  if (refusal === "no-route") {
+    return {
+      kind: "no-route",
+      message: `the gateway has no available route for this model (${status})${suffix}`,
+    };
+  }
+  if (refusal === "upstream-busy") {
+    return {
+      kind: "upstream-busy",
+      message: `the gateway is holding requests for this model (${status})${suffix}`,
+    };
+  }
   if (status === 429 || status === 402) {
     return { kind: "quota", message: `the model gateway refused this request (${status})${suffix}` };
   }
@@ -146,21 +171,6 @@ function imageFailure(status: number, detail: string): { kind: DirectImageFailur
     };
   }
   return { kind: "gateway", message: `the model gateway failed (${status})${suffix}` };
-}
-
-/** The reason a JSON refusal carries, without echoing the key back. */
-function refusalMessage(raw: string, key: string): string {
-  let message = "";
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (isRecord(parsed)) {
-      const error = isRecord(parsed.error) ? parsed.error : parsed;
-      message = text(error.message);
-    }
-  } catch {
-    message = raw.slice(0, 300);
-  }
-  return message.replaceAll(key, "[redacted]");
 }
 
 /**
@@ -236,7 +246,8 @@ async function readOwnAsset(input: {
   }
   if (!response.ok) {
     const raw = await response.text().catch(() => "");
-    return { ok: false, failure: imageFailure(response.status, refusalMessage(raw, input.authKey)) };
+    const refusal = parseGatewayRefusal(raw, input.authKey);
+    return { ok: false, failure: imageFailure(response.status, refusal.message, refusal.code) };
   }
   const declared = Number(response.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > IMAGE_GENERATION_MAX_BYTES) {
@@ -318,7 +329,8 @@ export async function requestDirectImageGeneration(
     if (!response.ok) {
       const raw = await response.text().catch(() => "");
       if (controller.signal.aborted) return { ok: false, stopped: true };
-      return { ok: false, failure: imageFailure(response.status, refusalMessage(raw, key)) };
+      const refusal = parseGatewayRefusal(raw, key);
+      return { ok: false, failure: imageFailure(response.status, refusal.message, refusal.code) };
     }
 
     let payload: unknown;
