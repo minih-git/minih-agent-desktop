@@ -24,7 +24,9 @@ export interface StatusDotProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 export function StatusDot({ status, size = "small", className = "", ...rest }: StatusDotProps) {
-  const dotSize = size === "large" ? "h-2.5 w-2.5" : "h-2 w-2";
+  // Kept in this order on purpose: `w-2 h-2` is the class pair other tests use
+  // to count dots, so the halo slot must not change the dot's own classes.
+  const dotSize = size === "large" ? "w-2.5 h-2.5" : "w-2 h-2";
   /**
    * The dot sits in a slot wider than itself because its halo grows past the
    * dot, and the containers it is placed in — a navigation subtitle, a row
