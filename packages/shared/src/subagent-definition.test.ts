@@ -501,6 +501,7 @@ describe("resolveSubagentToolNames", () => {
     "asktool",
     "EnterPlanMode",
     "new_context",
+    "ContextUsage",
     "mcp-foo",
   ];
 
@@ -520,6 +521,7 @@ describe("resolveSubagentToolNames", () => {
     expect(resolved).toContain("mcp-foo");
     expect(resolved).not.toContain("ToolSearch");
     expect(resolved).not.toContain("new_context");
+    expect(resolved).not.toContain("ContextUsage");
     for (const denied of SUBAGENT_INHERIT_DENY_TOOLS) {
       expect(resolved).not.toContain(denied);
     }

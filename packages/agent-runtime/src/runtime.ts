@@ -212,6 +212,12 @@ import {
   type ContextBudget,
 } from "./context-budget.js";
 import {
+  CONTEXT_USAGE_TOOL_DESCRIPTION,
+  CONTEXT_USAGE_TOOL_NAME,
+  contextUsageReport,
+  formatContextUsageReport,
+} from "./context-usage-tool.js";
+import {
   modelSwitchCompactionNeeded,
   previousModelSince,
 } from "./model-switch-compaction.js";
@@ -960,10 +966,10 @@ const CONTEXT_REMINDER_RATIO = 0.15;
 /** Close enough to the boundary that the next turn is likely to cross it. */
 const CONTEXT_FALLBACK_REMINDER_TOKENS = 2_000;
 
-function contextBudgetReminder(remaining: number): string {
+function contextBudgetReminder(untilCompaction: number): string {
   return [
     "<context_budget>",
-    `About ${remaining.toLocaleString("en-US")} tokens of working context remain before this conversation is compacted.`,
+    `About ${untilCompaction.toLocaleString("en-US")} tokens of working context remain before this conversation is compacted.`,
     "Start closing out: write anything durable to files, and prefer targeted reads over broad exploration.",
     `You may call ${CONTEXT_COMPACTION_TOOL_NAME} to start the new window yourself once the current step is at a clean stopping point.`,
     "</context_budget>",
@@ -4176,9 +4182,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             this.buildSubagentStopTool(),
           ]
         : [];
-    const contextTools = this.compactionEnabled
-      ? [this.buildContextCompactionTool()]
-      : [];
+    // ContextUsage stays when compaction is off: the safe limit still applies.
+    const contextTools = [
+      this.buildContextUsageTool(),
+      ...(this.compactionEnabled ? [this.buildContextCompactionTool()] : []),
+    ];
     // Trusted extension tools are non-core: the per-mode allowlist and
     // ToolSearch deferral treat them like plugin tools (spec 16 §7).
     const extensionTools = this.extensionRunner?.getAgentTools() ?? [];
@@ -4289,6 +4297,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       "Bash",
       ASK_TOOL_NAME,
       CONTEXT_COMPACTION_TOOL_NAME,
+      CONTEXT_USAGE_TOOL_NAME,
       SUBMIT_TOOL_NAMES[kind],
       ...memoryReadToolNames,
     ]).has(name);
@@ -4297,6 +4306,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
   private isCoreTool(name: string): boolean {
     return (
       name === CONTEXT_COMPACTION_TOOL_NAME ||
+      name === CONTEXT_USAGE_TOOL_NAME ||
       retainModeToolDeclaration(name) ||
       MODE_TRANSITION_TOOL_NAMES.has(name) ||
       // The whole delegation lifecycle stays in the core set rather than the
@@ -6416,6 +6426,33 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     };
   }
 
+  /**
+   * Read-only report of the budget the compaction guard decides on, measured
+   * over the live loop messages so the current turn's tool results count.
+   */
+  private buildContextUsageTool(): AgentTool {
+    return {
+      name: CONTEXT_USAGE_TOOL_NAME,
+      label: "Context Usage",
+      description: CONTEXT_USAGE_TOOL_DESCRIPTION,
+      parameters: Type.Object({}),
+      execute: async () => {
+        const measured = this.measureContextBudget(this.agent.state.messages);
+        const report = contextUsageReport({
+          model: this.model,
+          budget: measured.budget,
+          anchored: measured.anchored,
+          compactionEnabled: this.compactionEnabled,
+          compactionQueued: this.pendingModelCompaction,
+        });
+        return {
+          content: [{ type: "text", text: formatContextUsageReport(report) }],
+          details: report,
+        };
+      },
+    };
+  }
+
   private emit(event: AgentEventEnvelope["event"], turnId?: string, ts = Date.now()) {
     this.onEvent({
       sessionId: this.sessionId,
@@ -6860,6 +6897,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
   }
 
   private contextBudget(messages: AgentMessage[]): ContextBudget {
+    return this.measureContextBudget(messages).budget;
+  }
+
+  private measureContextBudget(
+    messages: AgentMessage[],
+  ): { budget: ContextBudget; anchored: boolean } {
     const budget = contextBudgetFor(this.model, messages);
     // Calibration learns from message usage; the output-cap estimator adds the
     // active system prompt and tool schemas that the provider also receives.
@@ -6881,13 +6924,17 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       },
       this.model,
     );
+    const anchored = contextEstimateAnchored(estimate);
     return {
-      ...budget,
-      tokens: contextBudgetTokens({
-        messageTokens: calibratedMessageTokens,
-        anchored: contextEstimateAnchored(estimate),
-        requestTokens,
-      }),
+      budget: {
+        ...budget,
+        tokens: contextBudgetTokens({
+          messageTokens: calibratedMessageTokens,
+          anchored,
+          requestTokens,
+        }),
+      },
+      anchored,
     };
   }
 
@@ -7254,7 +7301,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     );
     if (remaining > threshold || this.contextReminderClaimed) return undefined;
     this.contextReminderClaimed = true;
-    return contextBudgetReminder(remaining);
+    // The tier is measured against the hard limit, but compaction starts at
+    // the automatic threshold below it, so the figure the model plans with is
+    // the distance to that threshold.
+    return contextBudgetReminder(
+      Math.max(0, automaticCompactionThresholdFor(budget) - budget.tokens),
+    );
   }
 
   private async runCompaction(
