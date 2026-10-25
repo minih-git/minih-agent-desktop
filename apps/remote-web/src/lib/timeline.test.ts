@@ -1,4 +1,10 @@
-import type { RacpEventEnvelope, RacpSession, RacpSessionSnapshot } from "@minih-agent/shared";
+import type {
+  RacpEventEnvelope,
+  RacpSession,
+  RacpSessionSnapshot,
+  SessionTodo,
+  SessionTodoList,
+} from "@minih-agent/shared";
 import { describe, expect, it } from "vitest";
 
 import { createInitialTimelineState, timelineReducer, type TimelineState } from "./timeline.js";
@@ -413,5 +419,64 @@ describe("timeline turns, approvals and inputs", () => {
   it("marks an archived session", () => {
     const state = attach(createInitialTimelineState(), snapshot());
     expect(apply(state, event("session.archived", { session: session() })).archived).toBe(true);
+  });
+});
+
+describe("session checklist", () => {
+  const row = (content: string, status: SessionTodo["status"]): SessionTodo => ({
+    content,
+    status,
+    priority: "medium",
+  });
+  const list = (revision: number, items: SessionTodo[]): SessionTodoList => ({
+    revision,
+    updatedAt: "2026-10-25T03:04:05.000Z",
+    items,
+  });
+
+  it("keeps the checklist a snapshot carried", () => {
+    const state = attach(
+      createInitialTimelineState(),
+      snapshot({ session: session({ todos: list(3, [row("write", "in_progress")]) }) }),
+    );
+    expect(state.session?.todos?.revision).toBe(3);
+    expect(state.session?.todos?.items).toHaveLength(1);
+  });
+
+  it("takes the checklist the Host republishes on session.changed", () => {
+    const state = apply(
+      attached(),
+      event("session.changed", { sessionId: "s1", todos: list(2, [row("write", "in_progress")]) }),
+    );
+    expect(state.session?.todos?.revision).toBe(2);
+  });
+
+  it("ignores a checklist the Host already replaced", () => {
+    const state = apply(
+      attached(),
+      event("session.changed", { sessionId: "s1", todos: list(5, [row("a", "completed")]) }),
+      event("session.changed", { sessionId: "s1", todos: list(4, [row("a", "pending")]) }),
+    );
+    expect(state.session?.todos?.revision).toBe(5);
+  });
+
+  it("does not let a summary that raced an event roll the list back", () => {
+    const withTodos = apply(
+      attached(),
+      event("session.changed", { sessionId: "s1", todos: list(5, [row("a", "completed")]) }),
+    );
+    const renamed = apply(
+      withTodos,
+      event("session.changed", {
+        session: session({ title: "renamed", todos: list(4, [row("a", "pending")]) }),
+      }),
+    );
+    expect(renamed.session?.title).toBe("renamed");
+    expect(renamed.session?.todos?.revision).toBe(5);
+  });
+
+  it("stays valid for a Host that never sends a checklist", () => {
+    const state = apply(attached(), event("session.changed", { sessionId: "s1", status: "idle" }));
+    expect(state.session?.todos).toBeUndefined();
   });
 });

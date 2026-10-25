@@ -95,6 +95,9 @@ export const es: Record<TranslationKey, string> = {
   "sessions.status.error": "Fallida",
 
   "session.loading": "Cargando la sesión…",
+  "session.todos.progress": "{{completed}}/{{total}}",
+  "session.todos.open": "Mostrar la lista de tareas",
+  "session.todos.title": "Tareas",
   "session.connecting": "Conectando…",
   "session.live": "En vivo",
   "session.paused": "En pausa mientras esta pestaña está oculta",

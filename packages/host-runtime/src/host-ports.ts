@@ -15,6 +15,7 @@ import {
   withSessionMediaIds,
   type RacpItemSummary,
   type RacpPermissionMode,
+  type SessionTodoSnapshot,
   type UiMessage,
   type VoiceOrigin,
 } from "@minih-agent/shared";
@@ -195,6 +196,15 @@ export function createHostSessionPort(getHost: () => HostRpc | null): SessionPor
         }
       }
       return toSessionSummary(record, defaultPermissionMode ? { permissionMode: defaultPermissionMode } : undefined);
+    },
+    async todos(sessionId) {
+      // host-core owns the checklist, so this is the committed snapshot rather
+      // than anything a turn claimed: a refusal (an unknown session, a native
+      // Pi session that keeps none) throws and the caller treats that as "no
+      // checklist" instead of inventing one.
+      const host = getHost();
+      if (!host) return null;
+      return host.call<SessionTodoSnapshot | null>("todos.get", { sessionId });
     },
     async history(sessionId, { limit, beforeItemId }) {
       // One bounded window instead of the whole transcript, walked from the

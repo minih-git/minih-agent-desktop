@@ -5,6 +5,8 @@ import {
   type AgentEventEnvelope,
   type AskToolResolution,
   type RacpEventEnvelope,
+  type SessionTodo,
+  type SessionTodoSnapshot,
   type RacpItemSummary,
   type UiMessage,
 } from "@minih-agent/shared";
@@ -98,6 +100,11 @@ class FakeSessions implements SessionPort {
     }
     const start = Math.max(0, end - limit);
     return { items: this.items.slice(start, end), hasMore: start > 0 };
+  }
+  /** host-core's committed checklists, or nothing for a session without one. */
+  todosBySession = new Map<string, SessionTodoSnapshot>();
+  async todos(sessionId: string): Promise<SessionTodoSnapshot | null> {
+    return this.todosBySession.get(sessionId) ?? null;
   }
 }
 
@@ -1510,5 +1517,84 @@ describe("AgentHost idle release", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("session checklist (RACP §5.8)", () => {
+  const rows: SessionTodo[] = [
+    { content: "read the spec", status: "completed", priority: "high" },
+    { content: "write the code", status: "in_progress", priority: "medium" },
+    { content: "ship it", status: "pending", priority: "low" },
+  ];
+  const snapshot = (revision: number, todos: SessionTodo[] = rows): SessionTodoSnapshot => ({
+    sessionId: "s1",
+    todos,
+    revision,
+    updatedAt: Date.parse("2026-09-10T00:00:05.000Z"),
+  });
+  const list = (revision: number, todos: SessionTodo[] = rows) => ({
+    revision,
+    updatedAt: "2026-09-10T00:00:05.000Z",
+    items: todos,
+  });
+
+  it("carries the committed checklist on attach and on the snapshot", async () => {
+    const { host, sessions } = build();
+    sessions.todosBySession.set("s1", snapshot(3));
+    const attached = await host.attach(viewer, { sessionId: "s1" });
+    expect(attached.session.todos).toEqual(list(3));
+    expect((await host.snapshot("s1")).session.todos).toEqual(list(3));
+  });
+
+  it("carries it for an attach that asks for no snapshot", async () => {
+    const { host, sessions } = build();
+    sessions.todosBySession.set("s1", snapshot(1, rows.slice(1)));
+    const attached = await host.attach(viewer, { sessionId: "s1", includeSnapshot: false });
+    expect(attached.snapshot).toBeUndefined();
+    expect(attached.session.todos?.items).toEqual(rows.slice(1));
+  });
+
+  it("reports no checklist for a session that has none", async () => {
+    const { host } = build();
+    expect((await host.attach(viewer, { sessionId: "s1" })).session.todos).toBeUndefined();
+  });
+
+  it("stays valid when the session port keeps no checklists at all", async () => {
+    const port: SessionPort = {
+      async get(sessionId) {
+        return sessionId === "s1" ? summary("s1") : null;
+      },
+      async history() {
+        return { items: [], hasMore: false };
+      },
+    };
+    const host = new AgentHost({
+      runtime: new FakeRuntime(),
+      sessions: port,
+      approvals: new FakeApprovals(),
+      clock: new FixedClock(),
+      ids: new SeqIds(),
+    });
+    const attached = await host.attach(viewer, { sessionId: "s1" });
+    expect(attached.session.todos).toBeUndefined();
+  });
+
+  it("republishes a committed checklist on session.changed", async () => {
+    const { host, received } = build();
+    host.applyTodosChanged(snapshot(2));
+    const change = received.filter((event) => event.kind === "session.changed").at(-1);
+    expect(change?.payload).toEqual({ sessionId: "s1", todos: list(2) });
+    // The attach that follows must not go backwards to nothing: the write is
+    // held on the session state, not only published once.
+    expect((await host.snapshot("s1")).session.todos).toEqual(list(2));
+  });
+
+  it("drops a checklist the Host already replaced", async () => {
+    const { host, received } = build();
+    host.applyTodosChanged(snapshot(5));
+    const marks = received.length;
+    host.applyTodosChanged(snapshot(4, rows.slice(0, 1)));
+    expect(received.length).toBe(marks);
+    expect((await host.snapshot("s1")).session.todos).toEqual(list(5));
   });
 });

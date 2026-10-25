@@ -95,6 +95,9 @@ export const tr: Record<TranslationKey, string> = {
   "sessions.status.error": "Başarısız",
 
   "session.loading": "Oturum yükleniyor…",
+  "session.todos.progress": "{{completed}}/{{total}}",
+  "session.todos.open": "Görev listesini göster",
+  "session.todos.title": "Görevler",
   "session.connecting": "Bağlanıyor…",
   "session.live": "Canlı",
   "session.paused": "Sekme gizliyken duraklatıldı",

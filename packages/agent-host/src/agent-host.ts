@@ -26,6 +26,8 @@ import type {
   RacpSessionStatus,
   RacpTurn,
   RacpTurnAdmission,
+  SessionTodoList,
+  SessionTodoSnapshot,
   UiMessage,
   VoiceOrigin,
 } from "@minih-agent/shared";
@@ -40,6 +42,7 @@ import {
   isDesktopClassDevice,
   racpKindForAgentEvent,
   rolesAllowOperation,
+  toSessionTodoList,
   withSessionMediaIds,
 } from "@minih-agent/shared";
 
@@ -198,6 +201,8 @@ type SessionState = {
   pendingInputs: Map<string, { request: RacpInputRequest; original: AskToolRequest }>;
   /** True while at least one remote subscriber is attached. */
   remoteSubscribers: number;
+  /** The committed checklist, once this Host has read it (§5.8). */
+  todos?: SessionTodoList;
 };
 
 type IdempotencyEntry = {
@@ -549,6 +554,43 @@ export class AgentHost {
     this.hub.publish({ scope: "host", sessionId: summary.id, revision: state.revision, kind, payload: { session: summary } });
   }
 
+  /**
+   * The Host's committed checklist changed (`todos.changed` from host-core).
+   *
+   * It rides the existing `session.changed` event instead of a new kind: every
+   * client already refreshes the session record on it, and a phone drops an
+   * older revision, so a stale write can never undo a newer one.
+   */
+  applyTodosChanged(snapshot: SessionTodoSnapshot): void {
+    const state = this.state(snapshot.sessionId);
+    const list = toSessionTodoList(snapshot);
+    if (list && state.todos && state.todos.revision >= list.revision) return;
+    if (list) state.todos = list;
+    else delete state.todos;
+    this.emit(state, "session.changed", { sessionId: state.id, todos: list }, {});
+  }
+
+  /** Read the session's committed checklist when the Host offers one (§5.8). */
+  private async refreshTodos(state: SessionState): Promise<void> {
+    const read = this.sessions.todos?.bind(this.sessions);
+    if (!read) return;
+    let snapshot: SessionTodoSnapshot | null;
+    try {
+      snapshot = await read(state.id);
+    } catch {
+      // A checklist the Host cannot read is not a reason to fail an attach: the
+      // session still carries everything else, and the next `session.changed`
+      // refreshes it.
+      return;
+    }
+    const list = toSessionTodoList(snapshot);
+    // A read that answers "nothing committed" never blanks a list this Host is
+    // already showing: the event that produced it came from the same authority.
+    if (!list) return;
+    if (state.todos && state.todos.revision > list.revision) return;
+    state.todos = list;
+  }
+
   // -------------------------------------------------------------------------
   // RACP operations
   // -------------------------------------------------------------------------
@@ -577,6 +619,15 @@ export class AgentHost {
     };
     if (params.includeSnapshot !== false) {
       result.snapshot = await this.snapshot(state.id, summary, params.snapshotHistoryLimit);
+      // The snapshot read the checklist, so the session record in the same
+      // answer is rebuilt from it rather than from the pre-read state.
+      result.session = this.toRacpSession(summary, state);
+    } else {
+      // The checklist rides the session record, so a client that attached
+      // without a snapshot still needs it read here; the snapshot path above
+      // reads it already, and one attach must not cost two reads.
+      await this.refreshTodos(state);
+      result.session = this.toRacpSession(summary, state);
     }
     return result;
   }
@@ -991,6 +1042,10 @@ export class AgentHost {
   async snapshot(sessionId: string, summary?: SessionSummary, snapshotHistoryLimit?: number): Promise<RacpSessionSnapshot> {
     const resolved = summary ?? (await this.requireSession(sessionId));
     const state = this.state(sessionId);
+    // The checklist is part of the session record a client attaches to, so a
+    // snapshot read it fresh rather than trusting a cached copy that a missed
+    // `todos.changed` could have left behind.
+    await this.refreshTodos(state);
     // A client that only needs the recovery boundary (approvals, inputs, the
     // event cursor) asks for zero history items: the transcript reaches it
     // through `session/history` paging, as it does for a phone. The clamp keeps
@@ -1609,6 +1664,7 @@ export class AgentHost {
       permissionMode: summary.permissionMode,
       ...(state.activeTurnId ? { activeTurnId: state.activeTurnId } : {}),
       queuedTurnIds: this.queue.list(summary.id).map((record) => record.id),
+      ...(state.todos ? { todos: state.todos } : {}),
       revision: state.revision,
       createdAt: summary.createdAt,
       updatedAt: summary.updatedAt,

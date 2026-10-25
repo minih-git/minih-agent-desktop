@@ -811,6 +811,38 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
   也不会跳过审计记录。APNs 会话在两次推送之间复用（Apple 明确要求复用连接），并在出错或
   收到 `GOAWAY`、空闲五分钟、Gateway 停止时丢弃。
 
+### 5.8 会话清单
+
+```ts
+type SessionTodo = {
+  content: string
+  status: "pending" | "in_progress" | "completed" | "cancelled"
+  priority?: "high" | "medium" | "low"
+}
+
+type SessionTodos = {
+  revision: number
+  updatedAt: string
+  items: SessionTodo[]
+}
+```
+
+`RacpSession` 通过可选字段 `todos` 携带会话已提交的清单。该字段是**附加**的：
+不保存清单的 Host 省略它，早于该字段的客户端忽略它，双方都不需要版本判断。
+
+- 清单行来自 host-core 已提交的结果，不是模型或客户端对一个 `TodoWrite` 调用
+  的理解：被拒绝或只应用了一部分的写入在这里不改变任何东西。
+- 每次提交后 `revision` 递增。已经持有更高 `revision` 的客户端丢弃旧副本，而不是
+  显示一份 Host 已经替换掉的清单。
+- `updatedAt` 与其他 RACP 时间一样是 ISO 时间点。
+- 清单上限 50 行，与 Host 自身的限制一致；客户端必须渲染收到的每一行。
+- 它随会话记录一起到达：`session/attach`（`session` 与其 `snapshot`）、
+  `session/get`、`session/list`，以及 Host 在提交后发布的每次 `session.changed`。
+  不新增独立操作，也不新增事件类型——清单属于会话，新增事件类型只会让忽略它的
+  客户端错过一条它们本来就能处理的会话更新。
+- 被清空的清单（`revision` > 0 且无行）表示「没有剩余事项」：客户端移除展示，
+  而不是保留 Host 已经没有的行。
+
 ## 6. 限制和错误
 
 | Limit | Target |

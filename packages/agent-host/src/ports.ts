@@ -2,6 +2,7 @@ import type {
   AgentPromptAttachment,
   AskToolResolution,
   VoiceOrigin,
+  SessionTodoSnapshot,
   RacpItemSummary,
   RacpPermissionMode,
   RacpPlanningState,
@@ -157,6 +158,14 @@ export interface SessionPort {
     sessionId: string,
     options: { limit: number; beforeItemId?: string },
   ): Promise<{ items: RacpItemSummary[]; hasMore: boolean }>;
+  /**
+   * The session's committed checklist, or null when it has none.
+   *
+   * Optional so a Host assembled without a checklist source (`native-pi`
+   * sessions keep none, and a test double need not know about them) simply
+   * reports no checklist instead of failing an attach.
+   */
+  todos?(sessionId: string): Promise<SessionTodoSnapshot | null>;
 }
 
 export class SystemClock implements Clock {

@@ -259,6 +259,42 @@ export type SessionMediaReadResponse = Static<typeof SessionMediaReadResponseSch
 // Canonical resources (spec §5)
 // ---------------------------------------------------------------------------
 
+/**
+ * One row of a session's checklist (§5.8).
+ *
+ * Additive next to `SessionTodo`: `priority` is optional on the wire so a Host
+ * that only knows a row's status still describes it, and a client renders the
+ * row without a priority mark instead of dropping it.
+ */
+export const RacpSessionTodoSchema = Type.Object({
+  content: Type.String(),
+  status: Type.Union([
+    Type.Literal("pending"),
+    Type.Literal("in_progress"),
+    Type.Literal("completed"),
+    Type.Literal("cancelled"),
+  ]),
+  priority: Type.Optional(
+    Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")]),
+  ),
+});
+export type RacpSessionTodo = Static<typeof RacpSessionTodoSchema>;
+
+/**
+ * The session's committed checklist (§5.8).
+ *
+ * The rows are host-core's committed ones — never a client's or a model's
+ * reading of a `TodoWrite` call — and `revision` grows with every committed
+ * write, so a client that already holds a newer list ignores an older copy.
+ */
+export const RacpSessionTodosSchema = Type.Object({
+  revision: Type.Integer({ minimum: 0 }),
+  updatedAt: Type.String(),
+  /** host-core refuses more than this; the wire cap matches it. */
+  items: Type.Array(RacpSessionTodoSchema, { maxItems: 50 }),
+});
+export type RacpSessionTodos = Static<typeof RacpSessionTodosSchema>;
+
 export const RacpSessionSchema = Type.Object({
   id: Type.String({ minLength: 1 }),
   title: Type.String(),
@@ -279,6 +315,14 @@ export const RacpSessionSchema = Type.Object({
   permissionMode: RacpPermissionModeSchema,
   activeTurnId: Type.Optional(Type.String()),
   queuedTurnIds: Type.Array(Type.String()),
+  /**
+   * The session's checklist (§5.8), absent when it has none.
+   *
+   * Optional and additive like the model fields above: a Host that has no
+   * checklist to report omits the field, and a client that predates it ignores
+   * it, so neither side needs a version gate.
+   */
+  todos: Type.Optional(RacpSessionTodosSchema),
   revision: Type.Integer({ minimum: 0 }),
   createdAt: Type.String(),
   updatedAt: Type.String(),
@@ -1133,6 +1177,7 @@ export function racpErrorIsRegistered(code: RacpErrorCode): boolean {
 export const RACP_SCHEMAS = {
   RequestContext: RacpRequestContextSchema,
   Session: RacpSessionSchema,
+  SessionTodos: RacpSessionTodosSchema,
   ModelSummary: RacpModelSummarySchema,
   Turn: RacpTurnSchema,
   Cursor: RacpCursorSchema,

@@ -95,6 +95,9 @@ export const zhCN: Record<TranslationKey, string> = {
   "sessions.status.error": "失败",
 
   "session.loading": "正在加载会话…",
+  "session.todos.progress": "{{completed}}/{{total}}",
+  "session.todos.open": "查看任务清单",
+  "session.todos.title": "任务",
   "session.connecting": "连接中…",
   "session.live": "实时",
   "session.paused": "页面隐藏时已暂停",

@@ -16,7 +16,7 @@
  *     (plus `payload.itemType` / `payload.itemId` for item kinds), so message
  *     deltas are applied with the shared `applyMessageUpdate`.
  */
-import { applyMessageUpdate, type RacpApprovalRequest, type RacpEventEnvelope, type RacpInputRequest, type RacpSession, type RacpSessionSnapshot, type RacpTurn, type RacpTurnStatus, type UiMessage } from "@minih-agent/shared";
+import { applyMessageUpdate, type RacpApprovalRequest, type RacpEventEnvelope, type RacpInputRequest, type RacpSession, type RacpSessionSnapshot, type SessionTodoList, type RacpTurn, type RacpTurnStatus, type UiMessage } from "@minih-agent/shared";
 
 import {
   agentEvent,
@@ -34,6 +34,7 @@ import {
   withAgent,
 } from "./timeline-items.js";
 import { createInitialTimelineState, type TimelineAction, type TimelineFailure, type TimelineItem, type TimelineState } from "./timeline-types.js";
+import { newerTodos } from "./session-todos-view.js";
 
 /**
  * Add or replace one row, and remember whether the cap dropped the oldest row.
@@ -437,17 +438,28 @@ function applySessionChanged(state: TimelineState, payload: Record<string, unkno
   const incoming = asRecord(payload.session);
   if (incoming && typeof incoming.id === "string") {
     if (state.session && state.session.id !== incoming.id) return state;
-    return {
-      ...state,
-      session: { ...(state.session ?? emptySession(incoming.id)), ...(incoming as unknown as RacpSession) },
+    const merged = {
+      ...(state.session ?? emptySession(incoming.id)),
+      ...(incoming as unknown as RacpSession),
     };
+    // A summary that raced an event can carry the older checklist: the higher
+    // revision wins, exactly as it does for the event-shaped payload below.
+    const todos = newerTodos(state.session?.todos, merged.todos);
+    return { ...state, session: todos ? { ...merged, todos } : merged };
   }
   if (!state.session) return state;
   if (typeof payload.sessionId === "string" && payload.sessionId !== state.session.id) return state;
+  // The Host republishes a committed checklist on `session.changed` (§5.8), so
+  // a list the Host has already replaced is dropped instead of shown.
+  const todos =
+    payload.todos === undefined
+      ? state.session.todos
+      : newerTodos(state.session.todos, payload.todos as SessionTodoList | null);
   return {
     ...state,
     session: {
       ...state.session,
+      ...(todos ? { todos } : {}),
       ...(typeof payload.status === "string" ? { status: payload.status as RacpSession["status"] } : {}),
       ...(typeof payload.planningState === "string"
         ? { planningState: payload.planningState as RacpSession["planningState"] }
