@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { SessionTodo, TodoStatus } from "@minih-agent/shared";
+import { todoCounts, type SessionTodo, type TodoStatus } from "@minih-agent/shared";
 import { Button } from "./ui";
 import { IconCheck, IconChevronDown, IconChevronUp } from "./icons";
 import { useSessionTodosRecovery } from "../features/chat/todos/useSessionTodosRecovery";
@@ -32,25 +32,18 @@ export function todoProgress(
   todos: readonly SessionTodo[],
   t: (key: string, options?: Record<string, unknown>) => string,
 ): TodoProgress {
-  const completed = todos.filter((todo) => todo.status === "completed").length;
-  const cancelled = todos.filter((todo) => todo.status === "cancelled").length;
-  const denominator = todos.length - cancelled;
-  const current = todos.find((todo) => todo.status === "in_progress");
-  const allCancelled = todos.length > 0 && cancelled === todos.length;
-  const finished = todos.every(
-    (todo) => todo.status === "completed" || todo.status === "cancelled",
-  );
+  // One counting rule for both platforms; this only picks the words.
+  const counts = todoCounts(todos);
   return {
-    label: allCancelled
+    label: counts.allCancelled
       ? t("chat.todo.status.cancelled")
-      : finished
-        ? t("chat.todo.completed", { completed, total: denominator })
-        : t("chat.todo.progress", { completed, total: denominator }),
-    symbol: allCancelled ? "\u2298" : finished ? "\u2713" : "\u25d0",
-    current,
+      : counts.finished
+        ? t("chat.todo.completed", { completed: counts.completed, total: counts.denominator })
+        : t("chat.todo.progress", { completed: counts.completed, total: counts.denominator }),
+    symbol: counts.allCancelled ? "\u2298" : counts.finished ? "\u2713" : "\u25d0",
+    current: counts.current,
   };
 }
-
 function statusSymbol(status: TodoStatus): string {
   switch (status) {
     case "in_progress":

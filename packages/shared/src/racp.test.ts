@@ -453,3 +453,44 @@ describe("SSH repository instruction file contract", () => {
     expect(Value.Check(WorkspaceFilesRequestSchema, { path: "/repo", operation: "unknown" })).toBe(false);
   });
 });
+
+describe("session checklist schema", () => {
+  const base = {
+    id: "s1",
+    title: "Session",
+    mode: "agent",
+    status: "idle",
+    planningState: "inactive",
+    permissionMode: "ask",
+    queuedTurnIds: [],
+    revision: 1,
+    createdAt: "2026-10-25T03:00:00.000Z",
+    updatedAt: "2026-10-25T03:00:00.000Z",
+  };
+  const todos = {
+    revision: 2,
+    updatedAt: "2026-10-25T03:04:05.000Z",
+    items: [
+      { content: "read", status: "completed", priority: "high" },
+      { content: "write", status: "in_progress" },
+    ],
+  };
+
+  it("accepts a session with a checklist", () => {
+    expect(Value.Check(RACP_SCHEMAS.Session, { ...base, todos })).toBe(true);
+    expect(Value.Check(RACP_SCHEMAS.SessionTodos, todos)).toBe(true);
+  });
+
+  it("accepts a session from a Host that keeps no checklist", () => {
+    expect(Value.Check(RACP_SCHEMAS.Session, base)).toBe(true);
+  });
+
+  it("rejects a row with a status the protocol does not define", () => {
+    const broken = { ...todos, items: [{ content: "read", status: "done" }] };
+    expect(Value.Check(RACP_SCHEMAS.SessionTodos, broken)).toBe(false);
+  });
+
+  it("rejects a checklist before its first revision", () => {
+    expect(Value.Check(RACP_SCHEMAS.SessionTodos, { ...todos, revision: -1 })).toBe(false);
+  });
+});

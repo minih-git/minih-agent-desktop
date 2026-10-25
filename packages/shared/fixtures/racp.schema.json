@@ -147,6 +147,75 @@
           "type": "string"
         }
       },
+      "todos": {
+        "type": "object",
+        "required": [
+          "revision",
+          "updatedAt",
+          "items"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "content",
+                "status"
+              ],
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "pending"
+                    },
+                    {
+                      "type": "string",
+                      "const": "in_progress"
+                    },
+                    {
+                      "type": "string",
+                      "const": "completed"
+                    },
+                    {
+                      "type": "string",
+                      "const": "cancelled"
+                    }
+                  ]
+                },
+                "priority": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "high"
+                    },
+                    {
+                      "type": "string",
+                      "const": "medium"
+                    },
+                    {
+                      "type": "string",
+                      "const": "low"
+                    }
+                  ]
+                }
+              }
+            },
+            "maxItems": 50
+          }
+        }
+      },
       "revision": {
         "type": "integer",
         "minimum": 0
@@ -156,6 +225,75 @@
       },
       "updatedAt": {
         "type": "string"
+      }
+    }
+  },
+  "SessionTodos": {
+    "type": "object",
+    "required": [
+      "revision",
+      "updatedAt",
+      "items"
+    ],
+    "properties": {
+      "revision": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "updatedAt": {
+        "type": "string"
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "content",
+            "status"
+          ],
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "pending"
+                },
+                {
+                  "type": "string",
+                  "const": "in_progress"
+                },
+                {
+                  "type": "string",
+                  "const": "completed"
+                },
+                {
+                  "type": "string",
+                  "const": "cancelled"
+                }
+              ]
+            },
+            "priority": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "high"
+                },
+                {
+                  "type": "string",
+                  "const": "medium"
+                },
+                {
+                  "type": "string",
+                  "const": "low"
+                }
+              ]
+            }
+          }
+        },
+        "maxItems": 50
       }
     }
   },
@@ -702,6 +840,75 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "todos": {
+            "type": "object",
+            "required": [
+              "revision",
+              "updatedAt",
+              "items"
+            ],
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "content",
+                    "status"
+                  ],
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "pending"
+                        },
+                        {
+                          "type": "string",
+                          "const": "in_progress"
+                        },
+                        {
+                          "type": "string",
+                          "const": "completed"
+                        },
+                        {
+                          "type": "string",
+                          "const": "cancelled"
+                        }
+                      ]
+                    },
+                    "priority": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "high"
+                        },
+                        {
+                          "type": "string",
+                          "const": "medium"
+                        },
+                        {
+                          "type": "string",
+                          "const": "low"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "maxItems": 50
+              }
             }
           },
           "revision": {
