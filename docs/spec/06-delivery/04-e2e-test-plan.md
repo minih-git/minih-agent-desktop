@@ -20504,8 +20504,10 @@ Coverage: Rust background registry tests and `scripts/e2e-background-tasks-host.
 
 ### E2E-TASKS-shared-dock-preserves-user-tab
 Exercise Todo/tasks tabs while collapsed, selection expansion, badge arrival without
-tab theft, session changes and remote/draft exclusion. Dismiss running/settling
-tasks through the state action and confirm rejection. Output/Stop remain independent.
+tab theft, session changes and remote/draft exclusion. Entering a conversation
+collapses an open container while its tab choice and badge survive. Dismiss
+running/settling tasks through the state action and confirm rejection.
+Output/Stop remain independent.
 
 ### E2E-PROVIDER-reasoning-effort-tri-state
 Save/copy/sync true/false/null/absent with per-model protocol overrides. Inspect

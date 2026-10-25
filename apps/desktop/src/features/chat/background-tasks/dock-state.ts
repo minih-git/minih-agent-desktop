@@ -7,11 +7,11 @@ import type { BackgroundTaskSummary } from "../../../lib/api";
  * host. The registry stays the source of truth for the processes themselves, so
  * switching a tab or collapsing the container cannot affect them.
  *
- * Reading follows the container's lifetime, not the session's, because the
- * container is one surface the user configures once: the tab choice is
- * remembered per session, while the collapse is one container-wide condition
- * that survives switching sessions. Anything else would reopen a container the
- * user had closed the moment they looked at another session.
+ * The tab choice and the badge are remembered per session; the disclosure is
+ * per visit. The container stays mounted while the user moves between
+ * conversations, so an expansion that outlived the visit would drop an open
+ * checklist into every conversation opened afterwards — entering a session
+ * collapses it again (`enterSession`).
  */
 export type DockTab = "todo" | "tasks";
 
@@ -192,12 +192,26 @@ export function selectTab(
 }
 
 /**
- * Flip the container's collapse. It belongs to the container, not to the
- * session on screen, so the answer the user gave is reused everywhere and kept
- * when they switch sessions.
+ * Flip the container's collapse.
+ *
+ * The expansion lasts one visit: entering a conversation collapses it again
+ * (`enterSession`), so an open checklist never follows the user into the next
+ * one.
  */
 export function toggleCollapsed(view: DockViewState): DockViewState {
   return { ...view, collapsed: !view.collapsed };
+}
+
+/**
+ * Collapse the container when a conversation becomes the one on screen.
+ *
+ * The container is one surface shared by every session and the Composer keeps
+ * it mounted, so a renderer-lifetime expansion would open the checklist in
+ * every conversation entered afterwards. The tab choice and the badge survive;
+ * only the disclosure starts closed.
+ */
+export function enterSession(view: DockViewState): DockViewState {
+  return view.collapsed ? view : { ...view, collapsed: true };
 }
 
 /** Badge markup value: `0` hides it, and long counts collapse to `9+`. */

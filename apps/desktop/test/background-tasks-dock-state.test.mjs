@@ -16,6 +16,7 @@ const {
   badgeLabel,
   chooseTab,
   clearBadge,
+  enterSession,
   observeSessionTasks,
   pruneDockView,
   resolveDockTab,
@@ -202,6 +203,25 @@ test("collapse is one container-wide condition, both tabs share it", () => {
   const collapsed = toggleCollapsed(opened);
   assert.equal(collapsed.collapsed, true);
   assert.equal(sessionDockState(collapsed, SESSION).collapsed, true);
+});
+
+test("entering a conversation collapses an open container", () => {
+  // The regression: one expansion used to live for the whole renderer session,
+  // so a checklist opened in one conversation was still open in every
+  // conversation entered afterwards.
+  const opened = toggleCollapsed(
+    viewOf({ ...EMPTY_SESSION_DOCK, chosenTab: "tasks", newCount: 2 }),
+  );
+  assert.equal(opened.collapsed, false);
+
+  const entered = enterSession(opened);
+  assert.equal(entered.collapsed, true);
+  assert.equal(sessionDockState(entered, SESSION).collapsed, true);
+  // Only the disclosure resets: the tab choice and the badge are per session.
+  assert.equal(sessionDockState(entered, SESSION).chosenTab, "tasks");
+  assert.equal(sessionDockState(entered, SESSION).newCount, 2);
+  // Re-entering an already collapsed container is a no-op, not a new object.
+  assert.equal(enterSession(entered), entered);
 });
 
 test("a closed container stays closed after switching sessions", () => {

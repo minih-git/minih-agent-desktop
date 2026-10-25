@@ -17,6 +17,7 @@ import {
   type DockViewState,
   badgeLabel,
   clearBadge,
+  enterSession,
   observeSessionTasks,
   pruneDockView,
   resolveDockTabFor,
@@ -92,7 +93,10 @@ export function useBackgroundTasks(
 
   // A selection belongs to one conversation's list: switching must not keep
   // polling the previous conversation's task or pin its row into this container.
+  // Entering a conversation also starts with the disclosure closed, so an open
+  // checklist cannot follow the user into the next one.
   useEffect(() => {
+    setDockView(enterSession);
     setExpandedId(null);
     setOutput(null);
   }, [sessionId]);
