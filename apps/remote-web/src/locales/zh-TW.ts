@@ -95,6 +95,9 @@ export const zhTW: Record<TranslationKey, string> = {
   "sessions.status.error": "失敗",
 
   "session.loading": "正在載入工作階段…",
+  "session.todos.progress": "{{completed}}/{{total}}",
+  "session.todos.open": "查看任務清單",
+  "session.todos.title": "任務",
   "session.connecting": "連線中…",
   "session.live": "即時",
   "session.paused": "頁面隱藏時已暫停",

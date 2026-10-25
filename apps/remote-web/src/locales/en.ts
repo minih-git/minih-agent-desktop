@@ -99,6 +99,9 @@ export const en = {
   "sessions.status.error": "Failed",
 
   "session.loading": "Loading the session…",
+  "session.todos.progress": "{{completed}}/{{total}}",
+  "session.todos.open": "Show the task list",
+  "session.todos.title": "Tasks",
   "session.connecting": "Connecting…",
   "session.live": "Live",
   "session.paused": "Paused while this tab is hidden",

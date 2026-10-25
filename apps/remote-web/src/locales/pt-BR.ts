@@ -95,6 +95,9 @@ export const ptBR: Record<TranslationKey, string> = {
   "sessions.status.error": "Falhou",
 
   "session.loading": "Carregando a sessão…",
+  "session.todos.progress": "{{completed}}/{{total}}",
+  "session.todos.open": "Mostrar a lista de tarefas",
+  "session.todos.title": "Tarefas",
   "session.connecting": "Conectando…",
   "session.live": "Ao vivo",
   "session.paused": "Pausado enquanto esta aba está oculta",

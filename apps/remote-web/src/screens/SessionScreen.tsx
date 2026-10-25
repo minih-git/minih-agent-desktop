@@ -23,6 +23,7 @@ import { ChatTimeline } from "../components/chat/ChatTimeline.js";
 import { DecisionArea } from "../components/chat/DecisionArea.js";
 import { RunBar } from "../components/chat/RunBar.js";
 import { SessionInfoSheet } from "../components/chat/SessionInfoSheet.js";
+import { SessionTodoBar } from "../components/chat/SessionTodoBar.js";
 import { StopSheet } from "../components/chat/StopSheet.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
@@ -307,6 +308,9 @@ export function SessionScreen({
       {/* Bottom Dock */}
       <ScreenDock>
         <div className="flex flex-col gap-2 w-full">
+          {/* The committed checklist, above whatever needs the reader's answer:
+              a decision card is what they must act on, the tasks are context. */}
+          <SessionTodoBar todos={session?.todos} />
           {hasDecision ? (
             <DecisionArea
               approvals={timeline.pendingApprovals}

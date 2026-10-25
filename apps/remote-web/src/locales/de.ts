@@ -95,6 +95,9 @@ export const de: Record<TranslationKey, string> = {
   "sessions.status.error": "Fehlgeschlagen",
 
   "session.loading": "Sitzung wird geladen…",
+  "session.todos.progress": "{{completed}}/{{total}}",
+  "session.todos.open": "Aufgabenliste anzeigen",
+  "session.todos.title": "Aufgaben",
   "session.connecting": "Verbinden…",
   "session.live": "Live",
   "session.paused": "Pausiert, solange dieser Tab verborgen ist",

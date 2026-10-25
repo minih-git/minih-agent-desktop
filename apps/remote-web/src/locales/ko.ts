@@ -95,6 +95,9 @@ export const ko: Record<TranslationKey, string> = {
   "sessions.status.error": "실패",
 
   "session.loading": "세션을 불러오는 중…",
+  "session.todos.progress": "{{completed}}/{{total}}",
+  "session.todos.open": "작업 목록 보기",
+  "session.todos.title": "작업",
   "session.connecting": "연결 중…",
   "session.live": "실시간",
   "session.paused": "탭이 숨겨진 동안 일시 중지됨",
