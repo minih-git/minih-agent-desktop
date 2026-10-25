@@ -31,6 +31,10 @@ Rules:
 1. `code` is immutable once published
 2. `message` is English source text (i18n key may map separately)
 3. UI should prefer i18n key derived from `code` when available
+4. An IPC failure reports the same registry code the thrower used. Main code
+   declares it as `errorCode`; a failure that crossed a Host boundary arrives as
+   a `RacpError`, whose code is in `code` — both name an entry of this registry,
+   and a Node errno (`ENOENT`, `ECONNREFUSED`) is never reported as one.
 
 The desktop test suite (`apps/desktop/test/error-code-registry.test.mjs`) verifies
 that every `ErrorCodes` entry appears in this document and that every

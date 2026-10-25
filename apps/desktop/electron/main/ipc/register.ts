@@ -44,6 +44,7 @@ import type { SessionTitleJob } from "../session-title-service";
 import type { LiveCallService } from "../live-voice/call-service";
 import type { LiveVoiceWidget } from "../live-voice/widget-window";
 import type { IpcRegistrar } from "./types";
+import { ipcErrorCode } from "./error-code";
 import type { createTraySessions } from "../tray-sessions";
 import type { createTaskbarUnreadBadge } from "../taskbar-unread-badge";
 
@@ -104,7 +105,7 @@ function wrap<T>(fn: () => Promise<T>): Promise<Result<T>> {
     .then((data) => ok(data))
     .catch((e: any) =>
       err(
-        e?.data?.errorCode || e?.errorCode || ErrorCodes.INTERNAL,
+        ipcErrorCode(e),
         e instanceof Error ? e.message : String(e),
         { retriable: e?.data?.retriable === true, details: e?.data },
       ),

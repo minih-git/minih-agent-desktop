@@ -616,7 +616,17 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
     projects: catalog.projects,
     async browseProjects(hostKey, path) {
       await ensureReady(hostKey);
-      return catalog.browseProjects(hostKey, path);
+      try {
+        return await catalog.browseProjects(hostKey, path);
+      } catch (error) {
+        // The picker shows one localized line, so the reason a browse failed
+        // has to be readable here: without it a refused folder is impossible
+        // to diagnose from the user's side. The path itself stays out.
+        log("warn", "remote project browse failed", {
+          hostKey, code: (error as { code?: string }).code ?? null, error: String(error),
+        });
+        throw error;
+      }
     },
     registerProject: catalog.registerProject,
     async workspaceFiles(hostKey, input) {
