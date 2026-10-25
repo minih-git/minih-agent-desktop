@@ -8437,3 +8437,15 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   removal are adapted without replacing Minih density modes or Router behavior.
 - Provenance and development validation: [selected upstream fixes](../../project/upstream-import-2026-10-25.md).
   This does not advance the full imported baseline or publish a release.
+
+## 2026-10-25 — Todo dock collapse lasts one visit (D683)
+
+- Entering a conversation collapses the shared Todo/background-task container.
+  The tab choice and the badge stay per session and the disclosure still opens
+  on the chevron or on a tab click, but an expansion no longer survives a
+  session switch: after being opened once, the checklist reopened in every
+  conversation entered afterwards.
+- This supersedes the renderer-lifetime expansion recorded for the selected
+  upstream fixes above. No Host storage, protocol, or process-lifetime change.
+- See `04-ux/08-component-spec.md` §11, ADR 0312, and
+  E2E-TASKS-shared-dock-preserves-user-tab.

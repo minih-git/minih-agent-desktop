@@ -3180,9 +3180,10 @@ settling grace period, enforced in the state layer; dismissal never stops a proc
   A checklist whose items are all cancelled has a clear cancelled label
   instead of a misleading `0/0 completed` count.
 - The disclosure is keyboard accessible, does not take focus on updates, and
-  starts collapsed and retains its container-wide expansion across session
-  switches. Tabs and badges stay per session; pruning a session never resets the
-  container. The expanded dock lists every
+  starts collapsed on every session entry: one expansion lasts one visit, so a
+  checklist the user opened cannot follow them into the next conversation. Tabs
+  and badges stay per session; pruning a session never resets the container.
+  The expanded dock lists every
   ordered row and scrolls inside its own box (`max-height: min(280px, 30dvh)`,
   `overflow-y: auto`, `overscroll-behavior: contain`), so a long checklist stays
   readable without growing the Composer stack and reaching the list's end never

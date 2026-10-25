@@ -153,6 +153,9 @@ test("the container shows only live work: a finished row expires and can be remo
   assert.match(controller, /observeTasks\(current, result\.tasks, observedAt\)/);
   // A selected output must not survive into the next conversation.
   assert.match(controller, /setExpandedId\(null\);\s*\n\s*setOutput\(null\);\s*\n\s*\}, \[sessionId\]\);/);
+  // Entering a conversation starts with the disclosure closed: an open
+  // checklist must not follow the user into the next conversation.
+  assert.match(controller, /setDockView\(enterSession\);/);
   // Removal is refused for a live task in the state layer, not just by hiding
   // the control.
   assert.match(visibility, /task\.state === "running"\) return state;/);
