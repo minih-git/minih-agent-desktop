@@ -290,7 +290,7 @@ test("tool and search rows stay collapsed while thinking keeps its leaf default"
   assert.match(transcriptDisclosureSource, /const setManualOpen = useCallback/);
   assert.match(
     transcriptSource,
-    /const automaticallyOpen = hasSubagentTopology \|\| live \|\| visibleItems\.length <= AUTOMATIC_OPEN_MAX_ITEMS;/,
+    /const automaticallyOpen = activityGroupStartsOpen\(visibleItems, \{\s*subagentTopology: hasSubagentTopology,\s*turnActive,\s*groupActive: live,\s*\}\);/,
   );
   assert.match(
     transcriptSource,

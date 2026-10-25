@@ -505,7 +505,9 @@ test("rendered ModelBindingFields, ModelSelectionPanes and ProviderConnectionFie
     }),
   );
   assert.match(customSavedKeyHtml, /Leave blank to keep the saved key\./);
-  assert.match(customSavedKeyHtml, />Clear saved API key</);
+  assert.match(customSavedKeyHtml, /aria-label="Clear saved API key"/);
+  assert.match(customSavedKeyHtml, /class="provider-setup-key-control"/);
+  assert.doesNotMatch(customSavedKeyHtml, />Clear saved API key</);
 
   const routerHtml = render(
     createElement(ProviderConnectionFields, {

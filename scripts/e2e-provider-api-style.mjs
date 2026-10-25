@@ -3,8 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveElectronBinary } from "./e2e/boot.mjs";
@@ -15,7 +14,7 @@ const require = createRequire(
 );
 const { build } = require("esbuild");
 const { electronBinary } = resolveElectronBinary(root);
-const temp = await mkdtemp(join(tmpdir(), "pi-provider-api-style-"));
+const temp = await mkdtemp(join(process.env.PI_SCRATCH_DIR ?? root, "provider-api-style-"));
 try {
   await build({
     entryPoints: [join(root, "scripts/e2e/provider-api-style.tsx")],
@@ -25,7 +24,7 @@ try {
     format: "iife",
     jsx: "automatic",
     define: { "process.env.NODE_ENV": '"production"' },
-    // Exercise API-format interactions with real components/hooks, not visual layout.
+    // Production styles are attached below so control geometry is real.
     loader: { ".css": "empty" },
     alias: {
       "@minih-agent/i18n": join(root, "packages/i18n/src/index.ts"),
@@ -35,9 +34,14 @@ try {
     },
     nodePaths: [join(root, "apps/desktop/node_modules")],
   });
+  const renderer = join(root, "apps/desktop/out/renderer");
+  const index = await readFile(join(renderer, "index.html"), "utf8");
+  const css = [...index.matchAll(/href="([^" ]+\.css)"/g)].map((match) => match[1]);
+  assert(css.length, "Build Desktop before running this layout check");
+  await cp(join(renderer, "assets"), join(temp, "assets"), { recursive: true });
   await writeFile(
     join(temp, "index.html"),
-    '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; style-src \'self\' \'unsafe-inline\'"><title>Provider API format regression</title><body><script src="renderer.js"></script>',
+    `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:"><title>Provider API format regression</title>${css.map((path) => `<link rel="stylesheet" href="${path}">`).join("")}<body><script src="renderer.js"></script>`,
   );
   await writeFile(
     join(temp, "main.cjs"),

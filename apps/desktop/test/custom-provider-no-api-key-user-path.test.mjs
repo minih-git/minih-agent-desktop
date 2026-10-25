@@ -82,7 +82,10 @@ await i18n.use(initReactI18next).init({
   lng: "en",
   fallbackLng: "en",
   keySeparator: false,
-  resources: { en: { translation: flattenCatalog(catalogs.en) } },
+  resources: {
+    en: { translation: flattenCatalog(catalogs.en) },
+    "zh-CN": { translation: flattenCatalog(catalogs["zh-CN"]) },
+  },
   interpolation: { escapeValue: false },
 });
 useAppStore.setState({ providers: [] });
@@ -110,7 +113,7 @@ function mount(element) { flushSync(() => rootNode.render(element)); }
 window.customProviderNoApiKeyProbe = async () => {
   const check = (condition, message) => { if (!condition) throw new Error(message); };
   const button = (label) => [...document.querySelectorAll("button")]
-    .find((item) => item.textContent.trim() === label);
+    .find((item) => item.getAttribute("aria-label") === label || item.textContent.trim() === label);
   const keyField = () => document.querySelector('input[type="password"]');
   const edit = (provider, key) => {
     updateInput = null;
@@ -188,8 +191,17 @@ window.customProviderNoApiKeyProbe = async () => {
     "an untouched empty input overwrote the saved key");
 
   edit(keyedProvider, "edit-keyed-clear-and-cancel");
-  check(button("Clear saved API key"), "the saved-key removal action was missing");
-  flushSync(() => button("Clear saved API key").click());
+  const clearButton = button("Clear saved API key");
+  check(clearButton, "the saved-key removal action was missing");
+  check(clearButton.textContent.trim() === "" && clearButton.querySelector('svg[aria-hidden="true"]'),
+    "the saved-key removal action is not an accessible icon-only button");
+  const inputRect = keyField().getBoundingClientRect();
+  const clearRect = clearButton.getBoundingClientRect();
+  check(clearRect.left >= inputRect.right && clearRect.top < inputRect.bottom
+    && clearRect.bottom > inputRect.top, "the clear icon is not beside the API-key input");
+  check(clearRect.width >= 24 && clearRect.height >= 24, "the clear icon target is too small");
+  flushSync(() => clearButton.click());
+  check(document.activeElement === keyField(), "clearing the key did not focus its input");
   check(!updateInput, "clearing a key persisted before Save");
   check(keyField().value === "" && !keyField().disabled, "clearing a saved key disabled the input");
   const afterClear = calls.length;
@@ -203,6 +215,22 @@ window.customProviderNoApiKeyProbe = async () => {
   mount(null);
   check(!updateInput, "closing the form after Clear changed the saved key");
 
+  await i18n.changeLanguage("zh-CN");
+  edit(keyedProvider, "edit-keyed-clear-zh-cn");
+  const zhClearLabel = i18n.t("settings.clearApiKey");
+  const zhClearButton = button(zhClearLabel);
+  check(zhClearButton && zhClearLabel !== "settings.clearApiKey", "the localized saved-key removal action was missing");
+  check(zhClearButton.textContent.trim() === "" && zhClearButton.querySelector('svg[aria-hidden="true"]'),
+    "the localized saved-key removal action is not an accessible icon-only button");
+  const zhInputRect = keyField().getBoundingClientRect();
+  const zhClearRect = zhClearButton.getBoundingClientRect();
+  check(zhClearRect.left >= zhInputRect.right && zhClearRect.top < zhInputRect.bottom
+    && zhClearRect.bottom > zhInputRect.top, "the localized clear icon is not beside the API-key input");
+  check(zhClearRect.width >= 24 && zhClearRect.height >= 24, "the localized clear icon target is too small");
+  flushSync(() => zhClearButton.click());
+  check(document.activeElement === keyField(), "clearing the localized key did not focus its input");
+  mount(null);
+  await i18n.changeLanguage("en");
   edit(keyedProvider, "edit-keyed-clear-and-replace");
   flushSync(() => button("Clear saved API key").click());
   flushSync(() => setValue(keyField(), "replacement-api-key"));
@@ -341,7 +369,7 @@ window.customProviderNoApiKeyProbe = async () => {
 
 window.renderScreenshotScene = async (scene) => {
   const button = (label) => [...document.querySelectorAll("button")]
-    .find((item) => item.textContent.trim() === label);
+    .find((item) => item.getAttribute("aria-label") === label || item.textContent.trim() === label);
   const keyedProvider = {
     id: "custom:keyed-scene",
     name: "Custom Gateway",

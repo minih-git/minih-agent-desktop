@@ -9,6 +9,17 @@
 
 ---
 
+### E2E-UPSTREAM-20261025-selected-reliability
+
+- **前提：** 任务工作树、本地构建、复用依赖和隔离 Chromium 配置；仅使用合成 IPC／提供商边界，不使用用户桌面、真实凭据或付费模型。
+- **步骤：** 检查官方 DeepSeek 的 low/high/max/off 和显式发送／省略，再检查 Minih Router 中转默认；切回缓存／淘汰阅读页并滚动续读，再执行搜索；在三种密度中使用正文点击、焦点、选区和嵌套折叠后结束回合；跨会话保留任务容器状态；通过同行图标清除密钥并取消、替换或保存。
+- **预期：** 官方自动发送强度，中转默认屏蔽且显式选择优先。恢复不缩窄缓存页；本地有界续读保持视口和模型输入，远程不虚构前向游标，搜索仍手动分页。焦点／选区只临时保护，明确选择只归本层且跨淘汰保留；最后卸载清理监听器。保留 Minih 密度默认。任务容器默认收起并跨会话保留展开，内容／徽标／输出仍按会话隔离。密钥图标有本地化名称、至少 24px 命中目标并恢复输入焦点，删除仍暂存到保存。
+- **自动化：** Shared／Runtime 请求测试、Desktop 阅读／折叠／任务／凭据回归，以及 `e2e-transcript-render.mjs`、`e2e-background-tasks.mjs`、`e2e-provider-api-style.mjs`、`e2e-transcript-reading-position.mjs`。
+- **规格：** 提供商模型／目录、组件规范 §1.6／§4／§11.3a、交互模式 §4、思考参数与回合显示 ADR。
+- **验收：** B／C／E／品质／无障碍。
+- **里程碑：** 2026-10-25 选择性上游维护。
+- **状态：** 定向离线测试及 macOS 隔离 Electron／Chromium 探针通过；这些 UI 夹具不验证真实提供商或 Host 凭据持久化。
+
 ### E2E-LEGACY-DICTATION-idle-model-release
 
 - **前提：** 通过 `VoiceService` 接口测试保留的本地 Dictation 服务，使用确定性的
@@ -470,7 +481,7 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 
 - **前提条件**：已配置一个 Base URL 不含 `deepseek.com` 的 OpenAI 兼容提供商，模型 ID 属于 DeepSeek 系（例如硅基流动 `deepseek-ai/DeepSeek-V3.2`），并开启思考模式。
 - **步骤**：1) 在思考模式下开始会话。2) 完成若干回合，其中至少一条助手回复没有思考文本。3) 再发一条提示，使历史被回放到提供商。
-- **预期**：后续 Completions 请求的每条 assistant 消息都带推理字段。官方 `api.deepseek.com` 行对无思考内容的回合仍可使用 `""`。非官方 DeepSeek 系中转在可用时回传保留的真实思考，否则使用 ADR 0256 文档化的非空占位符——压缩后不得静默回填空串。请求不会携带通用 OpenAI 的 `reasoning_effort` 字段，因为 DeepSeek 端点不接受它；已选的思考模式仍按端点自身线路发送。不会仅因模型 ID 含 `"deepseek"` 就把 `thinkingFormat` 改成 `"deepseek"`。官方 `api.deepseek.com` 行仍使用 pi-ai 按 URL 检测的 DeepSeek `thinkingFormat`。
+- **预期**：后续 Completions 请求的每条 assistant 消息都带推理字段。官方 `api.deepseek.com` 行对无思考内容的回合仍可使用 `""`。非官方 DeepSeek 系中转在可用时回传保留的真实思考，否则使用 ADR 0256 文档化的非空占位符——压缩后不得静默回填空串。非官方中转（含 Minih Router）默认省略 `reasoning_effort`；官方 DeepSeek 主机由 pi-ai 检测，随开启的思考发送选中强度，off 仅发送关闭思考。显式保存的发送／不发送选择仍优先；主机识别不接受路径、userinfo 或其他域名中的子串。不会仅因模型 ID 含 `"deepseek"` 就把 `thinkingFormat` 改成 `"deepseek"`。官方 `api.deepseek.com` 行仍使用 pi-ai 按 URL 检测的 DeepSeek `thinkingFormat`。
 - **链接规格**：`03-runtime/11-provider-model-system.md`、
   `03-runtime/12-provider-config-schema.md`
 - **验收**：B（提供商 Completions 兼容）
@@ -5823,6 +5834,7 @@ eleven-tool-round desktop paths are verified by
 
 | 验收 | 应用场景 |
 |---|---|
+| B / C / E / 品质 / 无障碍 — 2026-10-25 选择性上游修复 | E2E-UPSTREAM-20261025-selected-reliability |
 | C / 品质 / 无障碍 — 右侧通知卡片 | E2E-NOTIFICATION-right-side-cards |
 | C / G / 品质 / 安全性 — 账户菜单与侧边栏工具 | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / 品质 / 安全性 — 会话待办清单 | E2E-CHAT-session-todo-checklist |

@@ -113,7 +113,7 @@ const sessionTasksOf = (sessionId: string) =>
 const barSessions = () => [...document.querySelectorAll<HTMLElement>(".task-command")]
   .map((command) => /--session=([a-z]+)/.exec(command.textContent ?? "")?.[1] ?? "");
 
-async function mount(count = 10) {
+async function mount(count = 10, expand = true) {
   flushSync(() => root?.unmount());
   pending.clear();
   requests.length = 0;
@@ -152,6 +152,13 @@ async function mount(count = 10) {
     </I18nextProvider>,
   ));
   await until(() => document.querySelectorAll(".task-row").length === count, "tasks did not render");
+  if (count > 0 && expand) {
+    const toggle = document.querySelector<HTMLButtonElement>(".dock-toggle");
+    if (toggle?.getAttribute("aria-expanded") === "false") {
+      flushSync(() => toggle.click());
+      await until(() => toggle.getAttribute("aria-expanded") === "true", "dock did not expand");
+    }
+  }
 }
 
 function row(index: number) {
@@ -227,13 +234,17 @@ async function probe() {
   });
 
   await check("collapsed tabs remain reachable, expand on click, and badge new tasks without stealing the tab", async () => {
-    await mount(1);
+    await mount(1, false);
     const todoTab = () => document.querySelectorAll<HTMLButtonElement>(".dock-tab")[0]!;
     const tasksTab = () => document.querySelectorAll<HTMLButtonElement>(".dock-tab")[1]!;
     const toggle = () => document.querySelector<HTMLButtonElement>(".dock-toggle")!;
+    assert(toggle().getAttribute("aria-expanded") === "false", "the container must start collapsed");
     assert(tasksTab().getAttribute("aria-selected") === "true", "running work selects tasks tab initially");
     flushSync(() => todoTab().click());
-    await until(() => todoTab().getAttribute("aria-selected") === "true", "Todo tab must select");
+    await until(
+      () => toggle().getAttribute("aria-expanded") === "true" && todoTab().getAttribute("aria-selected") === "true",
+      "clicking Todo tab while collapsed must expand the container and select Todo",
+    );
     // New running task arrives while the user is on the Todo tab: must badge, not steal tab.
     tasks = [
       ...tasks,
@@ -306,8 +317,8 @@ async function probe() {
     assert(document.querySelector("pre")?.textContent?.includes("task-1"), "late first response erased the current output");
   });
 
-  await check("the container follows the open conversation and never stops another session's task", async () => {
-    await mount(0);
+  await check("the container follows the open conversation, keeps its collapse across session switches, and never stops another session's task", async () => {
+    await mount(0, false);
     tasks = [
       { id: "task-a", sessionId: "session-a", command: "npm run dev -- --session=a",
         commandShellId: "bash", state: "running", elapsedMs: 1_000 },
@@ -315,13 +326,20 @@ async function probe() {
         commandShellId: "bash", state: "running", elapsedMs: 1_000 },
     ];
     await mountComposer("session-a");
+    const toggle = () => document.querySelector<HTMLButtonElement>(".dock-toggle")!;
+    assert(toggle().getAttribute("aria-expanded") === "false", "composer dock must start collapsed");
     assert(JSON.stringify(barSessions()) === JSON.stringify(["a"]),
       `session-a must not list session-b's task: ${JSON.stringify(barSessions())}`);
+    flushSync(() => toggle().click());
+    assert(toggle().getAttribute("aria-expanded") === "true", "session-a dock did not expand");
     // Switching conversations only changes what is listed; the running
-    // processes of both sessions stay alive.
+    // processes of both sessions stay alive and the container-wide collapse is preserved.
     flushSync(() => useAppStore.setState({ activeSessionId: "session-b" }));
     await until(() => JSON.stringify(barSessions()) === JSON.stringify(["b"]),
       `session-b must show only its own task: ${JSON.stringify(barSessions())}`);
+    assert(toggle().getAttribute("aria-expanded") === "true", "expanded dock collapsed on session switch");
+    flushSync(() => toggle().click());
+    assert(toggle().getAttribute("aria-expanded") === "false", "session-b dock did not collapse");
     assert(stoppedIds.length === 0, `switching conversations must not stop anything: ${stoppedIds}`);
     flushSync(() => useAppStore.setState({ activeSessionId: null }));
     await until(() => document.querySelectorAll(".task-row").length === 0,
@@ -329,6 +347,8 @@ async function probe() {
     flushSync(() => useAppStore.setState({ activeSessionId: "session-a" }));
     await until(() => JSON.stringify(barSessions()) === JSON.stringify(["a"]),
       "returning to session-a must restore only its task");
+    assert(toggle().getAttribute("aria-expanded") === "false", "closed dock reopened after switching back to session-a");
+    flushSync(() => toggle().click());
     click(0, "Stop");
     await until(() => stoppedIds.length === 1, "the Stop control did not reach the host");
     assert(stoppedIds[0] === "task-a", `Stop must target the open conversation's task: ${stoppedIds[0]}`);

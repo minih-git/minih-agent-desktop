@@ -55,6 +55,7 @@ globalThis.sessionReadingPositionProbe = async () => {
   const bridge = window.minihAgent;
   let firstARead = true;
   const aroundReads: string[] = [];
+  const forwardReads: number[] = [];
   const unexpected: string[] = [];
   window.minihAgent = {
     channels: IPC, platform: "win32", on: () => () => {},
@@ -74,6 +75,11 @@ globalThis.sessionReadingPositionProbe = async () => {
           assert(index >= 0, "missing anchor");
           start = Math.max(0, index - 20);
           end = Math.min(messages.length, index + 40);
+        } else if ("messageBefore" in input && typeof input.messageBefore === "number") {
+          const limit = "messageLimit" in input ? Number(input.messageLimit) : 100;
+          end = Math.min(input.messageBefore, messages.length);
+          start = Math.max(0, end - limit);
+          forwardReads.push(start);
         } else if (input.id === "real-A" && firstARead) {
           firstARead = false;
           start = 0;
@@ -129,6 +135,8 @@ globalThis.sessionReadingPositionProbe = async () => {
     await select("A");
     await until(() => Boolean(row(id)) && Math.abs(offset(id) - expectedOffset) < 2,
       "warm production pane preserves reading through revalidation");
+    assert(!host.querySelector('[data-visible="true"] .transcript-load-later'),
+      "warm return must not offer to load later messages");
     for (const id of ["B", "C", "D", "E"]) await select(id);
     assert(!host.querySelector('[data-session-pane="real-A"]'), "A was not evicted");
     await select("A");
@@ -139,6 +147,35 @@ globalThis.sessionReadingPositionProbe = async () => {
     assert(host.querySelectorAll("[data-session-pane]").length === 3, "pane count changed");
     assert(useAppStore.getState().messages[0]?.id === "real-m110", "restore changed canonical/live input");
     const restoredOffset = offset(id);
+    assert(!scroller().querySelector(".transcript-load-later"), "restoration must not expose manual paging");
+    const readsBefore = forwardReads.length;
+    const continuation = useAppStore.getState().transcriptViews["real-A"];
+    assert(continuation?.hasMoreAfter, "restore must leave a real gap");
+    const boundaryId = `real-m${continuation.messageEnd! - 1}`;
+    const boundary = row(boundaryId)!;
+    scroller().dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 1000 }));
+    scroller().scrollTop = scroller().scrollHeight - scroller().clientHeight;
+    const boundaryOffset = boundary.getBoundingClientRect().top - scroller().getBoundingClientRect().top;
+    scroller().dispatchEvent(new Event("scroll", { bubbles: true }));
+    await until(() => useAppStore.getState().transcriptViews["real-A"]?.hasMoreAfter === false && Boolean(row("real-m139")),
+      "scrolling continues restored history without a button");
+    assert(forwardReads.length > readsBefore, "continuation must read a physical page");
+    const continuedOffset = offset(boundaryId);
+    assert(Math.abs(continuedOffset - boundaryOffset) < 2,
+      `continuation moved the viewport: ${continuedOffset} vs ${boundaryOffset}`);
+    assert(useAppStore.getState().messages[0]?.id === "real-m110", "continuation changed model input");
+    console.info("READING_CONTINUATION_SCREENSHOT");
+    await frame();
+    await useAppStore.getState().navigateTranscript({ sessionId: "real-A", messageId: id, query: "Message" });
+    await until(() => Boolean(scroller().querySelector(".transcript-load-later")), "search keeps manual continuation");
+    const searchReads = forwardReads.length;
+    scroller().scrollTop = scroller().scrollHeight - scroller().clientHeight;
+    scroller().dispatchEvent(new Event("scroll", { bubbles: true }));
+    await frame(); await frame();
+    assert(forwardReads.length === searchReads, "search must not automatically continue");
+    flushSync(() => scroller().querySelector<HTMLButtonElement>(".transcript-load-later")!.click());
+    await until(() => useAppStore.getState().transcriptViews["real-A"]?.hasMoreAfter === false,
+      "search still loads subsequent pages manually");
     const jump = host.querySelector<HTMLButtonElement>('[data-visible="true"] .jump-latest-btn')!;
     flushSync(() => jump.click());
     await until(() => !useAppStore.getState().transcriptViews["real-A"] &&
@@ -154,6 +191,14 @@ globalThis.sessionReadingPositionProbe = async () => {
       return scrollerNow.scrollHeight - scrollerNow.clientHeight - scrollerNow.scrollTop < 2;
     };
     await until(atBottom, "A resumes the tail before the disclosure");
+    let stableBottomFrames = 0;
+    let previousHeight = -1;
+    await until(() => {
+      const height = scroller().scrollHeight;
+      stableBottomFrames = atBottom() && height === previousHeight ? stableBottomFrames + 1 : 0;
+      previousHeight = height;
+      return stableBottomFrames >= 3;
+    }, "the latest projection and mounted window settle before disclosure");
     const toolHeader = row("real-m140")?.querySelector<HTMLElement>(".tool-row-header");
     assert(toolHeader, "the expandable tool row did not render");
     flushSync(() => toolHeader.click());
@@ -164,7 +209,7 @@ globalThis.sessionReadingPositionProbe = async () => {
     await frame();
     assert(
       getTranscriptReadingPosition("real-A")?.pinned === true,
-      "a disclosure at the bottom must not demote the reading bookmark",
+      `a disclosure at the bottom must not demote the reading bookmark: ${JSON.stringify({ position: getTranscriptReadingPosition("real-A"), gap: scroller().scrollHeight - scroller().clientHeight - scroller().scrollTop })}`,
     );
     for (const id of ["B", "C", "D", "E"]) await select(id);
     assert(!host.querySelector('[data-session-pane="real-A"]'), "A was not evicted");

@@ -134,11 +134,132 @@ test("TaskDock renders session-scoped TodoPanel and omits shimmer", async () => 
         createElement(TaskDock, { sessionId: "session-dock-test" }),
       ),
     );
-    assert.match(html, /class="dock is-expanded"/);
+    assert.match(html, /class="dock"/);
+    assert.doesNotMatch(html, /class="dock is-expanded"/);
     assert.match(html, /class="dock-header-current" title="Ship shared dock">Ship shared dock<\/span>/);
-    assert.match(html, /class="[^"]*\bdock-toggle\b[^"]*"[^>]*aria-expanded="true"/);
+    assert.match(html, /class="[^"]*\bdock-toggle\b[^"]*"[^>]*aria-expanded="false"/);
     assert.doesNotMatch(html, /shimmer/i);
   } finally {
     await server.close();
+  }
+});
+
+test("TaskDock starts collapsed, keeps collapse across session switches, and passes interactive background-tasks probe", {
+  timeout: 60_000,
+  skip:
+    process.platform === "linux" && !process.env.DISPLAY
+      ? "Isolated Electron UI test requires a display"
+      : false,
+}, async () => {
+  const { spawn } = await import("node:child_process");
+  const { createRequire } = await import("node:module");
+  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { repositoryRoot, resolveElectronBinary } = await import("../../../scripts/e2e/boot.mjs");
+  const { loadStyles } = await import("./helpers/styles.mjs");
+  const root = repositoryRoot();
+  const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
+  const temp = await mkdtemp(join(root, "apps/desktop/.background-tasks-dock-ui-"));
+  try {
+    await build({
+      entryPoints: [join(root, "scripts/e2e/background-tasks.tsx")],
+      outfile: join(temp, "renderer.js"),
+      bundle: true,
+      platform: "browser",
+      format: "iife",
+      jsx: "automatic",
+      define: { "process.env.NODE_ENV": '"production"', "import.meta.env.DEV": "false" },
+      loader: { ".css": "empty", ".woff": "file", ".woff2": "file", ".ttf": "file" },
+      alias: {
+        "@minih-agent/i18n": join(root, "packages/i18n/src/index.ts"),
+        react: join(root, "apps/desktop/node_modules/react"),
+        "react-dom": join(root, "apps/desktop/node_modules/react-dom"),
+      },
+      nodePaths: [join(root, "apps/desktop/node_modules")],
+      plugins: [{
+        name: "local-url-assets",
+        setup(b) {
+          b.onResolve({ filter: /\?url$/ }, ({ path, resolveDir }) => ({
+            path: join(resolveDir, path.slice(0, -4)),
+            namespace: "local-url-asset",
+          }));
+          b.onLoad({ filter: /.*/, namespace: "local-url-asset" }, async ({ path }) => ({
+            contents: await readFile(path),
+            loader: "file",
+          }));
+        },
+      }],
+    });
+    await writeFile(
+      join(temp, "styles.css"),
+      (await loadStyles()).replace(/@theme(?: inline)?\s*\{/g, ":root {"),
+    );
+    await writeFile(
+      join(temp, "index.html"),
+      '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; style-src \'self\' \'unsafe-inline\'; font-src \'self\' data:"><link rel="stylesheet" href="styles.css"><style>body { margin: 0; } textarea { display: block; width: 100%; min-height: 60px; box-sizing: border-box; }</style></head><body><script src="renderer.js"></script></body></html>',
+    );
+    await writeFile(
+      join(temp, "main.cjs"),
+      `
+const { app, BrowserWindow } = require("electron");
+const { join } = require("node:path");
+app.setPath("userData", join(__dirname, "profile"));
+app.disableHardwareAcceleration();
+app.on("window-all-closed", () => {});
+app.whenReady().then(async () => {
+  const window = new BrowserWindow({ show: false, width: 1280, height: 800, useContentSize: true,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  window.webContents.debugger.attach("1.3");
+  window.webContents.on("console-message", event => {
+    if (event.message === "BACKGROUND_NATIVE_KEY Return" || event.message === "BACKGROUND_NATIVE_KEY Space") {
+      const enter = event.message.endsWith("Return");
+      const key = enter ? "Enter" : " ";
+      const code = enter ? "Enter" : "Space";
+      const windowsVirtualKeyCode = enter ? 13 : 32;
+      void window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {
+        type: "keyDown", key, code, windowsVirtualKeyCode, text: enter ? "\\r" : " ",
+      }).then(() => window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {
+        type: "keyUp", key, code, windowsVirtualKeyCode,
+      })).catch(error => { console.error(error); app.exit(1); });
+    }
+  });
+  try {
+    await window.loadFile(join(__dirname, "index.html"));
+    const result = await window.webContents.executeJavaScript("globalThis.backgroundTasksProbe()");
+    console.log("BACKGROUND_TASKS_UNIT_PROBE " + JSON.stringify(result));
+    app.exit(result.ok ? 0 : 1);
+  } finally { window.destroy(); }
+}).catch(error => { console.error(error); app.exit(1); });
+`,
+    );
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const child = spawn(resolveElectronBinary(root).electronBinary, [join(temp, "main.cjs")], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.setEncoding("utf8");
+      stream.on("data", (chunk) => { output += chunk; });
+    }
+    const timer = setTimeout(() => child.kill("SIGKILL"), 45_000);
+    let code;
+    try {
+      code = await new Promise((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", resolve);
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    assert.equal(code, 0, output.slice(-6000));
+    const line = output.split(/\r?\n/)
+      .find((item) => item.startsWith("BACKGROUND_TASKS_UNIT_PROBE "));
+    assert(line, output.slice(-6000));
+    const parsed = JSON.parse(line.slice("BACKGROUND_TASKS_UNIT_PROBE ".length));
+    assert.equal(parsed.ok, true, JSON.stringify(parsed.results));
+  } finally {
+    await rm(temp, { recursive: true, force: true });
   }
 });

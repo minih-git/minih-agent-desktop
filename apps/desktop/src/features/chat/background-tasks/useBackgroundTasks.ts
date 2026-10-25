@@ -12,6 +12,7 @@ import {
 } from "./bar-visibility";
 import {
   type DockSides,
+  EMPTY_DOCK_VIEW,
   type DockTab,
   type DockViewState,
   badgeLabel,
@@ -68,7 +69,7 @@ export function useBackgroundTasks(
   // Renderer-local view state: which tasks the container may show. The registry
   // in host-core stays the source of truth for the processes themselves.
   const [visibility, setVisibility] = useState<BarVisibility>(EMPTY_VISIBILITY);
-  const [dockView, setDockView] = useState<DockViewState>({});
+  const [dockView, setDockView] = useState<DockViewState>(EMPTY_DOCK_VIEW);
   const [clock, setClock] = useState(() => Date.now());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [output, setOutput] = useState<BackgroundTaskOutput | null>(null);
@@ -80,8 +81,6 @@ export function useBackgroundTasks(
   // Ids already folded into the badge, per session, so a re-read of the same
   // snapshot cannot count the same task twice.
   const knownIds = useRef(new Map<string, Set<string>>());
-  const dockViewRef = useRef(dockView);
-  dockViewRef.current = dockView;
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
   const todosRef = useRef(todos);
@@ -257,13 +256,11 @@ export function useBackgroundTasks(
     setDockView((current) => selectTab(current, sessionId, "todo"));
   }, [sessionId]);
 
+  // The collapse belongs to the container, so it is written even before a
+  // session is on screen and never reset by a session switch.
   const setCollapsed = useCallback((collapsed: boolean) => {
-    if (!sessionId) return;
-    const current = sessionDockState(dockViewRef.current, sessionId);
-    if (current.collapsed !== collapsed) {
-      setDockView((value) => toggleCollapsed(value, sessionId));
-    }
-  }, [sessionId]);
+    setDockView((current) => (current.collapsed === collapsed ? current : toggleCollapsed(current)));
+  }, []);
 
   /**
    * Remove a row from the container.

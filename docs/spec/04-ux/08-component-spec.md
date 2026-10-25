@@ -126,7 +126,13 @@ Outer frame that positions Topbar, Sidebar, MainChat, and WorkPanel. Owns resize
   so the fallback deadline cannot cancel that lookup. An unusable offset or a
   pane with no layout box still reports failure rather than guessing. Explicit
   disclosure choices and the mounted-window budget survive eviction; bookmarks do
-  not persist across renderer/app restarts.
+  not persist across renderer/app restarts. A retained page already holding the
+  bookmark survives session revalidation instead of being narrowed. Restored local
+  ranges continue in bounded pages near the lower viewport boundary without a
+  Load later button; appending preserves the viewport and never writes model input.
+  Hidden panes do not continue. Only after the gap closes may overlapping live rows
+  resume, without prepending older cached rows or inventing disjoint continuity.
+  Explicit search keeps manual paging; remote opaque cursors are not local offsets.
 - A pane renders the store's live `messages` while its session is the active one
   and its retained snapshot otherwise, so no pane can show another session's rows.
   While a session is running, or still holds live rows the durable page has
@@ -874,21 +880,17 @@ as standalone rows that stay visible even when every group is collapsed. Adjacen
 Bash rows each remain standalone, and a Bash row's detail stays closed until the
 user opens it.
 
-The ordinary group owning the active execution segment starts open while a turn is
-active. In `compact`, a completed ordinary group with at most four visible items
-stays open, a larger ordinary group starts closed, and a Task topology group stays
-open; `standard` and `detailed` keep their own disclosure behavior and do not force
-a group open. In every density an untouched active group remains open when any
-failed or denied tool has been recorded, through later recovery, and is
-reconsidered at completion. These group defaults do not depend on the thinking
-preference. Group headers summarize count, running state and issue count without
-treating a failed child as a failed turn.
+Every group stays open while its owning turn runs, even after another segment
+becomes live. Settled groups with at most four visible items, Task topology groups
+and groups with visible reasoning stay open; larger plain-tool groups start
+closed. Explicit choices remain authoritative. The density-specific rendering
+and item detail defaults are unchanged. Group headers summarize count, running
+state and issue count without treating a failed child as a failed turn.
 
 Except for the compact Thinking default, no item payload opens itself: a tool,
 hosted-search or plan call stays a header row until the user opens its disclosure,
-including a Bash row, whose detail stays closed until the user opens it. The
-activity groups keep their automatic open defaults, so a live turn still shows its
-work. When `Show thinking` is on, `compact` opens each visible Thinking row by
+including a Bash row, whose detail stays closed until the user opens it.
+When `Show thinking` is on, `compact` opens each visible Thinking row by
 default and lets the user collapse it independently; `standard` and `detailed`
 keep their existing detail defaults. When the preference is off, the live thinking
 indicator stays visible while completed reasoning rows and excerpts are suppressed
@@ -912,12 +914,13 @@ reduced-motion support is unchanged.
 
 Group and item are independent controls. Closing an ancestor keeps descendant
 choices and reopening restores them; opening a parent never expands all children.
-User interaction with a child claims its containing group without toggling it, so
-completion cannot close around opened, focused or selected content. Choices use
-stable turn/group/item identities and remain while the retained session pane lives,
-including preference changes and row remounts; pane eviction, deletion or renderer
-restart reapplies defaults rather than persisting disclosure state to messages or
-settings.
+An explicit header/rail choice belongs only to its own level and never pins an
+ancestor. Focus or an active selection temporarily defers automatic folding of
+that level and its ancestors; leaving returns control to the automatic default.
+Stable turn/group/item choices survive preference changes, remounts and pane
+eviction in renderer memory; deletion or renderer restart releases them. Nothing
+is persisted to messages or settings. Issue counts stay in one inline,
+non-wrapping chip, with the icon fixed and the localized text truncating.
 
 Search/navigation reveals the process segment and the activity group that own the
 named message, and applies each reveal request once. Item-level targeting is not
@@ -2549,15 +2552,13 @@ twice.
   ADR 0263). Such a click opens the file instead of toggling the row's
   disclosure, and a reference that matches nothing reports itself without
   opening a panel. A tool surface picks no destination of its own.
-- Click the processing header: expand/collapse only that ordered activity list.
-  The active group opens and closes on settlement only if untouched; completed
-  groups otherwise start closed. Opening a group does not expand every item, and
-  sibling groups remain independent.
+- Click the processing header: toggle only that activity list. Untouched groups
+  use the running-turn, visible-reasoning and four-row defaults in §4.3. Opening
+  a group does not expand every item; sibling groups remain independent.
 - Click or keyboard-activate the left rule beside expanded thinking, tool details,
-  delegated work, or processing steps: collapse that owning disclosure without
-  changing adjacent expansion state. Item interaction also claims its containing
-  group as user-owned without toggling it; automatic stream or completion
-  transitions never reverse those states.
+  delegated work or processing steps: collapse only its owning disclosure. An
+  explicit choice never pins an ancestor. Focus and selection temporarily protect
+  the containing levels; leaving releases that hold, not the explicit choice.
 - A failed child row remains error-hued and reports its failure in the row header,
   but its payload is not auto-expanded. The containing group settles as
   `Processed for {elapsed}` with an issue count even when a later tool recovered.
@@ -3179,7 +3180,9 @@ settling grace period, enforced in the state layer; dismissal never stops a proc
   A checklist whose items are all cancelled has a clear cancelled label
   instead of a misleading `0/0 completed` count.
 - The disclosure is keyboard accessible, does not take focus on updates, and
-  resets closed when the active session changes. The expanded dock lists every
+  starts collapsed and retains its container-wide expansion across session
+  switches. Tabs and badges stay per session; pruning a session never resets the
+  container. The expanded dock lists every
   ordered row and scrolls inside its own box (`max-height: min(280px, 30dvh)`,
   `overflow-y: auto`, `overscroll-behavior: contain`), so a long checklist stays
   readable without growing the Composer stack and reaching the list's end never

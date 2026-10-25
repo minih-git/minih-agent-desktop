@@ -10,7 +10,8 @@
 import type { RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { CatalogApiStyle } from "@minih-agent/shared";
-import { Button, Field, Input } from "../ui";
+import { Field, Input, TooltipButton } from "../ui";
+import { IconTrash } from "../icons";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
 import { ServiceMonogram } from "./ServiceMonogram";
 import { endpointLabel } from "./service-catalog";
@@ -229,29 +230,31 @@ export function ProviderConnectionFields({
           <div className="provider-setup-field-row provider-setup-custom-auth-row">
             <div className="provider-setup-key">
               <Field label={t("settings.apiKey")} hint={keyHint}>
-                <Input
-                  ref={apiKeyRef}
-                  type="password"
-                  value={apiKey}
-                  placeholder="sk-…"
-                  className="font-mono text-sm-plus"
-                  autoComplete="off"
-                  disabled={saving}
-                  onChange={(event) => onApiKeyChange(event.target.value)}
-                />
+                <div className="provider-setup-key-control">
+                  <Input
+                    ref={apiKeyRef}
+                    type="password"
+                    value={apiKey}
+                    placeholder="sk-…"
+                    className="font-mono text-sm-plus"
+                    autoComplete="off"
+                    disabled={saving}
+                    onChange={(event) => onApiKeyChange(event.target.value)}
+                  />
+                  {hasSavedApiKey && onClearApiKey ? (
+                    <TooltipButton
+                      type="button"
+                      className="icon-btn icon-btn-square"
+                      tooltip={t("settings.clearApiKey")}
+                      ariaLabel={t("settings.clearApiKey")}
+                      disabled={saving}
+                      onClick={onClearApiKey}
+                    >
+                      <IconTrash size={14} aria-hidden />
+                    </TooltipButton>
+                  ) : null}
+                </div>
               </Field>
-              {hasSavedApiKey && onClearApiKey ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="self-start"
-                  disabled={saving}
-                  onClick={onClearApiKey}
-                >
-                  {t("settings.clearApiKey")}
-                </Button>
-              ) : null}
             </div>
             <Field
               label={t("settings.apiStyle")}

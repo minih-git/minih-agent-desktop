@@ -8425,3 +8425,15 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   that ships the API through `engines.minihAgent`; older hosts reject the
   unknown permission. No schema migration or protocol-version bump is needed.
 - See [ADR plugin-learned-memory-read](../../adr/plugin-learned-memory-read.md).
+
+## 2026-10-25 — Selected upstream reliability fixes
+
+- The shared Todo/background-task container starts collapsed and retains one
+  renderer-lifetime expansion state across session switches. Tab choices, badges,
+  task ownership and output remain session-scoped. Session pruning does not reset
+  the container; no Host storage or process-lifetime policy changes.
+- Official DeepSeek effort defaults and precise hostname matching, restored local
+  history continuation, transient disclosure reading protection and inline key
+  removal are adapted without replacing Minih density modes or Router behavior.
+- Provenance and development validation: [selected upstream fixes](../../project/upstream-import-2026-10-25.md).
+  This does not advance the full imported baseline or publish a release.

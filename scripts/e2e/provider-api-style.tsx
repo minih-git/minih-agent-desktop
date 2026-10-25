@@ -113,7 +113,8 @@ globalThis.providerApiStyleProbe = async (reasoningOnly = false) => {
     flushSync(() => element!.click());
   };
   const button = (key: string) => [...document.querySelectorAll<HTMLButtonElement>("button")]
-    .find((element) => element.textContent?.trim() === i18n.t(key));
+    .find((element) => element.getAttribute("aria-label") === i18n.t(key)
+      || element.textContent?.trim() === i18n.t(key));
   const control = (key: string) => {
     const element = button(key);
     assert(element, `missing control ${key}`);
@@ -406,8 +407,19 @@ globalThis.providerApiStyleProbe = async (reasoningOnly = false) => {
       assert(!("authKind" in keepUpdate) && !("secretValue" in keepUpdate),
         `${locale}: blank edit changed the stored authentication`);
       render({ provider: editableKeyProvider });
-      click(control("settings.clearApiKey"));
+      const clearBtn = control("settings.clearApiKey");
+      const keyInputEl = document.querySelector<HTMLInputElement>('input[type="password"]');
+      assert(clearBtn.textContent?.trim() === "" && Boolean(clearBtn.querySelector('svg[aria-hidden="true"]')),
+        `${locale}: clear saved API key is not an icon-only button`);
+      assert(keyInputEl, `${locale}: API key input missing before clear`);
+      const keyRect = keyInputEl!.getBoundingClientRect();
+      const clearRect = clearBtn.getBoundingClientRect();
+      assert(clearRect.left >= keyRect.right && clearRect.top < keyRect.bottom && clearRect.bottom > keyRect.top,
+        `${locale}: clear icon is not beside the API key input`);
+      assert(clearRect.width >= 24 && clearRect.height >= 24, `${locale}: clear icon target is too small`);
+      click(clearBtn);
       const clearedKeyInput = document.querySelector<HTMLInputElement>('input[type="password"]');
+      assert(document.activeElement === clearedKeyInput, `${locale}: clearing the key did not restore focus to the input`);
       assert(clearedKeyInput && !clearedKeyInput.disabled && clearedKeyInput.value === "",
         `${locale}: clearing a saved key disabled the input`);
       assert(rowHints().includes(i18n.t("settings.apiKeyOptionalHint")),

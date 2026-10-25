@@ -1,11 +1,17 @@
 import type { BackgroundTaskSummary } from "../../../lib/api";
 
 /**
- * Per-session view state for the shared Todo/background-task container.
+ * View state for the shared Todo/background-task container.
  *
  * Everything here is renderer memory: never persisted and never sent to the
  * host. The registry stays the source of truth for the processes themselves, so
  * switching a tab or collapsing the container cannot affect them.
+ *
+ * Reading follows the container's lifetime, not the session's, because the
+ * container is one surface the user configures once: the tab choice is
+ * remembered per session, while the collapse is one container-wide condition
+ * that survives switching sessions. Anything else would reopen a container the
+ * user had closed the moment they looked at another session.
  */
 export type DockTab = "todo" | "tasks";
 
@@ -18,12 +24,20 @@ export type DockSessionState = {
   readonly collapsed: boolean;
 };
 
-export type DockViewState = Readonly<Record<string, DockSessionState>>;
+export type DockViewState = Readonly<{
+  /** Per-session entry: the tab choice and the badge. */
+  sessions: Readonly<Record<string, DockSessionState>>;
+  /** Container-wide collapse; independent of whichever session is on screen. */
+  collapsed: boolean;
+}>;
+
+/** The container starts collapsed: the composer keeps its room by default. */
+export const EMPTY_DOCK_VIEW: DockViewState = { sessions: {}, collapsed: true };
 
 export const EMPTY_SESSION_DOCK: DockSessionState = {
   chosenTab: null,
   newCount: 0,
-  collapsed: false,
+  collapsed: EMPTY_DOCK_VIEW.collapsed,
 };
 
 /** The badge value a tab shows; `0` means "no badge". */
@@ -34,7 +48,11 @@ export function sessionDockState(
   sessionId: string | null | undefined,
 ): DockSessionState {
   if (!sessionId) return EMPTY_SESSION_DOCK;
-  return view[sessionId] ?? EMPTY_SESSION_DOCK;
+  const session = view.sessions[sessionId];
+  if (!session) return { ...EMPTY_SESSION_DOCK, collapsed: view.collapsed };
+  return session.collapsed === view.collapsed
+    ? session
+    : { ...session, collapsed: view.collapsed };
 }
 
 function withSession(
@@ -42,8 +60,12 @@ function withSession(
   sessionId: string,
   patch: Partial<DockSessionState>,
 ): DockViewState {
-  const current = view[sessionId] ?? EMPTY_SESSION_DOCK;
-  return { ...view, [sessionId]: { ...current, ...patch } };
+  const current = sessionDockState(view, sessionId);
+  const session = { ...current, ...patch, collapsed: view.collapsed };
+  if (session.chosenTab === current.chosenTab && session.newCount === current.newCount) {
+    return view;
+  }
+  return { ...view, sessions: { ...view.sessions, [sessionId]: session } };
 }
 
 /**
@@ -159,22 +181,23 @@ export function chooseTab(
  *
  * Clicking a tab while collapsed also expands the container — otherwise the
  * click would only swap an invisible panel and appear to do nothing — so this
- * is the one user action that writes both fields.
+ * is the one user action that writes both the tab and the collapse.
  */
 export function selectTab(
   view: DockViewState,
   sessionId: string,
   tab: DockTab,
 ): DockViewState {
-  return withSession(view, sessionId, { chosenTab: tab, collapsed: false });
+  return withSession({ ...view, collapsed: false }, sessionId, { chosenTab: tab });
 }
 
-export function toggleCollapsed(
-  view: DockViewState,
-  sessionId: string,
-): DockViewState {
-  const current = sessionDockState(view, sessionId);
-  return withSession(view, sessionId, { collapsed: !current.collapsed });
+/**
+ * Flip the container's collapse. It belongs to the container, not to the
+ * session on screen, so the answer the user gave is reused everywhere and kept
+ * when they switch sessions.
+ */
+export function toggleCollapsed(view: DockViewState): DockViewState {
+  return { ...view, collapsed: !view.collapsed };
 }
 
 /** Badge markup value: `0` hides it, and long counts collapse to `9+`. */
@@ -189,12 +212,12 @@ export function pruneDockView(
 ): DockViewState {
   let changed = false;
   const next: Record<string, DockSessionState> = {};
-  for (const [id, state] of Object.entries(view)) {
+  for (const [id, state] of Object.entries(view.sessions)) {
     if (liveSessionIds.has(id)) {
       next[id] = state;
     } else {
       changed = true;
     }
   }
-  return changed ? next : view;
+  return changed ? { ...view, sessions: next } : view;
 }

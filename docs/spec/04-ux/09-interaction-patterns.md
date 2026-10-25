@@ -977,11 +977,12 @@ may be retained while exactly one workspace supplies the visible shell context.
 - Activating a group or item header toggles only that level. Closing a parent
   preserves child state, reopening restores it, and sibling groups remain
   independent. Opening a parent is never an expand-all action.
-- A manual item action claims its containing group as user-owned without toggling
-  it. Streaming and completion cannot reopen a manual close or close around
-  content the user opened, focused or selected. Choices survive preference
-  changes, singleton-to-group growth and remounts while the retained session pane
-  lives.
+- An explicit disclosure choice belongs to its own level, never to its ancestors.
+  While focus or selection is inside a level, automatic folding is deferred for
+  it and its ancestors; leaving releases that transient hold. A running turn's
+  groups and groups with visible reasoning stay open by default. Minih density
+  defaults still apply to each item's payload. Manual choices survive preference
+  changes, singleton-to-group growth, remounts and pane eviction in renderer memory.
 - Search/navigation opens the process segment and activity group that own the named
   message, once per reveal request. Item-level targeting is not part of this
   change. Reasoning hidden by the preference stays hidden until the user turns

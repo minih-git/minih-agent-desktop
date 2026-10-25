@@ -127,9 +127,14 @@ Non-official DeepSeek endpoints also set `requiresNonEmptyReasoningReplay` so
 missing reasoning is filled with a documented placeholder instead of `""`
 (OpenCode / third-party relays reject empty echoes after compaction; see
 ADR 0256 / #296). Official `deepseek.com` rows keep empty-string fill (#223).
-Both official and relay rows set `supportsReasoningEffort: false`; DeepSeek
-does not accept the generic OpenAI `reasoning_effort` request field even when
-thinking is enabled. The overlay does not change `thinkingFormat`.
+Relay rows set `supportsReasoningEffort: false` because non-official endpoints
+may reject the generic OpenAI `reasoning_effort` field. Official `deepseek.com`
+hosts leave the flag to pi-ai so the selected effort accompanies enabled thinking.
+Official matching parses the URL hostname: only `deepseek.com` and its subdomains
+qualify, never a substring in a relay path, userinfo or unrelated hostname.
+An explicit saved per-model boolean still overrides either automatic default.
+Minih Router remains a relay; its routing, credentials and fallback are unchanged.
+The overlay does not change `thinkingFormat`.
 
 Anthropic Messages requests set `forceAdaptiveThinking: true` when the
 models.dev record publishes a reasoning `effort` option and no

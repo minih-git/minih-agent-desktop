@@ -83,13 +83,14 @@ centres it and the label keeps its truncation; reduced-motion support remains.
 
 Each header toggles only its own level. Parent and child states are independent:
 closing a parent preserves descendant choices, reopening restores them, and
-sibling groups do not form an accordion. Manual interaction with an item claims
-its containing group as user-owned without toggling it; completion must not close
-a container around content the user opened, focused, or selected. Manual choices
-survive streaming, completion, preference changes, reparenting from singleton to
-group, and row remounts while the owning retained session pane remains alive.
-Pane eviction, session deletion, or renderer restart releases this presentation
-memory; it is not stored in messages or host settings.
+sibling groups do not form an accordion. An explicit choice belongs only to its
+own level. Focus and selection temporarily hold that level and its ancestors open;
+leaving releases the hold without recording a choice. Running-turn groups and
+groups with visible reasoning stay open by default; settled plain-tool groups use
+the four-row default. Minih density-specific item defaults remain unchanged.
+Manual choices survive streaming, completion, preference changes, reparenting,
+row remounts and pane eviction in renderer memory. Session deletion or renderer
+restart releases that memory; nothing is stored in messages or host settings.
 
 Search/navigation reveals the ancestor path its target needs: the process segment
 and the activity group that own the named message. Item-level targeting is not

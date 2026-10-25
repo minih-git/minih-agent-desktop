@@ -45,12 +45,21 @@ app.setPath("userData", path.join(__dirname, "profile"));
 app.whenReady().then(async () => {
   const window = new BrowserWindow({ show: false, width: 1000, height: 600,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
-  window.webContents.on("console-message", (event) => console.error(event.message));
+  const captures = [];
+  window.webContents.on("console-message", (event) => {
+    console.error(event.message);
+    if (event.message === "READING_CONTINUATION_SCREENSHOT" && process.env.PI_SCRATCH_DIR) {
+      captures.push(window.webContents.capturePage().then((image) =>
+        require("node:fs/promises").writeFile(path.join(process.env.PI_SCRATCH_DIR, "reading-continuation.png"), image.toPNG())));
+    }
+  });
   try {
     await window.loadFile(path.join(__dirname, "index.html"));
     const scrolling = await window.webContents.executeJavaScript("globalThis.transcriptReadingPositionProbe()");
     const session = scrolling.ok ? await window.webContents.executeJavaScript("globalThis.sessionReadingPositionProbe()") : null;
-    const result = { ok: scrolling.ok && session?.ok, scrolling, session };
+    const continuation = session?.ok ? await window.webContents.executeJavaScript("globalThis.transcriptContinuationProbe()") : null;
+    const result = { ok: scrolling.ok && session?.ok && continuation?.ok, scrolling, session, continuation };
+    await Promise.all(captures);
     console.log("READING_POSITION_PROBE " + JSON.stringify(result));
     app.exit(result.ok ? 0 : 1);
   } catch (error) { console.error(error); app.exit(1); }
@@ -69,7 +78,7 @@ app.whenReady().then(async () => {
   assert(line, `No probe result (exit=${code}): ${output.slice(-4000)}`);
   const result = JSON.parse(line.slice("READING_POSITION_PROBE ".length));
   console.log(JSON.stringify(result));
-  assert.equal(code, 0, result.scrolling?.error ?? result.session?.error ?? output.slice(-4000));
+  assert.equal(code, 0, result.scrolling?.error ?? result.session?.error ?? result.continuation?.error ?? output.slice(-4000));
   assert.equal(result.ok, true);
 } finally {
   await rm(temp, { recursive: true, force: true });

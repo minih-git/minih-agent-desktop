@@ -27,7 +27,8 @@ entitled to it.
 - **Name**, **Base URL** and **API Key** are all on screen at once. Custom endpoints
   infer authentication from the effective key, without a no-auth switch. A new
   blank/whitespace key saves anonymously; blank editing retains the saved key.
-  Clear saved key stages removal until Save and excludes the old key from discovery;
+  Clear saved key is a localized, accessible icon button beside the input, not
+  an extra row. It stages removal until Save and excludes the old key from discovery;
   cancel leaves credentials unchanged, and a replacement key takes precedence.
   Named services, including Minih Router, retain their authentication defaults.
 - A model's effective Chat Completions format exposes Auto / Send / Do not send
