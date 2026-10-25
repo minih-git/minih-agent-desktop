@@ -915,6 +915,10 @@ const { startHost } = createHostRuntime({
   superviseRestart,
   isQuitting: () => mainState.quitting,
   ensureSystemProxyRelay,
+  // The phone shows the same committed checklist the desktop dock does. The
+  // bridge is created after this runtime exists, so it is read at call time
+  // instead of captured here.
+  onTodosChanged: (snapshot) => runtimeState.agentHostBridge?.agentHost.applyTodosChanged(snapshot),
 });
 
 runtimeLifecycle = createRuntimeLifecycle({

@@ -1,4 +1,11 @@
-import { ErrorCodes, IPC, type AgentEventEnvelope, type PlanExecutionFinishStatus, type Risk } from "@minih-agent/shared";
+import {
+  ErrorCodes,
+  IPC,
+  type AgentEventEnvelope,
+  type PlanExecutionFinishStatus,
+  type Risk,
+  type SessionTodoSnapshot,
+} from "@minih-agent/shared";
 import { assertLinuxGlibcSupported } from "../linux-glibc";
 import { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
@@ -24,6 +31,12 @@ export type HostRuntimeDependencies = {
   sendToRenderer: (channel: string, payload: unknown) => void;
   emitAgentEvent: (envelope: AgentEventEnvelope) => void;
   togglePluginLauncher: () => Promise<void>;
+  /**
+   * The Host committed a new checklist for a session (host-core
+   * `todos.changed`). The remote Agent Host republishes it on `session.changed`
+   * so a phone shows the same rows the desktop dock does.
+   */
+  onTodosChanged?: (snapshot: SessionTodoSnapshot) => void;
   finishTurn: FinishTurn;
   finishApprovedExecution: (
     executionId: string,
@@ -70,6 +83,7 @@ export function createHostRuntime({
   superviseRestart,
   isQuitting,
   ensureSystemProxyRelay,
+  onTodosChanged,
 }: HostRuntimeDependencies): {
   wireHost: (host: HostProcess) => void;
   startHost: () => Promise<void>;
@@ -334,6 +348,7 @@ export function createHostRuntime({
       sendToRenderer(IPC.event.plansChanged, params);
     } else if (method === "todos.changed") {
       sendToRenderer(IPC.event.todosChanged, params);
+      onTodosChanged?.(params as SessionTodoSnapshot);
     } else if (method === "configSync.changed") {
       sendToRenderer(IPC.event.configSyncChanged, params);
     } else if (method === "configSync.progress") {
