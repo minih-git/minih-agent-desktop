@@ -8,6 +8,39 @@
 
 ## 1. Goals
 
+### E2E-UPSTREAM-20261025-selected-reliability
+
+- **Preconditions:** Request worktree with task-local workspace builds, reused
+  installed dependencies and isolated Chromium profiles. Synthetic IPC/provider
+  boundaries only; no user Desktop, real credentials or paid models.
+- **Steps:** Capture official DeepSeek requests for low/high/max/off and explicit
+  send/omit; repeat relay defaults with Minih Router. Return to cached/evicted
+  reading pages, scroll through continuation and then use explicit search. Complete
+  turns after body press, focus, text selection and nested toggles in all three
+  densities. Switch sessions with the task container open/closed. Clear a saved
+  custom key using the inline icon, then cancel, replace or save.
+- **Expected:** Official effort is sent by default; relays retain suppression and
+  explicit overrides win. Reading restores without narrowing, continues bounded
+  local pages without viewport movement or model-input writes, and never invents
+  remote forward cursors. Search keeps manual paging. Focus/selection holds are
+  transient, explicit choices remain local and survive pane eviction, and listeners
+  are removed on final unmount. Running groups and visible reasoning stay open;
+  density-specific item defaults remain. The task container starts closed and
+  retains expansion across sessions; badges/tabs/output stay session-scoped. The
+  localized key icon is beside its input with a >=24px target and restores focus;
+  staged removal, named presets and Router routes remain unchanged.
+- **Automation:** `provider-presets.test.ts`, `provider-reasoning-effort.test.ts`,
+  `provider-binding.test.ts`, Desktop reading/disclosure/folding/task/custom-key
+  tests; `e2e-transcript-render.mjs`, `e2e-background-tasks.mjs`,
+  `e2e-provider-api-style.mjs`, `e2e-transcript-reading-position.mjs`.
+- **Specs:** Runtime provider model/catalog; UX components §1.6/§4/§11.3a and
+  interaction patterns §4; model reasoning override and turn-display ADRs.
+- **Acceptance:** B / C / E / Quality / Accessibility.
+- **Milestone:** Selected upstream maintenance, 2026-10-25.
+- **Status:** Targeted offline tests and isolated macOS Electron/Chromium probes
+  passed in this worktree; real provider/Host persistence and other native
+  platforms are not exercised by these UI fixtures.
+
 ### E2E-CHAT-tool-call-identity
 
 - **Preconditions:** Request worktree with reused dependencies and an isolated
@@ -1788,9 +1821,11 @@ identify the platform validation still needed.
   turns that had no thinking. Non-official DeepSeek-family relays use real
   retained thinking when available, otherwise the documented non-empty
   placeholder from ADR 0256 — never a silent empty string after compaction.
-  The request omits the generic OpenAI `reasoning_effort` field because
-  DeepSeek endpoints do not accept it, while the selected thinking mode still
-  follows the endpoint's own wire format.
+  Non-official relays, including Minih Router, omit `reasoning_effort` by
+  default. Official DeepSeek hosts retain pi-ai detection and send the selected
+  effort beside enabled thinking; off sends only disabled thinking. Explicit
+  saved send/omit overrides still win on either endpoint. Parsed hostname
+  matching rejects relay path, userinfo and suffix lookalikes.
   The request does not switch `thinkingFormat` to `"deepseek"` solely because
   the model id contains `"deepseek"`. Official `api.deepseek.com` rows keep
   URL-based DeepSeek `thinkingFormat` from pi-ai.
@@ -10715,6 +10750,7 @@ selection already in place shows it without waiting for another event.
 
 | Acceptance | Scenarios |
 |---|---|
+| B / C / E / Quality / Accessibility — Selected upstream fixes 2026-10-25 | E2E-UPSTREAM-20261025-selected-reliability |
 | C / Quality / Accessibility — Right-side notification cards | E2E-NOTIFICATION-right-side-cards |
 | C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |

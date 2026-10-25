@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { useTranscriptReadingPosition } from "../../apps/desktop/src/hooks/use-transcript-reading-position";
 import { sessionReadingState, getTranscriptReadingPosition, type TranscriptReadingPosition } from "../../apps/desktop/src/lib/transcript-reading-position";
 import "./session-reading-position";
+import "./transcript-continuation";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { UiMessage } from "@minih-agent/shared";

@@ -118,8 +118,10 @@ OpenAI 风格的 Copilot 线路 API 仍将令牌作为请求密钥签名；所�
 `reasoning_content`。非官方 DeepSeek 端点还会设置 `requiresNonEmptyReasoningReplay`，
 用文档化的非空占位符而不是 `""` 填补缺失推理（OpenCode / 第三方中转在压缩后拒绝空回传；
 见 ADR 0256 / #296）。官方 `deepseek.com` 行仍使用空串回填（#223）。该覆盖不改
-`thinkingFormat`。官方与中转行都会设置 `supportsReasoningEffort: false`；即使开启思考，
-DeepSeek 也不接受通用 OpenAI 的 `reasoning_effort` 请求字段。
+`thinkingFormat`。中转行默认设置 `supportsReasoningEffort: false`，以兼容拒绝该字段的端点；
+官方端点则交由 pi-ai 检测，使选中的思考强度随开启的思考一起发送。官方识别只接受解析后的
+`deepseek.com` 主机名及其子域，不接受中转路径、userinfo 或其他域名中的子串。
+显式保存的每模型布尔选择仍优先于自动默认；Minih Router 仍按中转处理，路由、认证与回退不变。
 
 当 Pi catalog 记录发布了推理 `effort` 选项且没有 `budget_tokens` 选项时
 （例如 Opus 4.7+、Opus 5.x、Fable），Anthropic Messages 请求会设置

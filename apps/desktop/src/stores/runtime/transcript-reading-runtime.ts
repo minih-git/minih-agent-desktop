@@ -70,10 +70,15 @@ export function createTranscriptReadingRuntime({ get, set }: StoreAccess, read: 
       if (signal.aborted || get().activeSessionId !== sessionId || !position.messageId) return false;
       const previous = get().transcriptViews[sessionId];
       const range = currentView(sessionId);
-      if (get().selectingSessionId !== sessionId &&
-        range.messages.some((message) => message.id === position.messageId)) return true;
       // A user navigation already in flight always wins over automatic restore.
       if (range.focus || range.loading) return false;
+      if (range.messages.some((message) => message.id === position.messageId)) {
+        // A retained page already containing the bookmark must survive the
+        // revalidation swap, rather than being narrowed to a new bounded read.
+        if (get().selectingSessionId === sessionId && !previous?.restored)
+          publish(sessionId, { ...range, restored: true });
+        return true;
+      }
       const pending: TranscriptView = { ...range, restored: true, loading: "target" };
       const rollback = () => {
         if (get().transcriptViews[sessionId] !== pending) return;

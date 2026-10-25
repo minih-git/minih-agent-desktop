@@ -93,8 +93,29 @@ describe("DeepSeek reasoning replay", () => {
       deepseekRequestCompat({ baseUrl: "https://api.deepseek.com" }),
     ).toEqual({
       requiresReasoningContentOnAssistantMessages: true,
-      supportsReasoningEffort: false,
     });
+  });
+
+  it.each([
+    "https://api.deepseek.com/v1",
+    "https://DEEPSEEK.com/v1",
+    " https://api.deepseek.com/v1 ",
+  ])("leaves official reasoning effort to pi-ai for %s", (baseUrl) => {
+    expect(isOfficialDeepSeekEndpoint({ baseUrl })).toBe(true);
+    expect(deepseekRequestCompat({ baseUrl, modelId: "deepseek-flash" }))
+      .not.toHaveProperty("supportsReasoningEffort");
+  });
+
+  it.each([
+    "https://api.deepseek.com.evil.test/v1",
+    "https://relay.example.test/v1/deepseek.com",
+    "https://deepseek.com@relay.example.test/v1",
+    "not a URL deepseek.com",
+    "https://router.hmini.org/v1",
+  ])("keeps relay compatibility for %s", (baseUrl) => {
+    expect(isOfficialDeepSeekEndpoint({ baseUrl })).toBe(false);
+    expect(deepseekRequestCompat({ baseUrl, modelId: "deepseek-v4.1-flash" }))
+      .toMatchObject({ supportsReasoningEffort: false, requiresNonEmptyReasoningReplay: true });
   });
 
   it("matches aggregator and custom DeepSeek-family models without a deepseek.com URL", () => {

@@ -29,13 +29,16 @@ function providerFor(
   };
 }
 
-async function chatCompletionsBody(provider: RuntimeProviderConfig): Promise<Record<string, unknown>> {
+async function chatCompletionsBody(
+  provider: RuntimeProviderConfig,
+  reasoning: "low" | "high" | "max" | null = "high",
+): Promise<Record<string, unknown>> {
   const bodies: Record<string, unknown>[] = [];
   const model = buildProviderModel(provider);
   const result = await createProviderModels(provider, model).streamSimple(model, {
     messages: [{ role: "user", content: "hello", timestamp: 0 }],
   }, {
-    reasoning: "high",
+    ...(reasoning ? { reasoning } : {}),
     maxRetries: 0,
     fetch: async (input, init) => {
       bodies.push(await new Request(input, init).json() as Record<string, unknown>);
@@ -130,27 +133,37 @@ describe("per-model Chat Completions reasoning effort override", () => {
   });
 
   it.each([undefined, null, false, true])(
-    "keeps the official DeepSeek automatic guard with saved override %s",
-    (override) => {
+    "preserves the official DeepSeek saved override %s",
+    async (override) => {
       const provider = {
         ...providerFor("deepseek-v4.1-flash", override),
         vendorKey: "deepseek",
         baseUrl: "https://api.deepseek.com",
       };
-      expect(buildProviderModel(provider).compat).toMatchObject({
-        supportsReasoningEffort: override === true,
-      });
+      const compat = buildProviderModel(provider).compat ?? {};
+      if (typeof override === "boolean") {
+        expect(compat).toHaveProperty("supportsReasoningEffort", override);
+      } else {
+        expect(compat).not.toHaveProperty("supportsReasoningEffort");
+      }
+      const body = await chatCompletionsBody(provider);
+      expect(body.thinking).toEqual({ type: "enabled" });
+      expect(body.reasoning_effort).toBe(override === false ? undefined : "high");
     },
   );
 
-  it("lets an explicit true opt official DeepSeek in, while absent keeps the guard", async () => {
-    const official = (override?: boolean) => ({
+  it.each([undefined, false, true])("keeps Minih Router relay defaults and saved override %s", async (override) => {
+    const provider = {
       ...providerFor("deepseek-v4.1-flash", override),
-      vendorKey: "deepseek",
-      baseUrl: "https://api.deepseek.com",
+      vendorKey: "minih-router",
+      baseUrl: "https://router.hmini.org/v1",
+    };
+    expect(buildProviderModel(provider).compat).toMatchObject({
+      supportsReasoningEffort: override === true,
+      requiresNonEmptyReasoningReplay: true,
     });
-    expect((await chatCompletionsBody(official(true))).reasoning_effort).toBe("high");
-    expect((await chatCompletionsBody(official())).reasoning_effort).toBeUndefined();
+    expect((await chatCompletionsBody(provider)).reasoning_effort)
+      .toBe(override === true ? "high" : undefined);
   });
 
   it("does not mistake catalog compatibility for an explicit saved override", () => {
@@ -206,4 +219,20 @@ describe("per-model Chat Completions reasoning effort override", () => {
       expect(body).not.toHaveProperty("reasoning_effort");
     },
   );
+});
+
+describe("official DeepSeek effort values on the wire", () => {
+  it.each(["low", "high", "max", null] as const)("sends selected level %s without changing the thinking toggle", async (level) => {
+    const provider: RuntimeProviderConfig = {
+      ...providerFor("deepseek-v4.1-flash"),
+      vendorKey: "deepseek", baseUrl: "https://api.deepseek.com/v1",
+      supportedThinkingLevels: ["off", "low", "high", "max"],
+      modelConfig: modelConfigWithBinding(genericModelConfig("deepseek-v4.1-flash"), {
+        contextWindow: 128_000, maxTokens: 8192, thinkingLevels: ["off", "low", "high", "max"],
+      }),
+    };
+    const body = await chatCompletionsBody(provider, level);
+    expect(body.thinking).toEqual({ type: level ? "enabled" : "disabled" });
+    expect(body.reasoning_effort).toBe(level ?? undefined);
+  });
 });

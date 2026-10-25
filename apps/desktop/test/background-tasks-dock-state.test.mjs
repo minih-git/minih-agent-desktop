@@ -11,6 +11,7 @@ import test from "node:test";
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const {
+  EMPTY_DOCK_VIEW,
   EMPTY_SESSION_DOCK,
   badgeLabel,
   chooseTab,
@@ -36,19 +37,36 @@ const task = (id, state = "running") => ({
   elapsedMs: 1_000,
 });
 
-const view = (patch) => ({ [SESSION]: { ...EMPTY_SESSION_DOCK, ...patch } });
+/** A container the user has opened, with one session's state patched in. */
+const view = (patch) => ({
+  sessions: { [SESSION]: { ...EMPTY_SESSION_DOCK, ...patch, collapsed: false } },
+  collapsed: false,
+});
+/** A view holding exactly one session entry, as a tab choice would leave it. */
+const withSessionState = (state, id, patch) => ({
+  ...state,
+  sessions: { ...state.sessions, [id]: { ...EMPTY_SESSION_DOCK, ...patch, collapsed: state.collapsed } },
+});
+const viewOf = (state) => ({ sessions: { [SESSION]: state }, collapsed: state.collapsed });
 
 test("an unknown session starts from the empty state", () => {
-  assert.equal(sessionDockState({}, SESSION), EMPTY_SESSION_DOCK);
-  assert.equal(sessionDockState(view({ collapsed: true }), SESSION).collapsed, true);
+  assert.deepEqual(sessionDockState(EMPTY_DOCK_VIEW, SESSION), EMPTY_SESSION_DOCK);
+  assert.equal(sessionDockState(view({ chosenTab: "tasks" }), SESSION).chosenTab, "tasks");
   // No session means no view state to read.
-  assert.equal(sessionDockState(view({ collapsed: true }), null), EMPTY_SESSION_DOCK);
+  assert.equal(sessionDockState(view({ chosenTab: "tasks" }), null), EMPTY_SESSION_DOCK);
+});
+
+test("the container starts collapsed, so the composer keeps its room", () => {
+  assert.equal(EMPTY_DOCK_VIEW.collapsed, true);
+  assert.equal(sessionDockState(EMPTY_DOCK_VIEW, SESSION).collapsed, true);
+  // A session that never had its own entry reads the container-wide answer.
+  assert.equal(sessionDockState(EMPTY_DOCK_VIEW, "session-2").collapsed, true);
 });
 
 test("clicking a tab while collapsed also expands the container", () => {
   // D15: the click must not only swap an invisible panel, or it would look
   // like it did nothing.
-  const collapsed = view({ collapsed: true });
+  const collapsed = { ...view({}), collapsed: true };
   const opened = selectTab(collapsed, SESSION, "tasks");
 
   assert.equal(sessionDockState(opened, SESSION).collapsed, false);
@@ -56,14 +74,14 @@ test("clicking a tab while collapsed also expands the container", () => {
 });
 
 test("clicking the already-active tab while collapsed still expands", () => {
-  const collapsed = view({ collapsed: true, chosenTab: "tasks" });
+  const collapsed = { ...view({ chosenTab: "tasks" }), collapsed: true };
   const opened = selectTab(collapsed, SESSION, "tasks");
   assert.equal(sessionDockState(opened, SESSION).collapsed, false);
 });
 
 test("only a user action writes the remembered tab", () => {
   // Folding a snapshot into the badge must never overwrite what the user chose.
-  const chosen = chooseTab({}, SESSION, "todo");
+  const chosen = chooseTab(EMPTY_DOCK_VIEW, SESSION, "todo");
   const afterBadge = observeSessionTasks(chosen, SESSION, [task("a")], {
     knownIds: new Set(),
     tasksVisible: false,
@@ -89,9 +107,9 @@ test("with nothing remembered the content decides, running work first", () => {
 
 test("a tab whose side is empty is never selected", () => {
   // A remembered tab that lost its content falls back to the other side.
-  const remembered = { ...EMPTY_SESSION_DOCK, chosenTab: "tasks" };
+  const remembered = { ...EMPTY_SESSION_DOCK, chosenTab: "tasks", collapsed: false };
   assert.equal(resolveDockTab(remembered, true, false, 0, 0), "todo");
-  const rememberedTodo = { ...EMPTY_SESSION_DOCK, chosenTab: "todo" };
+  const rememberedTodo = { ...EMPTY_SESSION_DOCK, chosenTab: "todo", collapsed: false };
   assert.equal(resolveDockTab(rememberedTodo, false, true, 0, 0), "tasks");
 });
 
@@ -104,13 +122,11 @@ test("one populated side renders alone, so the tab list is not rendered", () => 
 
 test("a collapsed container never counts as looking at the tasks panel", () => {
   const sides = { hasTodo: true, hasTasks: true, runningTasks: 2, inProgressTodos: 0 };
-  assert.equal(tasksPanelVisible(EMPTY_SESSION_DOCK, sides), true);
-  assert.equal(
-    tasksPanelVisible({ ...EMPTY_SESSION_DOCK, collapsed: true }, sides),
-    false,
-  );
+  const open = { ...EMPTY_SESSION_DOCK, collapsed: false };
+  assert.equal(tasksPanelVisible(open, sides), true);
+  assert.equal(tasksPanelVisible(EMPTY_SESSION_DOCK, sides), false);
   // The todo panel on screen is not the tasks panel either.
-  const onTodo = { ...EMPTY_SESSION_DOCK, chosenTab: "todo" };
+  const onTodo = { ...open, chosenTab: "todo" };
   assert.equal(tasksPanelVisible(onTodo, sides), false);
 });
 
@@ -118,21 +134,21 @@ test("the render rule and the badge rule share one tab decision", () => {
   // Both read `resolveDockTabFor`, so they cannot disagree about which panel is
   // on screen. This is the invariant the old duplicated call broke.
   const sides = { hasTodo: true, hasTasks: true, runningTasks: 1, inProgressTodos: 1 };
-  const state = EMPTY_SESSION_DOCK;
+  const state = { ...EMPTY_SESSION_DOCK, collapsed: false };
   assert.equal(resolveDockTabFor(state, sides), "tasks");
   assert.equal(tasksPanelVisible(state, sides), true);
 });
 
 test("a new task raises the badge only while the tasks panel is not on screen", () => {
   const seen = new Set();
-  const raised = observeSessionTasks({}, SESSION, [task("a"), task("b")], {
+  const raised = observeSessionTasks(EMPTY_DOCK_VIEW, SESSION, [task("a"), task("b")], {
     knownIds: seen,
     tasksVisible: false,
   });
   assert.equal(sessionDockState(raised.view, SESSION).newCount, 2);
   assert.deepEqual([...raised.knownIds].sort(), ["a", "b"]);
 
-  const quiet = observeSessionTasks({}, SESSION, [task("a")], {
+  const quiet = observeSessionTasks(EMPTY_DOCK_VIEW, SESSION, [task("a")], {
     knownIds: new Set(),
     tasksVisible: true,
   });
@@ -140,7 +156,7 @@ test("a new task raises the badge only while the tasks panel is not on screen", 
 });
 
 test("the same snapshot re-read does not count a task twice", () => {
-  const first = observeSessionTasks({}, SESSION, [task("a")], {
+  const first = observeSessionTasks(EMPTY_DOCK_VIEW, SESSION, [task("a")], {
     knownIds: new Set(),
     tasksVisible: false,
   });
@@ -154,7 +170,7 @@ test("the same snapshot re-read does not count a task twice", () => {
 });
 
 test("a task that is already finished is not new work", () => {
-  const finished = observeSessionTasks({}, SESSION, [task("a", "exited")], {
+  const finished = observeSessionTasks(EMPTY_DOCK_VIEW, SESSION, [task("a", "exited")], {
     knownIds: new Set(),
     tasksVisible: false,
   });
@@ -162,7 +178,7 @@ test("a task that is already finished is not new work", () => {
 });
 
 test("entering the tasks tab is the only clear point for the badge", () => {
-  const raised = observeSessionTasks({}, SESSION, [task("a")], {
+  const raised = observeSessionTasks(EMPTY_DOCK_VIEW, SESSION, [task("a")], {
     knownIds: new Set(),
     tasksVisible: false,
   });
@@ -180,9 +196,28 @@ test("entering the tasks tab is the only clear point for the badge", () => {
 });
 
 test("collapse is one container-wide condition, both tabs share it", () => {
-  const collapsed = toggleCollapsed({}, SESSION);
+  const opened = toggleCollapsed(EMPTY_DOCK_VIEW);
+  assert.equal(opened.collapsed, false);
+  assert.equal(sessionDockState(opened, SESSION).collapsed, false);
+  const collapsed = toggleCollapsed(opened);
+  assert.equal(collapsed.collapsed, true);
   assert.equal(sessionDockState(collapsed, SESSION).collapsed, true);
-  assert.equal(sessionDockState(toggleCollapsed(collapsed, SESSION), SESSION).collapsed, false);
+});
+
+test("a closed container stays closed after switching sessions", () => {
+  // The regression: the collapse used to be stored per session, so the next
+  // session's own default reopened what the user had just closed.
+  const closed = viewOf({ ...EMPTY_SESSION_DOCK, chosenTab: "tasks" });
+  assert.equal(sessionDockState(closed, SESSION).collapsed, true);
+  assert.equal(sessionDockState(closed, "session-2").collapsed, true);
+  // The tab choice stays per session, the collapse does not.
+  assert.equal(sessionDockState(closed, "session-2").chosenTab, null);
+
+  // Entering a tab is the one user action that expands the shared container.
+  const reopened = selectTab(closed, "session-2", "todo");
+  assert.equal(reopened.collapsed, false);
+  assert.equal(sessionDockState(reopened, SESSION).collapsed, false);
+  assert.equal(sessionDockState(reopened, SESSION).chosenTab, "tasks");
 });
 
 test("badge text hides at zero and collapses long counts", () => {
@@ -193,12 +228,15 @@ test("badge text hides at zero and collapses long counts", () => {
 });
 
 test("view state is dropped for sessions that no longer exist", () => {
-  const kept = toggleCollapsed(chooseTab({}, SESSION, "tasks"), SESSION);
-  const both = toggleCollapsed(kept, "session-2");
+  // A session that has its own entry, with no second session ever seen.
+  const kept = withSessionState(EMPTY_DOCK_VIEW, SESSION, { chosenTab: "tasks" });
+  const both = toggleCollapsed(kept);
 
   // Pruning the dead session rebuilds the map, so identity is not the contract;
   // the surviving entry must be untouched.
-  assert.deepEqual(pruneDockView(both, new Set([SESSION])), kept);
+  const pruned = pruneDockView(both, new Set([SESSION]));
+  assert.deepEqual(pruned.sessions, kept.sessions);
+  assert.equal(pruned.collapsed, both.collapsed);
   // An unchanged map keeps its identity so a render is not forced.
   assert.equal(pruneDockView(kept, new Set([SESSION])), kept);
 });

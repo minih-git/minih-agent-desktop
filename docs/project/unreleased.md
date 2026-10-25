@@ -1,4 +1,12 @@
 # Unreleased changes
+- Official DeepSeek endpoints receive the selected thinking effort by default;
+  relay defaults and explicit per-model send/omit settings remain intact.
+- Restored conversation reading continues automatically without narrowing cached
+  pages or moving the viewport. Automatic folding respects temporary focus and
+  selection without pinning ancestor choices; Minih density modes remain intact.
+- The Todo/background-task dock starts collapsed and keeps its expansion across
+  sessions. Saved custom API keys have an accessible clear icon beside the input;
+  removal remains staged until Save.
 - Isolated-session file references open the branch copy instead of the parent
   checkout. Revisiting a conversation restores an unpinned reading bookmark
   even when the follow flag is stale. Large local projects can find deep files
