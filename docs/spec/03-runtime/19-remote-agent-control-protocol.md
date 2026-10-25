@@ -542,6 +542,42 @@ type ProjectSummary = {
 has more than one Host. `ProjectSummary` never contains an absolute path unless
 the principal has the path-disclosure scope.
 
+### 5.8 Session checklist
+
+```ts
+type SessionTodo = {
+  content: string
+  status: "pending" | "in_progress" | "completed" | "cancelled"
+  priority?: "high" | "medium" | "low"
+}
+
+type SessionTodos = {
+  revision: number
+  updatedAt: string
+  items: SessionTodo[]
+}
+```
+
+`RacpSession` carries the session's committed checklist as the optional `todos`
+field. The field is **additive**: a Host that keeps no checklist omits it, and a
+client that predates it ignores it, so neither side needs a version gate.
+
+- The rows are host-core's committed ones, never a model's or a client's reading
+  of a `TodoWrite` call: a refused or partly applied write changes nothing here.
+- `revision` grows on every committed write. A client that already holds a
+  higher revision drops the older copy instead of showing a list the Host has
+  already replaced.
+- `updatedAt` is an ISO instant, like every other RACP timestamp.
+- The list is capped at 50 rows, which is the Host's own limit; a client must
+  render every row it receives.
+- It travels with the session record: `session/attach` (both the `session` and
+  its `snapshot`), `session/get`, `session/list`, and every `session.changed`
+  the Host publishes after a committed write. There is no separate operation and
+  no separate event kind — a checklist belongs to the session, and a new kind
+  would make clients that ignore it miss a session update they already handle.
+- A cleared checklist (`revision` > 0 with no rows) means "nothing left": the
+  client removes its display instead of keeping rows the Host no longer has.
+
 ## 6. Operation catalog
 
 ### 6.1 v1 operations

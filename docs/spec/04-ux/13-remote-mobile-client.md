@@ -2187,3 +2187,28 @@ The gateway can open each model to phones, and the phone obeys.
   like an image-only one, so turning it off cannot migrate a user's remembered
   chat model into the image slot — a switch the operator may flip back must not
   rewrite saved choices.
+
+### 19.14 The session checklist (2026-10-25)
+
+A conversation's tasks are part of the session, so the phone reads them from the
+session record (protocol §5.8) instead of parsing `TodoWrite` calls.
+
+- One compact bar above the composer: the progress count (`2/4`) and the row in
+  progress, truncated to a single line. Tapping it opens the whole list in a
+  sheet, each row carrying a status mark (pending, in progress, completed,
+  cancelled with a strike-through).
+- The count follows the desktop dock's rule through one shared function
+  (`todoCounts` in `@minih-agent/shared`): a cancelled row leaves the
+  denominator instead of counting as done, so the two clients can never disagree
+  about "3/4".
+- Nothing to show, nothing drawn. A Host that keeps no checklist, a list with no
+  rows, and a list whose rows are all completed or cancelled all hide the bar: a
+  390 px conversation has no room for a finished list, and a finished list is not
+  a live task.
+- The bar sits above the decision cards. An approval or a question is what the
+  reader must act on now; the tasks are context.
+- Updates arrive on `session.changed`. A list the Host has already replaced (a
+  lower `revision`) is dropped, so a phone never shows a checklist that went
+  backwards, whichever order the event and the snapshot arrive in.
+- It requires a Host that sends the field. An older desktop draws no bar and
+  reports no error.
