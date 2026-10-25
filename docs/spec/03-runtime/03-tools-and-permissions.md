@@ -29,6 +29,7 @@ Let the agent get things done, but stay under control by default.
 |---|---|---|
 | `Read` | low | Read files within the workspace; returns line-numbered content and a `[path#TAG]` header |
 | `new_context` | low | Start a new context window at the next turn boundary; takes no parameters and changes no environment state |
+| `ContextUsage` | low | Report tokens in use, the model window, and tokens left before automatic compaction; takes no parameters and changes nothing |
 | `Glob` | low | List files by pattern |
 | `Grep` | low | Content search; uses system `rg` when installed, else in-process; mints a per-file `tag` |
 | `BrowserPreview` | low | Open a workspace-relative preview in the bundled Browser plugin (fails if `pi.browser` is disabled) |
@@ -681,7 +682,9 @@ for the current key-log policy.
 `new_context` is available in every mode and needs no confirmation: it only asks
 the runtime to compact at the next turn boundary, which the host would do on its
 own once the hard budget is reached (see
-[02-agent-runtime](02-agent-runtime.md) §5.1). A submit
+[02-agent-runtime](02-agent-runtime.md) §5.1). `ContextUsage` is available in
+every mode and needs no confirmation: it only reads the session's own context
+budget. A submit
 tool is available only in its own contract mode and must be the only tool call in its assistant batch. It preserves
 the exact Markdown bytes in a new unique artifact under the kind's directory
 (`.pi/plan/*.md` for `SubmitPlan`, `.pi/goal/*.md` for `SubmitGoal`)
@@ -709,7 +712,7 @@ A document may opt into the parent session's live tool catalog with
 the runtime unions `toolCatalog` keys (including deferred plugin/MCP tools)
 with any assignable extras, then drops `Task` / `TaskWait` / `TaskList` /
 `TaskStop`, `EnterPlanMode` / `EnterGoalMode`, `TodoWrite`, `asktool`,
-`new_context`, `ToolSearch`, the learned-memory tools `SessionHistorySearch` /
+`new_context`, `ContextUsage`, `ToolSearch`, the learned-memory tools `SessionHistorySearch` /
 `MemorySearch` / `MemoryRemember`, and the session-messaging tools `SessionList` /
 `SessionSend` / `SessionResult` / `SessionCreate`.
 Builtins do not opt in. `inherit` is visible in the Markdown and

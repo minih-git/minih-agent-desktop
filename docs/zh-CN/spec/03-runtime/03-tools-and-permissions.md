@@ -32,6 +32,7 @@
 |---|---|---|
 | `Read` | 低 | 读取工作区中的文件；返回带行号的内容和 `[path#TAG]` 头 |
 | `new_context` | 低 | 在下一个回合边界处启动一个新的上下文窗口；不接受任何参数并且不改变环境状态 |
+| `ContextUsage` | 低 | 报告已用 token、模型窗口以及距自动压缩还剩的 token；不接受任何参数且不改变任何状态 |
 | `Glob` | 低 | 按模式列出文件 |
 | `Grep` | 低 | 内容搜索；本机有 `rg` 时优先用，否则进程内搜索；为每个文件生成 `tag` |
 | `BrowserPreview` | 低 | 在随应用打包的浏览器插件中打开与工作区相关的预览（若 `pi.browser` 被禁用则失败） |
@@ -554,7 +555,8 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 `new_context` 在每种模式下都可用，无需确认：它只询问
 在下一回合边界压缩的运行时间，主机将在其上执行此操作
 一旦达到硬预算（参见
-[02-代理运行时](/zh-CN/spec/03-runtime/02-agent-runtime) §5.1)。提交
+[02-代理运行时](/zh-CN/spec/03-runtime/02-agent-runtime) §5.1)。`ContextUsage`
+在每种模式下都可用，无需确认：它只读取本会话自身的上下文预算。提交
 工具仅在其自己的合同模式下可用，并且必须是其辅助批次中唯一的工具调用。它保留了
 类型目录下新的独特工件中的确切 Markdown 字节
 （`.pi/plan/*.md` 为 `SubmitPlan`，`.pi/goal/*.md` 为 `SubmitGoal`）
@@ -579,7 +581,7 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 实时工具目录（ADR 0246 / D415）。`Task` 启动时运行时把 `toolCatalog`
 （含延迟的插件/MCP 工具）与可分配的额外工具取并集，再去掉 `Task` /
 `TaskWait` / `TaskList` / `TaskStop`、`EnterPlanMode` / `EnterGoalMode`、
-`TodoWrite`、`asktool`、`new_context`、`ToolSearch`、学习记忆工具
+`TodoWrite`、`asktool`、`new_context`、`ContextUsage`、`ToolSearch`、学习记忆工具
 `SessionHistorySearch` / `MemorySearch` / `MemoryRemember`，以及会话消息工具
 `SessionList` / `SessionSend` / `SessionResult` / `SessionCreate`。内置定义不默认开启。`inherit`
 写在 Markdown 和设置里；host-core 会保留该标记，因此只有 inherit 的文档

@@ -104,6 +104,14 @@ export type ContextBudgetModelInput = ContextBudgetModel | Model<Api>;
 export type ContextBudgetLimits = Omit<ContextBudget, "tokens">;
 
 /**
+ * The model window the thresholds are derived from: the reported window, or
+ * the package default when a catalog entry never reported one.
+ */
+export function contextWindowFor(model: ContextBudgetModel): number {
+  return Math.max(1, Math.round(model.contextWindow || DEFAULT_CONTEXT_WINDOW));
+}
+
+/**
  * Derive the safety thresholds for a model window, without estimating tokens.
  *
  * Headroom is the larger of the reserve floor, the model's own output budget,
@@ -115,10 +123,7 @@ export type ContextBudgetLimits = Omit<ContextBudget, "tokens">;
 export function contextBudgetLimitsFor(
   model: ContextBudgetModel,
 ): ContextBudgetLimits {
-  const contextWindow = Math.max(
-    1,
-    Math.round(model.contextWindow || DEFAULT_CONTEXT_WINDOW),
-  );
+  const contextWindow = contextWindowFor(model);
   const modelOutputBudget = Math.min(
     Math.max(1, Math.round(model.maxTokens || DEFAULT_MAX_TOKENS)),
     Math.max(1, Math.floor(contextWindow * 0.25)),

@@ -105,7 +105,8 @@ export const SUBAGENT_INHERIT_TOKEN = "inherit";
  * with the parent; the user-facing ask tool is out of reach because a delegate
  * has no user. `ToolSearch` and `new_context` mutate the parent runtime's
  * deferred-tool set and compaction flag, so they stay denied even though the
- * child receives the full catalog without searching. Handing work to another
+ * child receives the full catalog without searching. `ContextUsage` reports the
+ * parent runtime's own budget, which a delegate does not run under. Handing work to another
  * session is the parent's own capability: a delegate has no user to confirm an
  * ambiguous target with, no standing to start another session's turn, and no
  * user who opted into spending the session-creation model, so `SessionList` /
@@ -123,6 +124,7 @@ export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
   "TodoWrite",
   "asktool",
   "new_context",
+  "ContextUsage",
   "ToolSearch",
   // Learned memory belongs to the user, not to a delegate: a delegate has no
   // user, receives no learned memory in its prompt, and cannot cite one either,

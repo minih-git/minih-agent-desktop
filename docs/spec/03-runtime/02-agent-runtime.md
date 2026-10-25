@@ -643,11 +643,22 @@ and testable.
 
 **Model-facing surface.** `new_context` takes no parameters and starts a new
 context window at the next turn boundary; it never clears or resets environment
-state. Two budget reminders are appended to the current turn's system prompt,
+state. `ContextUsage` takes no parameters and changes nothing: it reports the
+budget the compaction guard decides on, measured over the live loop messages —
+estimated tokens in use, the model window, request headroom, `hardLimit`, the
+90% automatic trigger, the tokens left before that trigger (before `hardLimit`
+when automatic compaction is disabled), whether the count is anchored on a
+provider-reported usage, and whether a `new_context` request is queued. Both
+tools are core declarations available in every mode; `new_context` is withdrawn
+while automatic compaction is disabled, `ContextUsage` is not.
+
+Two budget reminders are appended to the current turn's system prompt,
 each at most once per checkpoint window and reset when a checkpoint is
-installed: one when the remaining budget falls to
+installed: one when the remaining budget to `hardLimit` falls to
 `clamp(hardLimit * 0.15, 8k, 32k)`, asking the model to start closing out, and
 one at 2,000 tokens remaining, telling it to write down whatever must survive.
+The first reminder's figure is the distance to the 90% automatic trigger, the
+point compaction actually starts, not the distance to `hardLimit`.
 Neither reminder is persisted or shown in the transcript.
 
 The hard boundary is the model context window minus request headroom. Automatic

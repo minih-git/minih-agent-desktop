@@ -2554,6 +2554,7 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
       "Skill",
       "EnterPlanMode",
       "EnterGoalMode",
+      "ContextUsage",
       "new_context",
       "ToolSearch",
     ]);
@@ -6651,6 +6652,11 @@ describe("DesktopAgentRuntime per-turn context protection", () => {
     // compaction trigger, so the model can close out before host compaction.
     expect(below.context.systemPrompt).toContain("<context_budget>");
     expect(below.context.systemPrompt).toContain("new_context");
+    // The figure is the distance to the 90% trigger (201,600), not to the
+    // hard limit the tier is measured against.
+    expect(below.context.systemPrompt).toContain(
+      "About 6,600 tokens of working context remain",
+    );
     expect(below.context.messages.at(-1)).toMatchObject({
       role: "system",
       content: "",
@@ -6810,6 +6816,91 @@ describe("DesktopAgentRuntime per-turn context protection", () => {
     await (runtime as any).prepareNextTurn(nextTurn);
     expect(runCompaction).toHaveBeenCalledOnce();
 
+    await runtime.dispose();
+  });
+
+  it("reports the remaining context the compaction guard decides on", async () => {
+    const runtime = createRuntime({
+      provider: {
+        ...provider,
+        modelConfig: { ...provider.modelConfig!, contextWindow: 128_000, maxTokens: 8_000 },
+      },
+    });
+    const internal = runtime as any;
+    const tool = internal.agent.state.tools.find(
+      (candidate: any) => candidate.name === "ContextUsage",
+    );
+    expect(tool).toBeDefined();
+    expect(Object.keys(tool.parameters.properties ?? {})).toEqual([]);
+
+    internal.setAgentMessages([
+      { role: "user", content: "hello", timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        api: "openai-completions",
+        provider: "local",
+        model: "local-model",
+        stopReason: "stop",
+        timestamp: 2,
+        usage: {
+          input: 13_000,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 13_001,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      },
+    ]);
+    const budget = internal.contextBudget(internal.agent.state.messages);
+    const threshold = automaticCompactionThresholdFor(budget);
+    const result = await tool.execute("call-1", {});
+
+    // 128K window, 16,384 reserved: the guard compacts at 100,454.
+    expect(threshold).toBe(100_454);
+    // The provider-reported usage anchors the count, so it is not the crude
+    // full-request estimate.
+    expect(budget.tokens).toBeGreaterThanOrEqual(13_001);
+    expect(budget.tokens).toBeLessThan(threshold);
+    expect(result.details).toMatchObject({
+      usedTokens: budget.tokens,
+      contextWindow: 128_000,
+      hardLimit: 111_616,
+      compactionThreshold: threshold,
+      remainingTokens: threshold - budget.tokens,
+      anchored: true,
+      compactionEnabled: true,
+      compactionQueued: false,
+    });
+    expect(result.content[0].text).toContain(
+      `~${(threshold - budget.tokens).toLocaleString("en-US")} tokens remain`,
+    );
+    // Reading the budget never asks for a compaction.
+    expect(internal.pendingModelCompaction).toBe(false);
+
+    await runtime.dispose();
+  });
+
+  it("keeps ContextUsage in contract modes and with compaction disabled", async () => {
+    const plan = createRuntime({ mode: "plan" });
+    const planNames = (plan as any).agent.state.tools.map((tool: any) => tool.name);
+    expect(planNames).toContain("ContextUsage");
+    expect((plan as any).isToolAllowedInMode("ContextUsage")).toBe(true);
+    await plan.dispose();
+
+    const runtime = createRuntime();
+    runtime.setCompactionSettings({
+      enabled: false,
+      reserveTokens: 16_384,
+      keepRecentTokens: 20_000,
+    });
+    const tool = (runtime as any).agent.state.tools.find(
+      (candidate: any) => candidate.name === "ContextUsage",
+    );
+    const result = await tool.execute("call-1", {});
+    expect(result.details.compactionThreshold).toBeNull();
+    expect(result.content[0].text).toContain("Automatic compaction is disabled");
     await runtime.dispose();
   });
 
@@ -8241,6 +8332,7 @@ describe("DesktopAgentRuntime subagents", () => {
     expect(names).not.toContain("TaskWait");
     expect(names).not.toContain("ToolSearch");
     expect(names).not.toContain("new_context");
+    expect(names).not.toContain("ContextUsage");
     expect(names).not.toContain("asktool");
     expect(subagentRuns.calls[0].systemPrompt).toContain("Skill");
     expect(subagentRuns.calls[0].systemPrompt).toContain("demo.hello/release-notes");
