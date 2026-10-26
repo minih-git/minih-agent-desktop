@@ -666,6 +666,12 @@ host-core 通过与其他桌面自持工具相同的 `tools.execute` 闸门授�
 撤回待批卡片。两种 kind 都会启动或排队目标回合，message 仅用于标注意图；
 `SessionResult` 只能读到本会话自己发起的投递。
 
+`SessionSend({ sessionId, content, kind?, delivery?, notifyOnCompletion? })`
+的 `delivery` 决定投递如何进入目标会话：`queue`（默认）排在它当前工作之后另起
+一个回合；`now` 复用输入框的“立即发送”，把该条目在目标会话队列中提前，Host 会把
+它 steer 进正在运行的回合，若该回合不再接收输入则留在队首。提前被拒绝不会让已受理
+的投递失败：它继续排队，工具如实报告未插入，Main 记录这次拒绝。
+
 `SessionCreate({ title })` 在调用方会话的项目里建一个普通 Agent 模式会话，
 沿用调用方的思考等级与权限模式，使用 AI 设置里的 provider/model 绑定
 （`sessionCreateModel`）运行，并返回其 Session ID 供随后的 `SessionSend`

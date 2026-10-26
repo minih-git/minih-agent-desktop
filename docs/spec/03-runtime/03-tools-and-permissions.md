@@ -816,6 +816,14 @@ Agent-only: Plan and Goal deny them, `Task` subagents cannot use them, and the
 MCP control catalog excludes them. Host-core authorizes them through the same
 `tools.execute` gate as `GenerateImages` because Main performs the call.
 
+`SessionSend({ sessionId, content, kind?, delivery?, notifyOnCompletion? })` is
+the delivery itself. `delivery` decides how the text enters the target: `queue`
+(default) starts the target turn after its current work, while `now` reuses the
+composer's send-now and promotes the entry in that session's queue, so the Host
+steers it into the running turn and leaves it first in the queue when that turn
+accepts no more input. A refused promotion does not fail an accepted delivery:
+it stays queued, the tool reports no insertion, and Main logs the refusal.
+
 `SessionCreate({ title })` creates one ordinary Agent-mode session in the
 caller's project with the caller's thinking level and permission mode, runs it
 on the provider/model binding in AI settings (`sessionCreateModel`), and returns

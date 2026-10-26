@@ -531,6 +531,83 @@ test("a queued built-in delivery is dispatched without a plugin row", async () =
   assert.equal(delivered.sessionId, "target-session");
 });
 
+/**
+ * Dispatch one built-in send whose target is busy, so the Host queues the
+ * delivery and `delivery: "now"` has something to promote.
+ */
+async function builtinSendWithBusyTarget({ delivery, promote } = {}) {
+  const stored = sessionMessage({ pluginId: "builtin:session-messaging", status: "queued" });
+  const host = createHost("host-1", (method) => {
+    if (method === "session.collaboration.send") return { message: stored };
+    if (method === "session.collaboration.message") return { message: stored };
+    return {};
+  });
+  const { service, logs } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-live" },
+    pluginLoaded: false,
+    bridge: {
+      queue: {
+        list: () => [],
+        // The real bridge promotes through Agent Host's turn/prioritize.
+        prioritize: async (turnId) => promote(turnId),
+      },
+      agentHost: {
+        startTurn: async () => ({ accepted: true, turn: { id: "turn-promoted", status: "queued" } }),
+      },
+    },
+  });
+  const delivered = await service.invokeBuiltin({
+    sessionId: "source-session",
+    turnId: "turn-live",
+    operation: "send",
+    args: {
+      sessionId: "target-session",
+      content: "review the diff",
+      ...(delivery ? { delivery } : {}),
+    },
+  });
+  return { delivered, logs };
+}
+
+test("a now delivery promotes the queued turn the Host just accepted", async () => {
+  const promoted = [];
+  const { delivered } = await builtinSendWithBusyTarget({
+    delivery: "now",
+    promote: async (turnId) => promoted.push(turnId),
+  });
+
+  // Promotion is what makes the Host steer the text into the running turn; a
+  // delivery that only queued would wait for the target's current work.
+  assert.deepEqual(promoted, ["turn-promoted"]);
+  assert.equal(delivered.inserted, true);
+});
+
+test("an ordinary delivery is left behind the target's current work", async () => {
+  const promoted = [];
+  const { delivered } = await builtinSendWithBusyTarget({
+    promote: async (turnId) => promoted.push(turnId),
+  });
+
+  assert.deepEqual(promoted, []);
+  assert.equal(delivered.inserted, undefined);
+});
+
+test("a refused promotion still delivers, without claiming an insertion", async () => {
+  const { delivered, logs } = await builtinSendWithBusyTarget({
+    delivery: "now",
+    promote: async () => {
+      throw Object.assign(new Error("only a queued turn can be prioritized"), { code: "CONFLICT" });
+    },
+  });
+
+  // The message is already in the target's queue: a refused promotion must not
+  // turn a completed delivery into a failure.
+  assert.equal(delivered.sessionId, "target-session");
+  assert.equal(delivered.inserted, undefined);
+  assert.ok(logs.some((entry) => entry.message === "Session delivery could not be promoted into the running turn"));
+});
+
 test("a delivery owned by a plugin still fails when that plugin is gone", async () => {
   const stored = sessionMessage({ pluginId: "demo-plugin", status: "queued" });
   // drain() reads the completion outbox before dispatching.

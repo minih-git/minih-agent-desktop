@@ -75,6 +75,26 @@ function errorMessage(error: unknown): string {
   try { return JSON.stringify(error) ?? String(error); } catch { return String(error); }
 }
 
+/** How a delivery enters the target session's queue. */
+type SessionDeliveryMode = "queue" | "now";
+
+/** A delivery plus whether `now` could promote it in the target's queue. */
+type SessionDelivery = SessionCollaborationDelivery & { readonly inserted?: boolean };
+
+/**
+ * Validate the model-facing `delivery` argument.
+ *
+ * `now` reuses the queue's own send-now: after the delivery is queued, the
+ * Host promotes it so it is steered into the target's running turn. It is a
+ * send-time choice, never ledger state, so a replay after a restart falls back
+ * to plain queueing instead of claiming an insertion.
+ */
+function deliveryMode(value: unknown): SessionDeliveryMode {
+  if (value === undefined) return "queue";
+  if (value !== "queue" && value !== "now") fail("INVALID_ARGUMENT", "delivery must be queue or now");
+  return value;
+}
+
 function delivery(message: SessionCollaborationMessage): SessionCollaborationDelivery {
   return {
     sessionId: message.targetSessionId,
@@ -110,7 +130,7 @@ function senderFields(sender: Sender): Record<string, string> {
 
 /** Coordinates reviewed operations; Rust owns all identity and outcome state. */
 export function createSessionCollaborationService(deps: SessionCollaborationDependencies) {
-  const dispatching = new Map<string, Promise<SessionCollaborationDelivery>>();
+  const dispatching = new Map<string, Promise<SessionDelivery>>();
   // Turn IDs awaiting settlement. The host keys the receipt by the turn row in
   // its own database, so an entry orphaned by a host restart is replayed there.
   const settlements = new Set<string>();
@@ -143,7 +163,31 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
     return { ownerId: context.pluginId, sourceSessionId: context.sessionId, sourceTurnId: context.turnId };
   }
 
-  async function dispatch(message: SessionCollaborationMessage, signal?: AbortSignal): Promise<SessionCollaborationDelivery> {
+  /**
+   * Promote a just-queued delivery to the head of its target's queue.
+   *
+   * A refusal is not a failed delivery: the message stays queued behind the
+   * target's current work, and the caller reports that instead of claiming an
+   * insertion the running turn did not take.
+   */
+  async function promote(bridge: AgentHostBridge, turnId: string): Promise<boolean> {
+    try {
+      await bridge.queue.prioritize(turnId);
+      return true;
+    } catch (error) {
+      deps.log("Session delivery could not be promoted into the running turn", {
+        turnId,
+        error: errorMessage(error),
+      });
+      return false;
+    }
+  }
+
+  async function dispatch(
+    message: SessionCollaborationMessage,
+    signal?: AbortSignal,
+    mode: SessionDeliveryMode = "queue",
+  ): Promise<SessionDelivery> {
     const existing = dispatching.get(message.id);
     if (existing) return existing;
     const operation = (async () => {
@@ -168,20 +212,27 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         }
         // beginTurn rechecks the persisted authorization ceiling at execution,
         // including when a queued turn resumes after settings have changed.
-        await bridge.agentHost.startTurn(DESKTOP_PRINCIPAL, {
+        const started = await bridge.agentHost.startTurn(DESKTOP_PRINCIPAL, {
           sessionId: current.targetSessionId,
           input: { text: current.content, sessionMessageId: current.id },
           admission: "queue",
           idempotencyKey: `session-message:${current.id}`,
           context: { requestId: `session-message:${current.id}` },
         });
+        // A busy target queues the delivery, so `now` promotes it and the Host
+        // steers it into the running turn; an idle target already started its
+        // own turn and has nothing to promote.
+        const inserted =
+          mode === "now" && started?.turn?.status === "queued"
+            ? await promote(bridge, started.turn.id)
+            : false;
         checkCurrent(host);
         const accepted = (await host.call<{ message: SessionCollaborationMessage }>(
           "session.collaboration.message", { messageId: current.id },
         )).message;
         if (signal?.aborted) await cancel(host, { sessionId: current.targetSessionId, messageId: current.id });
         deps.onChanged();
-        return delivery(accepted);
+        return inserted ? { ...delivery(accepted), inserted } : delivery(accepted);
       } catch (error) {
         // A full callback inbox is deferred until a later queue/turn change.
         // It must not turn a successfully completed original task into failure.
@@ -409,6 +460,7 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           // A task is the reason a user hands work to another session; a plain
           // message is the explicit exception.
           const kind = input.args.kind === undefined ? "task" : messageKind(input.args.kind);
+          const mode = deliveryMode(input.args.delivery);
           const sender: Sender = { ownerId: BUILTIN_SESSION_OWNER, sourceSessionId, sourceTurnId };
           const response = await host.call<{ message: SessionCollaborationMessage }>("session.collaboration.send", {
             ...senderFields(sender), content, kind,
@@ -416,7 +468,7 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
             ...(typeof notify === "boolean" ? { notifyOnCompletion: notify } : {}),
             sessionId: text(input.args, "sessionId"),
           });
-          return dispatch(response.message, input.signal);
+          return dispatch(response.message, input.signal, mode);
         }
         case "create": {
           const title = text(input.args, "title");

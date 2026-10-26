@@ -199,6 +199,40 @@ test("a send forwards kind and completion notice only when asked", async () => {
   assert.match(result.content, /No completion notice will be sent/);
 });
 
+test("a send asks for a now delivery and reports where the target put it", async () => {
+  // The Host promoted the queued delivery, so it is inserted into the running
+  // turn and otherwise stays at the head of that session's queue.
+  const promoted = service(() => ({
+    sessionId: "target-session", messageId: "message-4", status: "queued", inserted: true,
+  }));
+  const promotedResult = await createSessionSendTool(promoted)({
+    sessionId: "source-session",
+    toolCallId: "call-8",
+    turnId: "turn-1",
+    args: { sessionId: "target-session", content: "Answer now", delivery: "now" },
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(promotedResult.ok, true);
+  assert.equal(promoted.calls[0].args.delivery, "now");
+  assert.match(promotedResult.content, /sent now: inserted into the running turn/);
+
+  // A target whose running turn refuses more input keeps the delivery first in
+  // its queue, and the report must not claim an insertion that did not happen.
+  const kept = service(() => ({ sessionId: "target-session", messageId: "message-5", status: "queued" }));
+  const keptResult = await createSessionSendTool(kept)({
+    sessionId: "source-session",
+    toolCallId: "call-9",
+    turnId: "turn-1",
+    args: { sessionId: "target-session", content: "Answer next", delivery: "now" },
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(keptResult.ok, true);
+  assert.match(keptResult.content, /queued at the head of its queue/);
+  assert.doesNotMatch(keptResult.content, /inserted into the running turn/);
+});
+
 test("malformed arguments are rejected before any host call", async () => {
   const fake = service(() => assert.fail("must not reach the ledger"));
   const send = createSessionSendTool(fake);
@@ -216,6 +250,10 @@ test("malformed arguments are rejected before any host call", async () => {
   );
   assert.equal(
     (await send({ sessionId: "source-session", toolCallId: "c", args: { sessionId: "t", content: "x", notifyOnCompletion: "yes" }, signal })).errorCode,
+    "INVALID_ARGUMENT",
+  );
+  assert.equal(
+    (await send({ sessionId: "source-session", toolCallId: "c", args: { sessionId: "t", content: "x", delivery: "later" }, signal })).errorCode,
     "INVALID_ARGUMENT",
   );
   assert.equal(

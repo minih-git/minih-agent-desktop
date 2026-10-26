@@ -40,6 +40,14 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
         description: "task hands over work the target should carry out (default); message frames it as a notice. Both start or queue the target turn and spend its model quota.",
       }),
     ),
+    delivery: Type.Optional(
+      Type.Union([Type.Literal("queue"), Type.Literal("now")], {
+        // "now" is the queue's own "send now": the Host delivers the text into
+        // the target's running turn and keeps it at the head of that session's
+        // queue when the turn cannot take more input.
+        description: "queue (default) starts the target turn after its current work finishes; now inserts the text into the target's running turn so it is read immediately, and moves it to the front of that session's queue when the turn cannot accept more input.",
+      }),
+    ),
     notifyOnCompletion: Type.Optional(
       Type.Boolean({
         description: "Send this session one durable completion notice when the target turn settles. Defaults to true.",
@@ -65,7 +73,7 @@ export const sessionToolDescriptions: Record<string, string> = {
   SessionList:
     "List the other Agent sessions that can receive a delivery, optionally filtered by a title substring. Use it to turn a session name the user said into a real Session ID, and to confirm the target before sending. Titles are not unique: when several sessions match, ask the user which one instead of guessing. Only Agent-mode sessions appear.",
   SessionSend:
-    "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session: use SessionCreate first when no session exists yet. It cannot cancel another sender's delivery either.",
+    "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. Choose `delivery: \"now\"` when the target must act on it inside its current turn instead of after that turn ends; the default queues it. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session: use SessionCreate first when no session exists yet. It cannot cancel another sender's delivery either.",
   SessionResult:
     "Read the durable outcome of the latest delivery this session made into a session, or of one such delivery by messageId: status, result, error and the task text. Use it after a SessionSend to check a delivery that has not completed, or when the completion notice is not enough. Deliveries sent by other sessions or plugins are not readable here.",
   SessionCreate:
