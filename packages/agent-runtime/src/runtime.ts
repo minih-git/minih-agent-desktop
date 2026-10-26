@@ -1662,8 +1662,11 @@ export function toolResultFromUi(
   if (rawBlocks) {
     for (const b of rawBlocks) {
       if (!isRecord(b)) continue;
-      if (b.type === "text" && typeof b.text === "string") {
-        blocks.push({ type: "text", text: b.text });
+      // Restore the same MCP resource text and links exposed by live execution.
+      // Binary resources have no text and remain outside the text channel.
+      const blockText = hostContentBlockText(b);
+      if (blockText !== undefined) {
+        blocks.push({ type: "text", text: blockText });
       } else if (
         b.type === "image" &&
         typeof b.data === "string" &&

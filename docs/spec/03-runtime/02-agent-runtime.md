@@ -50,6 +50,10 @@ links contribute a one-line `[resource link]` reference, to the model-visible
 text alongside sibling text blocks; binary resources are not inlined. When no
 text block is available, the JSON fallback likewise keeps image `data` and
 resource `blob` bytes out of the model-visible text.
+Historical restoration of MCP `content` uses this same text extraction rule,
+preserving text-resource bodies and resource links in their original block order
+alongside text/images; resource-only results do not become missing-result
+placeholders. Binary resource `blob` bytes are never decoded as text.
 
 ## 4. Runtime API (package-level)
 
@@ -2217,6 +2221,16 @@ with the original v3 `SessionManager`, Pi `ModelRuntime`, `SettingsManager`, and
 `DefaultResourceLoader`. Native context is built by the SDK from the active tree
 leaf, compaction, model/thinking changes, and context-bearing custom messages;
 it is never reconstructed from renderer `UiMessage` rows.
+
+Native list summaries cache file-derived projection facts by canonical path and
+`(dev, ino, size, mtimeMs)`. Appends, replacements, removed files, a missing scan
+root and service disposal invalidate or prune that cache. Existing scan-root
+boundaries and duplicate-file ordering remain unchanged. Every list call still
+checks cwd existence, project trust, provider/auth availability and live ownership.
+The lease module retains the Minih-specific lock filename and reads a complete
+snapshot only when a present dead-owner lock needs append-only reclaim validation.
+Detail/open/fork and all writes retain full-byte identity/fingerprint checks;
+this optimization does not add async scanning or claim a large-catalog latency bound.
 
 The Pi 1.1.0 SDK also applies append-only `context_edit` entries to this model
 projection. An edit can omit or replace an earlier message for later provider
