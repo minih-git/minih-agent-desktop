@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "能选模型的插件又能装了：应用的原生校验器此前拒绝了一个设置弹层早已支持的类型，这类插件会在安装时失败。",
+      "远程会话在 Windows 主机上能打开你要的文件夹：主机给出的绝对路径按原样使用，不再被改写成一个不存在的路径。",
+      "消息可以直接投递到正在生成回复的会话里，不必等这一轮结束。",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [

@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "能選模型的外掛又能裝了：應用程式的原生檢查器先前拒絕了一個設定面板早已支援的類型，這類外掛會在安裝時失敗。",
+      "遠端工作階段在 Windows 主機上能開啟你要的資料夾：主機給出的絕對路徑按原樣使用，不再被改寫成不存在的路徑。",
+      "訊息可以直接投遞到正在產生回覆的工作階段裡，不必等這一輪結束。",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [

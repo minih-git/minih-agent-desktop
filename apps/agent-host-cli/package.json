@@ -1,6 +1,6 @@
 {
   "name": "@minih-agent/agent-host-cli",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "description": "Headless PI Agent Host: RACP-WS server over the Agent Host module, the pi sidecar, and host-core",

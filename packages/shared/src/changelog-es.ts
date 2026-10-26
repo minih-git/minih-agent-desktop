@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "Los complementos que eligen un modelo vuelven a instalarse: el validador nativo de la aplicación rechazaba un tipo de ajuste que la pantalla de ajustes ya admitía.",
+      "Las sesiones remotas abren la carpeta pedida en un host Windows: sus rutas absolutas se usan tal cual, en lugar de reescribirse a una ruta inexistente.",
+      "Un mensaje puede entregarse a una sesión que aún está escribiendo su turno, en vez de esperar a que termine.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [

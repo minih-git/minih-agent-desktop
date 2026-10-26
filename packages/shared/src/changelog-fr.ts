@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "Les extensions qui choisissent un modèle s'installent à nouveau : le validateur natif de l'application refusait un type de réglage que l'écran de réglages acceptait déjà.",
+      "Les sessions distantes ouvrent le dossier demandé sur un hôte Windows : ses chemins absolus sont utilisés tels quels, au lieu d'être réécrits vers un chemin inexistant.",
+      "Un message peut être livré à une session qui rédige encore son tour, au lieu d'attendre la fin de celui-ci.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [

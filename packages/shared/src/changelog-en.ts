@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "Plugins that pick a model from a list install again: the app's native validator rejected a setting type its settings screen already supported.",
+      "A remote session on a Windows host opens the folder you asked for: the host's own absolute paths are used as they are instead of being rewritten into a path that does not exist.",
+      "A message can land in a session that is still writing its turn, instead of waiting for that turn to finish.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [

@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "모델을 고르는 플러그인을 다시 설치할 수 있습니다: 앱의 네이티브 검증기가 설정 화면이 이미 지원하던 설정 유형을 거부했습니다.",
+      "원격 세션이 Windows 호스트에서 요청한 폴더를 엽니다: 호스트가 준 절대 경로를 그대로 사용하고, 없는 경로로 바꾸지 않습니다.",
+      "메시지를 응답을 쓰고 있는 세션에 바로 전달할 수 있습니다. 이 턴이 끝나기를 기다리지 않습니다.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [
