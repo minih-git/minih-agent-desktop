@@ -113,12 +113,47 @@ test("no answer text reaches the page as raw HTML", async () => {
 
 test("consecutive tool calls stay folded in one ToolRun even when thinking-only or empty assistant items sit between them", async () => {
   const html = await render([
-    item({ id: "t1", itemType: "tool", role: "tool", toolName: "Bash", toolArgs: { command: "ls" }, status: "completed" }),
+    item({ id: "t1", itemType: "tool", role: "tool", toolName: "Bash", toolArgs: { command: "ls /tmp/alpha-dir" }, status: "completed" }),
     item({ id: "m1", itemType: "message", role: "assistant", text: "", thinking: "checking next file" }),
     item({ id: "m2", itemType: "message", role: "assistant", text: "" }),
-    item({ id: "t2", itemType: "tool", role: "tool", toolName: "Bash", toolArgs: { command: "pwd" }, status: "completed" }),
+    item({ id: "t2", itemType: "tool", role: "tool", toolName: "Bash", toolArgs: { command: "pwd-beta-marker" }, status: "completed" }),
   ]);
   assert.match(html, /2 commands/);
+  // Folding the run must not swallow the thinking between the calls: it used to
+  // be counted by `summarizeToolRun` and then dropped by the renderer. Exactly
+  // one row, because the empty placeholder beside it is not content.
+  assert.equal((html.match(/>Thinking</g) ?? []).length, 1);
+  // Order is the transcript's: the thinking sits between the two calls. The
+  // needles are the commands themselves — `<details` already contains "ls".
+  const at = (needle: string) => html.indexOf(needle);
+  assert.ok(at("/tmp/alpha-dir") < at("checking next file"));
+  assert.ok(at("checking next file") < at("pwd-beta-marker"));
+  assert.match(html, /checking next file/);
+});
+
+test("a thinking step before a single tool keeps the call's own header", async () => {
+  const html = await render([
+    item({ id: "m1", itemType: "message", role: "assistant", text: "", thinking: "reading the config first" }),
+    item({ id: "t1", itemType: "tool", role: "tool", toolName: "Bash", toolArgs: { command: "ls /tmp/gamma-dir" }, status: "completed" }),
+  ]);
+  assert.match(html, /Thinking/);
+  assert.match(html, /reading the config first/);
+  // The collapsed card still names the call and what it acted on: a run of one
+  // call must never fall back to a counted "1 command" label.
+  assert.match(html, /Bash/);
+  assert.match(html, /ls \/tmp\/gamma-dir/);
+  assert.doesNotMatch(html, /1 command/);
+});
+
+test("a run of thinking with no tools keeps its own collapsed row", async () => {
+  const html = await render([
+    item({ id: "m1", itemType: "message", role: "assistant", text: "", thinking: "weighing two approaches" }),
+  ]);
+  // Unchanged behavior: the row is a disclosure, so the text stays out of the
+  // page until the reader opens it.
+  assert.match(html, /Thinking/);
+  assert.match(html, /data-item-id="m1"/);
+  assert.doesNotMatch(html, /weighing two approaches/);
 });
 
 test("an html code fence renders inline inside a sandboxed srcDoc iframe", async () => {

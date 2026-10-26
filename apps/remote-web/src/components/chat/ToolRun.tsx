@@ -97,6 +97,94 @@ function summaryOf(item: TimelineItem): string {
   return getToolSummary(item.toolName, item.toolArgs) || getToolDisplayName(item.toolName);
 }
 
+/** A step that reasoned without saying anything: the thinking is the content. */
+function isThinkingOnly(item: TimelineItem): boolean {
+  return !isTool(item) && !item.text.trim() && Boolean(item.thinking?.trim());
+}
+
+/** The first line of a thinking step, for the collapsed row. */
+function thinkingPreview(thinking: string | undefined): string {
+  return (thinking ?? "").trim().split("\n")[0]?.trim() ?? "";
+}
+
+/**
+ * One thinking step inside a run: a single line that opens to the whole text.
+ *
+ * The run counts thinking steps — they are part of what happened — but used to
+ * drop their words entirely, so a model that thinks before every tool call, the
+ * normal shape, looked like it never reasoned at all.
+ */
+function ThinkingRow({ item }: { item: TimelineItem }) {
+  const { t } = useTranslation();
+  const preview = thinkingPreview(item.thinking);
+  return (
+    <li data-item-id={item.id} className="min-w-0 font-sans">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-1 py-0.5 text-[13px] leading-[18px] text-[var(--rm-text-muted)] [&::-webkit-details-marker]:hidden">
+          <span className="shrink-0">{t("timeline.thinking")}</span>
+          {preview ? (
+            <span className="min-w-0 flex-1 truncate text-[12px] opacity-80">{preview}</span>
+          ) : null}
+          <ChevronDown
+            size={13}
+            className="shrink-0 text-[var(--rm-text-faint)] transition-transform group-open:rotate-180"
+            aria-hidden="true"
+          />
+        </summary>
+        <div className="my-1 border-l-2 border-[var(--rm-separator)] pl-3 text-[13px] leading-[20px] text-[var(--rm-text-muted)] whitespace-pre-wrap break-words">
+          {item.thinking}
+        </div>
+      </details>
+    </li>
+  );
+}
+
+/** The single call's own body: its output, or the one-line summary of it. */
+function ToolBody({ item, inline = false }: { item: TimelineItem; inline?: boolean }) {
+  if (item.text) {
+    return (
+      <pre
+        className={
+          inline
+            ? "m-0 max-h-[180px] overflow-x-auto whitespace-pre font-mono text-[11px] leading-[1.5] text-[var(--rm-text-secondary)]"
+            : "m-0 max-h-[220px] overflow-x-auto whitespace-pre border-t border-[var(--rm-hair)] bg-[var(--rm-code-bg)] px-3 py-2 font-mono text-[12px] leading-[1.6] text-[var(--rm-text-muted)]"
+        }
+      >
+        {item.text}
+      </pre>
+    );
+  }
+  if (inline) {
+    return <span className="font-mono text-[11px]">{summaryOf(item)}</span>;
+  }
+  return (
+    <div className="border-t border-[var(--rm-hair)] bg-[var(--rm-code-bg)] px-3 py-2 font-mono text-[12px] leading-[1.6] text-[var(--rm-text-muted)]">
+      {summaryOf(item)}
+    </div>
+  );
+}
+
+/**
+ * The body of a one-call run that also reasoned: the thinking steps and the
+ * call's output, in transcript order. The card header still names the call, so
+ * this only has to place the words the card used to drop.
+ */
+function SingleRunBody({ items }: { items: TimelineItem[] }) {
+  return (
+    <ul className="m-0 list-none space-y-1.5 border-t border-[var(--rm-hair)] bg-[var(--rm-code-bg)] px-3 py-2 font-mono text-[12px] leading-[1.6] text-[var(--rm-text-muted)]">
+      {items.map((item, index) =>
+        isTool(item) ? (
+          <li key={item.id || String(index)} data-item-id={item.id} className="min-w-0">
+            <ToolBody item={item} inline />
+          </li>
+        ) : isThinkingOnly(item) ? (
+          <ThinkingRow key={item.id || `think-${index}`} item={item} />
+        ) : null,
+      )}
+    </ul>
+  );
+}
+
 /**
  * A single tool call or a burst of consecutive tool calls (and any silent
  * thinking steps between them), collapsed into a `<details>` card with a status
@@ -116,16 +204,21 @@ export function ToolRun({ items, active }: { items: TimelineItem[]; active: bool
         : { action: "thinking" as const },
     ),
   );
-  const grouped = toolItems.length > 1;
+  // Nothing to fold when the run holds no call at all.
+  if (toolItems.length === 0) return null;
+  // One call keeps its own card: its name and what it acted on are the only
+  // thing a collapsed row says, and "1 command" would erase both. Two or more
+  // calls fold into one counted card.
+  const single = toolItems.length === 1 ? toolItems[0] : undefined;
+  const hasThinking = items.some(isThinkingOnly);
   const parts = describeToolRun(summary);
   const label =
     parts.length > 1
       ? parts.map((part) => t(`timeline.run.${part.key}`, { count: part.count })).join(", ")
       : t(`timeline.run.${summary.key}`, { count: summary.count });
 
-  if (!grouped) {
-    const item = toolItems[0];
-    if (!item) return null;
+  if (single) {
+    const item = single;
     const Icon = toolIcon(item.toolName);
     const state = toolState(item);
     return (
@@ -148,15 +241,7 @@ export function ToolRun({ items, active }: { items: TimelineItem[]; active: bool
             aria-hidden="true"
           />
         </summary>
-        {item.text ? (
-          <pre className="m-0 max-h-[220px] overflow-x-auto whitespace-pre border-t border-[var(--rm-hair)] bg-[var(--rm-code-bg)] px-3 py-2 font-mono text-[12px] leading-[1.6] text-[var(--rm-text-muted)]">
-            {item.text}
-          </pre>
-        ) : (
-          <div className="border-t border-[var(--rm-hair)] bg-[var(--rm-code-bg)] px-3 py-2 font-mono text-[12px] leading-[1.6] text-[var(--rm-text-muted)]">
-            {summaryOf(item)}
-          </div>
-        )}
+        {hasThinking ? <SingleRunBody items={items} /> : <ToolBody item={item} />}
       </details>
     );
   }
@@ -191,7 +276,14 @@ export function ToolRun({ items, active }: { items: TimelineItem[]; active: bool
         />
       </summary>
       <ul className="m-0 list-none space-y-1.5 border-t border-[var(--rm-hair)] bg-[var(--rm-code-bg)] px-3 py-2 font-mono text-[12px] leading-[1.6] text-[var(--rm-text-muted)]">
-        {toolItems.map((item, index) => {
+        {items.map((item, index) => {
+          // Empty assistant placeholders fold into the run without being content
+          // of their own, so only a real thinking step gets a row.
+          if (!isTool(item)) {
+            return isThinkingOnly(item) ? (
+              <ThinkingRow key={item.id || `think-${index}`} item={item} />
+            ) : null;
+          }
           const key = item.id || String(index);
           const Icon = toolIcon(item.toolName);
           return (
