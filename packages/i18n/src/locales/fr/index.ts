@@ -295,6 +295,7 @@ export const fr = {
     "hoverCardBranchAria": "Branche {{name}}",
     "activity": "Activité",
     "noActivitySessions": "Aucune activité récente",
+    "pluginViews": "Vues des plugins",
     "timeGroupToday": "Aujourd'hui",
     "projectRunningCount": "{{count}} en cours",
     "collapseMoreSessions": "Afficher moins"

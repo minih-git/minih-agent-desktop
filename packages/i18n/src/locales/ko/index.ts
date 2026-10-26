@@ -304,6 +304,7 @@ export const ko = {
     hoverCardBranchAria: "브랜치 {{name}}",
     activity: "활동",
     noActivitySessions: "최근 활동이 없습니다",
+    pluginViews: "플러그인 보기",
     timeGroupToday: "오늘",
     projectRunningCount: "{{count}}개 진행 중",
     collapseMoreSessions: "간략히 보기",

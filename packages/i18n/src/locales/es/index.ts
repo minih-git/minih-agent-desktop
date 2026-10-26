@@ -295,6 +295,7 @@ export const es = {
     "hoverCardBranchAria": "Rama {{name}}",
     "activity": "Actividad",
     "noActivitySessions": "Aún no hay actividad reciente",
+    "pluginViews": "Vistas de complementos",
     "timeGroupToday": "Hoy",
     "projectRunningCount": "{{count}} en curso",
     "collapseMoreSessions": "Mostrar menos"

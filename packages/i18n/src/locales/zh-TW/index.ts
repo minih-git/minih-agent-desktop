@@ -297,6 +297,7 @@ export const zhTW = {
     hoverCardBranchAria: "分支 {{name}}",
     activity: "活動",
     noActivitySessions: "暫無活動記錄",
+    pluginViews: "外掛視圖",
     timeGroupToday: "今天",
     projectRunningCount: "{{count}} 個任務進行中",
     collapseMoreSessions: "收起",

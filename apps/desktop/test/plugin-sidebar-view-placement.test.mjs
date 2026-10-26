@@ -104,6 +104,43 @@ test("history restores both the page and which view it was showing", async (t) =
   assert.equal(useAppStore.getState().pluginViewRef, "minih.terminal/terminal");
 });
 
+test("sidebar views render as one row of icon buttons named by their titles", async (t) => {
+  const ssr = await slotSsr(t);
+  const { createElement } = await import("react");
+  const { useAppStore } = await ssr.load("/src/stores/app-store.ts");
+  const { PluginSidebarDestinations } = await ssr.load(
+    "/src/features/plugins/PluginSidebarDestinations.tsx",
+  );
+  const unknownIcon = view({ ref: "other/x", title: "Xylo", icon: "no-such-token", placement: "sidebar" });
+  // Server rendering reads the store's initial snapshot, so both are set.
+  const setStore = (state) => {
+    useAppStore.setState(state);
+    Object.assign(useAppStore.getInitialState(), state);
+  };
+  const initial = { ...useAppStore.getInitialState() };
+  t.after(() => setStore(initial));
+  setStore({
+    pluginViews: [TERMINAL, view(), unknownIcon],
+    page: "pluginView",
+    pluginViewRef: "minih.terminal/terminal",
+  });
+
+  const html = ssr.render(createElement(PluginSidebarDestinations), { sessionId: null });
+  const buttons = [...html.matchAll(/<button[^>]*>/g)].map((match) => match[0]);
+  assert.equal(buttons.length, 2, "a panel view never reaches the sidebar");
+  assert.match(html, /^<div class="sidebar-plugin-destinations" role="group" aria-label="Plugin views">/);
+  assert.match(buttons[0], /aria-label="终端"/);
+  assert.match(buttons[0], /aria-pressed="true"/);
+  assert.match(buttons[1], /aria-label="Xylo"/);
+  assert.match(buttons[1], /aria-pressed="false"/);
+  // Icon-only: no visible title text, and an unknown token falls back to a letter tile.
+  assert.doesNotMatch(html, />终端</);
+  assert.match(html, /<span class="sidebar-destination-initial" aria-hidden="true">X<\/span>/);
+
+  setStore({ pluginViews: [view()] });
+  assert.equal(ssr.render(createElement(PluginSidebarDestinations), { sessionId: null }), "");
+});
+
 test("the shell draws the rows, routes the page, and hides the work panel", async () => {
   const sidebar = await read("src/components/Sidebar.tsx");
   assert.match(sidebar, /<PluginSidebarDestinations \/>/);

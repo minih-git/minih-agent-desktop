@@ -995,9 +995,11 @@ A `contributes.views` entry with `placement: sidebar` (ADR
 optional-terminal-plugin) is offered by the left sidebar instead of the work
 panel:
 
-- The host draws one row per entry in the sidebar destination list, using the
-  plugin's localized title and its declared icon token, with a letter tile when
-  the token is unknown. The row belongs to the host; the plugin supplies no
+- The host draws one square icon button per entry, in a single wrapping row
+  below the Scheduled, Plugins, and Activity destination rows, using the
+  plugin's declared icon token, with a letter tile when the token is unknown.
+  The localized title is the accessible name, and the tooltip reads
+  `title · plugin name`. The button belongs to the host; the plugin supplies no
   markup and gets no DOM access.
 - Selecting the row opens the same isolated `WebContentsView` in the main
   content area in place of the conversation. No chat session is selected, and no
