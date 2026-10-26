@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { RemoteHostBrowseProjectsResult } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { remoteHostErrorKey } from "../../lib/remote-host-errors";
+import { canChooseRemoteFolder, canGoToRemoteFolder, initialRemoteBrowsePath, needsAbsoluteRemotePath } from "../../lib/remote-folder-navigation";
 import { useBlockingOverlay } from "../../lib/blocking-overlay";
 import { OverlayBackdrop, Button, Field, Input, TooltipButton } from "../ui";
 import { IconChevronRight, IconClose, IconFolder } from "../icons";
@@ -45,7 +46,7 @@ export function RemoteFolderDialog({ hostKey, hostLabel, initialPath, onChoose, 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const frame = requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus());
-    void browse(initialPath.startsWith("/") ? initialPath : undefined);
+    void browse(initialRemoteBrowsePath(initialPath));
     return () => {
       generation.current++;
       cancelAnimationFrame(frame);
@@ -61,7 +62,8 @@ export function RemoteFolderDialog({ hostKey, hostLabel, initialPath, onChoose, 
   }, [browsing]);
 
   const choose = () => {
-    if (!directory || browsing || error || path !== directory.path) return;
+    if (!directory) return;
+    if (!canChooseRemoteFolder({ directoryPath: directory.path, path, browsing, failed: Boolean(error) })) return;
     onChoose(directory.path);
   };
   const dialog = <OverlayBackdrop className="overlay remote-folder-dialog-overlay" role="presentation"
@@ -87,15 +89,15 @@ export function RemoteFolderDialog({ hostKey, hostLabel, initialPath, onChoose, 
         <TooltipButton type="button" className="project-create-dialog-close" tooltip={t("project.createCancel")}
           ariaLabel={t("project.createCancel")} onClick={onClose}><IconClose size={17} /></TooltipButton>
       </div>
-      <form className="remote-folder-dialog-navigation" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); if (path.startsWith("/") && !browsing) void browse(path); }}>
+      <form className="remote-folder-dialog-navigation" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); if (canGoToRemoteFolder(path, browsing)) void browse(path); }}>
         <Field label={t("remote:folderPath")}>
           <div className="remote-folder-dialog-path-entry">
             <Input ref={pathRef} value={path} aria-label={t("remote:folderPath")} placeholder={t("remote:pathPlaceholder")}
               autoComplete="off" spellCheck={false} disabled={browsing} onChange={(event) => setPath(event.target.value)} />
-            <Button type="submit" disabled={browsing || !path.startsWith("/")}>{t("remote:goToFolder")}</Button>
+            <Button type="submit" disabled={!canGoToRemoteFolder(path, browsing)}>{t("remote:goToFolder")}</Button>
           </div>
         </Field>
-        {path && !path.startsWith("/") ? <p className="remote-project-error" role="alert">{t("remote:REMOTE_ABSOLUTE_PATH_REQUIRED")}</p> : null}
+        {needsAbsoluteRemotePath(path) ? <p className="remote-project-error" role="alert">{t("remote:REMOTE_ABSOLUTE_PATH_REQUIRED")}</p> : null}
         <Button type="button" variant="ghost" disabled={browsing || !directory?.parent}
           onClick={() => void browse(directory?.parent)}>{t("remote:parent")}</Button>
       </form>
@@ -117,7 +119,7 @@ export function RemoteFolderDialog({ hostKey, hostLabel, initialPath, onChoose, 
       </div>
       <div className="project-create-dialog-actions">
         <Button type="button" variant="ghost" onClick={onClose}>{t("project.createCancel")}</Button>
-        <Button type="button" variant="primary" disabled={!directory || browsing || !!error || path !== directory.path} onClick={choose}>{t("remote:useFolder")}</Button>
+        <Button type="button" variant="primary" disabled={!canChooseRemoteFolder({ directoryPath: directory?.path, path, browsing, failed: Boolean(error) })} onClick={choose}>{t("remote:useFolder")}</Button>
       </div>
     </div>
   </OverlayBackdrop>;

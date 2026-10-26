@@ -68,6 +68,13 @@ test("a Host that predates the operation is reported as needing an upgrade", () 
   assert.equal(remoteHostErrorKey(rendererError("HOST_VERSION_MISMATCH")), "remote:upgradeRequired");
 });
 
+test("an unreadable Host answer is not reported as a connection problem", () => {
+  // The Host answered; the two ends disagree about the shape of that answer.
+  // "Check the Host connection and try again" sent people to diagnose a
+  // connection that was working, which is what this code exists to stop.
+  assert.equal(remoteHostErrorKey(rendererError("REMOTE_RESPONSE_INVALID")), "remote:responseUnrecognized");
+});
+
 test("a code this Desktop does not know stays a generic failure", () => {
   assert.equal(remoteHostErrorKey(rendererError("INTERNAL")), "remote:operationFailed");
   assert.equal(remoteHostErrorKey(undefined), "remote:operationFailed");

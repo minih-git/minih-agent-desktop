@@ -17,6 +17,7 @@ import {
 import { catalogs, resolveLocale } from "@minih-agent/i18n";
 import {
   isRemoteProjectPath,
+  isAbsoluteRemotePath,
   type ComposerPasteFile,
   ErrorCodes,
   type FsChatRefEntryKind,
@@ -240,7 +241,7 @@ export function registerWorkspaceIpc({
     const hostKey = typeof input.hostKey === "string" ? input.hostKey.trim() : "";
     const path = typeof input.path === "string" ? input.path.trim() : "";
     if (!name || Array.from(name).length > 80 || !hostKey || hostKey.length > 200 || hostKey.includes(":")
-      || !path.startsWith("/") || path.length > 4096 || /[\u0000-\u001f]/.test(hostKey + path)) {
+      || !isAbsoluteRemotePath(path) || /[\u0000-\u001f]/.test(hostKey)) {
       throw Object.assign(new Error("invalid remote project"), { errorCode: ErrorCodes.INVALID_ARGUMENT });
     }
     const boot = getActiveRemoteHostsBoot();

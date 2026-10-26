@@ -182,7 +182,9 @@ test("remote folder browse rejects malformed Host data and stale connection resu
   let host = { hostKey: "h", label: "H", client: { request: async () => result }, connection: { ensureSession: async () => {} }, visible: () => true, adopt: async () => {} };
   const catalog = createRemoteSessionCatalog({ getHost: () => host });
   for (result of [null, { path: "local", entries: [] }, { path: "/home", parent: "relative", entries: [] }, { path: "/home", entries: Array(501).fill({ name: "app", path: "/home/app" }) }, { path: "/home", entries: [{ name: "../secret", path: "/secret" }] }, { path: "/home", entries: [{ name: "secret", path: "/elsewhere/secret" }] }, { path: "/home", entries: [{ name: "bad\0name", path: "/home/bad" }] }]) {
-    await assert.rejects(catalog.browseProjects("h"), { errorCode: "INVALID_ARGUMENT" });
+    // A Host answer this release cannot read is its own code: the connection is
+    // fine, so it must not be reported as a bad request or a broken link.
+    await assert.rejects(catalog.browseProjects("h"), { errorCode: "REMOTE_RESPONSE_INVALID" });
   }
   result = { path: "/home/pi", parent: "/home", entries: [] };
   assert.deepEqual(await catalog.browseProjects("h"), result);

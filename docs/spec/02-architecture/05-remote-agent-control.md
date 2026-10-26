@@ -248,7 +248,11 @@ Existing remote Agent histories remain reachable through their previous backend.
 Their session capabilities and opaque history cursors remain enforced; this does
 not grant them local project paths or change their persisted ownership.
 `remoteHostBrowseProjects` forwards only validated Host/path input to
-`project/browse` and validates returned directory entries. See
+`project/browse` and validates returned directory entries. Both accept the
+Host's own absolute spelling — POSIX, a Windows drive path or a UNC share —
+because the separator belongs to the Host's platform, not to Desktop; an answer
+this release cannot read is reported as `REMOTE_RESPONSE_INVALID` rather than as
+a connection failure. See
 [Local Agent remote workspace tools](../../adr/local-agent-remote-workspace-tools.md).
 The broader R2 target below is not an acceptance claim for every transport feature.
 

@@ -251,6 +251,15 @@ export const ErrorCodes = {
   REMOTE_PATH_NOT_FOUND: "REMOTE_PATH_NOT_FOUND",
   /** A Host-side path is outside what the principal may reach. */
   REMOTE_PATH_FORBIDDEN: "REMOTE_PATH_FORBIDDEN",
+  /**
+   * A Host answered a request with data this release cannot interpret. The
+   * connection is healthy and retrying changes nothing: the two ends disagree
+   * about the shape, which an upgrade (on either side) resolves. Kept apart
+   * from `INVALID_ARGUMENT` so a malformed *answer* is never reported as a bad
+   * *request* — and so neither reads as "check the Host connection", which is
+   * the misleading advice this code replaced.
+   */
+  REMOTE_RESPONSE_INVALID: "REMOTE_RESPONSE_INVALID",
   PAIRING_FAILED: "PAIRING_FAILED",
   PAIRING_TOKEN_EXPIRED: "PAIRING_TOKEN_EXPIRED",
   /** The Host does not advertise the capability the operation needs. */

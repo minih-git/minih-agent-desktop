@@ -316,6 +316,7 @@ codes surface through the same error object as any other call.
 | `REMOTE_FORWARD_FAILED` | yes | the SSH loopback port forward could not be established |
 | `REMOTE_PATH_NOT_FOUND` | no | a remote project/workspace path does not exist on the host |
 | `REMOTE_PATH_FORBIDDEN` | no | a remote path is outside the host's permitted roots |
+| `REMOTE_RESPONSE_INVALID` | no | a Host answered a request with data this release cannot interpret — the connection is healthy and the two ends disagree about the shape, so an upgrade resolves it (spec 19 §6.2, e.g. a Host path spelling the client does not recognize) |
 | `PAIRING_FAILED` | no | `connection/pair` could not mint a device credential |
 | `PAIRING_TOKEN_EXPIRED` | no | the single-use pairing token expired before pairing completed |
 | `CAPABILITY_UNAVAILABLE` | no | an operation was requested for a capability the host advertised as unavailable (e.g. attachments, tool relay); on the Gateway's `PUT /v1/push/registration` (HTTP 501) it means this Gateway has no provider configured for that push platform (spec 19 §11.6) |

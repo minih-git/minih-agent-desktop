@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { partitionRemoteHosts } from "../../lib/project-create-sources";
-import type { RemoteHostSummary } from "@minih-agent/shared";
+import { isAbsoluteRemotePath, type RemoteHostSummary } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { remoteHostErrorKey } from "../../lib/remote-host-errors";
+import { needsAbsoluteRemotePath } from "../../lib/remote-folder-navigation";
 import { Button, Field, Input, Select } from "../ui";
 import { RemoteFolderDialog } from "./RemoteFolderDialog";
 
@@ -45,7 +46,7 @@ export function RemoteProjectPicker({ busy, initialHostKey, onChange, onBrowsing
   }, [initialHostKey, t]);
 
   useEffect(() => {
-    selectionCallback.current(host && path.trim().startsWith("/") ? { hostKey, hostLabel: host.label, path: path.trim() } : null);
+    selectionCallback.current(host && isAbsoluteRemotePath(path.trim()) ? { hostKey, hostLabel: host.label, path: path.trim() } : null);
   }, [host, hostKey, path]);
 
   const setBrowsing = (open: boolean) => { setBrowseOpen(open); browsingCallback.current(open); };
@@ -67,7 +68,7 @@ export function RemoteProjectPicker({ busy, initialHostKey, onChange, onBrowsing
           <Button type="button" disabled={busy} onClick={(event) => { event.currentTarget.focus(); setBrowsing(true); }}>{t("remote:browseFolders")}</Button>
         </div>
       </Field>
-      {path && !path.trim().startsWith("/") ? <p className="remote-project-error" role="alert">{t("remote:REMOTE_ABSOLUTE_PATH_REQUIRED")}</p> : null}
+      {needsAbsoluteRemotePath(path.trim()) ? <p className="remote-project-error" role="alert">{t("remote:REMOTE_ABSOLUTE_PATH_REQUIRED")}</p> : null}
     </> : null}
     {loading ? <p role="status">{t("remote:loading")}</p> : null}
     {error ? <p className="remote-project-error" role="alert">{error}</p> : null}

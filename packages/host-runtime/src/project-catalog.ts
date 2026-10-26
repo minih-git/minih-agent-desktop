@@ -19,6 +19,7 @@ import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import { RacpError } from "@minih-agent/agent-host";
 import type { RacpProjectCatalog } from "@minih-agent/racp";
+import { shortenRemoteHomePath } from "@minih-agent/shared";
 
 import {
   listProjectSummaries,
@@ -61,21 +62,23 @@ export async function projectBrowseRoot(root: string = homedir()): Promise<strin
  * outside the root is returned unchanged, so a notice can never look like it is
  * inside the root when it is not.
  *
- * The phone has its own copy of this one-line rule (`apps/remote-web/src/lib/
- * path-display.ts`) because that bundle cannot import a Node module; both are
- * display-only, and the request always carries the Host's absolute spelling.
+ * The rule itself lives in `@minih-agent/shared` because the phone shows the
+ * same paths and cannot import a Node module; the separator comes from the path
+ * rather than from `node:path`, so a Windows Host shortens `C:\Users\me\x` to
+ * `~\x` and a POSIX Host keeps `/home/me/x` → `~/x`. Both are display only: the
+ * request always carries the Host's absolute spelling.
  */
 export function shortenHomePath(path: string, root: string): string {
-  const normalized = root.endsWith("/") ? root.slice(0, -1) : root;
-  if (!normalized) return path;
-  if (path === normalized) return "~";
-  const prefix = `${normalized}/`;
-  return path.startsWith(prefix) ? `~/${path.slice(prefix.length)}` : path;
+  return shortenRemoteHomePath(path, root);
 }
 
 /**
  * Whether `target` is inside `root`. Compared after `realpath`, so a symlink
  * that leaves the root is outside even when its spelling looks inside.
+ *
+ * `sep` is this Host's own separator, which is the right one here: the path and
+ * the root are both this machine's, so a Windows Host compares `\` and a POSIX
+ * Host compares `/` without either being spelled out.
  */
 export function isInsideRoot(root: string, target: string): boolean {
   if (target === root) return true;

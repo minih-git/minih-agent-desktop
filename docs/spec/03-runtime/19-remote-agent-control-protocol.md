@@ -672,6 +672,15 @@ piece of state instead of creating a second source of truth.
 | `project/register` | controller | Register a Host directory as a project: the Host canonicalizes the path, confines it to its browse root (the user's home directory), and returns the project id (D448; role lowered from owner by the D666 amendment of 2026-10-19) |
 | `project/browse` | controller | List directories under a Host path, bounded, confined to the same browse root, for the remote folder picker (D448; role lowered from owner by the D666 amendment of 2026-10-19) |
 
+Both project operations take and return a path in the **Host's own platform
+spelling**: a POSIX absolute path (`/home/me/…`), a Windows drive path
+(`C:\Users\me\…`) or a UNC share (`\\server\share\…`). A browse answer's entry
+path is the listed directory plus one separator plus the entry name, so a client
+checks the relationship without knowing which platform the Host runs. Neither
+side resolves the path locally, and the spelling is not negotiated: a POSIX
+client and a Windows Host interoperate without a protocol change. Root
+confinement, `..` collapsing and symlink escape stay in the Host.
+
 ### 6.2.1 Local-Agent workspace services
 
 New Desktop remote projects keep the Agent, transcript, project metadata, model
