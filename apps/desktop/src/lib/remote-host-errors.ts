@@ -15,6 +15,10 @@ export function remoteHostErrorKey(error: unknown): string {
     case "REMOTE_PATH_NOT_FOUND": return "remote:pathUnavailable";
     case "REMOTE_PATH_FORBIDDEN": return "remote:pathForbidden";
     case "HOST_VERSION_MISMATCH": return "remote:upgradeRequired";
+    // The Host is reachable and answered: the two ends disagree about the shape
+    // of that answer, which only an upgrade resolves. Reported on its own so the
+    // advice is never "check the connection" for a working connection.
+    case "REMOTE_RESPONSE_INVALID": return "remote:responseUnrecognized";
     // A Host that predates the operation answers with an unknown method, or
     // says the surface is not offered. Both mean the release is behind this
     // Desktop, which is what an upgrade fixes.

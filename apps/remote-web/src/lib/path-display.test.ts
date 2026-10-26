@@ -43,4 +43,12 @@ describe("displayPath", () => {
       path: "~/Projects/app",
     });
   });
+
+  it("shortens a Windows Host path with that Host's separator", () => {
+    const windowsRoot = "C:\\Users\\minih";
+    expect(displayPath("C:\\Users\\minih\\Projects\\app", windowsRoot)).toBe("~\\Projects\\app");
+    expect(displayPath(windowsRoot, windowsRoot)).toBe("~");
+    expect(displayPath("C:\\Users\\minih\\Projects", `${windowsRoot}\\`)).toBe("~\\Projects");
+    expect(displayPath("C:\\Users", "C:\\")).toBe("~\\Users");
+  });
 });
