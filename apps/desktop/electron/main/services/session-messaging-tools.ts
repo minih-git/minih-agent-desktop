@@ -44,6 +44,15 @@ function errorMessageOf(error: unknown): string {
   }
 }
 
+/**
+ * A built-in delivery's outcome.
+ *
+ * `inserted` is only meaningful for `delivery: "now"`: the Host promoted the
+ * queued turn, so it goes into the running turn when that turn accepts more
+ * input and otherwise stays at the head of the target session's queue.
+ */
+type DeliveryOutcome = SessionCollaborationDelivery & { readonly inserted?: boolean };
+
 type ParsedArgs =
   | { readonly record: Record<string, unknown> }
   | { readonly rejected: LocalToolResult };
@@ -149,6 +158,11 @@ export function createSessionSendTool(service: SessionCollaborationService): Loc
     if (kind !== undefined && kind !== "task" && kind !== "message") {
       return failure("INVALID_ARGUMENT", "`kind` must be task or message.");
     }
+    const deliveryRaw = record.delivery;
+    if (deliveryRaw !== undefined && deliveryRaw !== "queue" && deliveryRaw !== "now") {
+      return failure("INVALID_ARGUMENT", "`delivery` must be queue or now.");
+    }
+    const delivery = deliveryRaw as "queue" | "now" | undefined;
     const notifyRaw = record.notifyOnCompletion;
     if (notifyRaw !== undefined && typeof notifyRaw !== "boolean") {
       return failure("INVALID_ARGUMENT", "`notifyOnCompletion` must be a boolean.");
@@ -163,6 +177,7 @@ export function createSessionSendTool(service: SessionCollaborationService): Loc
           sessionId: stringArg(record, "sessionId"),
           content: stringArg(record, "content"),
           ...(kind ? { kind } : {}),
+          ...(delivery ? { delivery } : {}),
           ...(typeof notify === "boolean" ? { notifyOnCompletion: notify } : {}),
           // A retried model call must not deliver twice. The turn scopes the key
           // because the ledger remembers it for the session's whole lifetime,
@@ -170,14 +185,26 @@ export function createSessionSendTool(service: SessionCollaborationService): Loc
           idempotencyKey: `tool:${turnId ?? "no-turn"}:${toolCallId || randomUUID()}`,
         },
         signal,
-      })) as SessionCollaborationDelivery;
+      })) as DeliveryOutcome;
       const queued = delivered.status === "queued";
+      // A "now" delivery is promoted in the target's queue. The Host inserts it
+      // into the running turn when that turn accepts more input and otherwise
+      // leaves it at the head of the queue, so the report must not promise an
+      // insertion a turn refused.
+      const placement =
+        delivery === "now"
+          ? delivered.inserted === true
+            ? "sent now: inserted into the running turn, or first in its queue when that turn cannot take more input"
+            : "queued at the head of its queue: the target did not accept it into its running turn"
+          : queued
+            ? "queued behind its current work"
+            : `status ${delivered.status}`;
       // The completion notice is durable and at most once; mention it only
       // because a caller who turned it off must not wait for one.
       const notice =
         notify === false ? " No completion notice will be sent." : " A completion notice will arrive in this session.";
       return success(
-        `Delivered ${kind === "message" ? "message" : "task"} ${delivered.messageId} to session ${delivered.sessionId} (${queued ? "queued behind its current work" : `status ${delivered.status}`}).${notice}`,
+        `Delivered ${kind === "message" ? "message" : "task"} ${delivered.messageId} to session ${delivered.sessionId} (${placement}).${notice}`,
       );
     } catch (error) {
       return failure(errorCodeOf(error), errorMessageOf(error));
