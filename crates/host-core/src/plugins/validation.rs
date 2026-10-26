@@ -58,9 +58,26 @@ pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> 
                 .ok_or_else(|| anyhow!("PLUGIN_INVALID: setting {key} requires a type"))?;
             if !matches!(
                 setting_type,
-                "string" | "number" | "boolean" | "select" | "json" | "shortcut"
+                "string" | "number" | "boolean" | "select" | "model" | "json" | "shortcut"
             ) {
                 bail!("PLUGIN_INVALID: setting {key} has unsupported type {setting_type}");
+            }
+            if setting_type == "model" {
+                // The installed-plugin sheet fills a model field's options from
+                // the live ready-model list, so an author-declared enum would be
+                // a second source of truth that goes stale as soon as a provider
+                // is added or removed. The value is a model key; empty means the
+                // app's default model.
+                if obj.contains_key("enum") {
+                    bail!("PLUGIN_INVALID: model setting {key} cannot declare enum options");
+                }
+                if let Some(default) = obj.get("default") {
+                    if !default.is_string() {
+                        bail!(
+                            "PLUGIN_INVALID: model setting {key} default must be a model key string"
+                        );
+                    }
+                }
             }
             if obj.get("secret").and_then(Value::as_bool) == Some(true) {
                 bail!("PLUGIN_INVALID: setting {key} cannot be secret in this release");

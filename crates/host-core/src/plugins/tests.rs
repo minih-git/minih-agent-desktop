@@ -822,6 +822,79 @@ fn contributed_paths_must_stay_inside_the_plugin() {
 }
 
 #[test]
+fn a_model_setting_is_accepted_and_keeps_its_options_to_the_host() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("plugin");
+    write_plugin(
+        &root,
+        capability_manifest(
+            json!({
+                "settings": [
+                    { "key": "model", "title": "Model", "type": "model", "default": "" },
+                    {
+                        "key": "language",
+                        "title": "Language",
+                        "type": "select",
+                        "default": "zh-CN",
+                        "enum": [{ "label": "中文", "value": "zh-CN" }]
+                    }
+                ]
+            }),
+            json!([]),
+        ),
+        &[],
+    );
+    let manifest = PluginManager::read_manifest(&root).expect("a model setting is valid");
+    assert!(manifest.contributes.is_some());
+}
+
+#[test]
+fn a_model_setting_cannot_declare_its_own_options() {
+    // The sheet fills them from the live ready-model list; a manifest enum would
+    // be a second source of truth that goes stale with the provider list.
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("plugin");
+    write_plugin(
+        &root,
+        capability_manifest(
+            json!({
+                "settings": [{
+                    "key": "model",
+                    "title": "Model",
+                    "type": "model",
+                    "enum": [{ "label": "GPT", "value": "openai/gpt-5" }]
+                }]
+            }),
+            json!([]),
+        ),
+        &[],
+    );
+    let error = read_manifest_err(&root);
+    assert!(error.contains("cannot declare enum options"), "{error}");
+}
+
+#[test]
+fn a_model_setting_default_must_be_a_model_key() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("plugin");
+    write_plugin(
+        &root,
+        capability_manifest(
+            json!({
+                "settings": [{ "key": "model", "title": "Model", "type": "model", "default": 42 }]
+            }),
+            json!([]),
+        ),
+        &[],
+    );
+    let error = read_manifest_err(&root);
+    assert!(
+        error.contains("default must be a model key string"),
+        "{error}"
+    );
+}
+
+#[test]
 fn theme_contributions_require_permission_and_css() {
     let dir = tempdir().unwrap();
     let no_perm = dir.path().join("no-perm");
