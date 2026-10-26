@@ -2789,6 +2789,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     settingsTitle: "{{name}} ayarları",
     settingsHint: "Bu eklentinin bildirdiği alanları yapılandırın. Değişiklikler yalnızca bu eklenti için saklanır.",
     settingsPluginScope: "Eklenti kısayolu · yalnızca geçerli uygulama penceresi",
+    settingsModelDefault: "Uygulamanın varsayılan modeli",
     settingsSave: "Ayarları kaydet",
     settingsReset: "Sıfırla",
     settingsShortcutChange: "{{name}} kısayolunu değiştir",

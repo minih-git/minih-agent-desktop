@@ -2746,6 +2746,7 @@ export const ptBR = {
     settingsTitle: "Configuração de {{name}}",
     settingsHint: "Configure os campos declarados por este plugin. As alterações são armazenadas de forma privada para ele.",
     settingsPluginScope: "Atalho do plugin · somente na janela atual do aplicativo",
+    settingsModelDefault: "Modelo padrão do aplicativo",
     settingsSave: "Salvar configuração",
     settingsReset: "Redefinir",
     settingsShortcutChange: "Alterar atalho para {{name}}",

@@ -2781,6 +2781,7 @@ sklm: {
     "settingsTitle": "Paramètres de {{name}}",
     "settingsHint": "Configurez les champs déclarés par ce plugin. Les modifications sont stockées en privé pour ce plugin.",
     "settingsPluginScope": "Raccourci du plug-in · fenêtre de l'application actuelle uniquement",
+    "settingsModelDefault": "Modèle par défaut de l'application",
     "settingsSave": "Enregistrer les paramètres",
     "settingsReset": "Réinitialiser",
     "settingsShortcutChange": "Modifier le raccourci pour {{name}}",

@@ -2771,6 +2771,7 @@ sklm: {
     settingsTitle: "{{name}} 設定",
     settingsHint: "配置此外掛宣告的欄位。更改會私下儲存到此外掛。",
     settingsPluginScope: "外掛快捷鍵 · 僅當前應用視窗",
+    settingsModelDefault: "應用預設模型",
     settingsSave: "儲存設定",
     settingsReset: "重置",
     settingsShortcutChange: "修改 {{name}} 快捷鍵",

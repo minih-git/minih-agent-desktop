@@ -2780,6 +2780,7 @@ sklm: {
     settingsTitle: "{{name}} 设置",
     settingsHint: "配置此插件声明的字段。更改会私下保存到此插件。",
     settingsPluginScope: "插件快捷键 · 仅当前应用窗口",
+    settingsModelDefault: "应用默认模型",
     settingsSave: "保存设置",
     settingsReset: "重置",
     settingsShortcutChange: "修改 {{name}} 快捷键",

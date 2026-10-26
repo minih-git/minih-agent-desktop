@@ -462,6 +462,7 @@ export type PluginSettingType =
   | "number"
   | "boolean"
   | "select"
+  | "model"
   | "json"
   | "shortcut";
 
@@ -1847,6 +1848,7 @@ export function validateContributions(
       setting.type !== "number" &&
       setting.type !== "boolean" &&
       setting.type !== "select" &&
+      setting.type !== "model" &&
       setting.type !== "json" &&
       setting.type !== "shortcut"
     ) {
@@ -1867,6 +1869,17 @@ export function validateContributions(
       }
       if (setting.default !== undefined && !isValidShortcutShape(setting.default)) {
         return `shortcut setting "${setting.key}" has an invalid default`;
+      }
+    }
+    if (setting.type === "model") {
+      // The options come from the live ready-model list the host reads at
+      // render time, so an author-declared `enum` would be a second source of
+      // truth that goes stale the moment a provider is added or removed.
+      if (setting.enum !== undefined) {
+        return `model setting "${setting.key}" cannot declare enum options`;
+      }
+      if (setting.default !== undefined && typeof setting.default !== "string") {
+        return `model setting "${setting.key}" default must be a model key string`;
       }
     }
     if (setting.type === "select") {

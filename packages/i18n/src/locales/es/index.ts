@@ -2780,6 +2780,7 @@ sklm: {
     "settingsTitle": "Configuración de {{name}}",
     "settingsHint": "Configure los campos declarados por este complemento. Los cambios se almacenan de forma privada para este complemento.",
     "settingsPluginScope": "Acceso directo al complemento · solo ventana de la aplicación actual",
+    "settingsModelDefault": "Modelo predeterminado de la aplicación",
     "settingsSave": "Guardar configuración",
     "settingsReset": "Restablecer",
     "settingsShortcutChange": "Cambiar acceso directo para {{name}}",

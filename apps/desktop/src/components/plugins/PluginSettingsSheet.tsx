@@ -235,6 +235,24 @@ export function PluginSettingsSheet({ plugin, platform, onClose, onSaved }: Prop
                         label: option.label,
                       }))}
                     />
+                  ) : setting.type === "model" ? (
+                    <SettingsMenuSelect
+                      label={setting.title}
+                      value={String(value ?? "")}
+                      onChange={(id) => setValue(setting.key, id)}
+                      options={[
+                        {
+                          id: "",
+                          label: setting.defaultModelLabel
+                            ? `${t("plugins.settingsModelDefault")} · ${setting.defaultModelLabel}`
+                            : t("plugins.settingsModelDefault"),
+                        },
+                        ...(setting.enum ?? []).map((option) => ({
+                          id: String(option.value),
+                          label: option.label,
+                        })),
+                      ]}
+                    />
                   ) : setting.type === "json" ? (
                     <Textarea
                       className="plugins-setting-json"
