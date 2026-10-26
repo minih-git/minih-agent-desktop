@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    date: "2026-10-26",
+    highlights: [
+      "Eklenti ayarları canlı bir model seçici sunabilir: seçenekler şu anda hazır olan modelleri izler, boş bırakmak uygulamanın varsayılan modeli anlamına gelir.",
+      "Yeni salt okunur ContextUsage aracı, ajanın otomatik sıkıştırmaya ne kadar alan kaldığını görmesini sağlar; böylece toparlamayı veya devri zamanında planlayabilir.",
+      "Telefon bir oturumun görev listesini gösterir: yazma alanının üstündeki kompakt çubuk ilerlemeyi ve etkin maddeyi gösterir, dokununca tam liste açılır; sayılar masaüstüyle aynıdır.",
+      "Telefonda araç çağrılarından önceki düşünme, araç gruplarının içinde yeniden görünür; her düşünce açılabilen bir satırdır.",
+      "Uzak hatalar artık neyin yanlış gittiğini söyler — ana makine çevrimdışı, sürüm uyuşmazlığı, ağ geçidi kimlik doğrulaması veya izin verilen klasörlerin dışındaki bir yol — tek bir genel \"işlem başarısız\" yerine.",
+      "Güvenilirlik düzeltmeleri: DeepSeek istek uyumluluğu, okuma konumunu geri yükleme ve otomatik devam, aktarım hatası sınıflandırması, MCP geçmişi kurtarma; her oturum yapılacaklar paneli daraltılmış olarak açılır.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-10-24",
     highlights: [

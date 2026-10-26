@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    date: "2026-10-26",
+    highlights: [
+      "Los ajustes de plugins pueden ofrecer un selector de modelos en vivo: las opciones siguen los modelos listos en ese momento, y dejarlo vacío significa el modelo predeterminado de la app.",
+      "La nueva herramienta de solo lectura ContextUsage permite al agente saber cuánto espacio queda antes de la compactación automática, para planificar a tiempo un cierre o un traspaso.",
+      "El teléfono muestra la lista de tareas de la sesión: una barra compacta sobre el editor indica el progreso y el elemento activo, y al tocarla abre la lista completa; los recuentos coinciden con el escritorio.",
+      "En el teléfono, el razonamiento previo a las llamadas a herramientas vuelve a verse dentro de los grupos de herramientas, una línea desplegable por cada razonamiento.",
+      "Los fallos remotos ahora indican qué salió mal —host desconectado, versión incompatible, autenticación del gateway o una ruta fuera de las carpetas permitidas— en lugar de un genérico \"la operación falló\".",
+      "Correcciones de fiabilidad: compatibilidad de solicitudes con DeepSeek, restauración de la posición de lectura y continuación automática, clasificación de errores de transporte, recuperación del historial MCP; cada sesión se abre con el panel de pendientes contraído.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-10-24",
     highlights: [

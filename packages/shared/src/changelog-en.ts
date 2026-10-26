@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    date: "2026-10-26",
+    highlights: [
+      "Plugin settings can offer a live model picker: the choices follow the models that are ready right now, and leaving it empty means the app's default model.",
+      "A new read-only ContextUsage tool lets the agent check how much room is left before automatic compaction, so it can plan a wrap-up or handoff in time.",
+      "The phone shows a session's task list: a compact bar above the composer with progress and the active item opens the full list, and its counts match the desktop.",
+      "On the phone, thinking that precedes tool calls is visible again inside tool groups, one expandable line per thought.",
+      "Remote failures now say what went wrong — host offline, version mismatch, gateway authentication, or a path outside the allowed folders — instead of one generic \"operation failed\".",
+      "Reliability fixes: DeepSeek request compatibility, reading-position restore and auto-continue, transport error classification, MCP history recovery, and each session now opens with the todo panel collapsed.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-10-24",
     highlights: [

@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    date: "2026-10-26",
+    highlights: [
+      "Les paramètres des plugins peuvent proposer un sélecteur de modèle en direct : les choix suivent les modèles prêts à l’instant, et laisser vide signifie le modèle par défaut de l’application.",
+      "Le nouvel outil en lecture seule ContextUsage indique à l’agent la place restante avant la compaction automatique, pour planifier à temps une conclusion ou un relais.",
+      "Le téléphone affiche la liste de tâches d’une session : une barre compacte au-dessus de la zone de saisie montre la progression et l’élément en cours, et ouvre la liste complète ; les décomptes correspondent au bureau.",
+      "Sur le téléphone, la réflexion qui précède les appels d’outils est de nouveau visible dans les groupes d’outils, une ligne dépliable par réflexion.",
+      "Les échecs à distance indiquent désormais la cause — hôte hors ligne, version incompatible, authentification de la passerelle ou chemin hors des dossiers autorisés — au lieu d’un « opération échouée » générique.",
+      "Correctifs de fiabilité : compatibilité des requêtes DeepSeek, restauration de la position de lecture et reprise automatique, classification des erreurs de transport, récupération de l’historique MCP ; chaque session s’ouvre avec le panneau des tâches replié.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-10-24",
     highlights: [
