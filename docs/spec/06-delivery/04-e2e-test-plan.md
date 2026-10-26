@@ -8,6 +8,33 @@
 
 ## 1. Goals
 
+### E2E-UPSTREAM-20261026-selected-reliability
+
+- **Preconditions:** Request worktree, reused host dependencies, isolated session
+  files/SQLite fixtures and browser profile. No user data, live provider or MCP service.
+- **Steps:** Classify transport abort/TLS wording and actual Stop/auth failures;
+  reopen history containing MCP status/text-resource/link/image blocks. Refresh a
+  native file twice, append/replace/remove it, change auth/cwd/trust and acquire a
+  Minih lease without rewriting file bytes. Upgrade a v22 fixture with ambiguous
+  manually chosen placeholder titles, then derive a title on a new session. Switch
+  Agent/Plan/Goal in English/zh-CN at 100%, 115% and 150% appearance font scales.
+- **Expected:** Transport failures remain retryable, actual cancellation/auth and
+  certificate verification failures remain terminal. Restored MCP text matches
+  live text extraction and excludes binary bytes. Cache reuse never freezes live
+  capabilities, scan boundaries, dedup ordering or write fingerprints. Minih lock
+  ownership remains authoritative. Future v22 upgrades preserve old titles as
+  legacy; existing v23+ rows are not reclassified and new titles still derive.
+  Mode width scales with typography and stays stable across mode changes.
+- **Automation:** Runtime error/retry/history tests, native session cache tests,
+  Host title migration regressions, Composer source-contract and isolated font
+  interaction regression. Results and limitations are recorded in
+  [the selected-import record](../../project/upstream-import-2026-10-26.md).
+- **Specs:** Runtime §3.3/§12, error codes, data storage and UX components §11.3.
+- **Acceptance:** C / E / F / Quality / Accessibility.
+- **Milestone:** Selected upstream maintenance, 2026-10-26.
+- **Status:** Targeted automated coverage; no real provider, user database or
+  Windows/Linux native acceptance is implied.
+
 ### E2E-UPSTREAM-20261025-selected-reliability
 
 - **Preconditions:** Request worktree with task-local workspace builds, reused
@@ -10750,6 +10777,7 @@ selection already in place shows it without waiting for another event.
 
 | Acceptance | Scenarios |
 |---|---|
+| C / E / F / Quality / Accessibility — Selected upstream fixes 2026-10-26 | E2E-UPSTREAM-20261026-selected-reliability |
 | B / C / E / Quality / Accessibility — Selected upstream fixes 2026-10-25 | E2E-UPSTREAM-20261025-selected-reliability |
 | C / Quality / Accessibility — Right-side notification cards | E2E-NOTIFICATION-right-side-cards |
 | C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
@@ -11831,8 +11859,9 @@ This test plan spec is accepted when:
 - Open the empty home and a docked thread in both English and zh-CN.
 - Open the Composer mode chip and switch between Agent/Plan/Goal several times.
 - Expect the chip to list the three modes as checked menu items, to name only
-  the committed mode, and to keep one fixed width sized for the longest built-in
-  label (English "Agent" / zh-CN "智能体") plus its caret; the adjacent Thinking
+  the committed mode, and to keep one stable width at each appearance font scale:
+  `96px * --font-scale`, sized for the longest built-in label plus its caret.
+  Repeat at 100%, 115% and 150% in both locales; the adjacent Thinking
   and permission controls, send button, and composer shell do not move or
   resize.
 - In Goal, expect the permission chip to remain visible with the same geometry,

@@ -658,15 +658,21 @@ CREATE INDEX idx_session_import_origins_plugin
   rename does not update `updated_at`, so changing a label cannot reorder
   recent activity; transcript rows, message count, and session state remain
   unchanged.
-- `title_source` records `legacy`, `default`, `manual`, or `generated`. Schema
-  v23 classifies pre-existing known placeholder titles as `default` and all
-  other titles as `manual`; new session creation and manual rename write the
-  corresponding source. `default` means "not chosen by the user and still
-  replaceable": it covers a new session's placeholder and the deterministic
-  first-prompt fallback, which host-core writes only while the stored title is
-  still a recognized placeholder. A placeholder is recognized in every shipped
-  locale, because the renderer writes its localized `chat.untitledTask` label
-  when it creates a session. The standalone title plugin can read
+- `title_source` records `legacy`, `default`, `manual`, or `generated`. The
+  v22→v23 migration leaves every pre-existing title as `legacy`; new session
+  creation and manual rename write the corresponding source. `default` means
+  "not chosen by the user and still replaceable": it covers a new session's
+  placeholder and the deterministic first-prompt fallback, which host-core
+  writes only while the stored title is still a recognized placeholder. A
+  placeholder is recognized in every shipped locale, because the renderer
+  writes its localized `chat.untitledTask` label when it creates a session;
+  recognition trims the stored title and compares it case-insensitively. A
+  v22 database records no provenance, so an untouched placeholder and a
+  deliberate rename to that same text are indistinguishable; keeping
+  pre-existing rows `legacy` protects the deliberate rename from
+  automatic replacement. Only the future v22→v23 step behaves this way: rows a
+  database already upgraded to v23 or later keep the source they recorded and
+  are never reclassified. The standalone title plugin can read
   exact-title compare-and-set, so a manual rename wins a race.
 - Import binds every non-empty normalized `projectPath` to `project_id`;
   path-less imports remain `NULL`. Re-importing a deterministic session id
@@ -1777,9 +1783,10 @@ truncating at a guessed position.
 - **Schema v22 is additive.** It replaces `idx_sessions_updated` with
   `idx_sessions_updated_id(updated_at DESC, id DESC)` for session-list ordering.
   It changes no rows or persisted fields; a v21 backup precedes the migration.
-- **Schema v23 is additive.** It adds `sessions.title_source` and classifies
-  existing placeholder titles as `default`; every other existing title is
-  preserved and classified as `manual`. The migration keeps a v22 backup.
+- **Schema v23 is additive.** It adds `sessions.title_source` with default
+  `legacy`. Pre-existing v22 titles remain `legacy`, protecting deliberate
+  renames from automatic replacement; a database already upgraded to v23 or
+  later is never reclassified. The migration keeps a v22 backup.
 - **Schema v26 is additive.** It adds the learned-memory tables of §4.15 with
   their indexes, triggers, and FTS index. No existing row changes, pinned project
   memory is untouched, and the new tables start empty; the migration keeps a v25

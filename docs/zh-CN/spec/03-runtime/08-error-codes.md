@@ -391,7 +391,11 @@ Node sidecar 将提供商 SDK 错误映射到：
 仍为 `PROVIDER_RATE_LIMITED`。
 
 精确的 `terminated` 提供商消息和等效的过早流关闭
-消息映射到 `STREAM_FAILED`。请求设置阶段或响应后的
+消息映射到 `STREAM_FAILED`。只有结构化取消或固定措辞 `Request aborted`、
+`The operation was aborted`、`Turn aborted` 才表示 `TURN_ABORTED`；连接中断仍为
+可重试 `NETWORK_ERROR`，流中断仍为可重试 `STREAM_FAILED`。无 HTTP 状态时，
+TLS／SSL 握手认证措辞属于传输故障，不是 API Key 拒绝；已知证书验证失败、
+明确的 401／403 和凭据拒绝仍终止。请求设置阶段或响应后的
 `PROVIDER_RATE_LIMITED` 使用共享的运行时预算：初始尝试之后最多 10 次重试，
 且设置和流式传输失败一起计数。非 429 瞬时故障——`STREAM_FAILED`、
 `NETWORK_ERROR`、`TIMEOUT` 以及可重试的 `PROVIDER_ERROR`（例如上游网关

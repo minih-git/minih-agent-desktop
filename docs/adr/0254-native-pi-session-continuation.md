@@ -32,7 +32,7 @@ Minih-Agent-Desktop historically imports Pi sessions by flattening them into Des
 - ModelRuntime initializes the local catalog/auth snapshot without model network refresh; the exact saved provider/model/auth is required. Native Composer readiness uses `canPrompt`, independently of Desktop provider secrets.
 - Desktop terminal completion follows SDK prompt settlement (after `agent_settled` hooks and final persistence), not intermediate `agent_end`. Durable user acknowledgements reconcile caller optimistic IDs to SDK IDs without changing native entry IDs or deduplicating text. Abort refreshes native detail and never rewrites/restores a durable user row.
 - Native compact and session-addressed queue push/list fail with `NATIVE_PI_UNSUPPORTED` before host access. Queue remove/prioritize retain the existing opaque **host turnId** contract, not a session/source contract. Native paths never create host queue entries; future native queue support requires an explicit source/session protocol extension.
-- Listing still synchronously parses complete changed and unchanged files. Projection caching and bounded async scanning are deferred; no responsiveness bound is claimed for large catalogs in this slice.
+- Listing caches only file-derived summaries by canonical path and device/inode/size/mtime identity (2026-10-26 selected upstream adaptation). Changed files are still parsed synchronously; trust, provider/auth, cwd and lease state are recomputed. Full snapshots guard every write, and the Minih lease module owns its lock filename and append-only reclaim check. Bounded async scanning remains deferred; no responsiveness bound is claimed for large catalogs.
 
 ## Amendment: native side-chat forks (2026-09-14)
 

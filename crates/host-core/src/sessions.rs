@@ -356,9 +356,10 @@ pub struct SearchHit {
 /// and also recognizes `nav.newChat`, so host-core has to recognize the same
 /// values: it owns title eligibility and cannot read the renderer catalog when
 /// it decides whether a title may still be replaced. German, Spanish, and
-/// French fall back to the English label. Keep this in sync with the migration
-/// list in `db/session_title_source_migration.rs` and `LEGACY_DEFAULT_TITLES`
-/// in the renderer.
+/// French fall back to the English label. Keep this in sync with
+/// `LEGACY_DEFAULT_TITLES` in `apps/desktop/src/lib/session-title-utils.ts`.
+/// The v22→v23 migration no longer mirrors this list: it leaves every
+/// pre-existing title as `legacy` (see `db/session_title_source_migration.rs`).
 const PLACEHOLDER_TITLES: [&str; 13] = [
     "",
     "New task",

@@ -122,18 +122,40 @@ fn v18_database_migrates_session_thinking_omit() {
     assert!(sql.contains("'omit'"), "{sql}");
 }
 
+/// Historical v22 databases carry no provenance metadata, so an untouched
+/// placeholder title and a deliberate rename to that same text are
+/// indistinguishable. Schema v23 therefore leaves every pre-existing session
+/// classified as `legacy` with its stored title intact, protecting deliberate
+/// renames from being replaced by first-prompt title derivation. Sessions
+/// created after the upgrade keep the standard `default`/`manual` behavior.
 #[test]
 fn v22_database_migrates_session_title_sources_without_losing_titles() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pi.sqlite");
-    let (default_id, localized_id, manual_id) = {
+    let (default_id, localized_id, lowercase_id, renamed_v22_id, manual_id) = {
         let db = Database::open(&path).unwrap();
+        // 1. Untouched session holding the default placeholder.
         let default_session =
             crate::sessions::create_session(&db, None, None, None, None, None).unwrap();
-        // A v22 install wrote the active locale's placeholder into the title.
+        // 2. A v22 install wrote the active locale's placeholder into the title.
         let localized_session =
             crate::sessions::create_session(&db, Some("새 작업".into()), None, None, None, None)
                 .unwrap();
+        // 3. Untouched session created with the lowercase placeholder.
+        let lowercase_session =
+            crate::sessions::create_session(&db, Some("new task".into()), None, None, None, None)
+                .unwrap();
+        // 4. Session the user renames while the database is still at v22.
+        let renamed_session = crate::sessions::create_session(
+            &db,
+            Some("Initial task name".into()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        // 5. Ordinary title chosen by the user.
         let manual_session = crate::sessions::create_session(
             &db,
             Some("A title chosen by the user".into()),
@@ -143,38 +165,184 @@ fn v22_database_migrates_session_title_sources_without_losing_titles() {
             None,
         )
         .unwrap();
+        // Downgrade the fixture to schema v22 (no title_source column).
         db.conn()
             .execute_batch("ALTER TABLE sessions DROP COLUMN title_source;")
             .unwrap();
         db.conn().pragma_update(None, "user_version", 22).unwrap();
-        (default_session.id, localized_session.id, manual_session.id)
+        // v22 records no provenance, so this rename is a title-only update.
+        db.conn()
+            .execute(
+                "UPDATE sessions SET title = 'New task' WHERE id = ?1",
+                params![renamed_session.id],
+            )
+            .unwrap();
+        (
+            default_session.id,
+            localized_session.id,
+            lowercase_session.id,
+            renamed_session.id,
+            manual_session.id,
+        )
     };
 
+    // Reopening walks the real v22 -> v23 migration.
     let db = Database::open(&path).unwrap();
     assert_eq!(schema_version(db.conn()), SCHEMA_VERSION);
     assert!(migration_backup_path(&path, 22).exists());
-    let sources: (String, String, String) = db
+
+    let sources: (String, String, String, String, String) = db
         .conn()
         .query_row(
             "SELECT
                 (SELECT title_source FROM sessions WHERE id = ?1),
                 (SELECT title_source FROM sessions WHERE id = ?2),
-                (SELECT title_source FROM sessions WHERE id = ?3)",
-            params![default_id, localized_id, manual_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                (SELECT title_source FROM sessions WHERE id = ?3),
+                (SELECT title_source FROM sessions WHERE id = ?4),
+                (SELECT title_source FROM sessions WHERE id = ?5)",
+            params![
+                default_id,
+                localized_id,
+                lowercase_id,
+                renamed_v22_id,
+                manual_id
+            ],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .unwrap();
     assert_eq!(
         sources,
-        ("default".into(), "default".into(), "manual".into())
+        (
+            "legacy".into(),
+            "legacy".into(),
+            "legacy".into(),
+            "legacy".into(),
+            "legacy".into()
+        )
     );
+
+    // `legacy` refuses the deterministic first-prompt fallback for every
+    // pre-existing row, including untouched placeholders.
+    for id in [
+        &default_id,
+        &localized_id,
+        &lowercase_id,
+        &renamed_v22_id,
+        &manual_id,
+    ] {
+        assert!(
+            !crate::sessions::derive_session_title(&db, id, "Fix the login").unwrap(),
+            "legacy row {id} must refuse first-prompt derivation"
+        );
+    }
+    let titles: (String, String, String, String, String) = db
+        .conn()
+        .query_row(
+            "SELECT
+                (SELECT title FROM sessions WHERE id = ?1),
+                (SELECT title FROM sessions WHERE id = ?2),
+                (SELECT title FROM sessions WHERE id = ?3),
+                (SELECT title FROM sessions WHERE id = ?4),
+                (SELECT title FROM sessions WHERE id = ?5)",
+            params![
+                default_id,
+                localized_id,
+                lowercase_id,
+                renamed_v22_id,
+                manual_id
+            ],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
     assert_eq!(
-        crate::sessions::get_session(&db, &manual_id)
+        titles,
+        (
+            "New task".into(),
+            "새 작업".into(),
+            "new task".into(),
+            "New task".into(),
+            "A title chosen by the user".into()
+        )
+    );
+
+    // Sessions created after the upgrade keep the standard behavior.
+    let new_default = crate::sessions::create_session(&db, None, None, None, None, None).unwrap();
+    let new_source: String = db
+        .conn()
+        .query_row(
+            "SELECT title_source FROM sessions WHERE id = ?1",
+            params![new_default.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(new_source, "default");
+    assert!(crate::sessions::derive_session_title(&db, &new_default.id, "New turn title").unwrap());
+    assert_eq!(
+        crate::sessions::get_session(&db, &new_default.id)
             .unwrap()
             .unwrap()
             .summary
             .title,
-        "A title chosen by the user"
+        "New turn title"
+    );
+}
+
+/// A database that already ran the v22 -> v23 migration keeps the provenance it
+/// recorded: a manual rename to a placeholder-looking title stays `manual` and
+/// is not reclassified by later migration steps.
+#[test]
+fn manual_placeholder_title_is_never_overwritten_after_upgrade() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pi.sqlite");
+    let session_id = {
+        let db = Database::open(&path).unwrap();
+        let session = crate::sessions::create_session(&db, None, None, None, None, None).unwrap();
+        // The user explicitly renamed the session to a placeholder title.
+        assert!(crate::sessions::rename_session(&db, &session.id, "New task").unwrap());
+        // Simulate a database that already migrated past v22.
+        db.conn().pragma_update(None, "user_version", 23).unwrap();
+        session.id
+    };
+
+    // Reopening walks the real v23 -> v24 -> v25 -> v26 upgrade path.
+    let db = Database::open(&path).unwrap();
+    assert_eq!(schema_version(db.conn()), SCHEMA_VERSION);
+    let (title, source): (String, String) = db
+        .conn()
+        .query_row(
+            "SELECT title, title_source FROM sessions WHERE id = ?1",
+            params![session_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(source, "manual");
+    assert_eq!(title, "New task");
+
+    // The user-selected title must not be overwritten on the next prompt.
+    assert!(!crate::sessions::derive_session_title(&db, &session_id, "Fix the login").unwrap());
+    assert_eq!(
+        crate::sessions::get_session(&db, &session_id)
+            .unwrap()
+            .unwrap()
+            .summary
+            .title,
+        "New task"
     );
 }
 

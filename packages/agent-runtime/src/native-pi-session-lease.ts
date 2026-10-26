@@ -129,14 +129,16 @@ export class NativePiSessionLease {
     return lease;
   }
 
-  static canAcquire(path: string, current: NativePiSnapshot): boolean {
+  /** A lock-free list row needs no byte snapshot; reclaim checks still do. */
+  static canAcquire(path: string, current?: NativePiSnapshot): boolean {
+    let previous: LeaseRecord;
     try {
-      const previous = JSON.parse(readFileSync(`${path}.minih-agent-desktop.lock`, "utf8")) as LeaseRecord;
-      return previous?.hostname === hostname() && !processIsAlive(previous.pid) &&
-        Boolean(previous.target) && isCompleteAppendOnlyExtension(previous.target, current);
+      previous = JSON.parse(readFileSync(`${path}.minih-agent-desktop.lock`, "utf8")) as LeaseRecord;
     } catch (error) {
       return (error as NodeJS.ErrnoException).code === "ENOENT";
     }
+    return previous?.hostname === hostname() && !processIsAlive(previous.pid) &&
+      Boolean(previous.target) && isCompleteAppendOnlyExtension(previous.target, current ?? nativePiSnapshot(path));
   }
 
   private record(): LeaseRecord {

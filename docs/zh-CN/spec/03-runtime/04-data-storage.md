@@ -385,14 +385,15 @@ CREATE INDEX idx_sessions_project ON sessions(project_id) WHERE project_id IS NO
 CREATE INDEX idx_sessions_deleted ON sessions(deleted_at) WHERE deleted_at IS NOT NULL;
 ```
 
-`title_source` 记录 `legacy`、`default`、`manual` 或 `generated`。架构 v23 会将已有的
-已知占位标题归类为 `default`，其余标题归类为 `manual`，不改写标题。新建会话和手动重命名
-会写入相应来源。`default` 表示“非用户选择、仍可替换”：它既覆盖新会话的占位标题，也覆盖
-确定性的首条提示兜底标题（host-core 只在存储标题仍是可识别占位标题时才写入）。占位标题在
-所有已发布的语言下都会被识别，因为渲染器创建会话时会写入本地化的 `chat.untitledTask` 文案。
-独立标题插件只能读取 `default` 会话的首轮文本，并且只能用精确标题比较并设置，因此并发手动
-重命名会胜出。
-会胜出。
+`title_source` 记录 `legacy`、`default`、`manual` 或 `generated`。v22→v23 迁移将已有的
+v22 标题全部保留为 `legacy`，不改写标题；新建会话和手动重命名会写入相应来源。`default` 表示
+“非用户选择、仍可替换”：它既覆盖新会话的占位标题，也覆盖确定性的首条提示兜底标题（host-core
+只在存储标题仍是可识别占位标题时才写入）。占位标题在所有已发布的语言下都会被识别，因为渲染器
+创建会话时会写入本地化的 `chat.untitledTask` 文案；识别会先去掉首尾空白，再忽略大小写比较。
+v22 数据库不记录来源，未修改的占位标题与同名的主动重命名无法区分，因此把已有行保留为 `legacy`
+可以避免主动重命名被自动替换。只有未来的 v22→v23 迁移这样处理：已经升级到 v23 及以上的行保留
+其已记录的来源，永不重新分类。独立标题插件只能读取 `default` 会话的首轮文本，并且只能用精确标题
+比较并设置，因此并发手动重命名会胜出。
 
 插件导入增加一个由主机拥有的来源 sidecar。它与核心会话身份分离，
 每次插件读写都必须匹配创建该行的 `plugin_id`：
@@ -1316,8 +1317,9 @@ assistant 行进入 outbox 之前，事件持久化会丢弃没有可见文本�
 - **架构 v17 是增量的。** 它增加可为空的 `providers.owner_plugin_id` 归属列及其部分索引
   （ADR 0259），从而把插件在 `contributes.providers` 中声明的 provider 行与用户创建的行区分开
   —— 所有 v17 之前的行保持 NULL 归属。该步骤之前保留 `pi.sqlite.v16.bak` 副本。
-- **架构 v23 是增量的。** 它增加 `sessions.title_source`，并将现有占位标题归类为
-  `default`；其余现有标题保持原样并归类为 `manual`。迁移前保留 v22 备份。
+- **架构 v23 是增量的。** 它增加 `sessions.title_source`，默认值为 `legacy`。已有的 v22
+  标题保留为 `legacy`，防止主动重命名被自动覆盖；已经升级到 v23 及以上的数据库永不重新分类。
+  迁移前保留 v22 备份。
   v15→v16 会话协作步骤现在写入 `16`（它自己的版本）而不是最新的架构常量，
   因此 v15 文件可以在一次启动中走完两个步骤。
 - **架构 v26 是增量的。** 它增加 §4.15 的学习记忆表及其索引、触发器和 FTS 索引。

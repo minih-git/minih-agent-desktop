@@ -408,7 +408,13 @@ replayed by either retry budget, and a delegate reports it as
 classified first and stays `PROVIDER_RATE_LIMITED`.
 
 An exact `terminated` provider message and equivalent premature stream-close
-messages map to `STREAM_FAILED`. A request-setup or post-response
+messages map to `STREAM_FAILED`. Only a structured abort or the fixed phrases
+`Request aborted`, `The operation was aborted` and `Turn aborted` imply
+`TURN_ABORTED`. Connection-abort wording remains retryable `NETWORK_ERROR`,
+and stream-abort wording remains retryable `STREAM_FAILED`. Without an HTTP
+status, TLS/SSL handshake authentication wording is a transport failure, not
+an API-key rejection. Known certificate verification errors remain terminal,
+as do explicit 401/403 and credential-rejection phrases. A request-setup or post-response
 `PROVIDER_RATE_LIMITED` uses the shared runtime budget: ten retries after the
 initial attempt, with setup and stream failures counting together. Non-429
 transient failures — `STREAM_FAILED`, `NETWORK_ERROR`, `TIMEOUT`, and retryable

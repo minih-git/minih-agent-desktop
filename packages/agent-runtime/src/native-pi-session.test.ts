@@ -1190,3 +1190,117 @@ describe("native settlement and reclaim boundaries", () => {
     expect((await service.list())[0].readOnlyReason).toBe("busy");
   });
 });
+
+describe("native session list projection cache", () => {
+  it("reuses file-derived summaries until append and disposal invalidate them", async () => {
+    const f = fixture();
+    const service = new NativePiSessionService(f);
+    const derive = vi.spyOn(SessionManager, "inMemory");
+    try {
+      const first = await service.list();
+      expect(derive).toHaveBeenCalledTimes(1);
+      expect(await service.list()).toEqual(first);
+      expect(derive).toHaveBeenCalledTimes(1);
+      writeFileSync(f.file, f.text + JSON.stringify({
+        type: "message", id: "later", parentId: "future", timestamp: "2026-09-14T00:00:10.000Z",
+        message: { role: "user", content: [{ type: "text", text: "later question" }], timestamp: 4 },
+      }) + "\n");
+      const [appended] = await service.list();
+      expect(derive).toHaveBeenCalledTimes(2);
+      expect(appended.messageCount).toBe(first[0].messageCount + 1);
+      expect(appended.updatedAt).toBe("2026-09-14T00:00:10.000Z");
+      service.disposeAll();
+      expect(await service.list()).toEqual([appended]);
+      expect(derive).toHaveBeenCalledTimes(3);
+    } finally { service.disposeAll(); }
+  });
+
+  it("invalidates same-size atomic replacements even when mtime is retained", async () => {
+    const { renameSync, statSync, utimesSync } = await import("node:fs");
+    const f = fixture();
+    const fixedTime = new Date("2026-10-01T00:00:00Z");
+    utimesSync(f.file, fixedTime, fixedTime);
+    const service = new NativePiSessionService(f);
+    try {
+      expect((await service.list())[0].title).toBe("hello");
+      const before = statSync(f.file);
+      const replacement = `${f.file}.replacement`;
+      writeFileSync(replacement, f.text.replace('"hello"', '"world"'));
+      utimesSync(replacement, before.atime, before.mtime);
+      renameSync(replacement, f.file);
+      const after = statSync(f.file);
+      expect(after.size).toBe(before.size);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
+      expect(after.ino).not.toBe(before.ino);
+      expect((await service.list())[0].title).toBe("world");
+      rmSync(f.file);
+      expect(await service.list()).toEqual([]);
+      writeFileSync(f.file, f.text);
+      expect((await service.list())[0].title).toBe("hello");
+    } finally { service.disposeAll(); }
+  });
+
+  it("keeps Minih leases live while file-derived summaries are cached", async () => {
+    const f = await configuredFixture();
+    const service = new NativePiSessionService(f);
+    try {
+      expect((await service.list())[0].capabilities?.canPrompt).toBe(true);
+      const lease = acquireNativePiSessionLease(f.file);
+      try {
+        expect((await service.list())[0]).toMatchObject({ readOnlyReason: "busy", capabilities: { canPrompt: false } });
+      } finally { lease.release(); }
+      expect((await service.list())[0].capabilities?.canPrompt).toBe(true);
+    } finally { service.disposeAll(); }
+  });
+
+  it("rechecks provider authentication and cwd existence without a file write", async () => {
+    const f = await configuredFixture();
+    const service = new NativePiSessionService(f);
+    try {
+      expect((await service.list())[0].capabilities?.canPrompt).toBe(true);
+      const auth = vi.spyOn(ModelRuntime.prototype, "hasConfiguredAuth").mockReturnValue(false);
+      expect((await service.list())[0].readOnlyReason).toBe("provider-unavailable");
+      auth.mockRestore();
+      expect((await service.list())[0].capabilities?.canPrompt).toBe(true);
+      rmSync(f.project, { recursive: true });
+      expect((await service.list())[0].readOnlyReason).toBe("missing-cwd");
+      mkdirSync(f.project);
+      expect((await service.list())[0].capabilities?.canPrompt).toBe(true);
+    } finally { service.disposeAll(); }
+  });
+});
+
+describe("native cached projection live safety gates", () => {
+  it("rechecks project resource trust without rewriting session bytes", async () => {
+    const { ProjectTrustStore } = await import("@earendil-works/pi-coding-agent");
+    const f = await configuredFixture();
+    const service = new NativePiSessionService(f);
+    try {
+      expect((await service.list())[0].capabilities?.canPrompt).toBe(true);
+      const configDir = join(f.project, ".pi");
+      mkdirSync(configDir);
+      writeFileSync(join(configDir, "settings.json"), "{}");
+      expect((await service.list())[0].readOnlyReason).toBe("project-untrusted");
+      const trust = new ProjectTrustStore(f.agentDir);
+      trust.set(f.project, true);
+      expect((await service.list())[0].capabilities?.canPrompt).toBe(true);
+      trust.set(f.project, false);
+      expect((await service.list())[0].readOnlyReason).toBe("project-untrusted");
+      rmSync(configDir, { recursive: true });
+      expect((await service.list())[0].capabilities?.canPrompt).toBe(true);
+      expect(readFileSync(f.file, "utf8")).toBe(f.text);
+    } finally { service.disposeAll(); }
+  });
+
+  it("does not mistake a missing snapshot for an absent Minih lock", async () => {
+    const { NativePiSessionLease } = await import("./native-pi-session-lease.js");
+    const f = fixture();
+    const lease = acquireNativePiSessionLease(f.file);
+    const lockPath = `${f.file}.minih-agent-desktop.lock`;
+    const record = JSON.parse(readFileSync(lockPath, "utf8"));
+    lease.release();
+    writeFileSync(lockPath, JSON.stringify({ ...record, pid: 2147483647 }));
+    rmSync(f.file);
+    expect(() => NativePiSessionLease.canAcquire(f.file)).toThrow();
+  });
+});

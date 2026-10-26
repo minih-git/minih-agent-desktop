@@ -3073,10 +3073,11 @@ present, so the two never render together.
 - Padding: px-4 py-3 inner textarea
 - Font: text-sm for Agent, Plan, and Goal; mode changes semantics and tool
   controls, not the typography
-- The Agent/Plan/Goal mode chip reserves one fixed 96px width, sized from the
-  longest built-in label in English and zh-CN ("Agent" / "智能体") plus its
-  menu caret. Its label stays single-line and ellipsizes if a future locale
-  exceeds that budget, so switching modes never reflows the adjacent Composer
+- The Agent/Plan/Goal mode chip reserves `96px * --font-scale` width, sized from
+  the longest built-in label in English and zh-CN ("Agent" / "智能体") plus its
+  menu caret. The reservation scales with Appearance typography, remaining stable
+  across mode changes at each font scale. Its label stays single-line and may
+  ellipsize for a future locale exceeding that budget; mode changes never reflow adjacent Composer
   controls. The chip names the committed mode and opens one menu listing the
   three modes, each a checked menu item; choosing one closes the menu and
   configures the active session. While the live turn is

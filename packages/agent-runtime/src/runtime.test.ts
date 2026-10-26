@@ -4615,6 +4615,31 @@ describe("DesktopAgentRuntime tool history restore (D120)", () => {
     ...overrides,
   });
 
+  it("restores MCP resource bodies through runtime history initialization", async () => {
+    const runtime = createRuntime({ history: [
+      { id: "resource-user", role: "user", content: "read the file", createdAt: new Date().toISOString() },
+      { id: "resource-assistant", role: "assistant", content: "Reading.", createdAt: new Date().toISOString() },
+      toolRow({ toolName: "get_file_contents", toolResult: { content: [
+        { type: "text", text: "downloaded" },
+        { type: "resource", resource: { uri: "repo://fixture/index.ts", text: "export const answer = 42;" } },
+        { type: "resource_link", name: "large.json", uri: "https://example.test/large.json" },
+        { type: "image", data: "cG5n", mimeType: "image/png" },
+      ] } }),
+    ] });
+    try {
+      const internals = runtime as unknown as { agent: { state: { messages: unknown[] } } };
+      expect(internals.agent.state.messages).toContainEqual(expect.objectContaining({
+        role: "toolResult", toolName: "get_file_contents", isError: false,
+        content: [
+          { type: "text", text: "downloaded" },
+          { type: "text", text: "export const answer = 42;" },
+          { type: "text", text: "[resource link] large.json: https://example.test/large.json" },
+          { type: "image", data: "cG5n", mimeType: "image/png" },
+        ],
+      }));
+    } finally { await runtime.dispose(); }
+  });
+
   it("restores tool call/result pairs adjacent to their assistant turn", async () => {
     const runtime = createRuntime({
       history: [
@@ -5508,7 +5533,10 @@ describe("DesktopAgentRuntime assistant thinking events", () => {
     await runtime.dispose();
   });
 
-  it("retries a compacted transcript through the public prompt wiring (issue #1768)", async () => {
+  it.each([
+    "terminated", "software caused connection abort", "stream aborted",
+    "mutual TLS authentication failed", "authentication handshake timed out",
+  ])("retries %s through public prompt wiring after compaction", async (errorMessage) => {
     const onEvent = vi.fn();
     const runtime = createRuntime({ onEvent });
     const agent = (runtime as any).agent;
@@ -5527,7 +5555,7 @@ describe("DesktopAgentRuntime assistant thinking events", () => {
         content: [{ type: "text", text: "partial response" }],
         stopReason: "error",
       }),
-      errorMessage: "terminated",
+      errorMessage,
     };
 
     agent.prompt = vi.fn(async () => {
