@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "Plugins que escolhem um modelo voltam a ser instalados: o validador nativo do aplicativo recusava um tipo de configuração que a tela de configurações já aceitava.",
+      "Sessões remotas abrem a pasta pedida em um host Windows: os caminhos absolutos desse host são usados como estão, em vez de reescritos para um caminho inexistente.",
+      "Uma mensagem pode ser entregue a uma sessão que ainda está escrevendo o turno, em vez de esperar que ele termine.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [

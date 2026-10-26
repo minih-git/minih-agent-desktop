@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "Plugins mit einer Modellauswahl lassen sich wieder installieren: Der native Validator der App lehnte einen Einstellungstyp ab, den die Einstellungsansicht längst unterstützte.",
+      "Remote-Sitzungen öffnen auf einem Windows-Host den gewünschten Ordner: Dessen absolute Pfade werden unverändert übernommen, statt in einen nicht existierenden Pfad umgeschrieben zu werden.",
+      "Eine Nachricht kann direkt in einer Sitzung landen, die gerade ihre Antwort schreibt, statt auf deren Ende zu warten.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [

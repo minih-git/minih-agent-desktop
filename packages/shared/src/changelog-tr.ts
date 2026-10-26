@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.1.1",
+    date: "2026-10-27",
+    highlights: [
+      "Model seçen bir eklenti yeniden kurulabiliyor: uygulamanın yerel doğrulayıcısı, ayarlar ekranının zaten desteklediği bir ayar türünü reddediyordu.",
+      "Uzak oturumlar bir Windows ana makinesinde istenen klasörü açıyor: ana makinenin mutlak yolları olduğu gibi kullanılıyor, var olmayan bir yola çevrilmiyor.",
+      "Bir mesaj, turunu hâlâ yazan bir oturuma doğrudan iletilebiliyor; turun bitmesi beklenmiyor.",
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-26",
     highlights: [
