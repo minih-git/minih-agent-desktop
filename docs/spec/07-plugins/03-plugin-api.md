@@ -106,7 +106,12 @@ pi.plugin.getDataPath(): Promise<string> // plugin-private directory
 
 The installed Plugins page renders every `contributes.settings` field and
 persists edits in the plugin's private settings file. Supported generated
-controls are `string`, `number`, `boolean`, `select`, `json`, and `shortcut`.
+controls are `string`, `number`, `boolean`, `select`, `model`, `json`, and
+`shortcut`. A `model` field's options are the live ready-model list the host
+reads when it builds the sheet (the same list `pi.models.list` answers with), so
+a plugin declares no `enum` there and the empty value means "the app's default
+model"; the plugin still receives whatever key was stored, and a key naming a
+model that is momentarily unavailable is kept rather than reset.
 Generated `title` / `description` / `enum[].label` are author-language strings;
 the host does not resolve locale maps on them. A plugin that needs a localized
 settings surface ships `settingsDestinations` and reads `pi.app.getLocale`

@@ -2810,6 +2810,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     settingsTitle: "{{name}} settings",
     settingsHint: "Configure the fields declared by this plugin. Changes are stored privately for this plugin.",
     settingsPluginScope: "Plugin shortcut · current app window only",
+    settingsModelDefault: "App default model",
     settingsSave: "Save settings",
     settingsReset: "Reset",
     settingsShortcutChange: "Change shortcut for {{name}}",

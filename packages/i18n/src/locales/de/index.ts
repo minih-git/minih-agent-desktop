@@ -2781,6 +2781,7 @@ sklm: {
     "settingsTitle": "{{name}}-Einstellungen",
     "settingsHint": "Konfigurieren die von diesem Plugin deklarierten Felder. Änderungen werden für dieses Plugin privat gespeichert.",
     "settingsPluginScope": "Plugin-Verknüpfung · nur aktuelles App-Fenster",
+    "settingsModelDefault": "Standardmodell der App",
     "settingsSave": "Einstellungen speichern",
     "settingsReset": "Zurücksetzen",
     "settingsShortcutChange": "Verknüpfung für {{name}} ändern",

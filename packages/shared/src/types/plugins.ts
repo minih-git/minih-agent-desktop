@@ -282,6 +282,7 @@ export type PluginSettingType =
   | "number"
   | "boolean"
   | "select"
+  | "model"
   | "json"
   | "shortcut";
 
@@ -298,6 +299,12 @@ export type PluginSettingDefinition = {
   type: PluginSettingType;
   default?: unknown;
   enum?: PluginSettingOption[];
+  /**
+   * `type: "model"` only: the label of the model the app currently defaults to,
+   * so the surface can name the empty option instead of inventing a label. The
+   * live models travel in `enum`; a plugin never declares either of them.
+   */
+  defaultModelLabel?: string;
   /** Shortcut settings invoke this plugin command in the app window. */
   command?: string;
   /** The first shortcut scope; global registration is intentionally not supported. */

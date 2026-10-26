@@ -2793,6 +2793,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     settingsTitle: "{{name}} 설정",
     settingsHint: "이 플러그인이 선언한 필드를 구성하세요. 변경 사항은 이 플러그인에만 비공개로 저장됩니다.",
     settingsPluginScope: "플러그인 단축키 · 현재 앱 창에서만",
+    settingsModelDefault: "앱 기본 모델",
     settingsSave: "설정 저장",
     settingsReset: "초기화",
     settingsShortcutChange: "{{name}} 단축키 변경",

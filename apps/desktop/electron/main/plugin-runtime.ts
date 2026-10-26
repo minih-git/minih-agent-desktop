@@ -73,6 +73,7 @@ import {
   type PluginSkillContrib,
   type PluginThemeVariableContrib,
 } from "@minih-agent/plugin-sdk";
+import { pluginSettingsView } from "./plugin-settings-view";
 import {
   isAllowedKeybinding,
   isReservedKeybinding,
@@ -1870,7 +1871,7 @@ export class PluginRuntime {
     const loaded = this.loaded.get(pluginId);
     if (!loaded) throw apiError("NOT_FOUND", `plugin not loaded: ${pluginId}`);
     const values = await this.hostApi(loaded).plugin.getSettings();
-    return this.settingsView(loaded, values);
+    return await this.settingsView(loaded, values);
   }
 
   /** Validate and persist user settings, then notify the plugin process. */
@@ -1898,24 +1899,28 @@ export class PluginRuntime {
       event: "plugin:settingsChanged",
       args: [next],
     });
-    return this.settingsView(loaded, next);
+    return await this.settingsView(loaded, next);
   }
 
-  private settingsView(
+  /**
+   * The sheet's field list. The live model list is read per call, so a `model`
+   * field offers what Settings → Models shows right now, including a provider
+   * enabled since the app started; a failed read costs the options, never the
+   * sheet.
+   */
+  private async settingsView(
     loaded: LoadedPlugin,
     values: Record<string, unknown>,
-  ): PluginSettingDefinition[] {
-    return (loaded.manifest.contributes?.settings ?? []).map((setting) => ({
-      key: setting.key,
-      title: setting.title,
-      ...(setting.description ? { description: setting.description } : {}),
-      type: setting.type as PluginSettingDefinition["type"],
-      ...(setting.default === undefined ? {} : { default: setting.default }),
-      ...(setting.enum ? { enum: setting.enum } : {}),
-      ...(setting.command ? { command: setting.command } : {}),
-      scope: "plugin",
-      value: values[setting.key] ?? setting.default,
-    }));
+  ): Promise<PluginSettingDefinition[]> {
+    return pluginSettingsView(loaded.manifest.contributes?.settings, values, await this.readyModels());
+  }
+
+  private async readyModels(): Promise<PluginModelInfo[]> {
+    try {
+      return (await this.services.listModels?.()) ?? [];
+    } catch {
+      return [];
+    }
   }
 
   private validateSettingValue(
@@ -1946,6 +1951,14 @@ export class PluginRuntime {
       case "select":
         if (!setting.enum?.some((option) => Object.is(option.value, value))) {
           throw apiError("INVALID_ARGUMENT", `setting ${setting.key} has an invalid option`);
+        }
+        return;
+      case "model":
+        // Any string is accepted: a stored key may name a model that is only
+        // temporarily unavailable (provider disabled or rate-limited), and
+        // dropping the reader's choice is worse than keeping it.
+        if (typeof value !== "string") {
+          throw apiError("INVALID_ARGUMENT", `setting ${setting.key} must be a model key`);
         }
         return;
       case "shortcut": {

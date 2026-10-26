@@ -388,6 +388,33 @@ describe("validateContributions", () => {
       }),
     ).toMatch(/undeclared command/);
   });
+
+  it("accepts a model setting and leaves its options to the host", () => {
+    expect(
+      validateContributions({
+        settings: [{ key: "model", title: "Model", type: "model", default: "" }],
+      }),
+    ).toBeUndefined();
+    expect(
+      validateContributions({
+        settings: [{ key: "model", title: "Model", type: "model", default: "openai/gpt-5" }],
+      }),
+    ).toBeUndefined();
+    // The live ready-model list is the host's to fill; an author enum would be a
+    // second source of truth that goes stale when a provider comes or goes.
+    expect(
+      validateContributions({
+        settings: [
+          { key: "model", title: "Model", type: "model", enum: [{ label: "GPT", value: "openai/gpt-5" }] },
+        ],
+      }),
+    ).toMatch(/cannot declare enum options/);
+    expect(
+      validateContributions({
+        settings: [{ key: "model", title: "Model", type: "model", default: 42 }],
+      }),
+    ).toMatch(/default must be a model key string/);
+  });
 });
 
 describe("contributes.views", () => {
