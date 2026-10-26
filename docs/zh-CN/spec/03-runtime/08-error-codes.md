@@ -306,6 +306,7 @@ ADR 0285）。渲染进程除了一个标识徽章外看不到本地/远程之�
 | `REMOTE_FORWARD_FAILED` | 是 | 无法建立 SSH 回环端口转发 |
 | `REMOTE_PATH_NOT_FOUND` | 否 | 远程项目/工作区路径在主机上不存在 |
 | `REMOTE_PATH_FORBIDDEN` | 否 | 远程路径在主机允许的根之外 |
+| `REMOTE_RESPONSE_INVALID` | 否 | 主机返回了本版本无法解析的数据——连接本身正常，是两端对数据形状的理解不一致，升级可解决（规格 19 §6.2，例如客户端不识别的主机路径写法） |
 | `PAIRING_FAILED` | 否 | `connection/pair` 无法铸造设备凭据 |
 | `PAIRING_TOKEN_EXPIRED` | 否 | 一次性配对令牌在配对完成前已过期 |
 | `CAPABILITY_UNAVAILABLE` | 否 | 请求的操作对应主机声明为不可用的能力（如附件、工具中继）；在 Gateway 的 `PUT /v1/push/registration` 上（HTTP 501）表示该 Gateway 未配置该推送平台的服务商（规格 19 §11.6） |

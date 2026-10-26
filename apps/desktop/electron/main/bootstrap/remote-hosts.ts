@@ -8,7 +8,7 @@ import {
   type RemoteHostBrowseProjectsResult, type RemoteHostUpgrade,
   type RemoteHostConnectionStatus, type RemoteHostSyncProvidersRequest, type RemoteHostSyncProvidersResult, type SessionSummary,
   type RemoteHostTransport,
-  type CommandShellOption, isCommandShellOption,
+  type CommandShellOption, isCommandShellOption, isAbsoluteRemotePath,
   type WorkspaceFilesRequest,
 } from "@minih-agent/shared";
 import { wsClientTransport } from "@minih-agent/racp";
@@ -652,7 +652,9 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
       const host = connectedHost(input.hostKey);
       if (!host) throw unavailable();
       const { hostKey: _hostKey, ...request } = input;
-      if (!request.path.startsWith("/") || request.path.includes("\0")
+      // The Host's own spelling: a Windows Host answers `project/browse` with
+      // `C:\…`, so the tools on that project must accept it too.
+      if (!isAbsoluteRemotePath(request.path)
         || !["Read", "Glob", "Grep", "Write", "Edit", "Bash"].includes(request.toolName)) {
         throw Object.assign(new Error("invalid remote workspace tool"), { errorCode: "INVALID_ARGUMENT" });
       }

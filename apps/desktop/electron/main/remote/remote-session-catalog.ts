@@ -1,6 +1,7 @@
 import type {
   RacpProjectSummary, RacpSession, RemoteHostCreateSessionRequest, SessionSummary, RemoteHostBrowseProjectsResult,
 } from "@minih-agent/shared";
+import { isAbsoluteRemotePath, isRemoteChildPath, isRemoteEntryName } from "@minih-agent/shared";
 import { makeRemoteSessionId } from "./backend-router.js";
 import type { RemoteHostConnection } from "./remote-host-connection.js";
 import type { RemoteRacpClient } from "./remote-backend.js";
@@ -109,26 +110,37 @@ export function createRemoteSessionCatalog(options: {
   };
 }
 
-/** Validate untrusted Host picker data before it crosses the renderer boundary. */
-function validateProjectBrowse(value: unknown): RemoteHostBrowseProjectsResult {
+/**
+ * Validate untrusted Host picker data before it crosses the renderer boundary.
+ *
+ * The Host answers in its own platform's spelling — POSIX, a Windows drive, or
+ * a UNC share — so the shape rules come from `@minih-agent/shared` rather than
+ * from a leading `/`. This refused every Windows Host's answer, which is what
+ * the folder picker reported as an unusable connection.
+ */
+export function validateProjectBrowse(value: unknown): RemoteHostBrowseProjectsResult {
   const invalid = (): never => {
-    throw Object.assign(new Error("invalid remote project browse response"), { errorCode: "INVALID_ARGUMENT" });
+    // Data this release cannot read is a disagreement between the two ends, not
+    // a broken connection: `REMOTE_RESPONSE_INVALID` says so, and the renderer
+    // stops telling the user to check a connection that is working.
+    throw Object.assign(new Error("invalid remote project browse response"), { errorCode: "REMOTE_RESPONSE_INVALID" });
   };
-  const absolutePath = (path: unknown): path is string =>
-    typeof path === "string" && path.startsWith("/") && path.length <= 4096 && !/[\u0000-\u001f]/.test(path);
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   const result = value as Record<string, unknown>;
-  if (!absolutePath(result.path) || (result.parent !== undefined && !absolutePath(result.parent))
+  if (!isAbsoluteRemotePath(result.path) || (result.parent !== undefined && !isAbsoluteRemotePath(result.parent))
     || !Array.isArray(result.entries) || result.entries.length > 500) return invalid();
+  const directory = result.path;
   const entries = result.entries.map((value: unknown) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
     const entry = value as Record<string, unknown>;
-    if (typeof entry.name !== "string" || !entry.name || entry.name.length > 4096
-      || /[\/\u0000-\u001f]/.test(entry.name) || entry.name === "." || entry.name === ".."
-      || !absolutePath(entry.path)) return invalid();
-    const prefix = result.path === "/" ? "/" : `${String(result.path).replace(/\/+$/, "")}/`;
-    if (entry.path !== `${prefix}${entry.name}`) return invalid();
-    return { name: entry.name, path: entry.path };
+    const name = entry.name;
+    const path = entry.path;
+    // `name` is one component in the Host's own rules, and `path` is that
+    // component directly under the listed directory — never a sibling, a
+    // parent, or a path that only looks adjacent.
+    if (!isRemoteEntryName(name, directory) || !isAbsoluteRemotePath(path)
+      || !isRemoteChildPath(directory, name, path)) return invalid();
+    return { name, path };
   });
-  return { path: result.path, ...(typeof result.parent === "string" ? { parent: result.parent } : {}), entries };
+  return { path: directory, ...(typeof result.parent === "string" ? { parent: result.parent } : {}), entries };
 }

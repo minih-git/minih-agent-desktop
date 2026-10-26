@@ -4,6 +4,7 @@ import type { RemoteHostSummary } from "@minih-agent/shared";
 import { hostUnusableReasonKey, hostUsableForNewProject } from "../../lib/project-create-sources";
 import { Button, Field, Input, Select } from "../ui";
 import { RemoteFolderDialog } from "./RemoteFolderDialog";
+import { needsAbsoluteRemotePath } from "../../lib/remote-folder-navigation";
 
 /** One account computer's folder, picked for a new project (package E). */
 export type AccountProjectSelection = { hostKey: string; hostLabel: string; path: string };
@@ -93,7 +94,7 @@ export function AccountComputerPicker({ busy, hosts, hostKey, onHostChange, onCh
           </div>
         </Field>
       ) : null}
-      {path && !path.trim().startsWith("/") ? (
+      {needsAbsoluteRemotePath(path.trim()) ? (
         <p className="remote-project-error" role="alert">{t("remote:REMOTE_ABSOLUTE_PATH_REQUIRED")}</p>
       ) : null}
       {browseOpen && host ? (

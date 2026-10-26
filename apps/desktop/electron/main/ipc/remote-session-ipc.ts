@@ -1,5 +1,5 @@
 import {
-  IPC, PROVIDER_SYNC_MAX_PROVIDERS, RACP_PERMISSION_MODES, RACP_SESSION_MODES,
+  IPC, PROVIDER_SYNC_MAX_PROVIDERS, RACP_PERMISSION_MODES, RACP_SESSION_MODES, isAbsoluteRemotePath,
   type RemoteHostCreateSessionRequest, type RemoteHostSyncProvidersRequest,
 } from "@minih-agent/shared";
 import type { RemoteHostsBoot } from "../bootstrap/remote-hosts.js";
@@ -35,7 +35,7 @@ export function registerRemoteSessionIpc(registrar: IpcRegistrar, getBoot: () =>
     const input = object(request);
     const key = hostKey(input);
     const path = input.path === undefined ? undefined : text(input.path, "path", 4096);
-    if (path !== undefined && !path.startsWith("/")) invalid("path");
+    if (path !== undefined && !isAbsoluteRemotePath(path)) invalid("path");
     return getBoot().browseProjects(key, path);
   });
   registrar.handle(IPC.invoke.remoteHostSessions, async (request: unknown) => {
@@ -45,7 +45,7 @@ export function registerRemoteSessionIpc(registrar: IpcRegistrar, getBoot: () =>
     const input = object(request);
     const key = hostKey(input);
     const path = text(input.path, "path", 4096);
-    if (!path.startsWith("/")) invalid("path");
+    if (!isAbsoluteRemotePath(path)) invalid("path");
     return { project: await getBoot().registerProject(key, path) };
   });
   registrar.handle(IPC.invoke.remoteHostCreateSession, async (request: unknown) => {

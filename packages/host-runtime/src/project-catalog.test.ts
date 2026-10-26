@@ -83,6 +83,16 @@ describe("shortenHomePath", () => {
     expect(shortenHomePath("/home/user/Projects/app", "/home/user/")).toBe("~/Projects/app");
   });
 
+  it("uses a Windows Host's own separator", () => {
+    // A Windows Host answers `C:\…`; writing the shortened form with `/` left
+    // the whole path unshortened, which printed the account name on a phone.
+    expect(shortenHomePath("C:\\Users\\user", "C:\\Users\\user")).toBe("~");
+    expect(shortenHomePath("C:\\Users\\user\\Projects\\app", "C:\\Users\\user")).toBe("~\\Projects\\app");
+    expect(shortenHomePath("C:\\Users\\user\\Projects\\app", "C:\\Users\\user\\")).toBe("~\\Projects\\app");
+    expect(shortenHomePath("C:\\Users", "C:\\")).toBe("~\\Users");
+    expect(shortenHomePath("C:\\Users\\user2\\app", "C:\\Users\\user")).toBe("C:\\Users\\user2\\app");
+  });
+
   it("leaves a path outside the root, and a sibling prefix, untouched", () => {
     expect(shortenHomePath("/srv/data", "/home/user")).toBe("/srv/data");
     expect(shortenHomePath("/home/user2/app", "/home/user")).toBe("/home/user2/app");
