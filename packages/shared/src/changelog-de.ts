@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    date: "2026-10-26",
+    highlights: [
+      "Plugin-Einstellungen können eine Live-Modellauswahl anbieten: Die Optionen folgen den aktuell bereiten Modellen, und ein leerer Wert bedeutet das Standardmodell der App.",
+      "Das neue schreibgeschützte Werkzeug ContextUsage zeigt dem Agenten, wie viel Platz bis zur automatischen Verdichtung bleibt, damit er Abschluss oder Übergabe rechtzeitig plant.",
+      "Das Telefon zeigt die Aufgabenliste einer Sitzung: Eine kompakte Leiste über dem Eingabefeld zeigt Fortschritt und aktiven Punkt und öffnet die vollständige Liste; die Zählung entspricht dem Desktop.",
+      "Auf dem Telefon ist das Denken vor Werkzeugaufrufen in Werkzeuggruppen wieder sichtbar, eine aufklappbare Zeile pro Gedanke.",
+      "Fehler bei Remote-Vorgängen nennen jetzt die Ursache — Host offline, Versionskonflikt, Gateway-Authentifizierung oder ein Pfad außerhalb der erlaubten Ordner — statt eines allgemeinen „Vorgang fehlgeschlagen“.",
+      "Zuverlässigkeitskorrekturen: DeepSeek-Anfragekompatibilität, Wiederherstellen der Leseposition und automatisches Weiterlesen, Klassifizierung von Übertragungsfehlern, Wiederherstellung des MCP-Verlaufs; jede Sitzung öffnet mit eingeklapptem Aufgabenbereich.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-10-24",
     highlights: [

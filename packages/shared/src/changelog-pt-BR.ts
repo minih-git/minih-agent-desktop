@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    date: "2026-10-26",
+    highlights: [
+      "As configurações de plugins podem oferecer um seletor de modelos ao vivo: as opções acompanham os modelos prontos no momento, e deixar vazio significa o modelo padrão do app.",
+      "A nova ferramenta somente leitura ContextUsage permite ao agente ver quanto espaço resta antes da compactação automática, para planejar a tempo um fechamento ou uma passagem.",
+      "O celular mostra a lista de tarefas da sessão: uma barra compacta acima do campo de mensagem exibe o progresso e o item ativo e abre a lista completa; as contagens batem com o desktop.",
+      "No celular, o raciocínio anterior às chamadas de ferramentas volta a aparecer dentro dos grupos de ferramentas, uma linha expansível por raciocínio.",
+      "Falhas remotas agora dizem o que deu errado — host offline, versão incompatível, autenticação do gateway ou um caminho fora das pastas permitidas — em vez de um genérico \"falha na operação\".",
+      "Correções de confiabilidade: compatibilidade de requisições com DeepSeek, restauração da posição de leitura e continuação automática, classificação de erros de transporte, recuperação do histórico MCP; cada sessão abre com o painel de pendências recolhido.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-10-24",
     highlights: [
