@@ -21,6 +21,41 @@
   color: var(--ds-text-primary);
 }
 
+/* Plugin-contributed sidebar views: one wrapping row of square icon buttons,
+   so each view costs an icon slot instead of a full destination row. The
+   first glyph lines up with the glyphs of the labeled rows above it. */
+.sidebar-plugin-destinations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px 0 0 3px;
+}
+
+.sidebar-plugin-destination {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ds-text-secondary);
+  cursor: pointer;
+}
+
+.sidebar-plugin-destination:hover {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+
+.sidebar-plugin-destination[aria-pressed="true"] {
+  background: var(--ds-bg-active);
+  color: var(--ds-text-primary);
+}
+
 /* Fallback tile for a sidebar entry whose icon token this build does not know.
    Sized to the icon box the other destination rows use, so rows never shift. */
 .sidebar-destination-initial {

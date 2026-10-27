@@ -306,6 +306,7 @@ export const zhCN = {
     hoverCardBranchAria: "分支 {{name}}",
     activity: "活动",
     noActivitySessions: "暂无活动记录",
+    pluginViews: "插件视图",
     timeGroupToday: "今天",
     projectRunningCount: "{{count}} 个任务进行中",
     collapseMoreSessions: "收起",

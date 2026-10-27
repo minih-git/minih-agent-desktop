@@ -311,6 +311,7 @@ export const en = {
     hoverCardBranchAria: "Branch {{name}}",
     activity: "Activity",
     noActivitySessions: "No recent activity yet",
+    pluginViews: "Plugin views",
     timeGroupToday: "Today",
     projectRunningCount: "{{count}} running",
     collapseMoreSessions: "Show less",

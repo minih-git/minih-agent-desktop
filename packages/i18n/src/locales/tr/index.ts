@@ -304,6 +304,7 @@ export const tr = {
     hoverCardBranchAria: "Dal {{name}}",
     activity: "Etkinlik",
     noActivitySessions: "Henüz etkinlik yok",
+    pluginViews: "Eklenti görünümleri",
     timeGroupToday: "Bugün",
     projectRunningCount: "{{count}} çalışıyor",
     collapseMoreSessions: "Daha az göster",

@@ -294,6 +294,7 @@ export const ptBR = {
     hoverCardBranchAria: "Ramificação {{name}}",
     activity: "Atividade",
     noActivitySessions: "Nenhuma atividade recente",
+    pluginViews: "Visualizações de plugins",
     timeGroupToday: "Hoje",
     projectRunningCount: "{{count}} em andamento",
     collapseMoreSessions: "Mostrar menos"
