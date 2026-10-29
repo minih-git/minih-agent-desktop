@@ -435,7 +435,9 @@ Capacitor Keyboard 插件的原生 resize 模式（决定 O2）。键盘动画�
   第二次回答“给我看那一条”。只有一次调用的组直接画成普通行，不做折叠。
 - 系统与上下文压缩提示：两条细线之间居中的脚注（“上下文已压缩”）。
 - 被截短的内容用标注样式的“已截断”标签标出。
-- 运行失败：在该次运行末尾显示错误色说明框“运行失败：原因”。
+- 运行失败：在该次运行末尾显示错误色说明框“运行失败：原因”。若唯一的原因是内部错误码
+  （由 Host 自行结算的回合），只显示“运行失败”而不显示原因，协议信封永不渲染。会话头部用
+  `session.turn.failedStatus` 标出结果（被取消的回合用 `session.turn.canceled`）。
 - 滚动：页面打开时定位到底部；只有当用户距离底部 120 px 以内时，新内容才自动跟随；否则在底部固定区
   上方出现带向下箭头的浮动胶囊“新消息”。
 - 加载中：三个骨架气泡；空状态：弱化文字“还没有消息”。
@@ -510,6 +512,7 @@ Capacitor Keyboard 插件的原生 resize 模式（决定 O2）。键盘动画�
 | `session.turn.running` | 回合进行中 | 运行中 | Running |
 | `session.turn.waiting_approval` | 等待授权 | 等你批准 | Needs your approval |
 | `session.turn.failed` | 回合失败：{{reason}} | 运行失败：{{reason}} | Run failed: {{reason}} |
+| `session.turn.failedStatus` | 回合失败 | 运行失败 | Run failed |
 | `session.stop` | 停止 | 停止 | Stop |
 | `session.stopAfterStep` | （新增） | 完成当前步骤后停止 | Stop after this step |
 | `session.interrupt` | 中断 | 立即停止 | Stop now |

@@ -5970,7 +5970,7 @@ eleven-tool-round desktop paths are verified by
 | MVP 后 | E2E-022A、E2E-022B、E2E-022C、E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M （插件路线图 R2/R3/R6） |
 | 基线后本地自动化 | E2E-220 |
 | 基线后本地自动化（MCP `minih_session_get` 超大 compaction） | E2E-MCP-session-get-projects-large-compaction |
-| MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232、E2E-265、E2E-266、E2E-REMOTE-HOST-settings-compact-inventory、E2E-REMOTE-MOBILE-native-shell-credential-storage、E2E-REMOTE-ACCOUNT-cross-account-isolation、E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts、E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm、E2E-REMOTE-ACCOUNT-key-rotation-keeps-account、E2E-REMOTE-ACCOUNT-disabled-key-blocks-login、E2E-REMOTE-ACCOUNT-redacted-push、E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
+| MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232、E2E-265、E2E-266、E2E-REMOTE-HOST-settings-compact-inventory、E2E-REMOTE-MOBILE-native-shell-credential-storage、E2E-REMOTE-ACCOUNT-cross-account-isolation、E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts、E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm、E2E-REMOTE-ACCOUNT-key-rotation-keeps-account、E2E-REMOTE-ACCOUNT-disabled-key-blocks-login、E2E-REMOTE-ACCOUNT-redacted-push、E2E-REMOTE-ACCOUNT-offline-session-delete-forgets-locally、E2E-REMOTE-MOBILE-hosts-list-reprobes-without-flicker、E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
 | MVP 后远程控制（移动端重设计 2026-10-23） | E2E-REMOTE-MODEL-channel-union-text-model-stays-in-chats、E2E-REMOTE-MODEL-image-job-keeps-chat-model、E2E-REMOTE-MODEL-switch-model-in-unsent-conversation、E2E-REMOTE-IMAGE-retry-uses-image-endpoint、E2E-REMOTE-CHAT-archive-while-replying-stops-first、E2E-REMOTE-SESSION-revoked-offers-forget-and-repair、E2E-REMOTE-SETTINGS-push-state-and-appearance-survive-reload、E2E-REMOTE-NAV-h5-has-only-the-computers-root |
 | 受信任扩展（R7 v1） | E2E-DIALOG-long-text-boundaries、E2E-241、E2E-242、E2E-HOOKS-prompt-chain、E2E-HOOKS-cancel-and-dispose、E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding、E2E-243、E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch、E2E-244、E2E-245、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list、E2E-PLUGIN-provider-catalog-add-service |
 | 受信任扩展（R7 v1 npm 恢复） | E2E-PLUGIN-import-extension-recovers-missing-npm |
@@ -10538,6 +10538,40 @@ host-created files. The full app's file-preview viewer is covered separately.
   isolated native-window lifecycle checks
   (`pnpm test:e2e:upstream-reliability-ui`); `pnpm test:e2e:boot`. GPU measurement
   is not implied by visual/functional acceptance.
+
+#### E2E-REMOTE-ACCOUNT-offline-session-delete-forgets-locally：离线会话删除只在本机遗忘
+
+- **前置**：本地 Router 测试实例（key A）、本地测试 Gateway，以及账号 A 的两台电脑 A、B，
+  都打开远程控制开关并导入本地模型桩；B 上有本桌面创建的一个会话。
+- **步骤**：1) 从 A 打开 B 上的该会话，确认它出现在列表里。2) 让 B 离线（关闭窗口或结束
+  `agent-host-cli`），等 A 报告它已断开。3) 在 A 的侧栏删除该会话。4) 重启 B，让它重新加入
+  账号，再次列出它的会话。5) 让 B 回到在线，再删除它的另一个会话。
+- **预期**：B 不在时删除在本地成功：该行立刻从侧栏消失，没有任何调用到达 B；B 重新加入后
+  该会话仍然不出现在任何列表里——删除掉的就是让它可见的那条所有权记录。B 在线时同样的命令
+  到达 B，并在那里真正删除该会话。重连过程中（已连接但没有活动 backend）发起的删除以
+  `AGENT_UNAVAILABLE` 被拒绝，该行保留，因为会话仍属于 B。列出自己全部会话的 Host
+  （SSH 配对或直连的 Host）不会被本地遗忘。
+- **关联规格**：协议 §6.2（离线行）、§11.5
+- **验收**：功能、数据
+- **里程碑**：MVP 后（rollout R7）
+- **状态**：手工——本地行为由 `apps/desktop/test/boot-remote-hosts.test.mjs` 覆盖；两台电脑
+  之间的交互尚未自动化。
+
+#### E2E-REMOTE-MOBILE-hosts-list-reprobes-without-flicker：电脑列表重探且不闪烁
+
+- **前置**：手机客户端以账号模式登录，账号内有一台在线电脑和一台可被断开的电脑，并打开
+  Gateway 审计。
+- **步骤**：1) 打开“我的电脑”。2) 统计页面静止时发出的探测次数。3) 让第二台电脑离线，让页面
+  保持打开超过重探间隔。4) 从顶部下拉超过阈值。5) 切到后台，让第二台电脑回来，再返回应用。
+- **预期**：打开页面时每台电脑只探测一次，不会每行多探一次。可见列表按间隔重探，变化的电脑
+  转为离线，而各行不会闪回“检查中”也不会丢失会话计数。下拉手势立即重探，且该手势只触发这一次
+  刷新。返回前台只重探一次——即使页面可见性与原生应用状态两个来源都触发——并显示出回来的那台
+  电脑。不打开任何长连接，应用在后台时不跑定时器。
+- **关联规格**：手机客户端 §8.5、协议 §11.5（没有 presence 流）
+- **验收**：功能、体验
+- **里程碑**：MVP 后（rollout R7）
+- **状态**：手工——调度与手势判定由手机客户端包内的
+  `src/lib/foreground-refresh.test.ts` 与 `src/lib/pull-to-refresh.test.ts` 覆盖。
 
 #### E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop
 
