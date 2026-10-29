@@ -1,4 +1,4 @@
-# 04. Data Storage (Schema v26)
+# 04. Data Storage (Schema v27)
 
 ## 0. Ownership decision
 
@@ -59,6 +59,34 @@ duplicate appends retain their existing idempotent behavior. No schema migration
 or transcript format change is required.
 
 ## 2. File layout
+
+### Lossless tool images and schema v27
+
+Schema v27 appends a backed-up v26-to-v27 compatibility gate; Minih's v26
+learned-memory tables and migration remain intact. New code reads raw legacy
+records and transcript schema 1. The first write upgrades a legacy file to
+transcript schema 2 through verified temporary output and atomic replacement.
+An existing encoded generation is validated before mutation; replacement,
+size/time or identity changes invalidate the cached proof. Conversion failures
+preserve the original bytes and remain visible.
+
+`binaryStorage` version 1 is storage-private: record-local image tables and exact
+text templates remove repeated image bytes and proven JSON mirrors. TS and Rust
+restore the exact original values before business/RPC consumers see them. Live
+transcripts, revisions, checkpoints and the Desktop outbox remain self-contained;
+there is no global blob ownership or lossy field removal. Relocation decodes,
+rewrites only known path fields and re-encodes, including quarantined outbox data.
+
+Pending appends must reach Host before ID-based history mutation. A strict drain
+failure preserves entries and fails the operation, never silently discarding or
+quarantining its pending writes. Same-session deletions are serialized, and UI
+projections change only after Host confirms deletion, preserving late events.
+Revision-root acknowledgements update existing loaded rows; they never append
+old roots or create incomplete caches for unloaded sessions.
+
+Older applications refuse the upgraded profile. Rollback requires the complete
+pre-upgrade profile backup, not lowering `user_version`. No user data is migrated
+during development verification. See [the storage ADR](../../adr/lossless-tool-image-storage.md).
 
 ### User-selected storage location (issue #1213)
 

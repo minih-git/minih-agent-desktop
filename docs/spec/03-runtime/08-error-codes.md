@@ -590,3 +590,10 @@ summary. It asks the user to check the certificate, clock, and trusted roots
 used by security software/proxies, then restart after changing trust. It does
 not claim that interception is the only possible cause or offer a TLS bypass.
 Manual Continue remains available after the cause is corrected.
+
+### Exhausted provider quotas
+
+Explicit billing, credit, storage or `insufficient_quota` exhaustion takes
+precedence over a wrapped HTTP 429 status and maps to terminal `PROVIDER_ERROR`
+with retry disabled. It is not `PROVIDER_RATE_LIMITED`. Genuine throughput rate
+limits retain the existing bounded same-turn retry budget and delay policy.

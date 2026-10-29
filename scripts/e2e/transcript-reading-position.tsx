@@ -68,6 +68,7 @@ function Pane({ id, visible, running, canonicalTail }: { id: string; visible: bo
           </TranscriptDisclosureProvider>
         </div>
       </div>
+      <button data-jump-latest onClick={scroll.jumpToLatest} style={{ position: "absolute", right: 4, top: 4 }}>Latest</button>
     </div>
   </div>;
 }
@@ -187,6 +188,17 @@ globalThis.transcriptReadingPositionProbe = async () => {
     running = false;
     select("A");
     await until(() => bottom(scroller("A")), "pinned revisit follows latest");
+    select("J");
+    await until(() => bottom(scroller("J")), "jump fixture initially follows latest");
+    const jumpScroller = scroller("J");
+    jumpScroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -500 }));
+    jumpScroller.scrollTop = 650;
+    jumpScroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    await until(() => getTranscriptReadingPosition("J")?.pinned === false, "jump fixture stores an unpinned bookmark");
+    flushSync(() => host.querySelector<HTMLButtonElement>('[data-pane="J"] [data-jump-latest]')!.click());
+    assert(getTranscriptReadingPosition("J")?.pinned === true, "follow intent is stored before a smooth-scroll event or project switch");
+    select("B"); select("J");
+    await until(() => bottom(scroller("J")), "an immediate switch after Jump to latest restores follow intent");
     sessionReadingState("G").position = {
       pinned: false, messageId: "m10", offset: 24, scrollTop: 650, windowSize: 60, tailMessageId: "m99",
     };

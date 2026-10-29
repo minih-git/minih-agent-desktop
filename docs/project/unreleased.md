@@ -1,4 +1,15 @@
 # Unreleased changes
+- Each assistant turn summarizes its changed files; selecting a file opens the
+  existing Review panel focused on that change.
+- Conversations recover safely from malformed tool calls, real DeepSeek reasoning
+  remains compatible with relays, and exhausted billing quotas stop retrying.
+- Oversized screenshots use safe model-input fallbacks. Tool images are stored
+  losslessly without repeated payloads, and normal history edits use message IDs
+  instead of uploading the complete conversation. The upgraded profile requires
+  the new application; rollback needs a complete pre-upgrade backup.
+- Reopened windows restore live task state; returning to latest preserves follow
+  intent, empty-draft steering can send queued follow-ups, and provider operations
+  keep independent per-row busy guards.
 - Official DeepSeek endpoints receive the selected thinking effort by default;
   relay defaults and explicit per-model send/omit settings remain intact.
 - Restored conversation reading continues automatically without narrowing cached

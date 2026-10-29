@@ -12,6 +12,7 @@ import { modeToolDenial, retainModeToolDeclaration, withModeExecutionGuard } fro
 import { restoreHostedSearchReplay } from "./hosted-search-replay.js";
 import { requestExtensionUi } from "./extensions/ui-request.js";
 import { readLocalRequestErrorDetails } from "./local-request-errors.js";
+import { isValidToolCall, recoverMalformedToolCalls } from "./tool-call-recovery.js";
 import {
   createProviderStreamTrace,
   formatProviderStreamTraceLine,
@@ -136,6 +137,7 @@ import {
   splitInlineContent,
   subagentModelKey,
   subagentToolsLabel,
+  withoutReasoningReplayPlaceholder,
   type ProposalKind,
   type SubagentPermission,
 } from "@minih-agent/shared";
@@ -1523,17 +1525,53 @@ function commandTimeoutMs(params: unknown): number {
   return timeoutMs;
 }
 
+/**
+ * A supplementary-plane character is one code point and two UTF-16 code units.
+ * The progress cap counts code units, so a point that does not fit is left out
+ * whole instead of being sliced through the middle of its surrogate pair.
+ */
+function takePrefixCodeUnits(text: string, budget: number): string {
+  let used = 0;
+  let end = 0;
+  for (const point of text) {
+    if (used + point.length > budget) break;
+    used += point.length;
+    end += point.length;
+  }
+  return text.slice(0, end);
+}
+
+function takeSuffixCodeUnits(text: string, budget: number): string {
+  let used = 0;
+  let start = text.length;
+  while (start > 0 && used < budget) {
+    const low = text.charCodeAt(start - 1);
+    const high = start >= 2 ? text.charCodeAt(start - 2) : 0;
+    const pair =
+      low >= 0xdc00 &&
+      low <= 0xdfff &&
+      high >= 0xd800 &&
+      high <= 0xdbff;
+    const size = pair ? 2 : 1;
+    if (used + size > budget) break;
+    used += size;
+    start -= size;
+  }
+  return text.slice(start);
+}
+
 function appendToolProgress(current: string, chunk: string): string {
   const combined = `${current}${chunk}`;
   if (combined.length <= MAX_TOOL_PROGRESS_CHARS) return combined;
-  const codePoints = Array.from(combined);
-  const marker = Array.from(TOOL_PROGRESS_TRUNCATION_MARKER);
-  const remaining = Math.max(0, MAX_TOOL_PROGRESS_CHARS - marker.length);
-  const head = Math.ceil(remaining * 0.6);
-  const tail = remaining - head;
-  return `${codePoints.slice(0, head).join("")}${TOOL_PROGRESS_TRUNCATION_MARKER}${
-    tail > 0 ? codePoints.slice(-tail).join("") : ""
-  }`;
+  const remaining = Math.max(
+    0,
+    MAX_TOOL_PROGRESS_CHARS - TOOL_PROGRESS_TRUNCATION_MARKER.length,
+  );
+  const headBudget = Math.ceil(remaining * 0.6);
+  const tailBudget = remaining - headBudget;
+  const head = takePrefixCodeUnits(combined, headBudget);
+  const tail = tailBudget > 0 ? takeSuffixCodeUnits(combined, tailBudget) : "";
+  return `${head}${TOOL_PROGRESS_TRUNCATION_MARKER}${tail}`;
 }
 
 /** Bound a checkpoint message's text, naming the cut the way pi's tail does. */
@@ -1762,7 +1800,7 @@ function estimateToolTokenUsage(
   result: unknown,
   isError: boolean,
   timestamp: number,
-): ToolTokenUsage {
+): ToolTokenUsage | undefined {
   const toolCall = {
     role: "assistant" as const,
     content: [
@@ -1780,6 +1818,8 @@ function estimateToolTokenUsage(
     stopReason: "toolUse" as const,
     timestamp,
   } satisfies AssistantMessage;
+  // Optional telemetry must not suppress a terminal tool event.
+  if (!isValidToolCall(toolCall.content[0])) return undefined;
   const toolRow = {
     id: toolCallId,
     role: "tool" as const,
@@ -3264,12 +3304,15 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // but must never become model context on the next turn.
         if (m.status === "error" || m.isError || m.error) continue;
         const content: AssistantMessage["content"] = [];
-        if (m.thinking?.trim()) {
+        // A replay placeholder the model echoed is not its reasoning; sending
+        // it back is what kept the model continuing it (#1945).
+        const thinking = withoutReasoningReplayPlaceholder(m.thinking ?? "");
+        if (thinking.trim()) {
           // Completions DeepSeek replay needs thinkingSignature so convertMessages
           // maps the block to reasoning_content instead of dropping it (#296).
           content.push({
             type: "thinking" as const,
-            thinking: m.thinking,
+            thinking,
             ...(deepSeekCompletionsReplay
               ? { thinkingSignature: "reasoning_content" as const }
               : {}),
@@ -9257,6 +9300,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.pendingUserMessageId = userMessageId;
     this.resetRunRecoveryState();
     this.autonomousExecution = false;
+    const recovered = recoverMalformedToolCalls(this.agent.state.messages);
+    if (recovered !== this.agent.state.messages) this.setAgentMessages(recovered);
     // Main resolves this provenance from the Host ledger. Never infer it from
     // prompt text, model output, extension content, or restored history.
     const origin = typeof input === "string" ? undefined : input.sessionMessage;

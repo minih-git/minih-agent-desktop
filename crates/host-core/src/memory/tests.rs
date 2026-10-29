@@ -137,12 +137,12 @@ fn v25_database_gains_learned_memory_without_touching_pinned_memory() {
     };
 
     let db = Database::open(&path).unwrap();
-    assert_eq!(SCHEMA_VERSION, 26);
+    assert_eq!(SCHEMA_VERSION, 27);
     let version: i64 = db
         .conn()
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 26);
+    assert_eq!(version, SCHEMA_VERSION);
     assert!(migration_backup_path(&path, 25).exists());
     for table in [
         "memory_entries",

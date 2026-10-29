@@ -736,12 +736,16 @@ export function useTranscriptScroll({
     releaseDisclosureAnchor();
     pinnedRef.current = true;
     setShowJump(false);
+    // Persist the explicit follow intent before smooth scrolling yields. A
+    // session/project switch can hide or unmount this pane before its native
+    // scroll event; leaving the old bookmark would restore history on return.
+    rememberReadingPosition();
     scrollToBottom(
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
         ? "auto"
         : "smooth",
     );
-  }, [cancelReadingPosition, releaseDisclosureAnchor, scrollToBottom]);
+  }, [cancelReadingPosition, releaseDisclosureAnchor, rememberReadingPosition, scrollToBottom]);
 
   // D269: history progression follows the visible top boundary, not only a
   // native scroll event. A tail page can collapse to less than one viewport,

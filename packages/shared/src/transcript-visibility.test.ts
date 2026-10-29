@@ -57,3 +57,14 @@ describe("messageThinking", () => {
     expect(messageThinking(message({ role: "assistant" }))).toBe("");
   });
 });
+
+it("cleans replay-placeholder echoes consistently without rewriting source thinking", () => {
+  const hidden = message({ role: "assistant", thinking: "[reasoning not retained for this turn]" });
+  expect(messageThinking(hidden)).toBe("");
+  expect(isVisibleMessage(hidden)).toBe(false);
+  const source = "[reasoning retained for this turn] Real reasoning";
+  const row = message({ role: "assistant", thinking: source });
+  expect(messageThinking(row)).toBe("Real reasoning");
+  expect(isVisibleMessage(row)).toBe(true);
+  expect(row.thinking).toBe(source);
+});

@@ -195,3 +195,9 @@ type GlobResult = { matches: string[]; count: number; truncated: boolean; notice
 - [ ] timeout/abort 停止完整的进程树并且不再发出后续块
 - [ ] 超大并行结果批次压缩为有界标记尾部，
   重新启动后仍然存在，并保持原始成绩单结果不变
+
+### 运行时进度字符上限
+
+Bash 进度按 JavaScript UTF-16 码元长度限制，不按 Unicode 码点数量计算；
+截断不留下半个代理对。非 BMP 输出不能使进度上限翻倍；Host 的字节/行捕获、
+溢出文件与最终结果预算不变。

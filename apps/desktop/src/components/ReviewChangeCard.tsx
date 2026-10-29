@@ -133,6 +133,7 @@ export const ReviewChangeCard = memo(function ReviewChangeCard({
   compact = false,
   asToolRow = false,
   autoOpen,
+  openRequest,
   onUserInteraction,
 }: {
   message: UiMessage;
@@ -140,6 +141,8 @@ export const ReviewChangeCard = memo(function ReviewChangeCard({
   /** The card is the tool-level row: one file header and its diff body. */
   asToolRow?: boolean;
   autoOpen?: boolean;
+  /** One-time Review navigation; a later user collapse still wins. */
+  openRequest?: number;
   onUserInteraction?: () => void;
 }) {
   const { t } = useTranslation();
@@ -150,7 +153,7 @@ export const ReviewChangeCard = memo(function ReviewChangeCard({
   );
   const disclosure = useAutomaticDisclosure(
     autoOpen ?? defaultOpen,
-    undefined,
+    openRequest,
     asToolRow ? disclosureKey("review", message.id) : undefined,
   );
   const { open, toggle: toggleDisclosure, titleRef } = disclosure;
@@ -181,6 +184,7 @@ export const ReviewChangeCard = memo(function ReviewChangeCard({
       data-state={change.state}
       data-status={change.status}
       data-message-id={asToolRow ? message.id : undefined}
+      data-snapshot-id={change.snapshotId}
     >
       <button
         type="button"

@@ -8,6 +8,34 @@
 
 ## 1. Goals
 
+### E2E-UPSTREAM-20261028-selected-capabilities
+
+- **Preconditions:** Dedicated request worktree, reused dependencies, isolated
+  temporary profiles/SQLite/files and local provider fixtures. No user profile,
+  paid provider, installed Desktop or remote production service.
+- **Steps:** Recover malformed tool calls and replay DeepSeek reasoning; classify
+  exhausted quota versus throughput retry. Read/attach/reopen oversized images,
+  search multibyte filenames and bound non-BMP Bash progress. Upgrade a v26
+  profile preserving learned memory, round-trip TS/Rust encoded fixtures, refuse
+  corrupted generations, relocate stored paths and simulate a failed outbox drain.
+  Delete consecutive messages while terminal events arrive; retract a stopped
+  pending prompt and activate a revision using the Host canonical prefix.
+  Recreate windows, select the running session, acknowledge an old revision root,
+  jump to latest then switch projects, send an empty-draft queued follow-up,
+  operate provider rows concurrently and open a turn's file in Review.
+- **Expected:** Original history/data and valid completed tools survive; malformed
+  input is excluded only from projections. Quota exhaustion terminates without
+  changing genuine rate-limit retries. Image/path/output bounds hold. v26 memory
+  survives the backed-up v27 gate; invalid files and failed drains retain bytes
+  and pending writes. IDs avoid full-upload limits; deletion waits for Host and
+  preserves late events. Local-only mutation policy, Minih brands/Router/side
+  notes, reading windows and existing review/queue semantics remain intact.
+- **Specs:** Runtime/error/provider/data/RPC/IPC specifications and UX component
+  and interaction specifications; `lossless-tool-image-storage` ADR.
+- **Acceptance:** B / C / E / F / Quality / Accessibility.
+- **Status:** Implementation candidate; actual checks and limitations are tracked
+  in [the selected-import record](../../project/upstream-import-2026-10-28.md).
+
 ### E2E-UPSTREAM-20261026-selected-reliability
 
 - **Preconditions:** Request worktree, reused host dependencies, isolated session
@@ -10777,6 +10805,7 @@ selection already in place shows it without waiting for another event.
 
 | Acceptance | Scenarios |
 |---|---|
+| B / C / E / F / Quality / Accessibility — Selected capabilities 2026-10-28 | E2E-UPSTREAM-20261028-selected-capabilities |
 | C / E / F / Quality / Accessibility — Selected upstream fixes 2026-10-26 | E2E-UPSTREAM-20261026-selected-reliability |
 | B / C / E / Quality / Accessibility — Selected upstream fixes 2026-10-25 | E2E-UPSTREAM-20261025-selected-reliability |
 | C / Quality / Accessibility — Right-side notification cards | E2E-NOTIFICATION-right-side-cards |

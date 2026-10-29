@@ -18,6 +18,35 @@ describe("normalizeLockPath", () => {
     expect(normalizeLockPath("src/app.tsx/")).toBe("src/app.tsx");
     expect(normalizeLockPath(undefined)).toBe("");
   });
+
+  it("collapses dot, duplicate, and parent segments", () => {
+    for (const spelling of [
+      "src/a.ts",
+      "././src/a.ts",
+      "src/./a.ts",
+      "src//a.ts",
+      "src/foo/../a.ts",
+      "src\\.\\a.ts",
+    ]) {
+      expect(normalizeLockPath(spelling)).toBe("src/a.ts");
+    }
+    // Drive letters stay, including when `..` would otherwise pop them.
+    expect(normalizeLockPath("C:\\Src\\.\\A.ts")).toBe("c:/src/a.ts");
+    expect(normalizeLockPath("C:/src/foo/../A.ts")).toBe("c:/src/a.ts");
+    expect(normalizeLockPath("C:/../src/a.ts")).toBe("c:/src/a.ts");
+    // A namespaced key is `${namespace}\0${path}`; `..` must not climb out of
+    // the path half into the namespace.
+    expect(normalizeLockPath("Wt\0src/foo/../A.ts")).toBe("wt\0src/a.ts");
+    expect(normalizeLockPath("wt\0foo/../../a.ts")).toBe("wt\0../a.ts");
+  });
+
+  it("keeps a relative parent and an absolute root", () => {
+    expect(normalizeLockPath("../x.ts")).toBe("../x.ts");
+    expect(normalizeLockPath("../X.ts")).toBe("../x.ts");
+    expect(normalizeLockPath("/abs/a.ts")).toBe("/abs/a.ts");
+    expect(normalizeLockPath("/Abs/A.ts")).toBe("/abs/a.ts");
+    expect(normalizeLockPath("/../src/a.ts")).toBe("/src/a.ts");
+  });
 });
 
 describe("PathMutex", () => {
@@ -82,5 +111,42 @@ describe("PathMutex", () => {
     await expect(mutex.run("", async () => 2)).resolves.toBe(2);
     held.resolve();
     await expect(first).resolves.toBe(1);
+  });
+  it("queues a write behind another spelling of the same path", async () => {
+    const mutex = new PathMutex();
+    const gate = deferred();
+    let secondStarted = false;
+
+    const first = mutex.run("src/./a.ts", async () => {
+      await gate.promise;
+    });
+    const second = mutex.run("src/a.ts", async () => {
+      secondStarted = true;
+    });
+
+    expect(secondStarted).toBe(false);
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(secondStarted).toBe(true);
+    expect(mutex.busy).toBe(false);
+  });
+
+  it("does not create a second lock when an absolute path climbs above root", async () => {
+    const mutex = new PathMutex();
+    const gate = deferred();
+    let secondStarted = false;
+
+    const first = mutex.run("/../src/a.ts", async () => {
+      await gate.promise;
+    });
+    const second = mutex.run("/src/a.ts", async () => {
+      secondStarted = true;
+    });
+
+    expect(secondStarted).toBe(false);
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(secondStarted).toBe(true);
+    expect(mutex.busy).toBe(false);
   });
 });

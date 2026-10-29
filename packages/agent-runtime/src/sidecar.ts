@@ -274,34 +274,33 @@ async function runtimeFor(
     return reusable;
   }
 
-  let history: UiMessage[] = [];
-  let compaction: ContextCompactionRecord | undefined;
-  try {
-    const detail = await hostProxy.call<{
-      session?: {
-        messages?: UiMessage[];
-        compaction?: ContextCompactionRecord;
-      } | null;
-    }>("session.get", { id: sessionId });
-    let restoredMessages = detail?.session?.messages ?? [];
-    // The current prompt is sent separately below. Exclude its persisted row
-    // before attachment hydration so it cannot consume the history byte budget.
-    if (currentPrompt !== undefined && params.userMessageId) {
-      restoredMessages = restoredMessages.filter((message) =>
-        message.role !== "user" || message.id !== params.userMessageId,
-      );
-    }
-    const supportsVision = visionFromModelConfig(params.provider.modelConfig);
-    history = await hydrateAttachmentHistory(restoredMessages, {
-      scratchDir: params.scratchDir,
-      projectPath: params.remoteWorkspace ? undefined : params.projectPath,
-      attachmentsDir: params.attachmentsDir,
-      supportsVision,
+  const detail = await hostProxy.call<{
+    session?: {
+      messages?: UiMessage[];
+      compaction?: ContextCompactionRecord;
+    } | null;
+  }>("session.get", { id: sessionId });
+  if (!detail?.session) {
+    throw Object.assign(new Error("session not found while restoring history"), {
+      errorCode: "SESSION_NOT_FOUND",
     });
-    compaction = detail?.session?.compaction;
-  } catch {
-    // History restore is best-effort; a prompt can still start cleanly.
   }
+  let restoredMessages = detail.session.messages ?? [];
+  // The current prompt is sent separately below. Exclude its persisted row
+  // before attachment hydration so it cannot consume the history byte budget.
+  if (currentPrompt !== undefined && params.userMessageId) {
+    restoredMessages = restoredMessages.filter((message) =>
+      message.role !== "user" || message.id !== params.userMessageId,
+    );
+  }
+  const supportsVision = visionFromModelConfig(params.provider.modelConfig);
+  let history = await hydrateAttachmentHistory(restoredMessages, {
+    scratchDir: params.scratchDir,
+    projectPath: params.remoteWorkspace ? undefined : params.projectPath,
+    attachmentsDir: params.attachmentsDir,
+    supportsVision,
+  });
+  const compaction = detail.session.compaction;
   // Older callers without a stable message id retain the previous content match.
   if (currentPrompt !== undefined && !params.userMessageId) {
     const last = history.at(-1);

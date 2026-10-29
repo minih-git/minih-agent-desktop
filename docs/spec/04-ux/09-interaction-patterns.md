@@ -1857,3 +1857,12 @@ or reopen the panel. Session-filtered page restoration discards stale replies an
 preserves selection. Explicitly closing a connected page makes operations fail
 until explicit navigate/preview reconnects it; no visible-page substitution.
 See [IPC contract](../03-runtime/01-ipc-protocol.md#browser-d100-d333).
+
+## Follow intent and queue shortcut continuity
+
+An explicit Jump to latest stores follow intent synchronously before smooth
+scrolling starts. Immediate session/project switches therefore restore the new
+intent, while existing reading bookmarks and disclosure holds keep their own
+semantics. Empty-draft steering can promote the first sendable queued follow-up
+through Send now; it does not bypass paste, permission, session or queue guards.
+Completion does not introduce a new automatic scroll-to-question behavior.

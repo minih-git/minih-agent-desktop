@@ -36,3 +36,11 @@ export async function settleBootstrapRequests<TSettings, TSnapshot>(
           : new Error("renderer bootstrap failed"),
   };
 }
+
+/** Live events received during bootstrap take precedence over its snapshot. */
+export function restoreRunningSessions(
+  runningSessionIds: readonly string[] | undefined,
+  live: Record<string, boolean>,
+): Record<string, boolean> {
+  return { ...Object.fromEntries((runningSessionIds ?? []).map((id) => [id, true])), ...live };
+}

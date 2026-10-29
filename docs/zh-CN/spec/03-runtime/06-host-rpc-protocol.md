@@ -17,6 +17,19 @@ MVP 传输决策 (**D001**)：
 
 ## 2. 交通
 
+### 有界规范历史修改
+
+新增 Host 方法 `session.deleteMessage({ sessionId, messageId })` 和
+`session.retractPendingPrompt({ sessionId, userMessageId, turnId? })` 按 ID 修改
+规范历史，不接收界面上传的完整替换列表。目标已不存在时删除幂等返回。撤回仅适用于
+已停止且有持久化归属的最后一个普通提示；steering、运行中回合、更新提示/回合、归属
+不匹配或已有实质回复时，返回 `retracted: false` 及原因，不改历史。
+
+`session.activateRevision` 可选 `requireCanonicalPrefix: true`，由 Host 从规范
+历史生成前缀。旧显式前缀及 `session.replaceMessages` 保持兼容。64 MiB 输入上限不变，
+不引入传输压缩或扩容。Main 串行修改，修改前严格排空待写项；拒绝或失败保留重写栅栏
+原有语义。恢复历史失败须可见，不能静默使用旧运行时历史。
+
 - 流程：Electron 主要生成 Rust host-core sidecar
 - 通道：子进程 stdin/stdout
 - 成帧：每行一个以 LF 分隔的 JSON 对象（NDJSON）；接受 CRLF。

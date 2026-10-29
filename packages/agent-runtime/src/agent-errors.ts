@@ -36,8 +36,30 @@ const CONTEXT_PATTERN =
  * reports its tokens-per-minute throttle as "Throttling error: Too many tokens,
  * please wait before trying again.", which `CONTEXT_PATTERN` would otherwise
  * read as an overflow (pi-ai's `isContextOverflow` excludes it the same way).
+ *
+ * A bare `quota` must not be included. It also matches account and filesystem
+ * exhaustion ("monthly spending quota", "credit quota is exhausted", "Billing
+ * quota exceeded", "disk quota exceeded"). Those failures do not recover by
+ * backing off, but `/quota/` classified them as `PROVIDER_RATE_LIMITED` and
+ * the runtime retried them up to about ten times. Throughput quotas stay
+ * here: `quota exceeded` after `EXHAUSTED_QUOTA_MESSAGE_PATTERN` has taken
+ * the account and disk phrases.
  */
-const RATE_LIMIT_PATTERN = /rate.?limit|too many requests|quota|overloaded|throttl/i;
+const RATE_LIMIT_PATTERN =
+  /rate.?limit|too many requests|quota.?exceeded|overloaded|throttl/i;
+
+/**
+ * Billing, spending, credit, and disk exhaustion are terminal, including
+ * OpenAI's `insufficient_quota` type and explicit 429 error codes. Checked
+ * before the status table because those conditions do not recover by backing
+ * off. Generic "quota exceeded" wording remains eligible for rate-limit
+ * classification below.
+ */
+const EXHAUSTED_QUOTA_CODE_PATTERN =
+  /\b(?:insufficient_quota|credit_balance_exhausted|organization_spend_limit_exceeded|project_spend_limit_exceeded|organization_usage_limit_exceeded)\b/i;
+
+const EXHAUSTED_QUOTA_MESSAGE_PATTERN =
+  /\b(?:billing|spending|credit|disk)\s+quotas?\b|\b(?:organization|project)\s+spend\s+limit\s+(?:reached|exceeded)\b|\bquota\b.{0,100}\b(?:plan|billing)\b/i;
 
 /**
  * Whether a provider message reports a context overflow.
@@ -530,6 +552,18 @@ export function classifyAgentError(err: unknown): ClassifiedAgentError {
   // produces the identical failure. Probed before the status table so a status
   // some layer attached to the same message cannot re-arm the retry budget.
   if (UNSUPPORTED_ADAPTER_OPTION_PATTERN.test(rawMessage)) {
+    return result("PROVIDER_ERROR", false);
+  }
+
+  // These terminal billing/account exhaustion errors can also be HTTP 429.
+  // Inspect both the message and structured provider code before the generic
+  // 429 retry branch so the rate-limit budget cannot replay them.
+  if (
+    EXHAUSTED_QUOTA_CODE_PATTERN.test(rawMessage) ||
+    EXHAUSTED_QUOTA_MESSAGE_PATTERN.test(rawMessage) ||
+    (typeof providerCode === "string" &&
+      EXHAUSTED_QUOTA_CODE_PATTERN.test(providerCode))
+  ) {
     return result("PROVIDER_ERROR", false);
   }
 

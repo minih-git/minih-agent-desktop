@@ -22,6 +22,7 @@ use crate::workspace::{resolve_tool_path_with_external, simple_canonicalize, Too
 mod grep_rg;
 pub mod hashline;
 pub mod ignore_rules;
+mod image_dimensions;
 pub mod shell;
 
 pub use hashline::{HashlineContext, HashlineStore};
@@ -1388,6 +1389,15 @@ fn read_image_block(
             "TOOL_BINARY_CONTENT".into(),
             format!("{display} does not look like a valid {mime} image"),
         ));
+    }
+    if let Some((width, height)) = image_dimensions::probe_image_dimensions(&bytes) {
+        let limit = image_dimensions::MAX_INLINE_IMAGE_EDGE_PX;
+        if width.max(height) > limit {
+            return Err((
+                "TOOL_FAILED".into(),
+                format!("{display} is {width}x{height} px; images whose longest edge exceeds {limit} px are not inlined"),
+            ));
+        }
     }
     use base64::Engine as _;
     let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -3899,7 +3909,7 @@ mod tests {
         // Minimal real signatures so the sniffing branch is exercised.
         let png = b"\x89PNG\r\n\x1a\nfake-png-body";
         let jpeg = b"\xff\xd8\xff\xe0fake-jpeg-body";
-        let gif = b"GIF89afake-gif-body";
+        let gif = b"GIF89a\x01\x00\x01\x00fake-gif-body";
         let webp = b"RIFF\x00\x00\x00\x00WEBPVP8 fake-webp-body";
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.png"), png).unwrap();
@@ -3984,6 +3994,40 @@ mod tests {
         // read must still reject it without trusting the stale size argument.
         let error = read_image_block(&path, "big.png", 1, "image/png").unwrap_err();
         assert_eq!(error.0, "TOOL_FAILED");
+    }
+
+    #[tokio::test]
+    async fn read_refuses_images_past_the_pixel_limit() {
+        let mut tall = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+        tall.extend(780u32.to_be_bytes());
+        tall.extend(14182u32.to_be_bytes());
+        tall.extend([8, 2, 0, 0, 0]);
+        let mut edge = tall.clone();
+        edge[16..20].copy_from_slice(&8000u32.to_be_bytes());
+        edge[20..24].copy_from_slice(&780u32.to_be_bytes());
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("page.png"), tall).unwrap();
+        std::fs::write(dir.path().join("edge.png"), edge).unwrap();
+        let result = execute_tool(
+            Some(dir.path()),
+            None,
+            "Read",
+            &serde_json::json!({ "path": "page.png" }),
+            5_000,
+        )
+        .await;
+        assert!(!result.ok);
+        assert_eq!(result.error_code.as_deref(), Some("TOOL_FAILED"));
+        assert!(result.content.to_string().contains("780x14182 px"));
+        let result = execute_tool(
+            Some(dir.path()),
+            None,
+            "Read",
+            &serde_json::json!({ "path": "edge.png" }),
+            5_000,
+        )
+        .await;
+        assert!(result.ok, "8000px should inline: {}", result.content);
     }
 
     #[tokio::test]

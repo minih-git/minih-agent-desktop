@@ -205,3 +205,10 @@ counts are the stable signals. The UI truncated chip follows `truncated`.
 - [ ] timeout/abort stops the complete process tree and emits no later chunks
 - [ ] an oversized parallel result batch compacts to a bounded marked tail,
   survives restart, and leaves the original transcript results unchanged
+
+### Runtime progress character bounds
+
+Bash progress is bounded by JavaScript UTF-16 code-unit length, not Unicode
+code-point count. A cut never leaves half a surrogate pair. Non-BMP output cannot
+double the progress limit; the Host byte/line capture, spill and terminal result
+budgets remain unchanged.

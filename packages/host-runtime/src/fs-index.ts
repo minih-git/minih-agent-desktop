@@ -50,8 +50,10 @@ function gitListFiles(root: string): Promise<string[] | null> {
       failed = true;
       child.kill();
     }, GIT_TIMEOUT_MS);
+    // Preserve multibyte filenames split across stdout chunks.
+    child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
-      out += String(chunk);
+      out += chunk;
       if (out.length > MAX_GIT_BUFFER) {
         failed = true;
         child.kill();

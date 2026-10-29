@@ -5,6 +5,8 @@ import { copyFile, mkdir, open, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
   formatFileInsert,
+  imageExceedsInlineDimensions,
+  probeImageDimensions,
   isSvgAttachment,
   MAX_INLINE_IMAGE_BYTES,
   MAX_INLINED_IMAGE_HISTORY_BYTES,
@@ -204,6 +206,7 @@ export async function hydrateAttachmentHistory(
       try {
         const bytes = await readFileAtRecordedSize(item.canonicalPath!, item.size!);
         if (!bytes) return;
+        if (imageExceedsInlineDimensions(probeImageDimensions(bytes))) return;
         item.attachment = {
           ...item.attachment,
           data: bytes.toString("base64"),

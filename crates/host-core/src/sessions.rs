@@ -11,6 +11,10 @@ use std::collections::HashMap;
 use crate::transcripts::{self, CompactionRecord, MessageRecord, RevisionRecord};
 
 mod fork_files;
+mod history_mutations;
+pub use history_mutations::{
+    activate_message_revision_canonical, delete_message, retract_pending_prompt,
+};
 mod model_system;
 mod usage;
 pub use usage::record_usage;
@@ -3668,6 +3672,23 @@ pub fn activate_message_revision(
     revision_index: i64,
     prefix: &[UiMessage],
 ) -> Result<Vec<UiMessage>> {
+    activate_message_revision_with_prefix(
+        db,
+        session_id,
+        root_user_id,
+        revision_index,
+        Some(prefix),
+    )
+}
+
+/// None requires a durable family anchor; Some preserves the legacy prefix API.
+fn activate_message_revision_with_prefix(
+    db: &Database,
+    session_id: &str,
+    root_user_id: &str,
+    revision_index: i64,
+    prefix: Option<&[UiMessage]>,
+) -> Result<Vec<UiMessage>> {
     let session_created = session_created_at(db, session_id)?;
     {
         let conn = db.conn();
@@ -3687,10 +3708,19 @@ pub fn activate_message_revision(
     let live = get_session(db, session_id)?
         .map(|detail| detail.messages)
         .unwrap_or_default();
+    if prefix.is_none()
+        && live_branch_start(&live, root_user_id)
+            .filter(|&index| live[index].role == "user")
+            .is_none()
+    {
+        return Err(anyhow!(
+            "NOT_FOUND: revision family anchor missing from canonical transcript"
+        ));
+    }
     let live_start = archive_live_branch(db, session_id, root_user_id, &live)?;
     let prefix: &[UiMessage] = match live_start {
         Some(start) => &live[..start],
-        None => prefix,
+        None => prefix.ok_or_else(|| anyhow!("NOT_FOUND: canonical revision prefix missing"))?,
     };
 
     let payload =

@@ -11,6 +11,21 @@ Principles:
 3. Long-running tasks use event streams, not a single oversized response
 4. Errors must have a code + message
 
+## 1.1 Live-session bootstrap and local ID mutations
+
+`sessionList` also returns optional `runningSessionIds: string[]`, captured from
+Main's active-turn registry after asynchronous reads settle. Renderer bootstrap
+restores badges before session selection; live start/end events received during
+bootstrap outrank the snapshot. Older responses without the field remain
+compatible. Reopening a window does not start or replay an agent turn.
+
+Additive `sessionDeleteMessage` and `sessionRetractPendingPrompt` channels forward
+validated IDs through the existing Host mutation gate. They remain local-only
+alongside full-history replacement and revision mutation; no remote editing
+privilege or renderer filesystem/database access is added. File-index Git stdout
+is decoded incrementally as UTF-8 so multibyte filenames split across chunks
+remain selectable through Composer `@` search.
+
 ## 2. API Groups
 
 | Domain | Description |

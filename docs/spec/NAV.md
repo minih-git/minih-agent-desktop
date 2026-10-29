@@ -51,6 +51,7 @@
 - [svg-attachment-input.md](03-runtime/svg-attachment-input.md)
 - [Selected upstream import: 2026-10-24 (provenance and validation)](../project/upstream-import-2026-10-24.md)
 - [Selected upstream fixes: 2026-10-25 (provenance and validation)](../project/upstream-import-2026-10-25.md)
+- [Selected upstream capabilities: 2026-10-28 (provenance and validation)](../project/upstream-import-2026-10-28.md)
 - [Selected upstream fixes: 2026-10-26 (provenance and validation)](../project/upstream-import-2026-10-26.md)
 
 ## 4. UX

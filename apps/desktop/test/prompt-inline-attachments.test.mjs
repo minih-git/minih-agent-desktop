@@ -11,6 +11,22 @@ const png = Buffer.from(
 );
 const sessionId = "inline-placement";
 
+test("pixel admission keeps oversized screenshots as path references", async (t) => {
+  const { data, path } = await fixture(t);
+  for (const [height, accepted] of [[14182, false], [8000, true]]) {
+    const header = Buffer.from(png);
+    header.writeUInt32BE(780, 16);
+    header.writeUInt32BE(height, 20);
+    await writeFile(path, header);
+    const [prepared] = await preparePromptAttachments(data, sessionId, undefined, [{
+      path, name: "page.png", kind: "image", mimeType: "image/png",
+    }], true, "look at the screenshot");
+    assert.equal(Boolean(prepared.inlineData), accepted, `${height}px inline admission`);
+    assert.ok(prepared.message.ref.startsWith("attachments/"));
+    if (!accepted) assert.ok(appendPromptFallbackPaths("look", [prepared]).includes(prepared.fallbackPath));
+  }
+});
+
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "pi-inline-attachments-"));
   t.after(() => rm(root, { recursive: true, force: true }));
