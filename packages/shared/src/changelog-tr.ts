@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.1.2",
+    date: "2026-10-29",
+    highlights: [
+      "Telefon artık uzak bir çalıştırmanın neden başarısız olduğunu söylüyor: başarısız bir tur, bilgisayar kendisi kapattığında bile hata kodu ya da boş tur yerine sonucu gösteriyor.",
+      "Biten bir çalıştırma tek bir bildirim gönderiyor: önce hata bildirip sonra biten çalıştırma artık iki kez gelmiyor ve birden fazla kayıtlı telefon yalnızca bir kez bilgilendiriliyor.",
+      "Telefonun bilgisayar listesi kendini güncel tutuyor: uygulamaya dönüldüğünde, açık kaldığı sürece ve aşağı çekildiğinde yeniden yokluyor; satırlar \"Denetleniyor…\" durumuna geri dönmüyor.",
+      "Bilgisayarı ortalıkta olmayan bir uzak proje silinebiliyor: satır her seferinde hata vermek yerine bu masaüstünden kalkıyor; bağlı bir bilgisayar ise silmeyi kendi tarafında yapıyor.",
+      "Masaüstü kenar çubuğundaki hata artık kaynağı ayırıyor: uzak bir bilgisayardan geldiyse uygulamanın kendi metni, bu bilgisayardan geldiyse özgün mesaj gösteriliyor.",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-10-27",
     highlights: [

@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.1.2",
+    date: "2026-10-29",
+    highlights: [
+      "Le téléphone explique pourquoi une exécution distante a échoué : un tour en échec affiche son résultat même lorsque l'ordinateur l'a clos lui-même, au lieu d'un code ou d'un tour vide.",
+      "Une exécution terminée n'envoie qu'une notification : une exécution qui signale une erreur puis se termine n'arrive plus deux fois, et un téléphone enregistré plusieurs fois n'est prévenu qu'une fois.",
+      "La liste des ordinateurs du téléphone reste à jour : elle réinterroge au retour de l'application, pendant qu'elle reste ouverte et par un glissement vers le bas, sans que les lignes reviennent à « Vérification… ».",
+      "Un projet distant dont l'ordinateur est absent peut être supprimé : la ligne quitte ce bureau au lieu d'échouer à chaque fois, et un ordinateur connecté supprime toujours de son côté.",
+      "Un échec dans la barre latérale du bureau affiche le texte de l'application lorsqu'il vient d'un ordinateur distant, et garde le message d'origine lorsqu'il vient de celui-ci.",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-10-27",
     highlights: [

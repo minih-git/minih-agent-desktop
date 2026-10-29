@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.1.2",
+    date: "2026-10-29",
+    highlights: [
+      "The phone says why a remote run failed: a failed turn shows its outcome even when the computer had to settle it itself, instead of an error code or an empty turn.",
+      "One finished run sends one notification: a run that reported an error and then ended no longer arrives twice, and a phone registered more than once is told once.",
+      "The phone's computer list keeps itself current: it re-probes when the app returns, while it stays open and on a pull, without the rows flashing back to \"Checking…\".",
+      "A remote project whose computer is away can be deleted: the row leaves this desktop instead of failing every time, and a connected computer still deletes on its own side.",
+      "A failure in the desktop sidebar shows the app's own wording when it came from a remote computer, and keeps the plain message when it came from this one.",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-10-27",
     highlights: [
