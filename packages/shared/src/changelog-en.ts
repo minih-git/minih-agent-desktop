@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-29",
+    highlights: [
+      "Reasoning stays put while a turn runs: the thought you are reading no longer folds itself the moment the model calls a tool or starts the answer, which looked like clicking the reasoning closed it. A finished turn still folds by the reading density you chose.",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-10-29",
     highlights: [

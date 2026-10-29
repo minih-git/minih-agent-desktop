@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-29",
+    highlights: [
+      "턴이 실행되는 동안 추론 내용이 그대로 유지됩니다. 읽고 있던 사고 과정은 모델이 도구를 호출하거나 답변을 시작해도 접히지 않습니다. 이전에는 추론 내용을 클릭하면 닫히는 것처럼 보였습니다. 끝난 턴은 선택한 기록 밀도에 따라 계속 접힙니다.",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-10-29",
     highlights: [

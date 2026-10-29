@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-29",
+    highlights: [
+      "Der Gedankengang bleibt während eines laufenden Durchlaufs stehen: Der Text, den du gerade liest, klappt nicht mehr zu, sobald das Modell ein Werkzeug aufruft oder mit der Antwort beginnt – genau das wirkte wie „Klick auf den Gedankengang schließt ihn“. Ein beendeter Durchlauf faltet weiterhin nach der gewählten Transkript-Dichte.",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-10-29",
     highlights: [
