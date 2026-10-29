@@ -96,6 +96,12 @@ export interface RemoteHostsBoot {
   reconnectHost(hostKey: string): Promise<RemoteHostSummary>;
   ensureReady(hostKey: string): Promise<RemoteHostSummary>;
   removeHost(hostKey: string): Promise<void>;
+  /**
+   * Drop one session row of an offline account computer. The Host owns the
+   * session, so this is a local forget (see the implementation), not a delete:
+   * an SSH or direct Host refuses it and the delete has to reach that Host.
+   */
+  forgetSession(remoteSessionId: string): Promise<{ ok: boolean }>;
   sessionSummaries(): SessionSummary[];
   sessions(hostKey: string): Promise<SessionSummary[]>;
   projects(hostKey: string): Promise<RacpProjectSummary[]>;
@@ -750,6 +756,43 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
       catalog.forget(key);
       changed();
     }),
+    /**
+     * Remove one remote session row while its computer is away.
+     *
+     * A delete normally goes to the Host, which owns the session. With the
+     * computer genuinely away there is nothing to ask, and the row stayed in the
+     * sidebar failing every call with "remote session is disconnected" —
+     * including the delete itself, so it could never leave.
+     *
+     * Two conditions keep this narrow. A computer that is still connected always
+     * owns the delete: a missing backend there is a transient state (a reconnect
+     * in progress, a failed recovery), not an absent Host, and forgetting the row
+     * would leave the session alive on the Host while this desktop never listed
+     * it again. And only an account computer can forget a row durably: its
+     * listing is filtered by this desktop's ownership record, so dropping the
+     * entry keeps the session out of every later list. An SSH or direct Host
+     * lists all of its sessions, where forgetting one would only make it
+     * reappear on the next connection.
+     */
+    async forgetSession(remoteSessionId: string): Promise<{ ok: boolean }> {
+      const parsed = parseRemoteSessionId(remoteSessionId);
+      if (!parsed) {
+        throw Object.assign(new Error("malformed remote session id"), { errorCode: "INVALID_ARGUMENT" });
+      }
+      if (connectedHost(parsed.hostKey)) {
+        throw Object.assign(new Error("remote session is disconnected"), { errorCode: "AGENT_UNAVAILABLE" });
+      }
+      const record = (await registry.list()).find((item) => item.hostKey === parsed.hostKey);
+      if (!record || transportOf(record) !== "account") {
+        throw Object.assign(new Error("remote session is disconnected"), { errorCode: "AGENT_UNAVAILABLE" });
+      }
+      // The durable record first: if it cannot be written the row has to stay
+      // exactly where it was, or it disappears now and returns after a restart.
+      await ownership.remove(parsed.hostKey, parsed.hostSessionId);
+      const hadRow = catalog.forgetSession(parsed.hostKey, parsed.hostSessionId);
+      changed();
+      return { ok: hadRow };
+    },
     async listSessions() {
       const results = await Promise.all([...opened.values()].map(async (host) => {
         if (!connectedHost(host.hostKey)) return [];

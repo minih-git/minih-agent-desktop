@@ -408,6 +408,16 @@ export class AgentHost {
           this.emit(state, "turn.activity", { event }, meta2);
           return;
         }
+        // A turn settles once. A runtime that reports an error and then the
+        // agent's own end used to close the same turn twice, and every close is
+        // its own notification: one run produced two pushes, first "failed" and
+        // then "completed". The first close already published the outcome, so a
+        // repeat report is dropped instead of restating it.
+        if (turn && !isActive(turn.status)) return;
+        // A terminal report that names no turn and finds none active is the same
+        // repeat: the close that already happened cleared the active turn, and
+        // closing again would announce a turn that is already over.
+        if (!turn && state.activeTurnId === undefined) return;
         this.closeTurn(state, turn, {
           status: event.type === "error" ? "failed" : meta.interrupted ? "interrupted" : "completed",
           endedAt: new Date(envelope.ts).toISOString(),
@@ -1138,7 +1148,10 @@ export class AgentHost {
         endedAt: new Date(this.clock.now()).toISOString(),
         ...(options.error ? { error: options.error } : {}),
         kind: turnEventKindForStatus(status),
-        payload: {},
+        // A settlement this Host performs itself must carry the same payload a
+        // runtime error event publishes, or a client renders a failed turn with
+        // no reason at all: the failure banner reads `payload.event.error`.
+        payload: options.error ? { event: { type: "error", error: options.error } } : {},
         meta: { turnId: turn.id },
       });
       return;

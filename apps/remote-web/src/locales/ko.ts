@@ -126,6 +126,7 @@ export const ko: Record<TranslationKey, string> = {
   "session.turn.stopped": "턴 중지됨",
   "session.turn.canceled": "턴 취소됨",
   "session.turn.failed": "실행 실패: {{reason}}",
+  "session.turn.failedStatus": "실행 실패",
   "session.queuedCount": "대기 {{count}}",
   "session.stop": "중지",
   "session.interrupt": "지금 중지",

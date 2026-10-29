@@ -1408,6 +1408,56 @@ describe("AgentHost notification events (protocol §11.6)", () => {
     expect(seen).toEqual([]);
   });
 
+  it("settles a turn once: a second terminal report is dropped", async () => {
+    const seen: NotifyEvent[] = [];
+    const { host, received } = build({ onNotifyEvent: (event) => seen.push(event) });
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+
+    // The runtime reports the failure, then the agent's own end arrives for the
+    // same turn. Both used to close it, and each close is its own notification:
+    // one run produced two pushes, "failed" followed by "completed".
+    host.ingest(
+      envelope("s1", started.turn.id, {
+        type: "error",
+        error: { code: "PROVIDER_ERROR", message: "upstream refused", retriable: false, traceId: "" },
+      }),
+    );
+    host.ingest(envelope("s1", started.turn.id, { type: "agent_end", messageIds: [] }));
+
+    expect(seen.map((event) => event.kind)).toEqual(["turn.failed"]);
+    expect(received.filter((event) => event.kind === "turn.failed")).toHaveLength(1);
+    expect(received.filter((event) => event.kind === "turn.completed")).toHaveLength(0);
+    expect(host.getTurn(started.turn.id)?.status).toBe("failed");
+  });
+
+  it("drops a repeat terminal report that names no turn", async () => {
+    const seen: NotifyEvent[] = [];
+    const { host } = build({ onNotifyEvent: (event) => seen.push(event) });
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    host.ingest(envelope("s1", started.turn.id, { type: "agent_end", messageIds: [] }));
+
+    // The same end arrives again without a turn id. The session is already idle,
+    // and closing it again would announce a turn that is over.
+    host.ingest(envelope("s1", undefined, { type: "agent_end", messageIds: [] }));
+    expect(seen.map((event) => event.kind)).toEqual(["turn.completed"]);
+  });
+
+
+  it("carries the reason when this Host settles a failed turn itself", async () => {
+    const { host, received } = build();
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    host.endTurn("s1", started.turn.id, "failed", {
+      error: { code: "TURN_ABORTED", message: "the runtime went away", retriable: false, traceId: "" },
+    });
+
+    // The phone's failure banner reads exactly this path. An empty payload left
+    // a settled failure with nothing to display.
+    const closed = received.find((event) => event.kind === "turn.failed");
+    expect((closed?.payload as { event?: { error?: { message?: string } } }).event?.error?.message).toBe(
+      "the runtime went away",
+    );
+  });
+
   it("never lets a failing listener affect the turn or the approval it describes", async () => {
     const { host, approvals } = build({
       onNotifyEvent: () => {

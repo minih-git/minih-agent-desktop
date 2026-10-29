@@ -119,3 +119,21 @@ describe("resolveTurnStatusDisplay", () => {
     expect(resolveTurnStatusDisplay("idle", false)).toBeNull();
   });
 });
+
+describe("resolveTurnStatusDisplay outcomes", () => {
+  it("names a failed turn instead of showing nothing", () => {
+    // The status arrives as `failed` and had no branch at all: a failed turn
+    // rendered no outcome in the header while the banner explained it below.
+    expect(resolveTurnStatusDisplay("failed", false)).toEqual({
+      statusType: "error",
+      labelKey: "session.turn.failedStatus",
+    });
+  });
+
+  it("names a canceled turn", () => {
+    expect(resolveTurnStatusDisplay("canceled", false)).toEqual({
+      statusType: "muted",
+      labelKey: "session.turn.canceled",
+    });
+  });
+});

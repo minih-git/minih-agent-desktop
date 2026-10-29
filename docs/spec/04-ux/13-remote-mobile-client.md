@@ -496,7 +496,9 @@ show a neutral banner "Reconnecting…"; they do not reset the ring.
   this computer". Forget opens a confirmation sheet with the existing copy and
   a filled destructive button; success shows a Toast.
 - Pull to refresh re-probes every computer and replaces the per-row refresh
-  buttons. Statuses also refresh when the app returns to the foreground.
+  buttons. While the list stays visible it re-probes on a slow timer — the
+  Gateway keeps no presence stream, so nothing else would report that a computer
+  came back — and it refreshes again when the app returns to the foreground.
 - Footer caption: "Gateway rc.hmini.org · access is stored in this phone's
   Keychain" (native) or "… in a secure cookie" (browser).
 
@@ -592,6 +594,10 @@ Toast confirms ("Stopped", "Run finished").
   ("Context compacted").
 - "Truncated" marks a shortened item with a Caption chip.
 - Turn failure: error Callout at the end of the turn, "Run failed: reason".
+  A failure whose only reason is an internal error code — a turn the Host
+  settled itself — reads as "Run failed" with no reason, and the protocol
+  envelope is never rendered. The session header names the outcome with
+  `session.turn.failedStatus` (and `session.turn.canceled` for a canceled turn).
 - Scroll: the screen opens at the bottom; new content follows only when the
   user is within 120 px of the bottom; otherwise a floating "New messages" pill
   with a down chevron appears above the dock.
@@ -697,6 +703,7 @@ en.
 | `session.turn.running` | 回合进行中 | 运行中 | Running |
 | `session.turn.waiting_approval` | 等待授权 | 等你批准 | Needs your approval |
 | `session.turn.failed` | 回合失败：{{reason}} | 运行失败：{{reason}} | Run failed: {{reason}} |
+| `session.turn.failedStatus` | 回合失败 | 运行失败 | Run failed |
 | `session.stop` | 停止 | 停止 | Stop |
 | `session.stopAfterStep` | (new) | 完成当前步骤后停止 | Stop after this step |
 | `session.interrupt` | 中断 | 立即停止 | Stop now |

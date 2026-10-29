@@ -10,6 +10,7 @@ register(pathToFileURL(join(here, "helpers/ts-import-hooks.mjs")));
 const {
   ROUTE_LOCAL,
   createBackendRouter,
+  createDeleteOnlyOfflineBackend,
   makeRemoteSessionId,
   parseRemoteSessionId,
   isRemoteSessionId,
@@ -91,4 +92,53 @@ test("malformed remote identifiers cannot fall through to local handlers", async
   await assert.rejects(router.route("files/read", [{ sessionId: "remote:broken", path: "/private/data" }]), {
     errorCode: "INVALID_ARGUMENT",
   });
+});
+
+const SESSION_DELETE = "minih-agent-desktop/session/delete";
+
+test("an offline fallback answers only the channels it claims", async () => {
+  const asked = [];
+  const router = createBackendRouter({
+    offline: {
+      handles: (channel) => channel === SESSION_DELETE,
+      invoke: async (channel, sessionId, args) => {
+        asked.push({ channel, sessionId, args });
+        return { ok: true };
+      },
+    },
+  });
+  const remote = makeRemoteSessionId("h", "s");
+
+  // A session whose Host is offline has no backend. Deleting it used to fail
+  // with "remote session is disconnected", so the row could never leave.
+  assert.deepEqual(await router.route(SESSION_DELETE, [remote]), { remote: true, value: { ok: true } });
+  assert.deepEqual(asked, [{ channel: SESSION_DELETE, sessionId: remote, args: [remote] }]);
+
+  // Everything that must reach the Host still fails: nothing local can answer it.
+  await assert.rejects(router.route("session:get", [{ sessionId: remote }]), {
+    errorCode: "AGENT_UNAVAILABLE",
+  });
+});
+
+test("the delete-only seam refuses until the session directory is bound", async () => {
+  const remote = makeRemoteSessionId("h", "s");
+
+  // Boot creates the router before the directory that answers a delete exists.
+  // Until the handler is bound the seam must refuse, exactly as the router did
+  // before the seam existed — never report a delete nobody performed.
+  const unbound = createBackendRouter({ offline: createDeleteOnlyOfflineBackend(SESSION_DELETE, null) });
+  await assert.rejects(unbound.route(SESSION_DELETE, [remote]), { errorCode: "AGENT_UNAVAILABLE" });
+  await assert.rejects(unbound.route("session:get", [{ sessionId: remote }]), {
+    errorCode: "AGENT_UNAVAILABLE",
+  });
+
+  const asked = [];
+  const bound = createBackendRouter({
+    offline: createDeleteOnlyOfflineBackend(SESSION_DELETE, async (sessionId) => {
+      asked.push(sessionId);
+      return { ok: true };
+    }),
+  });
+  assert.deepEqual(await bound.route(SESSION_DELETE, [remote]), { remote: true, value: { ok: true } });
+  assert.deepEqual(asked, [remote]);
 });

@@ -126,6 +126,7 @@ export const tr: Record<TranslationKey, string> = {
   "session.turn.stopped": "Tur durduruldu",
   "session.turn.canceled": "Tur iptal edildi",
   "session.turn.failed": "Çalıştırma başarısız: {{reason}}",
+  "session.turn.failedStatus": "Çalıştırma başarısız",
   "session.queuedCount": "{{count}} sırada",
   "session.stop": "Durdur",
   "session.interrupt": "Şimdi durdur",

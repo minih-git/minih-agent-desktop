@@ -126,6 +126,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "session.turn.stopped": "Turno parado",
   "session.turn.canceled": "Turno cancelado",
   "session.turn.failed": "Falha na execução: {{reason}}",
+  "session.turn.failedStatus": "Falha na execução",
   "session.queuedCount": "{{count}} na fila",
   "session.stop": "Parar",
   "session.interrupt": "Parar agora",

@@ -18,7 +18,7 @@ import { registerPluginSchemes } from "../plugin-schemes";
 import { applyNetworkProxyFromAppSettings } from "../network-proxy";
 import { readCloseBehavior } from "../window-preferences";
 import { createAgentHostBridge, type AgentHostBridge } from "../agent-host-bridge";
-import { createBackendRouter, type BackendRouter } from "../remote/backend-router";
+import { createBackendRouter, createDeleteOnlyOfflineBackend, type BackendRouter } from "../remote/backend-router";
 import { createRemoteHostsBoot, setActiveRemoteHostsBoot } from "./remote-hosts";
 import { createGatewayLinkBootstrap, setActiveGatewayLink } from "./gateway-link";
 import { createAccountComputers } from "../remote/gateway-link/account-computers.js";
@@ -232,9 +232,22 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     // ROUTE_LOCAL and the local handler runs unchanged. Assigned before the
     // first window can issue IPC. Remote host connections register their
     // sessions here once paired (later stages).
+    //
+    // `offline` is the same seam for a session whose Host is not connected: only
+    // a delete has a local answer (forgetting the row of an account computer),
+    // and the boot that owns the session directory is created a few lines down,
+    // so the handler is bound there.
+    let forgetOfflineSession: ((remoteSessionId: string) => Promise<unknown>) | null = null;
     state.backendRouter = createBackendRouter({
       log: (level, message, data) =>
         logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
+      offline: createDeleteOnlyOfflineBackend(IPC.invoke.sessionDelete, (sessionId) =>
+        forgetOfflineSession ? forgetOfflineSession(sessionId) : Promise.reject(
+          Object.assign(new Error("remote session is disconnected"), {
+            errorCode: ErrorCodes.AGENT_UNAVAILABLE,
+          }),
+        ),
+      ),
     });
     // Every paired remote `agent-host-cli` opens against the router this boot just
     // created. An empty registry (default install with no user pairing) makes
@@ -258,6 +271,9 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
         logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
     });
     setActiveRemoteHostsBoot(remoteHostsBoot);
+    // Bound once the session directory exists: an offline delete of an account
+    // computer's session forgets the row instead of failing forever.
+    forgetOfflineSession = (sessionId) => remoteHostsBoot.forgetSession(sessionId);
     // Boot in the background: a slow or unreachable host must not delay the
     // first window. Failures for individual hosts are logged inside `open()`.
     void remoteHostsBoot.open().then((opened) => {

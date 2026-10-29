@@ -126,6 +126,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "session.turn.stopped": "回合已停止",
   "session.turn.canceled": "回合已取消",
   "session.turn.failed": "运行失败：{{reason}}",
+  "session.turn.failedStatus": "运行失败",
   "session.queuedCount": "队列 {{count}}",
   "session.stop": "停止",
   "session.interrupt": "立即停止",

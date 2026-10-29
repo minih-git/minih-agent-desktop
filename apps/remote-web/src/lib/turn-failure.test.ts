@@ -35,4 +35,12 @@ describe("describeTurnFailure", () => {
   it("reports an empty message as empty, so no banner is drawn", () => {
     expect(describeTurnFailure("   ")).toEqual({ reason: "" });
   });
+
+  it("drops a body that is only an envelope", () => {
+    // A complete payload with no sentence in it is protocol structure, not a
+    // reason: showing it would print JSON into the timeline.
+    expect(describeTurnFailure('{"event":{"type":"error","error":{"code":"INTERNAL"}}}')).toEqual({
+      reason: "",
+    });
+  });
 });

@@ -71,6 +71,23 @@ export function createRemoteSessionCatalog(options: {
       });
     },
     forget(hostKey: string) { cache.delete(hostKey); pending.delete(hostKey); },
+    /**
+     * Drop one session row of an offline Host from the directory.
+     *
+     * The Host is the only authority on its own sessions, so this is not a
+     * delete: it removes the row this desktop can no longer act on, which is
+     * what makes an offline session removable at all. Returns whether a row
+     * was there, so a caller never reports a delete it did not do.
+     */
+    forgetSession(hostKey: string, hostSessionId: string): boolean {
+      const rows = cache.get(hostKey);
+      if (!rows) return false;
+      const id = makeRemoteSessionId(hostKey, hostSessionId);
+      const next = rows.filter((row) => row.id !== id);
+      if (next.length === rows.length) return false;
+      cache.set(hostKey, next);
+      return true;
+    },
     async projects(hostKey: string): Promise<RacpProjectSummary[]> {
       const host = requireHost(hostKey);
       const result = await host.client.request<{ projects: RacpProjectSummary[] }>("project/list");

@@ -8,7 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 register(pathToFileURL(join(here, "helpers/ts-import-hooks.mjs")));
 
 const { ipcErrorCode } = await import("../electron/main/ipc/error-code.ts");
-const { remoteHostErrorKey } = await import("../src/lib/remote-host-errors.ts");
+const { failureMessage, remoteHostErrorKey } = await import("../src/lib/remote-host-errors.ts");
 
 /** A failure that crossed a Host boundary: `RacpError` keeps its code in `code`. */
 function racpError(code) {
@@ -78,4 +78,21 @@ test("an unreadable Host answer is not reported as a connection problem", () => 
 test("a code this Desktop does not know stays a generic failure", () => {
   assert.equal(remoteHostErrorKey(rendererError("INTERNAL")), "remote:operationFailed");
   assert.equal(remoteHostErrorKey(undefined), "remote:operationFailed");
+});
+
+test("a local failure keeps its own message even when it shares a remote code", () => {
+  const translate = (key) => `translated:${key}`;
+  const sameCode = rendererError("AGENT_UNAVAILABLE");
+
+  // The local Agent being unavailable is not a remote computer being down: the
+  // wording depends on what the call addressed, not only on the code it raised.
+  assert.equal(failureMessage(sameCode, { remote: false, translate }), "remote host refused");
+  assert.equal(
+    failureMessage(sameCode, { remote: true, translate }),
+    "translated:remote:connectionUnavailable",
+  );
+
+  // Anything the mapping does not know keeps the message it was thrown with.
+  assert.equal(failureMessage(new Error("disk is full"), { remote: true, translate }), "disk is full");
+  assert.equal(failureMessage("a plain string", { remote: true, translate }), "a plain string");
 });

@@ -420,12 +420,20 @@ function isEmptyAssistantPlaceholder(item: TimelineItem): boolean {
 function TurnFailureBanner({ failure }: { failure: TimelineFailure }) {
   const { t } = useTranslation();
   const display = describeTurnFailure(failure.message ?? "");
-  if (!display.reason) return null;
-  const reason = display.status === undefined ? display.reason : `${display.status} · ${display.reason}`;
+  // A Host that settles a turn itself fills `message` with its own error code
+  // (TURN_ERROR), so "the reason" would read as an internal token rather than a
+  // sentence someone can act on. A failure with no usable reason is still a
+  // failure: the line names the outcome either way.
+  const informative = display.reason !== "" && display.reason !== failure.code;
+  const reason = informative
+    ? display.status === undefined
+      ? display.reason
+      : `${display.status} · ${display.reason}`
+    : "";
   return (
     <li className="mt-2 min-w-0 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-[14px] leading-relaxed text-[var(--rm-error)]">
       <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-        {t("session.turn.failed", { reason })}
+        {reason ? t("session.turn.failed", { reason }) : t("session.turn.failedStatus")}
       </p>
     </li>
   );

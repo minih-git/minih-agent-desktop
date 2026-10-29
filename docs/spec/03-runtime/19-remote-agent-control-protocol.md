@@ -681,6 +681,19 @@ side resolves the path locally, and the spelling is not negotiated: a POSIX
 client and a Windows Host interoperate without a protocol change. Root
 confinement, `..` collapsing and symlink escape stay in the Host.
 
+A row for a session whose Host is not connected stays listed — a conversation
+the user knows about must not silently disappear — and every operation that
+would reach the Host is refused. `session/delete` is the one local exception,
+and only for an account computer (§11.5): its listing is filtered by the
+client's own ownership record, so the client may drop the row while the Host is
+away and the session stays out of every later list. A computer that is still
+connected keeps its own delete even when its live route is momentarily missing —
+a reconnect in progress, a failed recovery — because there the Host still owns
+the session and forgetting the row would leave it alive and unlisted; the
+transient state is retried instead. A Host that lists all of its sessions cannot
+be forgotten that way, because the row would simply come back on the next
+connection; there the delete has to reach the Host.
+
 ### 6.2.1 Local-Agent workspace services
 
 New Desktop remote projects keep the Agent, transcript, project metadata, model
@@ -2119,6 +2132,15 @@ says — so a Host never chooses an audience and a client never receives content
   failed. An interrupted or canceled turn is the user's own action on a screen
   they are looking at, so it is not a notification — and neither is anything
   about a message, a tool, or a token count.
+- **One close, one notification.** A turn settles once. A Host that receives a
+  terminal report for a turn it already closed — a runtime error followed by the
+  agent's own end is the common case — drops the repeat instead of closing it
+  again, so the Gateway and the device see one `host.notify` per finished turn
+  and not one per report.
+- **One phone, one delivery.** The Gateway delivers a notification once per
+  `platform` plus token. Two registrations can name the same token — a §11.4
+  device is minted per pairing, so re-pairing leaves the older row behind — and
+  delivering to each of them put the same notification on one phone twice.
 - **Registration.** `PUT /v1/push/registration` takes a **device token** — never
   an account session — with `{ platform: "ios" | "android", token, appId? }` and
   answers `{ result: { enabled, platform, hostIds } }` under the §11.2 command

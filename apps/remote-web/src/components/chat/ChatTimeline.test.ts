@@ -215,3 +215,26 @@ test("a failed turn shows the status and the provider's sentence, not its JSON b
   // ...and carries neither the envelope nor the id that names the call.
   assert.doesNotMatch(html, /request_id|authentication_error|\{&quot;message&quot;/);
 });
+
+test("a failure that carries only an internal code reads as an outcome", async () => {
+  // A Host that settles the turn itself writes its error code into `message`;
+  // `TURN_ERROR` is not a sentence someone can act on.
+  const html = await render([], {
+    lastFailure: { kind: "turn.failed", turnId: "turn-1", code: "TURN_ERROR", message: "TURN_ERROR" },
+  });
+  assert.match(html, /Run failed/);
+  assert.doesNotMatch(html, /TURN_ERROR/);
+});
+
+test("a failure whose body is only an envelope shows no protocol structure", async () => {
+  const html = await render([], {
+    lastFailure: {
+      kind: "turn.failed",
+      turnId: "turn-1",
+      code: "INTERNAL",
+      message: '{"event":{"type":"error","error":{"code":"INTERNAL"}}}',
+    },
+  });
+  assert.match(html, /Run failed/);
+  assert.doesNotMatch(html, /\{&quot;|&quot;event&quot;|INTERNAL/);
+});

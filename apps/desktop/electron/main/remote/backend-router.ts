@@ -53,11 +53,51 @@ export interface BackendRouter {
   /** Route a renderer IPC call. */
   route(channel: string, args: readonly unknown[]): Promise<RouteOutcome>;
 }
+/**
+ * The local stand-in for a remote session whose Host is not connected.
+ *
+ * A backend is registered only while its Host is connected, so an offline
+ * session has nothing to route to. Without this seam every call — including
+ * removing a row the user no longer wants — failed with "remote session is
+ * disconnected", and the row could never be deleted. Only the channels the
+ * implementation claims are served here: anything that would reach the Host
+ * must keep failing, because no local handler can answer it.
+ */
+export interface RemoteOfflineBackend {
+  /** Whether this channel has a meaningful offline behaviour. */
+  handles(channel: string): boolean;
+  /** Serve the call locally, returning the value the renderer expects. */
+  invoke(channel: string, sessionId: string, args: readonly unknown[]): Promise<unknown>;
+}
 
 export type BackendRouterOptions = {
   /** Optional structured log for routing faults; defaults to a no-op. */
   log?: (level: "warn" | "error", message: string, data?: unknown) => void;
+  /** Local answers for sessions whose Host is offline; absent means none. */
+  offline?: RemoteOfflineBackend;
 };
+/**
+ * The one offline behaviour this app offers: deleting an account computer's
+ * session may be answered by this desktop while that computer is away.
+ *
+ * `forget` is bound after boot, because the directory that answers it is created
+ * later than the router. Until it is bound the seam refuses, exactly as the
+ * router did before the seam existed — it never reports a success it did not do.
+ */
+export function createDeleteOnlyOfflineBackend(
+  channel: string,
+  forget: ((sessionId: string) => Promise<unknown>) | null,
+): RemoteOfflineBackend {
+  return {
+    handles: (candidate) => candidate === channel,
+    invoke: async (_candidate, sessionId) => {
+      if (!forget) {
+        throw Object.assign(new Error("remote session is disconnected"), { errorCode: "AGENT_UNAVAILABLE" });
+      }
+      return forget(sessionId);
+    },
+  };
+}
 
 /** Build the namespaced id the renderer sees for a remote session. */
 export function makeRemoteSessionId(hostKey: string, hostSessionId: string): string {
@@ -171,6 +211,15 @@ export function createBackendRouter(options: BackendRouterOptions = {}): Backend
       }
       const backend = sessionBackends.get(sessionId);
       if (!backend) {
+        const offline = options.offline;
+        if (offline?.handles(channel)) {
+          try {
+            return { remote: true, value: await offline.invoke(channel, sessionId, args) };
+          } catch (error) {
+            log("warn", `remote offline route failed for ${channel}`, error);
+            throw error;
+          }
+        }
         throw Object.assign(new Error("remote session is disconnected"), { errorCode: "AGENT_UNAVAILABLE" });
       }
       if (!backend.handles(channel)) {
