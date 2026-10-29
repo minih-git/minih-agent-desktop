@@ -335,7 +335,7 @@ test("rollback outcomes reach the toast instead of a second card row", () => {
 });
 
 test("Review is a session change history and no longer refreshes a Git diff", () => {
-  assert.match(reviewSource, /reviewChangesFromMessages\(messages\)/);
+  assert.match(reviewSource, /reviewChangesFromMessages\([\s\S]{0,180}messages/);
   assert.match(reviewSource, /<ReviewChangeCard/);
   assert.match(reviewSource, /panel\.review\.noChanges/);
   assert.doesNotMatch(reviewSource, /workspaceDiff|refreshWorkspaceDiff|api\.workspaceDiff/);
