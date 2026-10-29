@@ -217,6 +217,24 @@ export async function transcriptAutoCollapseProbe() {
       "closing and reopening a parent preserves a manually collapsed child",
     );
 
+
+    // A live burst keeps its reasoning readable: the row that was newest must
+    // not fold the moment the next step arrives. Folding it there pulled the
+    // text away right after the reader pressed it, which read as "clicking the
+    // reasoning closes it".
+    configure({ transcriptDensity: "standard" });
+    render("live-reasoning-burst", [thoughtLive], true);
+    check(expanded(thoughtHeader()), "a live burst opens its reasoning row");
+    render("live-reasoning-burst", [thoughtLive, tailRead], true);
+    check(
+      expanded(thoughtHeader()),
+      "the next step in the same burst keeps the reasoning row open",
+    );
+    render("live-reasoning-burst", [thoughtDone, tailRead], false);
+    check(
+      !expanded(thoughtHeader()),
+      "a settled burst returns the reasoning row to the density default",
+    );
     for (const mode of ["compact", "standard", "detailed"] as const) {
       configure({ transcriptDensity: mode });
 
