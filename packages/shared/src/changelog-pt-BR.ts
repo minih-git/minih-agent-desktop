@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-29",
+    highlights: [
+      "O raciocínio fica no lugar enquanto o turno executa: o texto que você está lendo não se recolhe mais no momento em que o modelo chama uma ferramenta ou começa a resposta, o que parecia «clicar no raciocínio fecha ele». Um turno encerrado continua se recolhendo conforme a densidade de transcrição escolhida.",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-10-29",
     highlights: [

@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-29",
+    highlights: [
+      "回合运行期间思考过程不再自己收起：你正在读的那段思考，不会因为模型接着调用工具或开始回答就折叠起来；此前看起来就像点一下思考内容它就被关掉了。已结束的回合仍按你选择的转录密度折叠。",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-10-29",
     highlights: [

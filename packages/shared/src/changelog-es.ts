@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-29",
+    highlights: [
+      "El razonamiento se queda quieto mientras el turno se ejecuta: el texto que estás leyendo ya no se pliega en cuanto el modelo llama a una herramienta o empieza la respuesta, que era lo que parecía «al hacer clic en el razonamiento se cierra». Un turno terminado sigue plegándose según la densidad de transcripción elegida.",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-10-29",
     highlights: [

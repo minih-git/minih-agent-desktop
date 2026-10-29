@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-29",
+    highlights: [
+      "Le raisonnement reste en place pendant qu'un tour s'exécute : le texte que vous lisez ne se replie plus dès que le modèle appelle un outil ou commence la réponse — ce qui donnait l'impression qu'un clic sur le raisonnement le refermait. Un tour terminé se replie toujours selon la densité de transcription choisie.",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-10-29",
     highlights: [

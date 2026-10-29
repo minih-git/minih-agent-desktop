@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-29",
+    highlights: [
+      "Tur çalışırken akıl yürütme yerinde kalır: okuduğun metin, model bir araç çağırdığında veya yanıta başladığında artık kendiliğinden katlanmıyor; bu daha önce «akıl yürütmeye tıklayınca kapanıyor» gibi görünüyordu. Bitmiş tur, seçtiğiniz transkript yoğunluğuna göre katlanmaya devam eder.",
+    ],
+  },
+  {
     version: "1.1.2",
     date: "2026-10-29",
     highlights: [
