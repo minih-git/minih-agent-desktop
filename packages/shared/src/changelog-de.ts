@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.1.2",
+    date: "2026-10-29",
+    highlights: [
+      "Das Telefon sagt, warum ein entfernter Lauf fehlgeschlagen ist: Ein fehlgeschlagener Turn zeigt sein Ergebnis auch dann, wenn der Computer ihn selbst abgeschlossen hat — statt eines Fehlercodes oder eines leeren Turns.",
+      "Ein beendeter Lauf sendet eine Benachrichtigung: Ein Lauf, der erst einen Fehler meldet und dann endet, kommt nicht mehr doppelt an, und ein mehrfach registriertes Telefon wird einmal benachrichtigt.",
+      "Die Computerliste des Telefons bleibt aktuell: Sie prüft beim Zurückkehren in den Vordergrund, während sie offen bleibt und beim Herunterziehen erneut — ohne dass die Zeilen auf „Wird geprüft…“ zurückspringen.",
+      "Ein entferntes Projekt, dessen Computer nicht erreichbar ist, lässt sich löschen: Die Zeile verschwindet von diesem Desktop, statt jedes Mal zu scheitern; ein verbundener Computer löscht weiterhin auf seiner Seite.",
+      "Ein Fehler in der Desktop-Seitenleiste zeigt den eigenen Wortlaut der App, wenn er von einem entfernten Computer kam, und die unveränderte Meldung, wenn er von diesem hier kam.",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-10-27",
     highlights: [

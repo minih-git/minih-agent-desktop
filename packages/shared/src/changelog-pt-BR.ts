@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.1.2",
+    date: "2026-10-29",
+    highlights: [
+      "O telefone explica por que uma execução remota falhou: um turno com falha mostra o resultado mesmo quando o computador o encerrou sozinho, em vez de um código ou de um turno vazio.",
+      "Uma execução concluída envia uma única notificação: uma execução que relatou um erro e depois terminou não chega mais duas vezes, e um telefone registrado mais de uma vez é avisado só uma vez.",
+      "A lista de computadores do telefone se mantém atualizada: ela sonda de novo ao voltar ao app, enquanto continua aberta e ao puxar para baixo, sem as linhas voltarem para “Verificando…”.",
+      "Um projeto remoto cujo computador está ausente pode ser excluído: a linha sai deste desktop em vez de falhar sempre, e um computador conectado continua excluindo do lado dele.",
+      "Uma falha na barra lateral do desktop mostra o texto do próprio app quando veio de um computador remoto, e mantém a mensagem original quando veio deste.",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-10-27",
     highlights: [

@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.1.2",
+    date: "2026-10-29",
+    highlights: [
+      "El teléfono explica por qué falló una ejecución remota: un turno fallido muestra su resultado aunque el equipo lo haya cerrado por su cuenta, en lugar de un código o un turno vacío.",
+      "Una ejecución terminada envía una sola notificación: una ejecución que informó un error y luego terminó ya no llega dos veces, y un teléfono registrado más de una vez recibe un solo aviso.",
+      "La lista de equipos del teléfono se mantiene al día: vuelve a sondear al regresar la app, mientras sigue abierta y al deslizar hacia abajo, sin que las filas vuelvan a «Comprobando…».",
+      "Un proyecto remoto cuyo equipo no está disponible se puede eliminar: la fila desaparece de este escritorio en lugar de fallar cada vez, y un equipo conectado sigue borrando en su lado.",
+      "Un fallo en la barra lateral del escritorio muestra el texto propio de la app cuando vino de un equipo remoto, y conserva el mensaje original cuando vino de este.",
+    ],
+  },
+  {
     version: "1.1.1",
     date: "2026-10-27",
     highlights: [
