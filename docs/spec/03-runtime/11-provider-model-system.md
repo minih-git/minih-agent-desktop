@@ -801,3 +801,15 @@ exact origins and paths, never display names or model substrings.
 The resolved adapter remains authoritative for search extraction and replay.
 Unknown connection formats are described as not integrated by this app rather
 than unsupported by the vendor. See the provider configuration specification.
+
+## DeepSeek reasoning field and echo amendment
+
+For DeepSeek-compatible replay, the latest nonempty real reasoning wins over a
+placeholder or a stale duplicate field. Write the selected reasoning to the field
+the relay expects and remove contradictory duplicate reasoning keys. Leading
+placeholder echoes are removed only from model/display projections; persisted
+assistant text is not rewritten. Parent and delegate histories use the same
+normalization. Minih Router presets, endpoint resolution and the existing official
+DeepSeek default/relay suppression/explicit effort overrides remain unchanged.
+This adaptation keeps Pi 1.1.0 and its other compatibility patches; it is not a
+dependency upgrade or a Fast service-tier feature.

@@ -48,6 +48,7 @@ import {
 } from "@minih-agent/shared";
 import { classifyAgentError } from "./agent-errors.js";
 import { readLocalRequestErrorDetails } from "./local-request-errors.js";
+import { recoverMalformedToolCalls } from "./tool-call-recovery.js";
 import { withProviderFetchFailure } from "./provider-transport-recovery.js";
 import {
   assistantContent,
@@ -276,7 +277,8 @@ export class SubagentRun {
 
   constructor(opts: SubagentRunOptions) {
     this.opts = opts;
-    this.uniqueToolCalls = createToolCallIdentity(opts.initialMessages ?? []);
+    const initialMessages = recoverMalformedToolCalls(opts.initialMessages ?? []);
+    this.uniqueToolCalls = createToolCallIdentity(initialMessages);
     this.provider = opts.provider;
     this.thinkingLevel = opts.thinkingLevel;
     this.attemptedModels.add(`${opts.provider.id}/${opts.provider.modelId}`);
@@ -297,7 +299,7 @@ export class SubagentRun {
         model: binding.model,
         tools: opts.tools,
         thinkingLevel: binding.agentThinkingLevel,
-        messages: opts.initialMessages ? [...opts.initialMessages] : [],
+        messages: [...initialMessages],
       },
       toolExecution: "sequential",
     });

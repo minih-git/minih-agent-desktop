@@ -1,6 +1,7 @@
 import type { Message } from "@earendil-works/pi-ai";
 import { hostedSearchReplayProjection } from "@earendil-works/pi-ai/utils/hosted-search";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { omitOversizedImages } from "./image-admission.js";
 
 export type CompactionSummaryMessage = {
   role: "compactionSummary";
@@ -145,7 +146,8 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
         break;
     }
   }
-  return converted;
+  // Admission also covers restored tool results without mutating stored history.
+  return omitOversizedImages(converted);
 }
 
 function asProviderMessage(message: unknown): Message {

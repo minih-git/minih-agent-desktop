@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Isolated React/Chromium regression; no running Desktop, Host, or provider. */
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -21,7 +21,14 @@ try {
     loader: { ".css": "empty" },
     alias: { react: join(root, "apps/desktop/node_modules/react"),
       "react-dom": join(root, "apps/desktop/node_modules/react-dom") },
-    plugins: [{ name: "url-assets", setup(build) {
+    plugins: [
+      ...(process.argv.includes("--baseline-follow") ? [{ name: "follow-baseline", setup(build) {
+        build.onLoad({ filter: /useTranscriptScroll\.ts$/ }, ({ path }) => ({
+          contents: execFileSync("git", ["show", "d7e1b6701b48d73a6960bd4a340a486932d590b0:apps/desktop/src/features/chat/transcript/hooks/useTranscriptScroll.ts"], { cwd: root, encoding: "utf8" }),
+          loader: "ts", resolveDir: dirname(path),
+        }));
+      } }] : []),
+      { name: "url-assets", setup(build) {
       build.onResolve({ filter: /\?url$/ }, ({ path, resolveDir }) => ({
         path: join(resolveDir, path.slice(0, -4)), namespace: "url-asset",
       }));

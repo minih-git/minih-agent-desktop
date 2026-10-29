@@ -30,7 +30,7 @@ import {
   isPendingPlan,
   latestPlanProposal,
 } from "../lib/plan-mode-state";
-import { settleBootstrapRequests } from "../lib/bootstrap-result";
+import { restoreRunningSessions, settleBootstrapRequests } from "../lib/bootstrap-result";
 import {
   createSessionRuntime,
   type SessionRuntime,
@@ -366,12 +366,13 @@ export const useAppStore = create<AppState>((set, get) => {
         planningStates[proposal.sessionId] = "awaiting_approval";
       }
       if (generation !== bootstrapGeneration) return;
-      set({
+      set((state) => ({
         ready: true,
         version,
         healthOk: health.ok,
         settings,
         sessions: hydratedSessions,
+        runningSessions: restoreRunningSessions(sessions.runningSessionIds, state.runningSessions),
         providers: providers.providers,
         providerModels: cachedProviderModels,
         workspace: currentWorkspace,
@@ -386,7 +387,7 @@ export const useAppStore = create<AppState>((set, get) => {
         notifications: notifications.notifications,
         unreadNotificationCount: notifications.unreadCount,
         sessionOutcomes: latestSessionOutcomes(notifications.notifications),
-      });
+      }));
 
       // The artifact's surface depends on which plugin views are launchable, and
       // the launcher list is only read after `ready`. Resolve it before the

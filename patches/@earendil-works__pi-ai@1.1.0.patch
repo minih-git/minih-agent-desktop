@@ -407,7 +407,7 @@ index a60f393..f03916c 100644
              }
              params.push(assistantMsg);
          }
-@@ -1126,6 +1132,41 @@ export function convertMessages(model, context, compat, options) {
+@@ -1126,6 +1132,49 @@ export function convertMessages(model, context, compat, options) {
          }
          lastRole = msg.role;
      }
@@ -422,14 +422,20 @@ index a60f393..f03916c 100644
 +    // Placeholder text must match DEEPSEEK_REASONING_REPLAY_PLACEHOLDER in
 +    // @minih-agent/shared provider-presets.
 +    const reasoningFields = ["reasoning_content", "reasoning_text", "reasoning"];
++    // The history can mix field names: a rebuilt row is stamped
++    // reasoning_content while a live row keeps the field the relay streamed.
++    // The newest row's field is the one the upstream speaks, so every row is
++    // normalized to it; filling it on a row whose real reasoning sat under
++    // another name put the placeholder where the model reads, and the model
++    // echoed it as its own reasoning (#1945). One field per row: relays reject
++    // a duplicate reasoning field.
++    const realReasoningField = (m) => reasoningFields.find((field) => typeof m[field] === "string" &&
++        m[field].length > 0);
 +    if (compat.requiresReasoningContentOnAssistantMessages) {
 +        let activeField;
-+        for (const field of reasoningFields) {
-+            if (params.some((m) => m.role === "assistant" &&
-+                typeof m[field] === "string" &&
-+                m[field].length > 0)) {
-+                activeField = field;
-+                break;
++        for (let index = params.length - 1; index >= 0 && !activeField; index--) {
++            if (params[index].role === "assistant") {
++                activeField = realReasoningField(params[index]);
 +            }
 +        }
 +        if (!activeField && model.reasoning) {
@@ -440,16 +446,18 @@ index a60f393..f03916c 100644
 +                ? "[reasoning not retained for this turn]"
 +                : "";
 +            for (const m of params) {
-+                if (m.role === "assistant" && m[activeField] === undefined) {
-+                    m[activeField] = fill;
-+                }
++                if (m.role !== "assistant") continue;
++                const sourceField = realReasoningField(m);
++                const reasoning = sourceField ? m[sourceField] : fill;
++                for (const field of reasoningFields) delete m[field];
++                m[activeField] = reasoning;
 +            }
 +        }
 +    }
      return params;
  }
  function convertTools(tools, compat) {
-@@ -1270,6 +1311,9 @@ function detectCompat(model) {
+@@ -1270,6 +1319,9 @@ function detectCompat(model) {
          requiresAssistantAfterToolResult: false,
          requiresThinkingAsText: false,
          requiresReasoningContentOnAssistantMessages: isDeepSeek,
@@ -459,7 +467,7 @@ index a60f393..f03916c 100644
          thinkingFormat: isDeepSeek
              ? "deepseek"
              : isZai
-@@ -1323,6 +1367,8 @@ function getCompat(model) {
+@@ -1323,6 +1375,8 @@ function getCompat(model) {
          requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
          requiresReasoningContentOnAssistantMessages: model.compat.requiresReasoningContentOnAssistantMessages ??
              detected.requiresReasoningContentOnAssistantMessages,

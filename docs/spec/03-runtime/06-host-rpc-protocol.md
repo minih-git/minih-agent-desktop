@@ -14,6 +14,25 @@ MVP transport decision (**D001**):
 
 ## 2. Transport
 
+### Bounded canonical history mutations
+
+Additive Host methods `session.deleteMessage({ sessionId, messageId })` and
+`session.retractPendingPrompt({ sessionId, userMessageId, turnId? })` mutate
+canonical history by identity rather than accepting an uploaded replacement.
+Deletion is idempotent when the target no longer exists. Retraction is limited
+to the final stopped, durably attributed ordinary prompt: steering, active turns,
+newer prompts/turns, mismatched attribution and substantive replies refuse mutation.
+A refusal reports `retracted: false` and its reason without changing history.
+
+`session.activateRevision` accepts opt-in `requireCanonicalPrefix: true`; Host
+then derives the prefix from its canonical transcript. Legacy explicit-prefix
+activation and `session.replaceMessages` remain compatible. The incoming frame
+ceiling remains 64 MiB; this is neither compression nor an increased limit.
+Main serializes writes, strictly drains pending appends before mutation and
+preserves the transcript rewrite fence on refusals and failures. Restore failures
+remain observable instead of silently continuing with stale runtime history.
+
+
 - Process: Electron main spawns Rust host-core sidecar
 - Channel: child process stdin/stdout
 - Framing: one JSON object per LF-delimited line (NDJSON); CRLF is accepted.

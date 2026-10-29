@@ -28,6 +28,23 @@ function userMessage(
 }
 
 describe("hydrateAttachmentHistory", () => {
+  it("keeps oversized geometry as a path without rewriting stored attachments", async () => {
+    await withTempDir(async (tmp) => {
+      const imgPath = resolve(tmp, "page.png");
+      const header = Buffer.alloc(33);
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]).copy(header);
+      header.write("IHDR", 12, "latin1");
+      header.writeUInt32BE(780, 16);
+      header.writeUInt32BE(14182, 20);
+      await writeFile(imgPath, header);
+      const history = [userMessage("msg-1", [{ name: "page.png", ref: imgPath, kind: "image", mimeType: "image/png", size: 33 }])];
+      const original = structuredClone(history);
+      const hydrated = await hydrateAttachmentHistory(history, { projectPath: tmp, supportsVision: true });
+      expect(hydrated[0]?.attachments?.[0]?.data).toBeUndefined();
+      expect(hydrated[0]?.content).toContain(imgPath);
+      expect(history).toEqual(original);
+    });
+  });
   it("inlines image attachments when supportsVision is true and within per-image byte limits", async () => {
     await withTempDir(async (tmp) => {
       const imgPath = resolve(tmp, "sample.png");

@@ -2341,3 +2341,22 @@ record. The cost is one history read and one prompt without a warm provider
 cache, and a finished delegation chain in a reclaimed runtime can no longer be
 resumed — the same rule that already applies to an evicted chain.
 See ADR `sidecar-idle-runtime-reclaim`.
+
+## Selected reliability amendments (2026-10-28 upstream interval)
+
+- Exhausted billing, credit, storage and `insufficient_quota` errors are terminal,
+  even if wrapped in HTTP 429. Actual throughput rate limits keep the existing
+  bounded same-turn retry policy; cancellation/auth semantics do not change.
+- Recovering malformed unfinished tool calls removes only invalid model-facing
+  continuations. Completed valid call/result pairs remain; recovery must not run
+  completed tools again or rewrite durable diagnostic history. Delegate history
+  omits results whose owning assistant was excluded, not valid sibling pairs.
+- Path-lock keys collapse lexical dot and duplicate-separator aliases without
+  changing filesystem permissions or introducing a new tool execution policy.
+- Known PNG/JPEG/GIF/WebP geometry whose longest edge exceeds 8000px is not sent
+  inline. Exactly 8000px is allowed; unknown/truncated geometry remains subject to
+  existing byte rules. Main attachments and restored refs use safe path fallbacks;
+  Host Read reports the size and refuses inline output. The final model projection
+  replaces oversized historical images with deterministic text notices, preserving
+  original persisted values and image placement. The 10 MB/30 MB byte budgets and
+  session-root confinement remain unchanged.

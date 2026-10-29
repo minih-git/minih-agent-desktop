@@ -22,8 +22,10 @@ import {
   ErrorCodes,
   formatFileInsert,
   formatPromptPathText,
+  imageExceedsInlineDimensions,
   isSvgAttachment,
   locateInlinePromptPaths,
+  probeImageDimensions,
   SVG_MIME_TYPE,
   MAX_INLINE_IMAGE_BYTES,
   type AgentPromptAttachment,
@@ -278,13 +280,19 @@ export async function preparePromptAttachments(
     }
 
     const size = statSync(source.absolute).size;
-    const inline = supportsVision && size <= MAX_INLINE_IMAGE_BYTES;
-    const bytes = inline ? await readFile(source.absolute) : undefined;
+    const read = supportsVision && size <= MAX_INLINE_IMAGE_BYTES
+      ? await readFile(source.absolute)
+      : undefined;
+    // Pixel limits also apply to highly compressed screenshots.
+    const bytes = read && !imageExceedsInlineDimensions(probeImageDimensions(read))
+      ? read
+      : undefined;
+    const inline = bytes !== undefined;
     const ref =
       source.root === "attachment" && attachment.path.trim().startsWith("attachments/")
         ? attachment.path.trim()
-        : bytes
-          ? ensureAttachmentBlob(dataRoot, bytes)
+        : read
+          ? ensureAttachmentBlob(dataRoot, read)
           : await ensureAttachmentBlobFromFile(dataRoot, source.absolute);
     // The user's own position for this image: the draft named its path between
     // words, so the text stays in the prompt and the transcript renders the

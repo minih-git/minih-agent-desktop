@@ -174,6 +174,8 @@ export const IPC = {
     sessionImportRun: "minih-agent-desktop/session/importRun",
     modelConfigImportScan: "minih-agent-desktop/modelConfig/importScan",
     modelConfigImportRun: "minih-agent-desktop/modelConfig/importRun",
+    sessionDeleteMessage: "minih-agent-desktop/session/deleteMessage",
+    sessionRetractPendingPrompt: "minih-agent-desktop/session/retractPendingPrompt",
     sessionReplaceMessages: "minih-agent-desktop/session/replaceMessages",
     sessionSaveRevision: "minih-agent-desktop/session/saveRevision",
     sessionListRevisions: "minih-agent-desktop/session/listRevisions",

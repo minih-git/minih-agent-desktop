@@ -84,3 +84,10 @@ OpenCode or multiplying retries through pi-ai's own wrapper.
 - `packages/agent-runtime/src/provider-retry.ts`
 - `packages/agent-runtime/src/runtime.ts`
 - `packages/agent-runtime/src/subagent.ts`
+
+## Amendment: exhausted quota is not throughput limiting
+
+Selected upstream `e8f413bca` gives explicit billing/credit/storage exhaustion and
+`insufficient_quota` precedence over HTTP 429 retry classification. These errors
+terminate rather than spending the throughput retry budget. Genuine rate limits,
+the shared attempt budget, Stop and authentication handling remain unchanged.

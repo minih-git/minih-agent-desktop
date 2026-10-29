@@ -63,6 +63,7 @@ import { AssistantTurnParts } from "./AssistantTurnParts";
 import { TurnProcess } from "./TurnProcess";
 import { ActionSlotSide } from "./ActionBarSlots";
 import { EntryExtraStack } from "./EntryExtraStack";
+import { TurnChangesCard } from "./TurnChangesCard";
 import { slotMessage } from "../../../plugins/renderer-slots/slot-message";
 
 type AssistantTurnProps = {
@@ -435,6 +436,7 @@ export const AssistantTurn = memo(function AssistantTurn({
         )}
         <AssistantTurnParts parts={responses} {...partContext} />
         {generatedImages}
+        {slotReply ? <TurnChangesCard tools={tools} /> : null}
         {!isActive && metaMessage ? (
           <MessageMeta
             modelId={modelId}

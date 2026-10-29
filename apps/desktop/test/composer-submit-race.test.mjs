@@ -22,7 +22,7 @@ async function productionSubmit() {
     if (name.endsWith("submit-with-latest-draft-restore.mjs")) return helper;
     if (name.endsWith("/editor")) return { readEditorValue: () => { throw new Error("No editor is mounted in this hook fixture"); } };
     // Local command paths are disabled; reaching them is a fixture failure.
-    if (["../../../../lib/api", "../../../../lib/commands", "../../../../hooks/use-composer-autocomplete", "../slash-dispatch"].includes(name)) return {};
+    if (["../../../../lib/api", "../../../../lib/commands", "../../../../lib/queued-prompts", "../../../../hooks/use-composer-autocomplete", "../slash-dispatch"].includes(name)) return { nextSendableQueuedPrompt: () => undefined };
     return require(name);
   };
   new Function("require", "module", "exports", output)(imports, module, module.exports);

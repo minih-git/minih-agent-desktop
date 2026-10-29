@@ -1468,3 +1468,16 @@ transcript when compaction already replaced a failed assistant with a summary
 or retained user message. Remove trailing assistant rows if present; do not
 require an assistant tail before `continue()`. Retry budgets, cancellation,
 fallback selection, usage and the visible transcript remain unchanged.
+
+## 选择性可靠性修订（2026-10-28 上游区间）
+
+- 计费、余额、存储和 `insufficient_quota` 耗尽即使被包装成 HTTP 429 也须终止；
+  真正的吞吐限流仍使用原有有界回合内重试，取消与认证语义不变。
+- 畸形未完成工具调用只从模型输入投影中恢复；有效的已完成调用与结果必须保留，
+  不重复执行已完成工具，也不改写持久化诊断。委派历史只移除其所属 assistant
+  已被排除的结果，不移除有效同批调用。
+- 路径锁折叠点段和重复分隔符等词法别名，不改变权限或工具执行策略。
+- 已知 PNG/JPEG/GIF/WebP 最长边超过 8000px 时不内联；恰好 8000px 仍允许，
+  未知或不完整尺寸继续使用既有字节规则。新附件与历史引用保留安全路径回退；
+  Host Read 报告尺寸并拒绝内联。最终模型投影将超限历史图片替换为确定的文本说明，
+  不改持久化原值或图片位置。原有 10 MB/30 MB 字节预算与会话根目录限制不变。

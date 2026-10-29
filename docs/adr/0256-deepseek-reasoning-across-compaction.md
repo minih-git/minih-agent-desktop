@@ -59,3 +59,11 @@ the #223 empty backfill fills `""` — which strict relays reject.
 - Put full assistant/tool messages back in `retainedTail`: preserves reasoning
   but reintroduces stranded tool calls and weakens the task boundary (rejected
   by ADR 0136).
+
+## Amendment: real reasoning wins on relay replay
+
+Selected upstream `fe31fa13d` normalizes duplicate replay fields around the latest
+real reasoning rather than an empty/stale placeholder. The relay-selected field
+receives that value and contradictory duplicates are removed. Leading placeholder
+echoes are cleaned only from display/model projections, never durable source text.
+Minih's Pi 1.1.0 pin, Router defaults and effort overrides stay intact.

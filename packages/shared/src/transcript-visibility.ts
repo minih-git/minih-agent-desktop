@@ -12,6 +12,7 @@
  * dependency, which is why they can be shared at all.
  */
 import type { UiMessage } from "./types/messages.js";
+import { withoutReasoningReplayPlaceholder } from "./provider-presets.js";
 
 const contentFacts = new WeakMap<UiMessage, { trimmedContent: string; hasContent: boolean }>();
 
@@ -34,7 +35,8 @@ export function messageContentFacts(message: UiMessage): { trimmedContent: strin
 /** The message's thinking text, or `""` when it has none worth showing. */
 export function messageThinking(message: UiMessage): string {
   if (typeof message.thinking !== "string") return "";
-  return message.thinking.trim() ? message.thinking : "";
+  const thinking = withoutReasoningReplayPlaceholder(message.thinking);
+  return thinking.trim() ? thinking : "";
 }
 
 /**

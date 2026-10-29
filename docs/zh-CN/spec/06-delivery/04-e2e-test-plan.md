@@ -9,6 +9,15 @@
 
 ---
 
+### E2E-UPSTREAM-20261028-selected-capabilities
+
+- **前提：** 独立任务工作树、复用依赖、隔离临时配置/SQLite/文件和本地提供商夹具；不使用用户数据、运行中的桌面或付费服务。
+- **步骤：** 恢复畸形工具调用并回放 DeepSeek 推理，区分配额耗尽与真实吞吐重试；读取/发送/重开超限图片，搜索多字节文件名，限制非 BMP Bash 进度。升级保留长期记忆的 v26 夹具，校验 TS/Rust 编码对等、损坏代际拒绝、路径搬迁和失败待写排空。晚到事件期间连续删除、撤回已停止提示、按 Host 规范前缀激活修订。重建窗口并选择运行会话，确认旧修订根，返回最新后切项目，空草稿发送队列，重叠操作提供商行，点击每轮文件卡定位 Review。
+- **预期：** 保留原历史、数据和有效已完成工具；只修改模型投影。耗尽配额终止而真实限流仍按原规则重试。图片/路径/输出限制正确。v27 带备份门禁保留 v26 长期记忆；损坏文件和失败排空保留字节与待写记录。ID 操作不全量上传，Host 确认后才删除投影并保留晚到事件。本地权限、Minih 品牌/Router/旁注/阅读窗口和原 Review/队列语义不变。
+- **规格：** 运行时、错误、提供商、存储、RPC、IPC、组件、交互规格及 `lossless-tool-image-storage` ADR。
+- **验收：** B／C／E／F／品质／无障碍。
+- **状态：** 实现候选；实际执行结果和限制见[选择性导入记录](../../../project/upstream-import-2026-10-28.md)。
+
 ### E2E-UPSTREAM-20261026-selected-reliability
 
 - **前提：** 任务工作树、复用依赖、隔离会话文件／SQLite 夹具和浏览器配置；不使用用户数据、真实模型或 MCP 服务。
@@ -5845,6 +5854,7 @@ eleven-tool-round desktop paths are verified by
 
 | 验收 | 应用场景 |
 |---|---|
+| B / C / E / F / 品质 / 无障碍 — 2026-10-28 选择性能力迁移 | E2E-UPSTREAM-20261028-selected-capabilities |
 | C / E / F / 品质 / 无障碍 — 2026-10-26 选择性上游修复 | E2E-UPSTREAM-20261026-selected-reliability |
 | B / C / E / 品质 / 无障碍 — 2026-10-25 选择性上游修复 | E2E-UPSTREAM-20261025-selected-reliability |
 | C / 品质 / 无障碍 — 右侧通知卡片 | E2E-NOTIFICATION-right-side-cards |

@@ -35,6 +35,7 @@ import {
   MAX_RESUMABLE_LISTED_FILES,
   MAX_RESUMABLE_READ_LINES,
   normalizeSubagentName,
+  withoutReasoningReplayPlaceholder,
   type UiMessage,
 } from "@minih-agent/shared";
 import { isRecord, timestampMs, toJsonObject, toJsonValue, usageToPi } from "./agent-messages.js";
@@ -259,10 +260,13 @@ export function chainRowsToMessages(
       // hand the model a stopReason the provider never agreed to.
       if (row.status === "error" || row.isError || row.error) continue;
       const content: AssistantMessage["content"] = [];
-      if (row.thinking?.trim()) {
+      // Same rule as session history: an echoed replay placeholder is not
+      // reasoning to hand back (#1945).
+      const thinking = withoutReasoningReplayPlaceholder(row.thinking ?? "");
+      if (thinking.trim()) {
         content.push({
           type: "thinking",
-          thinking: row.thinking,
+          thinking,
           ...(deepSeekCompletionsReplay
             ? { thinkingSignature: "reasoning_content" as const }
             : {}),

@@ -4867,3 +4867,19 @@ fixed for the running process, independent of later preference saves.
   Keep Minih standard/detailed/compact, narration, visible-step counts, thinking
   preferences, issue indicators, standalone Bash where the density requires it,
   search reveal and user-owned disclosures. Missing timing stays absent.
+
+## Per-turn changes and queued steering
+
+An assistant turn with recorded file changes shows a read-only summary under its
+reply. Repeated paths are grouped; large lists use the compact/folded presentation.
+Selecting a file opens the existing session Review tab and requests that exact
+snapshot's expansion/focus. The request is transient and session-scoped; it does
+not modify files, roll back changes or persist a new review state. Normal Review
+refresh, keyboard access, add-on rendering and remote capabilities remain intact.
+
+The configurable steering shortcut can send the first currently sendable queued
+follow-up when the editor is empty, through the existing Send now workflow. Empty
+queues and blocked/disabled sends remain no-ops; nonempty drafts retain their
+current submit path. Provider operations have independent row guards: a completed
+request cannot unlock another row's in-flight write/test. Dialog and reorder
+locks remain governed by the existing page rules; Minih Router stays separate.
