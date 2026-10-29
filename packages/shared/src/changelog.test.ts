@@ -43,6 +43,7 @@ describe("changelog catalog", () => {
     // 0.20.1, the first published release on the 0.20 line.
     expect(versions).toEqual([
       "1.1.3",
+      "1.1.2",
       "1.1.1",
       "1.1.0",
       "1.0.0",
