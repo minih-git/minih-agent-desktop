@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { register } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -690,4 +690,93 @@ test("an account computer lists only the sessions this desktop started there, ac
     assert.deepEqual(listed(second), [makeRemoteSessionId("account-host_sibling", "mine-1"), makeRemoteSessionId("direct", "d1")]);
     assert.deepEqual((await second.listSessions()).map((row) => row.id).sort(), listed(second));
   } finally { await second.closeAll(); await cleanup(); }
+});
+
+async function accountBootFixture(sessions) {
+  const { dir, cleanup } = await tmpDir();
+  const encryption = reversibleEncryption();
+  const registry = createRemoteHostRegistry({ dataDir: dir, encryption });
+  await registry.upsert({
+    hostKey: "acct-host",
+    label: "Laptop",
+    url: "wss://gw.test/v1/hosts/host_laptop1/ws",
+    deviceToken: "tok",
+    metadata: {
+      transport: "account",
+      account: { hostId: "host_laptop1", publicOrigin: "https://gw.test" },
+    },
+  });
+  // This desktop's own ownership record: an account computer lists every one of
+  // its conversations, so only sessions this desktop started are visible.
+  await writeFile(
+    join(dir, "remote-account-sessions.json"),
+    JSON.stringify({ version: 1, hosts: { "acct-host": sessions.map((session) => session.id) } }),
+  );
+  const adapter = fakeAdapter({ sessions });
+  const boot = createRemoteHostsBoot({
+    dataDir: dir,
+    encryption,
+    router: createBackendRouter(),
+    emit: () => {},
+    clientInfo: { name: "test", version: "0.15.0" },
+    buildAdapter: () => adapter,
+  });
+  return { dir, cleanup, boot, adapter };
+}
+
+test("a connected account computer keeps its own delete", async () => {
+  const { cleanup, boot } = await accountBootFixture([makeSession("s1")]);
+  await boot.open();
+  const remoteId = makeRemoteSessionId("acct-host", "s1");
+
+  // A missing backend while the computer is still connected is a transient state
+  // (a reconnect in progress, a failed recovery), not an absent Host: forgetting
+  // the row would leave the session alive there while this desktop never listed
+  // it again.
+  await assert.rejects(boot.forgetSession(remoteId), { errorCode: "AGENT_UNAVAILABLE" });
+  assert.deepEqual(boot.sessionSummaries().map((row) => row.id), [remoteId]);
+  await boot.closeAll();
+  await cleanup();
+});
+
+test("forgetting an away account computer's session removes the row for good", async () => {
+  const { cleanup, boot, adapter } = await accountBootFixture([makeSession("s1")]);
+  await boot.open();
+  const remoteId = makeRemoteSessionId("acct-host", "s1");
+  assert.deepEqual(boot.sessionSummaries().map((row) => row.id), [remoteId]);
+
+  // Deleting an offline session used to fail in the router ("remote session is
+  // disconnected") and the row could never leave the sidebar. An account
+  // computer's listing is filtered by the ownership record, so forgetting the
+  // row also keeps it out of every later list — including after a restart.
+  adapter.setState("disconnected");
+  assert.deepEqual(await boot.forgetSession(remoteId), { ok: true });
+  assert.deepEqual(boot.sessionSummaries(), []);
+
+  await boot.closeAll();
+  await boot.open();
+  assert.deepEqual(boot.sessionSummaries(), []);
+  await boot.closeAll();
+  await cleanup();
+});
+
+test("a Host that lists every session is not forgotten locally", async () => {
+  const { dir, cleanup } = await tmpDir();
+  const encryption = reversibleEncryption();
+  const registry = createRemoteHostRegistry({ dataDir: dir, encryption });
+  await registry.upsert({ hostKey: "direct-host", label: "D", url: "wss://d.test", deviceToken: "t" });
+  const boot = createRemoteHostsBoot({
+    dataDir: dir,
+    encryption,
+    router: createBackendRouter(),
+    emit: () => {},
+    clientInfo: { name: "test", version: "0.15.0" },
+  });
+
+  // Such a Host lists all of its sessions, so a local forget would only make the
+  // row reappear on the next connection: the delete has to reach the Host.
+  await assert.rejects(boot.forgetSession(makeRemoteSessionId("direct-host", "s1")), {
+    errorCode: "AGENT_UNAVAILABLE",
+  });
+  await cleanup();
 });

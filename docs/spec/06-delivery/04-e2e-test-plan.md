@@ -10921,7 +10921,7 @@ selection already in place shows it without waiting for another event.
 | Post-MVP | E2E-022A, E2E-022B, E2E-022C, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M (plugin roadmap R2/R3/R6) |
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
-| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push, E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
+| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push, E2E-REMOTE-ACCOUNT-offline-session-delete-forgets-locally, E2E-REMOTE-MOBILE-hosts-list-reprobes-without-flicker, E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
 | Post-MVP remote control (mobile redesign 2026-10-23) | E2E-REMOTE-MODEL-channel-union-text-model-stays-in-chats, E2E-REMOTE-MODEL-image-job-keeps-chat-model, E2E-REMOTE-MODEL-switch-model-in-unsent-conversation, E2E-REMOTE-IMAGE-retry-uses-image-endpoint, E2E-REMOTE-CHAT-archive-while-replying-stops-first, E2E-REMOTE-SESSION-revoked-offers-forget-and-repair, E2E-REMOTE-SETTINGS-push-state-and-appearance-survive-reload, E2E-REMOTE-NAV-h5-has-only-the-computers-root |
 @end
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
@@ -16726,6 +16726,56 @@ sibling Hosts is still open for package D.
   with the operator's own Apple and Firebase material stays with the user, and
   the notifications' visible text is the app's own localized string, which a
   device run would show.
+
+#### E2E-REMOTE-ACCOUNT-offline-session-delete-forgets-locally
+
+- **Preconditions**: A local Router test instance with key A, the local test
+  Gateway, and two account computers A and B with the remote-control switch on
+  and a loopback model stub; one session this desktop started on B.
+- **Steps**: 1) Open that session on B from A and confirm it is listed. 2) Make
+  B away — close its window or end `agent-host-cli` — and wait until A reports
+  it disconnected. 3) Delete the session from A's sidebar. 4) Restart B, let it
+  rejoin the account, and list its sessions again. 5) Bring B back, then delete
+  another of its sessions while it is connected.
+- **Expected**: While B is away the delete succeeds locally: the row leaves the
+  sidebar at once, no call reaches B, and after B rejoins the session is still
+  absent from every list — the ownership record the delete removed is what made
+  it visible. While B is connected the same command goes to B and really deletes
+  the session there. A delete issued during a reconnect (connected, no live
+  backend) is refused with `AGENT_UNAVAILABLE` and the row stays, because B
+  still owns it. A Host that lists all of its own sessions — an SSH-paired or
+  direct Host — is never forgotten locally.
+- **Specs linked**: protocol §6.2 (offline rows), §11.5
+- **Acceptance**: Functional, Data
+- **Milestone**: Post-MVP (rollout R7)
+- **Status**: Manual — the local behaviour is covered by
+  `apps/desktop/test/boot-remote-hosts.test.mjs`; the two-computer exchange is
+  not automated.
+
+#### E2E-REMOTE-MOBILE-hosts-list-reprobes-without-flicker
+
+- **Preconditions**: The phone client signed in to account mode with one online
+  computer and one computer that can be taken offline, with the Gateway audit
+  visible.
+- **Steps**: 1) Open My computers. 2) Count the probes the screen issues while it
+  sits idle. 3) Take the second computer offline and leave the screen open for
+  longer than the re-probe interval. 4) Drag the list down from its top past the
+  threshold. 5) Background the app, bring the second computer back, then return
+  to the app.
+- **Expected**: Opening the screen probes each computer once, with no second
+  probe per row. A visible list re-probes on the interval and the changed
+  computer turns offline without the rows blanking to "Checking…" or losing
+  their session counts. The pull gesture re-probes immediately and is the only
+  refresh that gesture triggers. Returning to the foreground re-probes once even
+  though the page-visibility and native app-state sources both fire, and the
+  answer shows the computer that came back. No long-lived connection is opened,
+  and no timer runs while the app is in the background.
+- **Specs linked**: mobile client §8.5, protocol §11.5 (no presence stream)
+- **Acceptance**: Functional, UX
+- **Milestone**: Post-MVP (rollout R7)
+- **Status**: Manual — the schedule and the gesture decisions are covered by
+  `src/lib/foreground-refresh.test.ts` and `src/lib/pull-to-refresh.test.ts` in
+  the phone client package.
 
 #### E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop
 

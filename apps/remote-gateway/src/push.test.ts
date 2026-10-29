@@ -175,6 +175,20 @@ describe("push service", () => {
     expect(providers.sent).toEqual([]);
   });
 
+  it("delivers one notification once per phone, even when re-pairing left a second registration", async () => {
+    // A §11.4 device is minted per pairing, so pairing again leaves the older
+    // registration in the store and both match this Host. The token is the
+    // delivery target: pushing to each registration sent the same event twice.
+    const store = await newStore([{ hostId: "host_a" }]);
+    await register(store, { deviceId: "dev_old", hostId: "host_a", token: "token_phone" });
+    await register(store, { deviceId: "dev_new", hostId: "host_a", token: "token_phone" });
+    await register(store, { deviceId: "dev_other", hostId: "host_a", token: "token_other" });
+    const { push, providers } = service({ store, hostLinks: capabilitiesOf({ host_a: [PUSH] }) });
+
+    expect(await push.handleNotify("host_a", notify())).toEqual({ status: "sent", delivered: 2 });
+    expect(providers.sent.map((entry) => entry.token).sort()).toEqual(["token_other", "token_phone"]);
+  });
+
   it("refuses a notification from a Host that never announced push.notify", async () => {
     const store = await newStore([{ hostId: "host_a" }]);
     await register(store, { deviceId: "dev_1", hostId: "host_a" });
@@ -555,4 +569,23 @@ describe("push service", () => {
     await push.handleNotify("host_other", notify());
     expect(providers.sent).toEqual([]);
   });
+
+  it("takes the newest registration for a token, so its preferences apply", async () => {
+  const store = await newStore([{ hostId: "host_a" }]);
+  // Re-pairing left the older row behind, and the newer one asked for
+  // "only things that need me". Filtering on the older row would deliver an
+  // outcome this phone explicitly did not want.
+  await register(store, { deviceId: "dev_old", hostId: "host_a", token: "token_phone" });
+  await register(store, { deviceId: "dev_new", hostId: "host_a", token: "token_phone", onlyActionable: true });
+  const { push, providers } = service({ store, hostLinks: capabilitiesOf({ host_a: [PUSH] }) });
+
+  const outcome = await push.handleNotify("host_a", {
+    notifyId: "ntf_turn",
+    kind: "turn.completed",
+    sessionId: "s1",
+    occurredAt: "2026-10-18T00:00:00.000Z",
+  });
+  expect(outcome).toEqual({ status: "sent", delivered: 0 });
+  expect(providers.sent).toEqual([]);
+});
 });

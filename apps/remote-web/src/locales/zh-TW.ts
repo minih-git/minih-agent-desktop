@@ -126,6 +126,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "session.turn.stopped": "回合已停止",
   "session.turn.canceled": "回合已取消",
   "session.turn.failed": "運行失敗：{{reason}}",
+  "session.turn.failedStatus": "運行失敗",
   "session.queuedCount": "佇列 {{count}}",
   "session.stop": "停止",
   "session.interrupt": "立即停止",

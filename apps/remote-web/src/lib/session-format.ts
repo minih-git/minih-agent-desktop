@@ -208,5 +208,20 @@ export function resolveTurnStatusDisplay(
       labelKey: "session.turn.completed",
     };
   }
+  // A failed turn is the one state the header used to say nothing about: the
+  // status was simply unmapped, so the screen showed no outcome at all while
+  // the failure banner below explained it.
+  if (turnStatus === "failed") {
+    return {
+      statusType: "error",
+      labelKey: "session.turn.failedStatus",
+    };
+  }
+  if (turnStatus === "canceled") {
+    return {
+      statusType: "muted",
+      labelKey: "session.turn.canceled",
+    };
+  }
   return null;
 }

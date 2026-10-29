@@ -34,6 +34,8 @@ export interface HostRowProps {
   onOpenMore: (statusKind: HostDisplayStatusKind, refresh: () => void) => void;
   onAskAgain: () => void;
   onForgetAndPair: () => void;
+  /** Bumped by the list to re-probe this row without remounting it. */
+  refreshSignal?: number;
 }
 
 const sessionViews =
@@ -81,10 +83,11 @@ export function HostRow({
   onOpenMore,
   onAskAgain,
   onForgetAndPair,
+  refreshSignal = 0,
 }: HostRowProps) {
   const { t } = useTranslation();
   const credential = credentialPort.credentialFor(entry.hostId);
-  const { status, sessions, refresh } = useHostStatus(entry.hostId, credential);
+  const { status, sessions, refresh } = useHostStatus(entry.hostId, credential, refreshSignal);
 
   const isOnline = status.kind === "online";
   const isDanger = status.kind === "revoked" || status.kind === "error";

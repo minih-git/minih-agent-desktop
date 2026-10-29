@@ -1,6 +1,7 @@
 import { IconActivity, IconClock } from "./icons";
 import { RemoteProjectGroups } from "./remote/RemoteProjectGroups";
 import { groupRemoteProjectSessions } from "../lib/remote-project-catalog";
+import { failureMessage } from "../lib/remote-host-errors";
 import { useRemoteHostStates } from "../hooks/use-remote-host-states";
 import { isRemoteSession, sessionAllows } from "../lib/remote-session-safety";
 import {
@@ -1201,12 +1202,13 @@ export function Sidebar({
   };
 
   const reportError = useCallback(
-    (error: unknown) => {
-      showToast(error instanceof Error ? error.message : String(error), {
-        variant: "error",
-      });
+    (error: unknown, options?: { remote?: boolean }) => {
+      showToast(
+        failureMessage(error, { remote: options?.remote === true, translate: t }),
+        { variant: "error" },
+      );
     },
-    [showToast],
+    [showToast, t],
   );
 
   const focusComposer = useCallback(() => {
@@ -1429,7 +1431,7 @@ export function Sidebar({
         else await newSession({ projectPath: session.projectPath ?? null });
       }
     } catch (error) {
-      reportError(error);
+      reportError(error, { remote: isRemoteSession(session) });
     }
   };
 
@@ -1459,7 +1461,7 @@ export function Sidebar({
       try {
         await deleteSessionAction(session.id);
       } catch (error) {
-        reportError(error);
+        reportError(error, { remote: isRemoteSession(session) });
       }
     }
     // If we deleted the active session, create or select a fallback

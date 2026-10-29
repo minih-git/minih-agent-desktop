@@ -126,6 +126,7 @@ export const es: Record<TranslationKey, string> = {
   "session.turn.stopped": "Turno detenido",
   "session.turn.canceled": "Turno cancelado",
   "session.turn.failed": "Ejecución fallida: {{reason}}",
+  "session.turn.failedStatus": "Ejecución fallida",
   "session.queuedCount": "{{count}} en cola",
   "session.stop": "Detener",
   "session.interrupt": "Detener ahora",

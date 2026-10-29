@@ -51,11 +51,28 @@ function tidy(text: string): string {
   return text.replace(REQUEST_ID, "").replace(/\s{2,}/g, " ").trim();
 }
 
+/** A body that parses as a JSON object, whatever it holds. */
+function parsesAsObject(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) return false;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return typeof parsed === "object" && parsed !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function describeTurnFailure(message: string): TurnFailureDisplay {
   const raw = message.trim();
   if (!raw) return { reason: "" };
   const match = STATUS_PREFIX.exec(raw);
   const body = match ? match[2] : raw;
-  const reason = tidy(providerMessage(body) ?? body) || raw;
+  const unwrapped = providerMessage(body);
+  // An object with no sentence in it is an envelope, not a reason: rendering it
+  // would print protocol structure into the timeline. An unparsable body still
+  // falls back to its text, because a truncated payload is all there is.
+  const reason =
+    unwrapped !== null ? tidy(unwrapped) : parsesAsObject(body) ? "" : tidy(body) || raw;
   return match ? { status: Number(match[1]), reason } : { reason };
 }

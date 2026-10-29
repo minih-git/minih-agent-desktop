@@ -5,7 +5,7 @@
  * and apps/remote-web/design/prototype/redesign.html.
  */
 import { Globe, Lock, Plus, Ticket, User } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { HostRow } from "../components/hosts/HostRow.js";
@@ -23,15 +23,28 @@ import { Screen, ScreenContent } from "../components/ui/Screen.js";
 import { SectionHeader } from "../components/ui/SectionHeader.js";
 import { Toast } from "../components/ui/Toast.js";
 import { useAccountAvailability } from "../hooks/useAccountFlow.js";
+import { usePullToRefresh } from "../hooks/usePullToRefresh.js";
+import { watchForeground } from "../lib/app-state.js";
+import { createForegroundRefresh } from "../lib/foreground-refresh.js";
 import { forgetHost } from "../lib/forget.js";
 import type { HostDisplayStatusKind } from "../lib/host-display.js";
 import type { HostRegistryEntry } from "../lib/host-registry.js";
 import {
+  appStateSource,
   credentialPort,
   gatewayOrigin,
   hostRegistry,
   isNativeApp,
 } from "../lib/runtime.js";
+
+/**
+ * How often a visible host list re-probes its computers.
+ *
+ * Slow on purpose: each row's probe is a real request to the Gateway, and this
+ * only exists so a phone that stays open notices a computer that came or went.
+ * The pull gesture and the row menu are the immediate paths.
+ */
+const FOREGROUND_REFRESH_MS = 30_000;
 
 export function HostsScreen({
   hosts,
@@ -61,17 +74,36 @@ export function HostsScreen({
   >(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const contentRef = useRef<HTMLElement>(null);
+  const refreshAll = useCallback(() => setRefreshKey((key) => key + 1), []);
 
-  // Background to foreground re-probe per §8.5 & §9
+  // A computer's state changes without this phone being told: the Gateway keeps
+  // no presence stream (§11.5) and this screen holds no long-lived connection.
+  // `createForegroundRefresh` decides when to ask again — once per return, never
+  // twice for the two foreground sources — while the rows keep what they show.
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        setRefreshKey((k) => k + 1);
-      }
+    const schedule = createForegroundRefresh({
+      refresh: refreshAll,
+      intervalMs: FOREGROUND_REFRESH_MS,
+    });
+    // A list that opens while the page is already visible never receives its
+    // first visibility transition, so the schedule is primed once here. That
+    // first report only starts the timer: every row probes itself on mount.
+    if (document.visibilityState !== "hidden") schedule.visible();
+    const stopWatching = watchForeground(
+      { onVisible: () => schedule.visible(), onHidden: () => schedule.hidden() },
+      {
+        appState: appStateSource(),
+        onError: (error) => console.warn("[remote-web] the native app-state listener failed", error),
+      },
+    );
+    return () => {
+      stopWatching();
+      schedule.dispose();
     };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, []);
+  }, [refreshAll]);
+
+  const { pulling } = usePullToRefresh({ scrollRef: contentRef, onRefresh: refreshAll });
 
   const handleOpenMore = (
     entry: HostRegistryEntry,
@@ -120,7 +152,15 @@ export function HostsScreen({
         }
       />
 
-      <ScreenContent className="pt-1 space-y-3">
+      <ScreenContent ref={contentRef} className="pt-1 space-y-3">
+        {pulling ? (
+          <div
+            className="px-1 pt-1 text-center text-[12px] font-semibold text-[var(--rm-text-muted)]"
+            role="status"
+          >
+            {t("hosts.sheet.refresh")}
+          </div>
+        ) : null}
         <div className="flex items-baseline justify-between px-1 pt-2 pb-1">
           <h1 className="text-[28px] font-bold leading-[1.12] tracking-[-0.5px] text-[var(--rm-text-primary)]">
             {t("hosts.title")}
@@ -135,7 +175,9 @@ export function HostsScreen({
         {hosts.length === 0 ? (
           <Callout tone="neutral">{t("hosts.empty")}</Callout>
         ) : (
-          <div key={refreshKey} className="space-y-3">
+          // No key: a re-probe must not remount the rows, which would clear their
+          // status and session counts and break the sheet that holds their refresh.
+          <div className="space-y-3">
             {hosts.map((entry) => (
               <HostRow
                 key={entry.hostId}
@@ -153,6 +195,7 @@ export function HostsScreen({
                   setSelectedHost(entry);
                   setActiveSheet("forget");
                 }}
+                refreshSignal={refreshKey}
               />
             ))}
           </div>

@@ -130,6 +130,7 @@ export const en = {
   "session.turn.stopped": "Turn stopped",
   "session.turn.canceled": "Turn canceled",
   "session.turn.failed": "Run failed: {{reason}}",
+  "session.turn.failedStatus": "Run failed",
   "session.queuedCount": "{{count}} queued",
   "session.stop": "Stop",
   "session.interrupt": "Stop now",

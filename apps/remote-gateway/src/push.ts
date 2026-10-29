@@ -218,8 +218,22 @@ export class PushService {
 
     // Which devices may be told at all is decided above the concurrency below,
     // so the budget is spent once per device rather than once per attempt.
-    const targets: GatewayPushRegistrationRecord[] = [];
+    //
+    // One phone can hold several registrations naming the same provider token: a
+    // §11.4 device is minted per pairing, so re-pairing leaves the older row
+    // behind and both match this Host. The newest row is the phone's current
+    // state — its appId and its "only actionable" preference — so a token is
+    // reduced to that one before those preferences are applied, and it is
+    // delivered once.
+    const newestByToken = new Map<string, GatewayPushRegistrationRecord>();
     for (const registration of audience) {
+      const key = `${registration.platform}:${registration.token}`;
+      const current = newestByToken.get(key);
+      if (!current || registration.updatedAt >= current.updatedAt) newestByToken.set(key, registration);
+    }
+
+    const targets: GatewayPushRegistrationRecord[] = [];
+    for (const registration of newestByToken.values()) {
       // The device's own preference (§17.6.5): "only things that need me" drops the
       // two outcome kinds. Filtered here rather than on the phone because a
       // delivered notification cannot be recalled, and counted as a skip rather

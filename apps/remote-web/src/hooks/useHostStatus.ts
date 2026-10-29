@@ -16,7 +16,12 @@ export type HostStatusView = { kind: "checking" } | HostStatus;
  * response carries the computer's sessions for free, letting the host card show
  * how many sessions need the user or are running without a second round-trip.
  */
-export function useHostStatus(hostId: string, credential: HostCredential | null): {
+export function useHostStatus(
+  hostId: string,
+  credential: HostCredential | null,
+  /** Bumped by the list to re-probe without unmounting the row. */
+  refreshSignal = 0,
+): {
   status: HostStatusView;
   sessions: RacpSession[] | null;
   refresh: () => void;
@@ -34,7 +39,9 @@ export function useHostStatus(hostId: string, credential: HostCredential | null)
       return;
     }
     let cancelled = false;
-    setStatus({ kind: "checking" });
+    // The previous answer stays on screen while the new probe runs: a list that
+    // blanks back to "checking" on every re-probe looks like it lost its
+    // computers, and the rows below it lose their session counts with it.
     void probeHostWithSessions({ gatewayOrigin, hostId, credential }).then((result) => {
       if (!cancelled) {
         setStatus(result.status);
@@ -44,7 +51,7 @@ export function useHostStatus(hostId: string, credential: HostCredential | null)
     return () => {
       cancelled = true;
     };
-  }, [hostId, credentialKey, revision, t]);
+  }, [hostId, credentialKey, revision, refreshSignal, t]);
 
   const refresh = useCallback(() => setRevision((current) => current + 1), []);
   return { status, sessions, refresh };
