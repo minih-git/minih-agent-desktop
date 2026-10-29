@@ -897,6 +897,11 @@ indicator stays visible while completed reasoning rows and excerpts are suppress
 and empty thinking-only containers are omitted; the stored reasoning is retained
 and reappears when the preference is turned back on.
 
+While a burst is still running, every Thinking row inside it stays open, not
+only the newest one: the row the reader is on must not fold when the next tool
+call or answer fragment arrives. The density default applies again once the
+burst settles, and an explicit choice always wins.
+
 Only `compact` indents a group's child rows by 12px below the group header. The
 group's collapse rail sits in that gutter: invisible at rest, a 2px bar on hover
 or focus, collapsing the group when clicked. `standard` and `detailed` add no

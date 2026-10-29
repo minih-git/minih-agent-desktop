@@ -88,6 +88,12 @@ own level. Focus and selection temporarily hold that level and its ancestors ope
 leaving releases the hold without recording a choice. Running-turn groups and
 groups with visible reasoning stay open by default; settled plain-tool groups use
 the four-row default. Minih density-specific item defaults remain unchanged.
+
+A running burst keeps all of its reasoning rows open, not only the newest one.
+Folding the previous thought the moment the next tool call or answer fragment
+arrived pulled the text away from under the reader, and in a live turn that
+moment reads as "the reasoning closed when I clicked it". The density default
+applies again once the burst settles, and an explicit choice always wins.
 Manual choices survive streaming, completion, preference changes, reparenting,
 row remounts and pane eviction in renderer memory. Session deletion or renderer
 restart releases that memory; nothing is stored in messages or host settings.

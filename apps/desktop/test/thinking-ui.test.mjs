@@ -298,8 +298,12 @@ test("tool and search rows stay collapsed while thinking keeps its leaf default"
   );
   assert.match(
     transcriptSource,
-    /<ThinkingRow[\s\S]*?autoOpen=\{thinkingDefaultOpen \|\| openDetails \|\| \(live && item === lastItem\)\}/,
+    /<ThinkingRow[\s\S]*?autoOpen=\{thinkingDefaultOpen \|\| openDetails \|\| live\}/,
   );
+  // Reasoning stays readable for the whole live burst: the condition is the
+  // burst, not "the newest row", so a tool call or answer arriving mid-thought
+  // cannot fold the reasoning the reader is on.
+  assert.doesNotMatch(transcriptSource, /item === lastItem/);
   // The leaf default follows the density: `detailed` opens payloads, and in
   // every other density a tool, hosted-search or plan row waits for the user.
   assert.doesNotMatch(transcriptSource, /autoOpenLatest/);

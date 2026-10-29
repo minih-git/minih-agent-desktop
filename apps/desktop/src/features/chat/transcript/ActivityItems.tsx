@@ -33,7 +33,6 @@ type ActivityItemsProps = {
 
 type ActivityItemBlockProps = Omit<ActivityItemsProps, "items" | "delegateItems" | "delegationStatuses" | "delegationTimings"> & {
   block: RenderBlock<AssistantActivityItem>;
-  lastItem?: AssistantActivityItem;
   topologyItem?: AssistantActivityItem;
   delegateItems?: DelegationActivityItem[];
   delegationStatuses?: ReadonlyMap<string, SubagentOutcome>;
@@ -41,7 +40,7 @@ type ActivityItemBlockProps = Omit<ActivityItemsProps, "items" | "delegateItems"
 };
 
 const ActivityItemBlock = memo(function ActivityItemBlock({
-  block, isActive, live, lastItem, topologyItem, openDetails, thinkingDefaultOpen, dense,
+  block, isActive, live, topologyItem, openDetails, thinkingDefaultOpen, dense,
   delegateItems, delegationStatuses, delegationTimings, onUserInteraction,
 }: ActivityItemBlockProps) {
   return <>{block.items.map((item) => {
@@ -90,11 +89,15 @@ const ActivityItemBlock = memo(function ActivityItemBlock({
       streaming={isActive && item.message.status === "streaming"}
       onUserInteraction={onUserInteraction}
     />;
+    // A live burst keeps all of its reasoning rows open, not only the newest:
+    // folding the previous thought the moment a tool call or answer arrives made
+    // running reasoning vanish under the reader's pointer. A settled burst still
+    // follows the density default, and an explicit choice always wins.
     return <ThinkingRow
       key={`thinking-${item.message.id}`}
       message={item.message}
       streaming={isActive && item.message.status === "streaming"}
-      autoOpen={thinkingDefaultOpen || openDetails || (live && item === lastItem)}
+      autoOpen={thinkingDefaultOpen || openDetails || live}
       onUserInteraction={onUserInteraction}
     />;
   })}</>;
@@ -102,10 +105,8 @@ const ActivityItemBlock = memo(function ActivityItemBlock({
 
 export const ActivityItems = memo(function ActivityItems({ items, ...context }: ActivityItemsProps) {
   const blocks = useRenderBlocks(items, itemKey);
-  const lastItem = items.at(-1);
   const topologyItem = context.delegateItems[0];
   return <>{blocks.map((block) => {
-    const ownsLast = lastItem !== undefined && block.items.includes(lastItem);
     const ownsTopology = topologyItem !== undefined && block.items.includes(topologyItem);
     return <ActivityItemBlock
       key={block.key}
@@ -115,7 +116,6 @@ export const ActivityItems = memo(function ActivityItems({ items, ...context }: 
       openDetails={context.openDetails}
       thinkingDefaultOpen={context.thinkingDefaultOpen}
       dense={context.dense}
-      lastItem={ownsLast ? lastItem : undefined}
       topologyItem={ownsTopology ? topologyItem : undefined}
       delegateItems={ownsTopology ? context.delegateItems : undefined}
       delegationStatuses={ownsTopology ? context.delegationStatuses : undefined}
