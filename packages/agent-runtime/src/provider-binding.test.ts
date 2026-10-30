@@ -10,7 +10,11 @@ import {
   apiBindingForStyle,
   buildProviderModel,
   copilotRequestHeaders,
+  createProviderEndpointFallbackState,
   createProviderModels,
+  PRIMARY_LIVENESS_PROBE_TIMEOUT_MS,
+  PRIMARY_RESPONSE_HEADER_DEADLINE_MS,
+  PRIMARY_RETRY_COOLDOWN_MS,
   providerRequestFetch,
   runtimeBaseUrlForApi,
   type RuntimeProviderConfig,
@@ -1696,6 +1700,327 @@ describe("Minih Router rows", () => {
     );
     const res = await requestFetch!("http://127.0.0.1:25890/v1/chat/completions");
     expect(res.status).toBe(401);
+    expect(urls).toEqual(["http://127.0.0.1:25890/v1/chat/completions"]);
+  });
+
+  it("keeps the LAN response when a late answer is only slow, not a dead tunnel", async () => {
+    vi.useFakeTimers();
+    try {
+      const urls: string[] = [];
+      const state = createProviderEndpointFallbackState();
+      const slowFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        urls.push(url);
+        if (url.startsWith("http://127.0.0.1:25890/v1")) {
+          // Gateway only writes headers once the whole upstream answer exists.
+          return await new Promise<Response>((resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+            void new Promise((settle) => setTimeout(settle, 30_000)).then(() =>
+              resolve(new Response("lan-ok", { status: 200 })));
+          });
+        }
+        return new Response("public-ok", { status: 200 });
+      };
+      const requestFetch = providerRequestFetch(
+        "openai-completions",
+        slowFetch,
+        "api_key_and_base_url",
+        {
+          primaryBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackBaseUrl: "https://router.hmini.org/v1",
+          state,
+        },
+      )!;
+
+      const pending = requestFetch("http://127.0.0.1:25890/v1/chat/completions");
+      // Deadline lapses; the probe reaches the tunnel and answers 404 for "/".
+      await vi.advanceTimersByTimeAsync(PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
+      expect(urls).toEqual([
+        "http://127.0.0.1:25890/v1/chat/completions",
+        "http://127.0.0.1:25890/",
+      ]);
+      await vi.advanceTimersByTimeAsync(30_000);
+      const res = await pending;
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("lan-ok");
+      // A slow answer must not park the tunnel for the next request.
+      expect(urls).not.toContain("https://router.hmini.org/v1/chat/completions");
+      expect(state.skipPrimaryUntil ?? 0).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("falls back when the probe of a silent tunnel finds nothing listening", async () => {
+    vi.useFakeTimers();
+    try {
+      const urls: string[] = [];
+      const state = createProviderEndpointFallbackState();
+      const deadFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        urls.push(url);
+        if (url === "http://127.0.0.1:25890/") {
+          throw new Error("connect ECONNREFUSED 127.0.0.1:25890");
+        }
+        if (url.startsWith("http://127.0.0.1:25890/v1")) {
+          return await new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          });
+        }
+        return new Response("public-ok", { status: 200 });
+      };
+      const requestFetch = providerRequestFetch(
+        "openai-completions",
+        deadFetch,
+        "api_key_and_base_url",
+        {
+          primaryBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackBaseUrl: "https://router.hmini.org/v1",
+          state,
+        },
+      )!;
+
+      const pending = requestFetch("http://127.0.0.1:25890/v1/chat/completions");
+      await vi.advanceTimersByTimeAsync(PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
+      const res = await pending;
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("public-ok");
+      expect(urls).toEqual([
+        "http://127.0.0.1:25890/v1/chat/completions",
+        "http://127.0.0.1:25890/",
+        "https://router.hmini.org/v1/chat/completions",
+      ]);
+      expect(state.skipPrimaryUntil ?? 0).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the probe and never falls back when the caller aborts past the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const urls: string[] = [];
+      const state = createProviderEndpointFallbackState();
+      const silentFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        urls.push(url);
+        return await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")));
+        });
+      };
+      const requestFetch = providerRequestFetch(
+        "openai-completions",
+        silentFetch,
+        "api_key_and_base_url",
+        {
+          primaryBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackBaseUrl: "https://router.hmini.org/v1",
+          state,
+        },
+      )!;
+
+      const pending = requestFetch("http://127.0.0.1:25890/v1/chat/completions", {
+        signal: controller.signal,
+      });
+      // The probe is still hanging when the caller gives up.
+      await vi.advanceTimersByTimeAsync(PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
+      // The hung probe is the only pending work left for the request.
+      expect(urls).toEqual([
+        "http://127.0.0.1:25890/v1/chat/completions",
+        "http://127.0.0.1:25890/",
+      ]);
+      controller.abort();
+      await expect(pending).rejects.toThrow();
+      expect(urls).not.toContain("https://router.hmini.org/v1/chat/completions");
+      expect(state.skipPrimaryUntil ?? 0).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("probes the tunnel origin without credentials or request body", async () => {
+    vi.useFakeTimers();
+    try {
+      let probe: { url: string; init?: RequestInit } | undefined;
+      const requestFetch = providerRequestFetch(
+        "openai-completions",
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = input instanceof Request ? input.url : String(input);
+          if (url === "http://127.0.0.1:25890/") {
+            probe = { url, init };
+            return new Response("unauthorized", { status: 401 });
+          }
+          if (url.startsWith("http://127.0.0.1:25890/v1")) {
+            // A non-streaming reply: the gateway writes its headers only once
+            // the whole upstream answer exists.
+            return await new Promise<Response>((resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+              void new Promise((settle) => setTimeout(settle, 30_000)).then(() =>
+                resolve(new Response("lan-ok", { status: 200 })));
+            });
+          }
+          return new Response("public-ok", { status: 200 });
+        },
+        "api_key_and_base_url",
+        {
+          primaryBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackBaseUrl: "https://router.hmini.org/v1",
+          state: createProviderEndpointFallbackState(),
+        },
+      )!;
+
+      const pending = requestFetch("http://127.0.0.1:25890/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: "Bearer sk-router" },
+        body: JSON.stringify({ model: "gpt-4.1" }),
+      });
+      await vi.advanceTimersByTimeAsync(PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
+      // The probe answered 401, so the tunnel counts as reachable and the slow
+      // LAN request keeps running instead of being re-sent to the public URL.
+      expect(probe?.url).toBe("http://127.0.0.1:25890/");
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect((await pending).status).toBe(200);
+      expect(probe?.init?.method).toBe("GET");
+      expect(probe?.init?.body).toBeUndefined();
+      expect(new Headers(probe?.init?.headers).get("authorization")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("falls back to the public endpoint when the LAN address accepts the request and never answers", async () => {
+    vi.useFakeTimers();
+    try {
+      const urls: string[] = [];
+      const hangingFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        urls.push(url);
+        if (url.startsWith("http://127.0.0.1:25890/v1")) {
+          // A No-TUN forward accepts the connection while the tunnel is gone and
+          // then answers nothing: only the caller giving up ends this attempt.
+          return await new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          });
+        }
+        if (url === "http://127.0.0.1:25890/") {
+          // The probe reaches nothing: the tunnel itself is down.
+          return await new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          });
+        }
+        return new Response("ok", { status: 200 });
+      };
+      const requestFetch = providerRequestFetch(
+        "openai-completions",
+        hangingFetch,
+        "api_key_and_base_url",
+        {
+          primaryBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackBaseUrl: "https://router.hmini.org/v1",
+          state: createProviderEndpointFallbackState(),
+        },
+      )!;
+
+      const pending = requestFetch("http://127.0.0.1:25890/v1/chat/completions", {
+        method: "POST",
+      });
+      // The request keeps its LAN budget: only the deadline starts a probe.
+      await vi.advanceTimersByTimeAsync(PRIMARY_RESPONSE_HEADER_DEADLINE_MS - 1);
+      expect(urls).toEqual(["http://127.0.0.1:25890/v1/chat/completions"]);
+      await vi.advanceTimersByTimeAsync(1);
+      // The tunnel hangs its answer for the probe too, so it counts as gone.
+      expect(urls).toEqual([
+        "http://127.0.0.1:25890/v1/chat/completions",
+        "http://127.0.0.1:25890/",
+      ]);
+      await vi.advanceTimersByTimeAsync(PRIMARY_LIVENESS_PROBE_TIMEOUT_MS);
+      const res = await pending;
+      expect(res.status).toBe(200);
+      expect(urls).toEqual([
+        "http://127.0.0.1:25890/v1/chat/completions",
+        "http://127.0.0.1:25890/",
+        "https://router.hmini.org/v1/chat/completions",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps using the public endpoint inside the cooldown window and tries the LAN address again after it", async () => {
+    vi.useFakeTimers();
+    try {
+      const urls: string[] = [];
+      let lanAnswers = false;
+      const requestFetch = providerRequestFetch(
+        "openai-completions",
+        async (input: RequestInfo | URL) => {
+          const url = input instanceof Request ? input.url : String(input);
+          urls.push(url);
+          if (!url.startsWith("http://127.0.0.1:25890/v1")) {
+            return new Response("ok", { status: 200 });
+          }
+          return lanAnswers
+            ? new Response("ok", { status: 200 })
+            : new Response("bad gateway", { status: 502 });
+        },
+        "api_key_and_base_url",
+        {
+          primaryBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackBaseUrl: "https://router.hmini.org/v1",
+          state: createProviderEndpointFallbackState(),
+        },
+      )!;
+
+      await requestFetch("http://127.0.0.1:25890/v1/chat/completions");
+      expect(urls).toEqual([
+        "http://127.0.0.1:25890/v1/chat/completions",
+        "https://router.hmini.org/v1/chat/completions",
+      ]);
+
+      // Inside the window the failed tunnel is not asked a second time.
+      urls.length = 0;
+      await requestFetch("http://127.0.0.1:25890/v1/chat/completions");
+      expect(urls).toEqual(["https://router.hmini.org/v1/chat/completions"]);
+
+      // A recovered tunnel is picked up again once the window lapses.
+      lanAnswers = true;
+      urls.length = 0;
+      await vi.advanceTimersByTimeAsync(PRIMARY_RETRY_COOLDOWN_MS);
+      await requestFetch("http://127.0.0.1:25890/v1/chat/completions");
+      expect(urls).toEqual(["http://127.0.0.1:25890/v1/chat/completions"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not fall back when the caller itself aborts the request", async () => {
+    const controller = new AbortController();
+    const urls: string[] = [];
+    const requestFetch = providerRequestFetch(
+      "openai-completions",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        urls.push(url);
+        return await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")));
+        });
+      },
+      "api_key_and_base_url",
+      {
+        primaryBaseUrl: "http://127.0.0.1:25890/v1",
+        fallbackBaseUrl: "https://router.hmini.org/v1",
+        state: createProviderEndpointFallbackState(),
+      },
+    )!;
+
+    const pending = requestFetch("http://127.0.0.1:25890/v1/chat/completions", {
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(pending).rejects.toThrow();
     expect(urls).toEqual(["http://127.0.0.1:25890/v1/chat/completions"]);
   });
 

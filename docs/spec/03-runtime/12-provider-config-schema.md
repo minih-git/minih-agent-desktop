@@ -559,6 +559,21 @@ address is only a default (`customBaseUrl: true`):
   test, and chat/subagent runtime requests prefer the LAN tunnel and
   automatically retry against the row's configured public `baseUrl` on transport
   or `502/503/504` gateway errors.
+  A tunnel that is down still leaves its No-TUN forward listening, so the
+  request is accepted and never answered rather than failing. A late response
+  header is not evidence of that: the gateway writes headers only after the
+  whole upstream answer for a non-streaming reply, and a streamed one can also
+  be buffered behind an internal channel retry. Runtime requests therefore give
+  the tunnel 15 s for its response headers and, when they have not arrived,
+  probe the tunnel origin with a credential-free `GET` bounded to 3 s. Any HTTP
+  answer (401, 404, anything) means the tunnel is reachable and the in-flight
+  request simply keeps waiting — no public re-send, no parked tunnel; a rejected
+  or timed-out probe means the tunnel is gone, so that attempt is abandoned and
+  retried against the row's public `baseUrl`. The body of a streaming answer is
+  never bounded, and a caller abort never triggers either branch. After a real
+  tunnel failure the provider binding keeps using the public address for 60 s
+  before it tries the tunnel again, so one outage does not spend every request's
+  timeout budget on the dead tunnel.
 
 The same token also reads the gateway's key-scoped control plane, which
 Settings uses for the balance and model plaza (§6, Minih Router account).
