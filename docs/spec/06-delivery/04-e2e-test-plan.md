@@ -20644,3 +20644,16 @@ report one classified failure, complete teardown and throw no TypeError.
 
 These scenarios describe acceptance; actual executed results are recorded in
 `docs/project/upstream-import-2026-10-24.md`, not inferred from this plan.
+
+### Selected upstream reliability fixes (2026-10-29)
+
+These scenarios preserve Minih side notes, retained reading windows and automatic
+disclosure. They do not introduce completion-prompt navigation or new turn-outcome labels.
+
+| Scenario | Expected behavior | Automated coverage |
+| --- | --- | --- |
+| E2E-CHECKPOINT-drain-across-settlement | Hold a checkpoint RPC, settle its turn and start another reply. Shutdown waits for issued writes; same-session saves remain serial while other sessions progress. Restart reads the last saved snapshot. A message-scoped flush does not force a newer reply past its throttle. | `inflight-checkpoint-lifecycle.test.mjs`, Host Runtime `turn-events.test.ts`, `node scripts/e2e-checkpoint-lifecycle.mjs`; controlled stdio peer and temporary files, no real profile or provider |
+| E2E-COMPOSER-ime-commit-keeps-native-preedit | Compose `、` in an empty draft: native pre-edit stays unchanged; commit converts once to `/` and opens completion. Nonempty punctuation, cancellation, replaced drafts and missing-compositionend recovery retain their semantics. | `node scripts/e2e-composer-ime-stack.mjs`; production editor/draft/completion wiring and native Chromium CDP composition |
+| E2E-MCP-MARKET-explicit-install-owner | Install under Project, All and Global; Project writes only to the selected project, All/Global remain global. Another owner's installation does not block this target. With no project, both the entry point and direct install path refuse project installation without global fallback. | `node --test apps/desktop/test/mcp-market-owner-user-path.test.mjs`; real settings/market components and mocked IPC boundary, no network installation |
+| E2E-TRANSCRIPT-reader-takes-over-smooth-navigation | While minimap/jump smooth scrolling runs, manual scrolling, disclosure or history navigation cancels it at the current offset. Button Space/select/editable keys and nested-scroller input do not cancel an ancestor's navigation. Delegated scrollers follow the same ownership rules. | Transcript scroll/input unit regressions and the isolated `scripts/e2e-transcript-disclosure-anchor.mjs` production-hook interaction probe |
+| E2E-TRANSCRIPT-non-tail-turn-stays-live | While a session runs, streaming rows remain active behind steering side notes or system rows. An ordinary user message bounds the current run, and a retained historical reading window never activates older streaming rows. Settling restores normal disclosure defaults without overriding explicit choices. | `turn-process.test.mjs` and `transcript-live-turn.test.mjs`; row-boundary regressions and production transcript component rendering |

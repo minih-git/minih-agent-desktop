@@ -3,6 +3,7 @@ import type {
   AssistantActivityItem,
   AssistantTurnEntry,
   AssistantTurnPart,
+  TranscriptEntry,
 } from "./assistant-turns";
 import { isStandaloneRunActivity } from "./assistant-turns";
 import { messageContentFacts } from "./transcript-summary";
@@ -235,4 +236,51 @@ export function processNarrationPreview(
       : text;
   }
   return "";
+}
+
+/** A row of the turn is still streaming, so the turn has unsettled live work. */
+export function turnHasStreamingRows(
+  parts: readonly AssistantTurnPart[],
+): boolean {
+  return parts.some((part) =>
+    part.kind === "message"
+      ? part.message.status === "streaming"
+      : part.items.some((item) => item.message.status === "streaming"),
+  );
+}
+
+/**
+ * The turn a running transcript is driving, when that turn is not the tail
+ * entry. Tail position alone cannot identify it: a steering message or a
+ * system row may render after the live turn (#1949), while the history list
+ * renders every entry as inactive. Walk back like
+ * `collectLiveDelegationEntries`, with one deliberate difference: system rows
+ * stay inside the run, because a system update can land during a tool call
+ * and render after the turn's rows. The last assistant-turn of the current
+ * run is live only while it still has streaming rows; an earlier turn left
+ * streaming by a crash is outside this run's boundary. A tail assistant-turn
+ * reports its own active state, so it yields no history id. `modelSystem`
+ * rows never reach this walk: `isVisibleMessage` filters them from the
+ * projected entries entirely.
+ */
+export function liveHistoryTurnId(
+  entries: readonly TranscriptEntry[],
+  tailEntry?: TranscriptEntry | null,
+): string | undefined {
+  if (tailEntry?.kind === "assistant-turn") return undefined;
+  for (let index = entries.length; index >= 0; index -= 1) {
+    const entry = index === entries.length ? (tailEntry ?? undefined) : entries[index];
+    if (!entry) continue;
+    if (entry.kind === "assistant-turn") {
+      return turnHasStreamingRows(entry.parts) ? entry.id : undefined;
+    }
+    if (entry.kind === "message") {
+      const { message } = entry;
+      // System rows arrive mid-run and stay inside it, like steering messages.
+      if (message.role === "system") continue;
+      if (message.role === "user" && message.steering) continue;
+      break;
+    }
+  }
+  return undefined;
 }

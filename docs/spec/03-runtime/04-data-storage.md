@@ -303,6 +303,11 @@ as `complete` when the turn already completed, otherwise as an `aborted`
 assistant message under its turn. It is never appended to, never read by the sidecar, and never
 mirrored into SQLite; a late checkpoint for an id that is already indexed is
 dropped. Delegate replies are not checkpointed.
+The shared runtime tracks issued checkpoint writes until they finish, even
+after message settlement removes pending snapshots. Shutdown drains those
+writes before disposing host-core, and a newer message in the same session
+cannot overtake an older write. Message-scoped drains do not force a newer
+reply past its throttle; late settlement only clears the matching message.
 
 `sessions/<sessionId>.revisions.jsonl` — append-only, one line per archived
 regenerate branch; the *active* flag lives only in the DB index so switching

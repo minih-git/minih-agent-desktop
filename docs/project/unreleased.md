@@ -1,4 +1,15 @@
 # Unreleased changes
+- Chinese IME composition keeps its native text until commit; the empty-draft
+  slash alias no longer rewrites a candidate while it is still being composed.
+- MCP Market respects the selected project installation target and reports
+  installed entries only for that target; a missing project never falls back
+  to a global installation.
+- Streaming checkpoints stay tracked through turn settlement and shutdown,
+  so a newer reply cannot overtake an unfinished write in the same session.
+- Manual transcript scrolling and disclosure cancel old smooth navigation
+  without taking control keys or nested-scroll gestures from their owners.
+- Running turns stay active behind side notes and system rows, without
+  reviving unfinished rows from an earlier turn or a historical reading window.
 - Each assistant turn summarizes its changed files; selecting a file opens the
   existing Review panel focused on that change.
 - Conversations recover safely from malformed tool calls, real DeepSeek reasoning

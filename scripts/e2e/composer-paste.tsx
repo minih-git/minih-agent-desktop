@@ -64,7 +64,7 @@ function Fixture({ sessionId, t, workspacePath }: { sessionId: string; t: TFunct
     composerPrefill: null,
     clearComposerPrefill: noop,
     t,
-    invalidatePromptEnhancement: noop,
+    invalidateComposerTransforms: noop,
     inputBlocked: false,
   });
   controller = draft;
@@ -77,6 +77,7 @@ function Fixture({ sessionId, t, workspacePath }: { sessionId: string; t: TFunct
     value: draft.value, draftKey: draft.draftKey, activeSessionId: sessionId || null,
     thinkingLevel: "off", modelReady: true, sendBlocked: false, pasting: false,
     activeFileReferences: draft.activeFileReferences, t, draft,
+    invalidateComposerTransforms: noop,
     recordHistory: inputHistory.record,
     sendPrompt: (...args) => historySendPrompt(...args),
     steerPrompt: async () => false, showToast: noop,
@@ -118,9 +119,9 @@ function Fixture({ sessionId, t, workspacePath }: { sessionId: string; t: TFunct
         onSubmit={(steering) => { latestSubmission = submitFromComposer(steering); }}
         onHistoryNavigate={inputHistory.navigate}
         onInsertNewline={draft.insertNewlineInEditor}
-        onInput={(source, caret) => { inputHistory.exitBrowsing(); draft.handleInput(source, caret); }}
-        onCompositionStart={noop}
-        onCompositionEnd={noop}
+        onInput={(source, caret, composing) => { inputHistory.exitBrowsing(); draft.handleInput(source, caret, composing); }}
+        onCompositionStart={() => draft.setComposing(true)}
+        onCompositionEnd={() => draft.setComposing(false)}
         onSettledInput={() => draft.setComposing(false)}
         onFocus={noop}
         onBlur={noop}
@@ -1123,11 +1124,12 @@ globalThis.composerHistoryProbe = async (phase) => {
         activeSessionId: null,
         pendingPlans: {},
         runningSessions: {},
-        sessions: [{ id: "history-created-session" }],
+        sessions: [{ id: "history-created-session", title: "History session" }],
         messages: [],
         latestTurnResults: {},
         sessionOutcomes: {},
         isRunning: false,
+        rememberModel: noop,
       } as unknown as AppState;
       const queueRuntime = {
         beginNavigationIntent: () => 1,

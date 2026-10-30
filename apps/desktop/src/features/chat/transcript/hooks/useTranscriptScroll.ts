@@ -36,7 +36,7 @@ import {
   TRANSCRIPT_SCROLL_ROUNDING_TOLERANCE_PX,
   type ScrollInputType,
 } from "../../../../lib/transcript-scroll";
-import { readScrollInputContext } from "../../../../lib/scroll-input";
+import { readScrollInputContext, stopSmoothScroll } from "../../../../lib/scroll-input";
 import { useDisclosureAnchor } from "../../../../hooks/use-disclosure-anchor";
 import type { TranscriptSearchTarget } from "../../../../lib/transcript-reading";
 import { useTranscriptSearchFocus } from "../../../../hooks/use-transcript-search-focus";
@@ -166,6 +166,7 @@ export function useTranscriptScroll({
     the view one frame later and undoes the move.
   */
   const releaseFollow = useCallback(() => {
+    stopSmoothScroll(scrollRef.current);
     cancelReadingPosition();
     cancelFollowScroll();
     pinnedRef.current = false;
@@ -207,6 +208,10 @@ export function useTranscriptScroll({
         contentRef.current,
       );
       if (!isScrollGestureInput(event.type as ScrollInputType, input)) return;
+      // Minimap / jump navigation runs in the browser, independently of our
+      // follow rAF. Real input must retire that animation at its current offset
+      // before its queued frames can overwrite the reader's next movement.
+      stopSmoothScroll(scrollRef.current);
       cancelReadingPosition();
       lastScrollGestureAtRef.current = performance.now();
       // Real input takes the viewport back from a held disclosure position.
@@ -626,6 +631,7 @@ export function useTranscriptScroll({
   );
 
   const releaseSearchFollow = useCallback((fresh: boolean) => {
+    stopSmoothScroll(scrollRef.current);
     cancelReadingPosition();
     if (fresh) prependHeightRef.current = null;
     releaseDisclosureAnchor();
