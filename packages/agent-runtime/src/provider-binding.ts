@@ -83,6 +83,8 @@ export type RuntimeProviderConfig = {
 export type ProviderEndpointFallback = {
   primaryBaseUrl?: string;
   fallbackBaseUrl?: string;
+  /** Sticky memory owned by the binding holder; one-shot callers omit it. */
+  state?: ProviderEndpointFallbackState;
 };
 
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
@@ -167,11 +169,81 @@ function rewriteEndpointUrl(
   return undefined;
 }
 
+/**
+ * How long the primary (EasyTier tunnel) address may take to answer with
+ * response headers before that attempt is abandoned for the public address.
+ *
+ * A No-TUN forward keeps its listening socket open while the tunnel is down:
+ * the connection is accepted and never answered, so no socket error ever
+ * surfaces and the request would wait for the stream idle timeout instead of
+ * falling back (skill `minih-project-routing` §4: LAN unreachable → retry the
+ * public base URL).
+ */
+export const PRIMARY_RESPONSE_HEADER_DEADLINE_MS = 15_000;
+
+/**
+ * How long the public address keeps winning after the tunnel address failed.
+ * Inside the window later requests skip the dead tunnel at once; after it the
+ * tunnel is tried first again, so a recovered tunnel is picked up without a
+ * restart.
+ */
+export const PRIMARY_RETRY_COOLDOWN_MS = 60_000;
+
+/**
+ * Sticky fallback memory shared by every `fetch` built for one provider
+ * binding. The runtime builds its wrapper per request, so the memory lives on
+ * the owner of the binding rather than inside a single wrapper closure; a
+ * different endpoint pair starts over.
+ */
+export type ProviderEndpointFallbackState = {
+  /** Endpoint pair this memory describes, as `primary\nfallback`. */
+  pair?: string;
+  /** `Date.now()` after which the primary address is tried first again. */
+  skipPrimaryUntil?: number;
+};
+
+export function createProviderEndpointFallbackState(): ProviderEndpointFallbackState {
+  return {};
+}
+
+/**
+ * One attempt against the primary address, bounded to the response headers.
+ * The deadline timer is cleared as soon as the headers arrive — a streaming
+ * body may legitimately run far longer — while the caller's own abort stays
+ * wired for the whole response.
+ */
+async function fetchPrimaryWithinDeadline(
+  fetchFn: FetchFunction,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  callerSignal: AbortSignal | undefined,
+): Promise<Response> {
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) {
+    forwardAbort();
+  } else {
+    callerSignal?.addEventListener("abort", forwardAbort, { once: true });
+  }
+  const timer = setTimeout(() => {
+    controller.abort(
+      new Error(`Primary endpoint sent no response headers within ${PRIMARY_RESPONSE_HEADER_DEADLINE_MS}ms`),
+    );
+  }, PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
+  (timer as { unref?: () => void }).unref?.();
+  try {
+    return await fetchFn(input, { ...(init ?? {}), signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function withEndpointFallback(
   api: Api | undefined,
   fetchFn: FetchFunction,
   primaryBaseUrl: string,
   fallbackBaseUrl: string,
+  state?: ProviderEndpointFallbackState,
 ): FetchFunction {
   const rawPrimary = primaryBaseUrl.trim().replace(/\/+$/, "");
   const rawFallback = fallbackBaseUrl.trim().replace(/\/+$/, "");
@@ -184,6 +256,15 @@ function withEndpointFallback(
     : rawFallback;
   const primaryPrefixes = apiPrimary !== rawPrimary ? [rawPrimary, apiPrimary] : [rawPrimary];
   const fallbackPrefixes = apiPrimary !== rawPrimary ? [rawFallback, apiFallback] : [rawFallback];
+  const pair = `${rawPrimary}\n${rawFallback}`;
+  /** True while the tunnel address is parked after a recent failure. */
+  const primaryIsParked = (): boolean =>
+    state?.pair === pair && (state.skipPrimaryUntil ?? 0) > Date.now();
+  const parkPrimary = (): void => {
+    if (!state) return;
+    state.pair = pair;
+    state.skipPrimaryUntil = Date.now() + PRIMARY_RETRY_COOLDOWN_MS;
+  };
 
   return async (input, init) => {
     const urlString =
@@ -202,18 +283,35 @@ function withEndpointFallback(
       if (input instanceof URL) return new URL(rewrittenUrl);
       return new Request(rewrittenUrl, input);
     };
+    const useFallback = (): Promise<Response> => {
+      parkPrimary();
+      return fetchFn(toFallbackInput(), init);
+    };
+    if (primaryIsParked()) {
+      // The tunnel failed recently: go straight to the public address, but do
+      // not give up on a tunnel that may already have recovered when the
+      // public one is the one that is down.
+      try {
+        return await fetchFn(toFallbackInput(), init);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        const response = await fetchFn(input, init);
+        if (state) state.skipPrimaryUntil = 0;
+        return response;
+      }
+    }
     try {
-      const response = await fetchFn(input, init);
+      const response = await fetchPrimaryWithinDeadline(fetchFn, input, init, signal);
       if (
         (response.status === 502 || response.status === 503 || response.status === 504) &&
         !signal?.aborted
       ) {
-        return await fetchFn(toFallbackInput(), init);
+        return await useFallback();
       }
       return response;
     } catch (error) {
       if (signal?.aborted) throw error;
-      return fetchFn(toFallbackInput(), init);
+      return useFallback();
     }
   };
 }
@@ -246,6 +344,7 @@ export function providerRequestFetch(
       wrapped,
       endpointFallback!.primaryBaseUrl!,
       endpointFallback!.fallbackBaseUrl!,
+      endpointFallback!.state,
     );
   }
   if (authKind === "none") {

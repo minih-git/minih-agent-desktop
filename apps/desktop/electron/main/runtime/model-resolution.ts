@@ -139,18 +139,24 @@ export function createRuntimeModelResolver({
       (provider.id === requestedProviderId ? session.thinkingLevel : undefined) ??
       storedModel?.defaultThinkingLevel,
     ));
+    // A Minih Router row prefers the EasyTier tunnel address, but the tunnel
+    // can be down while its local forward still accepts connections: keep the
+    // public base URL as the fallback the runtime retries against.
+    let fallbackBaseUrl: string | undefined;
     if (isMinihRouterVendorKey(provider.vendorKey)) {
       const endpoint = await resolveMinihRouterEndpoint(runtimeState.host, baseUrl);
       if (endpoint.activeBaseUrl) {
         baseUrl = endpoint.activeBaseUrl;
         if (modelConfig) modelConfig = { ...modelConfig, baseUrl: endpoint.activeBaseUrl };
       }
+      fallbackBaseUrl = endpoint.fallbackBaseUrl;
     }
     const resolvedProvider = {
       id: provider.id,
       name: provider.name,
       vendorKey: provider.vendorKey,
       baseUrl,
+      ...(fallbackBaseUrl ? { fallbackBaseUrl } : {}),
       modelId,
       apiKey: secret.value || "",
       authKind: provider.authKind,

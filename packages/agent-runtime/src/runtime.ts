@@ -198,10 +198,12 @@ import {
   buildProviderModel,
   copilotRequestHeaders,
   createExtensionAgentModels,
+  createProviderEndpointFallbackState,
   createProviderModels,
   DEFAULT_CONTEXT_WINDOW,
   providerRequestFetch,
   providerRequestKey,
+  type ProviderEndpointFallbackState,
   type RuntimeProviderConfig,
 } from "./provider-binding.js";
 import {
@@ -2035,6 +2037,13 @@ export class DesktopAgentRuntime {
    */
   private readonly providerTransportHealth: ProviderTransportHealth =
     createProviderTransportHealth();
+  /**
+   * Sticky LAN-failure memory for provider endpoint fallback. `streamFn` builds
+   * a fresh `fetch` wrapper per attempt, so "the tunnel failed, use the public
+   * address" has to live here, on the owner of the binding.
+   */
+  private readonly providerEndpointFallbackState: ProviderEndpointFallbackState =
+    createProviderEndpointFallbackState();
   private pendingProviderRetry?: ReturnType<typeof classifyAgentError>;
   /** Non-429 setup + stream failures since the last successful response. */
   private providerTransientRetryAttempt = 0;
@@ -2318,6 +2327,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
                 {
                   primaryBaseUrl: m.baseUrl ?? this.provider.baseUrl,
                   fallbackBaseUrl: this.provider.fallbackBaseUrl,
+                  state: this.providerEndpointFallbackState,
                 },
               ),
               onResponse: async (response, responseModel) => {
@@ -2910,6 +2920,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       this.provider.id === config.provider.id &&
       this.provider.modelId === config.provider.modelId &&
       (this.provider.baseUrl ?? "") === (config.provider.baseUrl ?? "") &&
+      // The public fallback address is part of the binding: when only it
+      // changed, the retained runtime would keep falling back to the old one.
+      (this.provider.fallbackBaseUrl ?? "") === (config.provider.fallbackBaseUrl ?? "") &&
       this.provider.apiKey === config.provider.apiKey &&
       this.provider.authKind === config.provider.authKind &&
       (this.provider.apiStyle ?? "") === (config.provider.apiStyle ?? "") &&
