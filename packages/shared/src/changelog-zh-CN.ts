@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.1.4",
+    date: "2026-10-30",
+    highlights: [
+      "Minih Router 隧道掉线不再卡住对话：请求会改用网关的公网地址，而不是一直等到流超时；只是响应慢的请求也不会再被当成隧道断开。",
+      "中文输入法候选在确认前保持原样；草稿为空时输入斜杠命令不会再改写你正在输入的候选文字。",
+      "MCP 市场安装到你选中的项目，并且只报告该项目的条目，不再退回到全局安装。",
+      "流式写入的检查点在回合结算与退出时保持顺序，新回复不会越过尚未写完的内容。",
+    ],
+  },
+
+  {
     version: "1.1.3",
     date: "2026-10-29",
     highlights: [

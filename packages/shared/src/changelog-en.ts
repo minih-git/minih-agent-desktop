@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.1.4",
+    date: "2026-10-30",
+    highlights: [
+      "A Minih Router tunnel that drops out no longer stalls a chat: requests fall back to the gateway's public address instead of waiting out the stream timeout, and a reply that is merely slow is no longer mistaken for a dead tunnel.",
+      "Chinese IME composition keeps its native text until commit; an empty-draft slash command no longer rewrites the candidate you are still typing.",
+      "MCP Market installs into the project you selected and reports entries only for that project, instead of falling back to a global installation.",
+      "Streamed checkpoints stay ordered through turn settlement and shutdown, so a newer reply cannot overtake an unfinished write.",
+    ],
+  },
+
+  {
     version: "1.1.3",
     date: "2026-10-29",
     highlights: [

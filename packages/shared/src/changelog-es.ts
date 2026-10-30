@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.1.4",
+    date: "2026-10-30",
+    highlights: [
+      "Un túnel de Minih Router caído ya no bloquea el chat: las peticiones pasan a la dirección pública de la pasarela en lugar de esperar el tiempo de espera del flujo, y una respuesta solo lenta ya no se confunde con un túnel muerto.",
+      "La composición con IME chino conserva su texto hasta confirmar; un comando con barra en un borrador vacío ya no reescribe el candidato que estás escribiendo.",
+      "MCP Market instala en el proyecto que elegiste e informa solo de sus entradas, sin recurrir a una instalación global.",
+      "Los puntos de control en streaming mantienen su orden durante el cierre del turno y al salir, así que una respuesta nueva no adelanta a una escritura sin terminar.",
+    ],
+  },
+
+  {
     version: "1.1.3",
     date: "2026-10-29",
     highlights: [

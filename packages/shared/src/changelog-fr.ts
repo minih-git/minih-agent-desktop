@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.1.4",
+    date: "2026-10-30",
+    highlights: [
+      "Un tunnel Minih Router coupé ne bloque plus la conversation : les requêtes basculent vers l'adresse publique de la passerelle au lieu d'attendre le délai du flux, et une réponse simplement lente n'est plus prise pour un tunnel mort.",
+      "La composition IME chinoise conserve son texte jusqu'à validation ; une commande avec barre oblique sur un brouillon vide ne réécrit plus le candidat en cours de saisie.",
+      "Le marché MCP installe dans le projet sélectionné et ne signale que ses entrées, sans revenir à une installation globale.",
+      "Les points de contrôle en flux restent ordonnés pendant la clôture du tour et à la fermeture : une réponse récente ne double plus une écriture inachevée.",
+    ],
+  },
+
+  {
     version: "1.1.3",
     date: "2026-10-29",
     highlights: [
