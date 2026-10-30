@@ -230,6 +230,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "timeline.run.failures": "{{count}} 處問題",
   "timeline.run.failures_other": "{{count}} 處問題",
   "timeline.thinking": "思考",
+  "timeline.responding": "正在回應…",
   "timeline.truncated": "已截斷",
   "timeline.agent": "來自 {{agent}}",
 

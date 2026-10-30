@@ -280,6 +280,8 @@ export function SessionScreen({
         <ChatTimeline
           items={timeline.items}
           lastFailure={timeline.lastFailure}
+          activeTurnId={turnId}
+          responding={active && streamState === "open" && !hasDecision && !isStopping}
           resolveMedia={actions.readMedia}
         />
       </ScreenContent>

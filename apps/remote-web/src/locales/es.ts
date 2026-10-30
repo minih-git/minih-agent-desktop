@@ -230,6 +230,7 @@ export const es: Record<TranslationKey, string> = {
   "timeline.run.failures": "{{count}} problema",
   "timeline.run.failures_other": "{{count}} problemas",
   "timeline.thinking": "Razonamiento",
+  "timeline.responding": "Respondiendo…",
   "timeline.truncated": "Truncado",
   "timeline.agent": "vía {{agent}}",
 

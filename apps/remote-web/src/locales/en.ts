@@ -240,6 +240,7 @@ export const en = {
   "timeline.run.failures": "{{count}} issue",
   "timeline.run.failures_other": "{{count}} issues",
   "timeline.thinking": "Thinking",
+  "timeline.responding": "Responding…",
   "timeline.truncated": "Truncated",
   "timeline.agent": "via {{agent}}",
 

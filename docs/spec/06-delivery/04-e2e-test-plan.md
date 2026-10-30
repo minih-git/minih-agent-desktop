@@ -10921,7 +10921,7 @@ selection already in place shows it without waiting for another event.
 | Post-MVP | E2E-022A, E2E-022B, E2E-022C, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M (plugin roadmap R2/R3/R6) |
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
-| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push, E2E-REMOTE-ACCOUNT-offline-session-delete-forgets-locally, E2E-REMOTE-MOBILE-hosts-list-reprobes-without-flicker, E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
+| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-MOBILE-live-thinking-and-response, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push, E2E-REMOTE-ACCOUNT-offline-session-delete-forgets-locally, E2E-REMOTE-MOBILE-hosts-list-reprobes-without-flicker, E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
 | Post-MVP remote control (mobile redesign 2026-10-23) | E2E-REMOTE-MODEL-channel-union-text-model-stays-in-chats, E2E-REMOTE-MODEL-image-job-keeps-chat-model, E2E-REMOTE-MODEL-switch-model-in-unsent-conversation, E2E-REMOTE-IMAGE-retry-uses-image-endpoint, E2E-REMOTE-CHAT-archive-while-replying-stops-first, E2E-REMOTE-SESSION-revoked-offers-forget-and-repair, E2E-REMOTE-SETTINGS-push-state-and-appearance-survive-reload, E2E-REMOTE-NAV-h5-has-only-the-computers-root |
 @end
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
@@ -16305,6 +16305,29 @@ acceptance targets.
   (`pnpm test:e2e:desktop-gateway-link`) against the packaged Gateway: the
   desktop's production main-process modules run in Node with a stub host-core
   and the fixture runtime, and the phone side is the Gateway's client API.
+
+#### E2E-REMOTE-MOBILE-live-thinking-and-response
+
+- **Preconditions:** Request worktree, reused installed dependencies, isolated
+  browser profile, production remote SessionScreen and ChatTimeline components,
+  synthetic RACP snapshot/events only. No user session, installed Desktop, paid
+  provider, or production Gateway is used.
+- **Steps:** Attach a running turn after completed tools; deliver thinking-only
+  deltas, collapse/reopen the newest thought, append another delta, then begin
+  the following tool. Finish the turn and reopen historical thinking. Repeat at
+  320px and 390px, with Simplified Chinese and English. Exercise approval/input,
+  stopping, disconnected and terminal states.
+- **Expected:** The newest active thought is visible outside folded tool calls;
+  manual disclosure survives updates. A localized animated response tail exists
+  before output and during work, but not while awaiting a decision, stopping,
+  disconnected, or finished. Old thinking stays folded and readable on demand.
+  No horizontal overflow; reduced motion disables the status animation.
+- **Automation:** `live-timeline.test.ts` covers projection and rendered defaults;
+  `scripts/e2e-remote-live-thinking.mjs` mounts the production session screen and
+  exercises browser interaction with isolated RACP boundaries.
+- **Specs:** Remote mobile UX §15.11.
+- **Acceptance:** C / E / Quality / Accessibility.
+- **Milestone:** Post-MVP mobile maintenance.
 
 #### E2E-266: The mobile / H5 client pairs, resumes the timeline, and approves
 

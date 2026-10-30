@@ -25,6 +25,8 @@ export interface ChatTimelineProps {
   items: TimelineItem[];
   lastFailure?: TimelineFailure;
   pendingText?: string | null;
+  activeTurnId?: string;
+  responding?: boolean;
   resolveMedia?: (mediaId: string, name?: string) => Promise<MediaViewerItem | SessionMediaState | null>;
   onCopyMessage?: (item: TimelineItem) => void;
   onRegenerateMessage?: (item: TimelineItem) => void;
@@ -443,6 +445,8 @@ export function ChatTimeline({
   items,
   lastFailure,
   pendingText,
+  activeTurnId,
+  responding = false,
   resolveMedia,
   onCopyMessage,
   onRegenerateMessage,
@@ -479,8 +483,8 @@ export function ChatTimeline({
     setViewerState({ open: true, items: viewerItems, index });
   };
 
-  const toggle = (key: string) => {
-    setOpenItems((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggle = (key: string, current = false) => {
+    setOpenItems((prev) => ({ ...prev, [key]: !(prev[key] ?? current) }));
   };
 
   // Drop empty assistant placeholders first so they never split consecutive tool calls.
@@ -494,6 +498,16 @@ export function ChatTimeline({
     }
     return null;
   }, [visibleItems]);
+  // Keep the newest reasoning step of the active turn out of folded tool runs.
+  // A completed reasoning message still describes the tool currently executing.
+  const liveThinkingId = useMemo(() => {
+    if (!activeTurnId) return undefined;
+    for (let index = visibleItems.length - 1; index >= 0; index--) {
+      const item = visibleItems[index];
+      if (item.role === "assistant" && item.turnId === activeTurnId && item.thinking?.trim()) return item.id;
+    }
+    return undefined;
+  }, [visibleItems, activeTurnId]);
   const visibleItemsRef = useRef<readonly TimelineItem[]>(visibleItems);
   visibleItemsRef.current = visibleItems;
 
@@ -571,10 +585,10 @@ export function ChatTimeline({
   );
 
   const rows = groupConsecutiveToolRuns(visibleItems, (item) =>
-    isToolItem(item) ? "tool" : isThinkingOnlyItem(item) ? "thinking" : "other",
+    item.id === liveThinkingId ? "other" : isToolItem(item) ? "tool" : isThinkingOnlyItem(item) ? "thinking" : "other",
   );
 
-  if (visibleItems.length === 0 && !pendingText && !lastFailure) {
+  if (visibleItems.length === 0 && !pendingText && !lastFailure && !responding) {
     return (
       <div className="py-12 text-center text-[14px] text-[var(--rm-text-muted)]">
         {t("session.empty")}
@@ -796,7 +810,7 @@ export function ChatTimeline({
 
           // Assistant / Agent response
           const thinkKey = `think-${item.id || idx}`;
-          const isThinkOpen = !!openItems[thinkKey];
+          const isThinkOpen = openItems[thinkKey] ?? item.id === liveThinkingId;
           const topGap =
             rowIndex === 0 ? "" : prevIsUser ? "mt-2.5 " : prevIsToolRun ? "mt-0.5 " : "mt-1.5 ";
           return (
@@ -832,7 +846,7 @@ export function ChatTimeline({
                 <div className={item.text ? "mt-1" : ""}>
                   <button
                     type="button"
-                    onClick={() => toggle(thinkKey)}
+                    onClick={() => toggle(thinkKey, isThinkOpen)}
                     className="flex items-center gap-1 py-0.5 text-[13px] leading-[18px] text-[var(--rm-text-muted)] hover:text-[var(--rm-text-secondary)] cursor-pointer"
                     aria-expanded={isThinkOpen}
                   >
@@ -882,6 +896,13 @@ export function ChatTimeline({
               <Clock size={12} />
               <span>{t("timeline.sending")}</span>
             </div>
+          </li>
+        ) : null}
+
+        {responding ? (
+          <li role="status" className="mt-2 flex items-center gap-2 py-2 text-[13px] text-[var(--rm-text-muted)]">
+            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[var(--rm-running)] animate-pulse motion-reduce:animate-none" />
+            <span>{t("timeline.responding")}</span>
           </li>
         ) : null}
 
