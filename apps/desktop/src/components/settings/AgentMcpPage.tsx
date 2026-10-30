@@ -621,6 +621,7 @@ export function AgentMcpPage() {
 
   const marketButton = (
     <CapabilityButton
+      disabled={targetLevel === "project" && !selectedProjectPath}
       onClick={() => setView("market")}
     >
       <IconServer size={14} />
@@ -631,7 +632,9 @@ export function AgentMcpPage() {
   if (view === "market") {
     return (
       <McpMarketPanel
-        installedIds={[...globalServers, ...projectServers].map((server) => server.id)}
+        level={targetLevel}
+        projectPath={targetLevel === "project" ? selectedProjectPath ?? undefined : undefined}
+        installedIds={(targetLevel === "project" ? projectServers : globalServers).map((server) => server.id)}
         onBack={() => {
           setView("servers");
           void load();

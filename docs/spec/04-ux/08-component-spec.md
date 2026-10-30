@@ -886,6 +886,12 @@ and groups with visible reasoning stay open; larger plain-tool groups start
 closed. Explicit choices remain authoritative. The density-specific rendering
 and item detail defaults are unchanged. Group headers summarize count, running
 state and issue count without treating a failed child as a failed turn.
+Liveness follows the owning turn's rows, not its position at the transcript
+tail. While the live view runs, a turn with streaming rows stays active even
+when a steering side note or system row renders after it. An ordinary user row
+ends that run's boundary: a prior turn left streaming by a crash is not revived.
+Historical reading windows never activate these rows. Existing explicit
+disclosure choices and density defaults remain authoritative.
 
 Except for the compact Thinking default, no item payload opens itself: a tool,
 hosted-search or plan call stays a header row until the user opens its disclosure,

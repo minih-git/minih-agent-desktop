@@ -11,6 +11,7 @@ import { useTranscriptScroll } from "../../apps/desktop/src/features/chat/transc
 import { ToolRow } from "../../apps/desktop/src/features/chat/transcript/ToolRow";
 import { useFollowScroll } from "../../apps/desktop/src/hooks/use-follow-scroll";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
+import { probeScrollInputOwnership } from "./scroll-input-ownership";
 
 declare global {
   var transcriptDisclosureProbe: () => Promise<unknown>;
@@ -83,7 +84,17 @@ async function settle() {
  * viewport. Only the app's stylesheet is left out, so the geometry comes from
  * inline sizes and the real components' intrinsic height.
  */
-function TranscriptFixture({ messages, process = false, isActive = false }: { messages: UiMessage[]; process?: boolean; isActive?: boolean }) {
+function TranscriptFixture({
+  messages,
+  process = false,
+  isActive = false,
+  sessionId = "fixture",
+}: {
+  messages: UiMessage[];
+  process?: boolean;
+  isActive?: boolean;
+  sessionId?: string;
+}) {
   const entry = process ? buildTranscriptEntries(messages).entries.find((item) => item.kind === "assistant-turn") : undefined;
   const {
     scrollRef,
@@ -92,7 +103,7 @@ function TranscriptFixture({ messages, process = false, isActive = false }: { me
     handleScroll,
     disclosureAnchorNotifier,
   } = useTranscriptScroll({
-    sessionId: "fixture",
+    sessionId,
     messages,
     hasMoreBefore: false,
     isRunning: false,
@@ -142,7 +153,7 @@ function FollowFixture({ tool }: { tool: UiMessage }) {
         onScroll={handleScroll}
         style={{ height: "300px", overflowY: "auto" }}
       >
-        <div ref={contentRef}>
+        <div ref={contentRef} data-layout-content>
           <div style={{ height: 320 }} />
           <ToolRow message={tool} />
           <div style={{ height: 200 }} />
@@ -345,9 +356,92 @@ globalThis.transcriptDisclosureProbe = async () => {
       processTitle.getAttribute("aria-expanded") === "true",
       "a user-expanded process should stay open after completion",
     );
+    // A minimap navigation can still be animating when the reader takes over.
+    // Exercise the browser-owned animation separately from queued follow rAFs.
+    const interruption = mount(
+      <TranscriptFixture
+        sessionId="scroll-interruption"
+        messages={[
+          message("interrupt-user", "user", "Read history"),
+          toolRowMessage("interrupt-tool"),
+        ]}
+      />,
+    );
+    const interruptScroller = interruption.querySelector<HTMLElement>(".thread-scroll")!;
+    const interruptTitle = interruption.querySelector<HTMLElement>(".tool-row-header")!;
+    assert(interruptScroller && interruptTitle, "interruption fixture did not render");
+    await settle();
+    const beforeDisclosureNavigation = geometry(interruptScroller, interruptTitle);
+    interruptScroller.scrollTo({ top: 0, behavior: "smooth" });
+    interruptTitle.click();
+    await settle();
+    assert(
+      Math.abs(geometry(interruptScroller, interruptTitle).titleTop - beforeDisclosureNavigation.titleTop) < 2,
+      "a pending navigation moved the manually toggled disclosure title",
+    );
+    assert(interruptScroller.scrollTop > 0, "interruption fixture has no scroll range");
+    interruptScroller.scrollTo({ top: 0, behavior: "smooth" });
+    const interruptedTop = interruptScroller.scrollTop;
+    interruptScroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -1 }));
+    // Interrupt before yielding: hidden Linux windows can finish a smooth
+    // navigation between two rAF callbacks, so waiting for a mid-point races it.
+    // Synthetic input has no native default scroll. Any later movement is the
+    // old animation, which the production input handler must relinquish.
+    for (let frame = 0; frame < 6; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      assert(
+        Math.abs(interruptScroller.scrollTop - interruptedTop) < 2,
+        `interrupted navigation moved the reader: ${interruptedTop} -> ${interruptScroller.scrollTop}`,
+      );
+    }
+    const interruptionResult = { interruptedTop, finalTop: interruptScroller.scrollTop };
+    // Space activates a focused disclosure button; it does not scroll its
+    // ancestor. A synthetic key has no default activation, isolating ownership.
+    interruptScroller.scrollTo({ top: 0, behavior: "smooth" });
+    interruptTitle.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    const controlDeadline = performance.now() + 5000;
+    while (interruptScroller.scrollTop > 1 && performance.now() < controlDeadline) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    assert(
+      interruptScroller.scrollTop <= 1,
+      `button Space cancelled transcript navigation at ${interruptScroller.scrollTop}`,
+    );
+    const nestedInterruption = mount(<FollowFixture tool={toolRowMessage("interrupt-dock")} />);
+    const nestedScroller = nestedInterruption.querySelector<HTMLElement>(".subagent-run-rows")!;
+    const nestedTitle = nestedInterruption.querySelector<HTMLElement>(".tool-row-header")!;
+    assert(nestedScroller && nestedTitle, "nested interruption fixture did not render");
+    await settle();
+    const beforeNestedDisclosureNavigation = geometry(nestedScroller, nestedTitle);
+    nestedScroller.scrollTo({ top: 0, behavior: "smooth" });
+    nestedTitle.click();
+    await settle();
+    assert(
+      Math.abs(geometry(nestedScroller, nestedTitle).titleTop - beforeNestedDisclosureNavigation.titleTop) < 2,
+      "a pending nested navigation moved the manually toggled disclosure title",
+    );
+    const nestedTop = nestedScroller.scrollTop;
+    assert(nestedTop > 0, "nested fixture has no scroll range");
+    nestedScroller.scrollTo({ top: 0, behavior: "smooth" });
+    nestedScroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -1 }));
+    for (let frame = 0; frame < 6; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      assert(
+        Math.abs(nestedScroller.scrollTop - nestedTop) < 2,
+        `interrupted nested navigation moved the reader: ${nestedTop} -> ${nestedScroller.scrollTop}`,
+      );
+    }
+    const nestedInterruptionResult = { interruptedTop: nestedTop, finalTop: nestedScroller.scrollTop };
+    const inputOwnership = {
+      transcript: probeScrollInputOwnership(interruptScroller),
+      nested: probeScrollInputOwnership(nestedScroller),
+    };
     assert(renderErrors.length === 0, `React render errors: ${renderErrors.map(String).join("; ")}`);
     return {
       ok: true,
+      inputOwnership,
+      interruption: interruptionResult,
+      nestedInterruption: nestedInterruptionResult,
       process: { before: processBefore, collapsed: processCollapsed, expanded: processExpanded },
       transcript: { before, expanded, collapsed },
       dock: { before: dockBefore, expanded: dockExpanded },

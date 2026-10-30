@@ -10693,3 +10693,15 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **状态：** 定向开发验证见来源记录；未进行发布验收。
 
 **实现侧定向入口（本文档不声明其运行结果）：** `apps/desktop/test/composer-submit-race.test.mjs`、`background-tasks-dock-state.test.mjs`、`background-tasks-row-toggle.test.mjs`、`browser-tab-restore.test.mjs`、`browser-background-session.test.mjs`、`topbar-title-inline-rename.test.mjs`、`turn-usage-capsule.test.mjs`、`turn-process-header.test.mjs`、`turn-process-header-style.test.mjs`、`packages/agent-runtime/src/provider-reasoning-effort.test.ts` 与 `scripts/e2e/browser-background-session.ts`。
+
+### 选择性上游可靠性修复（2026-10-29）
+
+这些场景保留 Minih 旁注、历史阅读窗口和自动折叠规则，不引入完成后定位提问或新的回合结果标签。
+
+| 场景 | 预期行为 | 自动化覆盖 |
+| --- | --- | --- |
+| E2E-CHECKPOINT-drain-across-settlement | 阻塞一个检查点 RPC，结束原回合并开始下一条回复；退出等待已发出的写入。同会话串行，其他会话继续推进。重启可读取最后快照；针对某消息的排空不突破新回复的节流。 | `inflight-checkpoint-lifecycle.test.mjs`、Host Runtime `turn-events.test.ts`、`node scripts/e2e-checkpoint-lifecycle.mjs`；受控 stdio 对端及临时文件，不使用真实配置或提供商 |
+| E2E-COMPOSER-ime-commit-keeps-native-preedit | 空草稿组合输入 `、` 时保留原生预编辑文本；提交后仅转换一次为 `/` 并打开补全。非空标点、取消组合、替换草稿和缺失 compositionend 的恢复语义不变。 | `node scripts/e2e-composer-ime-stack.mjs`；真实编辑器、草稿和补全接线及 Chromium CDP 原生组合输入 |
+| E2E-MCP-MARKET-explicit-install-owner | Project 仅写入所选项目，All/Global 仍写入全局；其他归属的同名安装不阻止当前目标安装。未选项目时，入口和直接安装路径均拒绝项目安装，不回退全局。 | `node --test apps/desktop/test/mcp-market-owner-user-path.test.mjs`；真实设置和市场组件，模拟 IPC 边界，不进行网络安装 |
+| E2E-TRANSCRIPT-reader-takes-over-smooth-navigation | 缩略图或跳转的平滑滚动期间，手动滚动、展开或历史导航在当前偏移取消旧导航。按钮空格键、select、编辑区按键及嵌套滚动输入不取消祖先导航；子代理遵守同一归属规则。 | 滚动输入单测及隔离的 `scripts/e2e-transcript-disclosure-anchor.mjs` 生产钩子交互探针 |
+| E2E-TRANSCRIPT-non-tail-turn-stays-live | 会话运行时，steering 旁注或系统行后的流式轮次仍活动；普通用户消息界定当前运行边界，历史阅读窗口不激活旧流式行。结束后恢复原折叠规则，不覆盖用户选择。 | `turn-process.test.mjs`、`transcript-live-turn.test.mjs`；行边界回归及真实转录组件渲染 |

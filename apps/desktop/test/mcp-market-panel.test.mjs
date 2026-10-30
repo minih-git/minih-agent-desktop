@@ -20,8 +20,6 @@ const [panel, page, en, zh] = await Promise.all([
 test("market panel installs through the existing upsert path only", () => {
   assert.match(panel, /resolveCatalogEntry\(/);
   assert.match(panel, /api\.upsertMcpServer\(/);
-  assert.match(panel, /level: "global"/);
-  assert.match(panel, /scope: GLOBAL_SCOPE/);
   // No other write path may appear.
   assert.doesNotMatch(panel, /mcpImport|writeFile|host\.call\(/);
 });
@@ -65,7 +63,7 @@ test("a failed query keeps the last successful list with its timestamp and remot
 
 test("installed state comes from matching server ids", () => {
   assert.match(panel, /installedIds\.includes\(entry\.id\)/);
-  assert.match(page, /installedIds=\{\[\.\.\.globalServers, \.\.\.projectServers\]/);
+  assert.match(page, /installedIds=\{\(targetLevel === "project" \? projectServers : globalServers\)\.map/);
 });
 
 test("agents page wires the market view with reload on exit", () => {

@@ -105,7 +105,7 @@ test("holding a disclosure leaves follow without a delayed grab-back", () => {
   // on real input or an explicit re-pin, never by taking the bottom back later.
   assert.match(
     transcript,
-    /const releaseFollow = useCallback\(\(\) => \{\s*cancelReadingPosition\(\);\s*cancelFollowScroll\(\);\s*pinnedRef\.current = false;\s*setShowJump\(true\);/,
+    /const releaseFollow = useCallback\(\(\) => \{\s*stopSmoothScroll\(scrollRef\.current\);\s*cancelReadingPosition\(\);\s*cancelFollowScroll\(\);\s*pinnedRef\.current = false;\s*setShowJump\(true\);/,
   );
   assert.match(
     transcript,
@@ -170,6 +170,13 @@ test("scroll input is attributed to the scroller that can consume it", () => {
     transcript,
     /if \(!isScrollGestureInput\(event\.type as ScrollInputType, input\)\) return;/,
   );
+  assert.match(transcript, /stopSmoothScroll\(scrollRef\.current\);\s*cancelReadingPosition\(\);\s*lastScrollGestureAtRef\.current = performance\.now\(\);/);
+  assert.match(transcript, /const releaseSearchFollow = useCallback\(\(fresh: boolean\) => \{\s*stopSmoothScroll\(scrollRef\.current\);/);
+  assert.match(followScroll, /stopSmoothScroll\(scrollRef\.current\);\s*lastScrollGestureAtRef\.current = performance\.now\(\);/);
+  assert.match(followScroll, /const releaseFollow = useCallback\(\(\) => \{\s*stopSmoothScroll\(scrollRef\.current\);\s*releaseDisclosureAnchor\(\);/);
+  assert.match(scrollInput, /export function stopSmoothScroll\(scroller: HTMLElement \| null\): void/);
+  assert.match(scrollInput, /EDITABLE_SELECTOR = "input, textarea, select, \[contenteditable='true'\]"/);
+  assert.match(scrollInput, /context\.controlOwnsKey = event\.key === " "/);
   // A press on a control, a keystroke in a field and a nested scroller's input
   // are read from the DOM, not guessed from the event type.
   assert.match(scrollInput, /target\.closest\(`\[\$\{SCROLL_OWNER_ATTRIBUTE\}\]`\)/);

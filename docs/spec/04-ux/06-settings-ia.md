@@ -972,6 +972,10 @@ system while preserving their different data ownership:
   opens inline on the MCP page. Imported servers follow the current Global /
   Project filter and selected project; secrets and header values are never
   shown in candidate rows.
+- MCP Market installs into the same destination as Add: Global under All or
+  Global, and the selected project under Project. Installed badges reflect only
+  that destination, so an entry in another level can still be installed here.
+  Project installation requires a selected project and never falls back to Global.
 - MCP Market offers Retry after a failed query or partial source failure. It
   repeats the current search through the existing market request path and
   announces loading while the request runs. After a successful load, a later
