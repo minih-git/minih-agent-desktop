@@ -171,7 +171,8 @@ function rewriteEndpointUrl(
 
 /**
  * How long the primary (EasyTier tunnel) address may take to answer with
- * response headers before that attempt is abandoned for the public address.
+ * response headers before its reachability is checked and — when the tunnel is
+ * gone — the attempt is abandoned for the public address.
  *
  * A No-TUN forward keeps its listening socket open while the tunnel is down:
  * the connection is accepted and never answered, so no socket error ever
@@ -180,6 +181,17 @@ function rewriteEndpointUrl(
  * public base URL).
  */
 export const PRIMARY_RESPONSE_HEADER_DEADLINE_MS = 15_000;
+
+/**
+ * How long the reachability probe of a silent tunnel may take.
+ *
+ * A late response header is not evidence of a broken tunnel: the gateway only
+ * writes them after the whole upstream answer for a non-streaming reply, and a
+ * streamed one can also be buffered behind an internal channel retry. Aborting
+ * on the deadline alone would re-send a healthy in-flight request to the public
+ * address and bill the upstream twice, so the deadline only triggers a probe.
+ */
+export const PRIMARY_LIVENESS_PROBE_TIMEOUT_MS = 3_000;
 
 /**
  * How long the public address keeps winning after the tunnel address failed.
@@ -207,34 +219,95 @@ export function createProviderEndpointFallbackState(): ProviderEndpointFallbackS
 }
 
 /**
- * One attempt against the primary address, bounded to the response headers.
- * The deadline timer is cleared as soon as the headers arrive — a streaming
- * body may legitimately run far longer — while the caller's own abort stays
- * wired for the whole response.
+ * Probe the tunnel address without credentials: any HTTP answer — 401, 404,
+ * anything — proves the path reaches a server, so the in-flight request is
+ * merely slow. Only a rejected or timed-out probe means the tunnel is gone.
+ */
+async function primaryEndpointAnswers(
+  probeOrigin: string,
+  fetchFn: FetchFunction,
+): Promise<boolean> {
+  // The transport under test is the tunnel itself: the adapter's own fetch
+  // still speaks to the primary address, while a global fetch would bypass a
+  // configured proxy or transport and answer for a tunnel that is down.
+  const probeFetch = fetchFn === globalThis.fetch ? globalThis.fetch : fetchFn;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PRIMARY_LIVENESS_PROBE_TIMEOUT_MS);
+  (timer as { unref?: () => void }).unref?.();
+  try {
+    const response = await probeFetch(probeOrigin, {
+      method: "GET",
+      signal: controller.signal,
+      redirect: "manual",
+      credentials: "omit",
+    });
+    await response.body?.cancel().catch(() => undefined);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * One attempt against the primary address, bounded by the response-header
+ * deadline.
+ *
+ * When the deadline passes without headers the attempt is not abandoned right
+ * away: a short probe decides whether the tunnel is unreachable (abandon, so
+ * the caller can fall back) or merely slow (keep waiting, and never park the
+ * tunnel for a late response). The deadline timer is cleared as soon as the
+ * headers arrive — a streaming body may legitimately run far longer — while the
+ * caller's own abort stays wired for the whole response and is detached again
+ * once the response is settled.
  */
 async function fetchPrimaryWithinDeadline(
   fetchFn: FetchFunction,
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   callerSignal: AbortSignal | undefined,
+  primaryOrigin: string,
 ): Promise<Response> {
   const controller = new AbortController();
-  const forwardAbort = () => controller.abort(callerSignal?.reason);
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const forwardAbort = () => {
+    controller.abort(callerSignal?.reason);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+  };
   if (callerSignal?.aborted) {
     forwardAbort();
   } else {
     callerSignal?.addEventListener("abort", forwardAbort, { once: true });
   }
-  const timer = setTimeout(() => {
-    controller.abort(
-      new Error(`Primary endpoint sent no response headers within ${PRIMARY_RESPONSE_HEADER_DEADLINE_MS}ms`),
-    );
+  deadlineTimer = setTimeout(() => {
+    deadlineTimer = undefined;
+    void primaryEndpointAnswers(primaryOrigin, fetchFn).then((answers) => {
+      if (answers) return;
+      controller.abort(
+        new Error(`Primary endpoint unreachable after ${PRIMARY_RESPONSE_HEADER_DEADLINE_MS}ms`),
+      );
+    });
   }, PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
-  (timer as { unref?: () => void }).unref?.();
+  (deadlineTimer as { unref?: () => void }).unref?.();
   try {
     return await fetchFn(input, { ...(init ?? {}), signal: controller.signal });
   } finally {
-    clearTimeout(timer);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    callerSignal?.removeEventListener("abort", forwardAbort);
+  }
+}
+
+/**
+ * Probe URL for the tunnel address: the origin, without the API path, so the
+ * probe asks nothing of the Router API. A Network Center No-TUN forward listens
+ * on the gateway's origin port, and a Router row is stored as `<origin>/v1`.
+ */
+function endpointOrigin(baseUrl: string): string {
+  try {
+    return `${new URL(baseUrl).origin}/`;
+  } catch {
+    return baseUrl;
   }
 }
 
@@ -257,6 +330,7 @@ function withEndpointFallback(
   const primaryPrefixes = apiPrimary !== rawPrimary ? [rawPrimary, apiPrimary] : [rawPrimary];
   const fallbackPrefixes = apiPrimary !== rawPrimary ? [rawFallback, apiFallback] : [rawFallback];
   const pair = `${rawPrimary}\n${rawFallback}`;
+  const probeOrigin = endpointOrigin(rawPrimary);
   /** True while the tunnel address is parked after a recent failure. */
   const primaryIsParked = (): boolean =>
     state?.pair === pair && (state.skipPrimaryUntil ?? 0) > Date.now();
@@ -301,7 +375,7 @@ function withEndpointFallback(
       }
     }
     try {
-      const response = await fetchPrimaryWithinDeadline(fetchFn, input, init, signal);
+      const response = await fetchPrimaryWithinDeadline(fetchFn, input, init, signal, probeOrigin);
       if (
         (response.status === 502 || response.status === 503 || response.status === 504) &&
         !signal?.aborted
