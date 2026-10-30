@@ -230,6 +230,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "timeline.run.failures": "{{count}} problema",
   "timeline.run.failures_other": "{{count}} problemas",
   "timeline.thinking": "Raciocínio",
+  "timeline.responding": "Respondendo…",
   "timeline.truncated": "Truncado",
   "timeline.agent": "via {{agent}}",
 

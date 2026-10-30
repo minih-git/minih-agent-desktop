@@ -1091,6 +1091,19 @@ Rules, and they are the desktop transcript's rules rather than a second set:
   call's output. Two taps is the depth: "what happened here", then "show me that
   one".
 - **A burst of one call is a plain row**, not a fold with one child.
+- **The active turn's latest thinking stays visible.** The newest assistant
+  reasoning step of the active turn is a separate timeline row, not content
+  hidden inside the preceding or following tool run. It opens by default while
+  the turn is active, including while a following tool executes. Streaming
+  deltas update that row in place; a reader's explicit collapse/expand choice
+  survives later deltas. Earlier steps and completed turns retain historical
+  folding. This overrides the blanket collapsed-thinking default in §8.7.
+- **A live response has a visible tail.** While the event stream is open and a
+  turn is active, the timeline ends with localized "Responding…" text and a
+  subtle animated status mark, even before the first assistant text arrives.
+  Reduced motion disables the animation. Awaiting approval/input, stopping,
+  connection loss, and terminal turn states hide this response indicator; the
+  existing decision, connection, and run bars remain authoritative.
 - **All of it is localized.** The clause keys and the failure count are catalog
   entries in the nine shipped locales; no sentence is assembled from English
   fragments.

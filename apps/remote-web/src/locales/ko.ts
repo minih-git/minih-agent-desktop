@@ -230,6 +230,7 @@ export const ko: Record<TranslationKey, string> = {
   "timeline.run.failures": "문제 {{count}}개",
   "timeline.run.failures_other": "문제 {{count}}개",
   "timeline.thinking": "생각",
+  "timeline.responding": "응답 중…",
   "timeline.truncated": "잘림",
   "timeline.agent": "{{agent}} 경유",
 
