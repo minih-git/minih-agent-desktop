@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.1.4",
+    date: "2026-10-30",
+    highlights: [
+      "Ein ausgefallener Minih-Router-Tunnel blockiert den Chat nicht mehr: Anfragen weichen auf die öffentliche Adresse des Gateways aus, statt den Stream-Timeout abzuwarten; eine nur langsame Antwort gilt nicht mehr als toter Tunnel.",
+      "Die chinesische IME behält ihren Text bis zur Bestätigung; ein Slash-Befehl bei leerem Entwurf schreibt den noch nicht bestätigten Kandidaten nicht mehr um.",
+      "Der MCP-Markt installiert in das gewählte Projekt und meldet nur dessen Einträge, statt auf eine globale Installation zurückzufallen.",
+      "Gestreamte Checkpoints bleiben über Turn-Abschluss und Beenden hinweg geordnet, sodass eine neuere Antwort keinen unfertigen Schreibvorgang überholt.",
+    ],
+  },
+
+  {
     version: "1.1.3",
     date: "2026-10-29",
     highlights: [

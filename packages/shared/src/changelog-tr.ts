@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.1.4",
+    date: "2026-10-30",
+    highlights: [
+      "Düşen bir Minih Router tüneli sohbeti artık kilitlemiyor: istekler akış zaman aşımını beklemek yerine ağ geçidinin genel adresine geçiyor ve yalnızca yavaş olan yanıt ölü tünel sanılmıyor.",
+      "Çince IME kompozisyonu onaylayana kadar metnini korur; boş taslakta eğik çizgi komutu yazmakta olduğunuz adayı artık yeniden yazmıyor.",
+      "MCP Market seçtiğiniz projeye kurulur ve yalnızca o projenin kayıtlarını bildirir, genel kuruluma geri dönmez.",
+      "Akış halindeki kontrol noktaları tur kapanışı ve çıkışta sırasını korur; yeni yanıt tamamlanmamış bir yazmanın önüne geçmez.",
+    ],
+  },
+
+  {
     version: "1.1.3",
     date: "2026-10-29",
     highlights: [

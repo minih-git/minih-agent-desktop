@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.1.4",
+    date: "2026-10-30",
+    highlights: [
+      "Um túnel do Minih Router que cai não trava mais a conversa: as requisições passam para o endereço público do gateway em vez de esperar o tempo limite do stream, e uma resposta apenas lenta não é mais confundida com um túnel morto.",
+      "A composição com IME chinês mantém o texto até a confirmação; um comando de barra em rascunho vazio não reescreve mais o candidato que você está digitando.",
+      "O MCP Market instala no projeto escolhido e informa apenas as entradas dele, sem recorrer a uma instalação global.",
+      "Checkpoints transmitidos em streaming mantêm a ordem na conclusão do turno e ao encerrar, então uma resposta nova não ultrapassa uma gravação inacabada.",
+    ],
+  },
+
+  {
     version: "1.1.3",
     date: "2026-10-29",
     highlights: [

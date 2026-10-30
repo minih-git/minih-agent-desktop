@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "1.1.4",
+    date: "2026-10-30",
+    highlights: [
+      "Minih Router 通道中斷不再卡住對話：請求會改用閘道的公網位址，而不是一直等到串流逾時；只是回應較慢的請求也不會再被當成通道中斷。",
+      "中文輸入法候選在確認前保持原樣；草稿為空時輸入斜線指令不會再改寫你正在輸入的候選文字。",
+      "MCP 市集安裝到你選取的專案，並且只回報該專案的項目，不再退回全域安裝。",
+      "串流寫入的檢查點在回合結算與結束時保持順序，新回覆不會越過尚未寫完的內容。",
+    ],
+  },
+
+  {
     version: "1.1.3",
     date: "2026-10-29",
     highlights: [
