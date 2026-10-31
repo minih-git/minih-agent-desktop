@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.1.5",
+    date: "2026-10-31",
+    highlights: [
+      "Eklenti pazarı artık kataloğu ve paketleri projenin herkese açık Gitea deposundan alıyor; kurulum öncesinde paket boyutu ve SHA-256 doğrulaması korunuyor.",
+    ],
+  },
+
+  {
     version: "1.1.4",
     date: "2026-10-30",
     highlights: [

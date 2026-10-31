@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "1.1.5",
+    date: "2026-10-31",
+    highlights: [
+      "플러그인 마켓은 이제 프로젝트의 공개 Gitea 저장소에서 카탈로그와 패키지를 다운로드하며, 설치 전 패키지 크기와 SHA-256 검증을 그대로 유지합니다.",
+    ],
+  },
+
+  {
     version: "1.1.4",
     date: "2026-10-30",
     highlights: [

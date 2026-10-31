@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.1.5",
+    date: "2026-10-31",
+    highlights: [
+      "插件市场改为从项目的公开 Gitea 仓库读取目录和下载安装包，安装前仍校验包大小与 SHA-256。",
+    ],
+  },
+
+  {
     version: "1.1.4",
     date: "2026-10-30",
     highlights: [
