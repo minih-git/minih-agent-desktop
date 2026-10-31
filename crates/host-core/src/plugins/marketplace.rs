@@ -17,10 +17,10 @@ pub(crate) use catalog::{built_in_catalog_at, bundled_package_bytes};
 /// `engines.piDesktop` manifest key and the `minPiDesktop` catalog version
 /// field are accepted as aliases of their fork-side names).
 ///
-/// `github.com/minih-git/minih-agent-plugins` holds plugin source under
+/// `gitea.hungraim.com/minih/minih-agent-plugins` holds plugin source under
 /// `plugins/<id>/`, built packages under `packages/`, and this `catalog.json`.
 pub const OFFICIAL_CHANNEL_CATALOG_URL: &str =
-    "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json";
+    "https://gitea.hungraim.com/minih/minih-agent-plugins/raw/branch/main/catalog.json";
 
 /// The catalog source used by the plugin manager.
 ///

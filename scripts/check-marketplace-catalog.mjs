@@ -4,12 +4,11 @@ import { readFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-// The distribution repository the plugin center publishes to, which is what a
-// release gate has to read: the center serves the same document with a package
-// base filled in.
+// The project's public distribution repository serves the catalog and packages
+// directly; the release gate uses the same source as host-core.
 const DEFAULT_URL =
   process.env.MINIH_AGENT_PLUGIN_MARKET_URL ||
-  "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json";
+  "https://gitea.hungraim.com/minih/minih-agent-plugins/raw/branch/main/catalog.json";
 
 /**
  * Hosts a published package may be served from.
@@ -120,7 +119,7 @@ function packageUrlErrors(label, rawUrl, catalog, catalogSource) {
 
   let absolute = url;
   if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) {
-    const base = String(catalog.artifactBaseUrl ?? "").trim();
+    const base = String(catalog.artifact_base_url ?? catalog.artifactBaseUrl ?? "").trim();
     if (base) {
       absolute = `${base.endsWith("/") ? base : `${base}/`}${url.replace(/^\/+/, "")}`;
     } else if (/^https?:\/\//i.test(catalogSource)) {
@@ -145,12 +144,15 @@ function packageUrlErrors(label, rawUrl, catalog, catalogSource) {
   if (parsed.username || parsed.password) {
     return [`${label}: url must not embed credentials`];
   }
-  if (!hostMatchesAllowlist(parsed.hostname)) {
-    return [
-      `${label}: ${parsed.hostname} is not a package host the client will download from`,
-    ];
+  if (hostMatchesAllowlist(parsed.hostname)) return [];
+  const source = /^https?:\/\//i.test(catalogSource) ? catalogSource : DEFAULT_URL;
+  if (/^https?:\/\//i.test(source)) {
+    const catalogHost = new URL(source).hostname;
+    if (parsed.hostname === catalogHost) return [];
   }
-  return [];
+  return [
+    `${label}: ${parsed.hostname} is not a package host the client will download from`,
+  ];
 }
 
 const TRUST_TIERS = new Set(["verified", "community", "unknown"]);

@@ -470,8 +470,29 @@ fn resolve_relative_package_urls_against_catalog() {
     );
     assert_eq!(
         resolved,
-        "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/packages/demo.hello-0.2.0.piplug"
+        "https://gitea.hungraim.com/minih/minih-agent-plugins/raw/branch/main/packages/demo.hello-0.2.0.piplug"
     );
+}
+
+#[test]
+fn official_gitea_catalog_accepts_only_its_own_package_host() {
+    let base = "https://gitea.hungraim.com/minih/minih-agent-plugins/raw/branch/main";
+    assert_eq!(OFFICIAL_CHANNEL_CATALOG_URL, format!("{base}/catalog.json"));
+    let package = PluginManager::resolve_package_url(
+        OFFICIAL_CHANNEL_CATALOG_URL,
+        Some(base),
+        "packages/demo.hello-0.2.0.piplug",
+    );
+    assert_eq!(package, format!("{base}/packages/demo.hello-0.2.0.piplug"));
+    package_host_allowed(&package, OFFICIAL_CHANNEL_CATALOG_URL).unwrap();
+    for untrusted in [
+        "https://gitea.hungraim.com.attacker.example/plugin.piplug",
+        "https://sub.gitea.hungraim.com/plugin.piplug",
+        "http://gitea.hungraim.com/plugin.piplug",
+        "https://user:secret@gitea.hungraim.com/plugin.piplug",
+    ] {
+        assert!(package_host_allowed(untrusted, OFFICIAL_CHANNEL_CATALOG_URL).is_err());
+    }
 }
 
 /// The upstream PI-Desktop plugin center catalogs its minimum host version as

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.1.5",
+    date: "2026-10-31",
+    highlights: [
+      "Der Plugin-Marktplatz lädt Katalog und Pakete jetzt aus dem öffentlichen Gitea-Repository des Projekts; Paketgröße und SHA-256 werden vor der Installation weiterhin geprüft.",
+    ],
+  },
+
+  {
     version: "1.1.4",
     date: "2026-10-30",
     highlights: [

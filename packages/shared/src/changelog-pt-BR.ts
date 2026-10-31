@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.1.5",
+    date: "2026-10-31",
+    highlights: [
+      "O mercado de plugins agora carrega o catálogo e baixa os pacotes do repositório público do projeto no Gitea, mantendo a verificação do tamanho e do SHA-256 antes da instalação.",
+    ],
+  },
+
+  {
     version: "1.1.4",
     date: "2026-10-30",
     highlights: [

@@ -31,10 +31,10 @@ The host is responsible for:
 ### Phase B ✅
 - Browse/search + download install are implemented against the official provider
 - Official provider: this project's own plugin distribution repository,
-  `github.com/minih-git/minih-agent-plugins` (Phase B originally pointed at the
+  `gitea.hungraim.com/minih/minih-agent-plugins` (Phase B originally pointed at the
   upstream plugin center; see "Catalog source" below and
   [ADR 0332](../../adr/0332-own-plugin-distribution-repository.md))
-- Default catalog URL: `https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`
+- Default catalog URL: `https://gitea.hungraim.com/minih/minih-agent-plugins/raw/branch/main/catalog.json`
 - Package URLs may be absolute `https://` / `http://` / `file://`, or a relative path resolved against the catalog's `artifact_base_url` when it declares one, and otherwise against the catalog URL
 - HTTPS fetch uses `curl` in host-core
 - curl diagnostics are decoded as UTF-8 first and as the active Windows ANSI
@@ -45,7 +45,7 @@ The host is responsible for:
 
 Plugins → Marketplace always uses this project's distribution repository catalog
 at
-`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`
+`https://gitea.hungraim.com/minih/minih-agent-plugins/raw/branch/main/catalog.json`
 (ADR 0332). The page has no source selector. Persisted `pluginMarketSource` and
 `pluginMarketCustomUrl` values from older versions are retained for settings
 compatibility but ignored — `settings.set` keeps the host's marketplace
@@ -53,6 +53,12 @@ selection pinned to the repository — and no data migration is needed.
 `MINIH_AGENT_PLUGIN_MARKET_URL` remains available to development and test runs
 and outranks the channel; it does not make the catalog configurable in the
 shipped interface.
+
+The distribution repository is public: both the catalog and packages must be
+downloadable without Gitea authentication. Package URLs stay relative to the
+Gitea raw branch base. Moving the source preserves plugin versions, package
+bytes, publication dates and SHA-256 digests. The existing exact catalog-host
+download rule accepts Gitea without adding a general domain allowlist entry.
 
 Marketplace catalog and package downloads follow Settings → General → Network.
 System mode sends host-core `curl` through Electron's authenticated loopback
@@ -69,7 +75,7 @@ There is no publishing platform behind this catalog. The repository's
 sha256 itself, so an install fetches that URL once and verifies the declared
 digest. There is no resolve request, no device identifier, and no
 platform-provided mirror list: the package is served by the git host that
-served the catalog (GitHub, or the CNB mirror of the same repository), and a
+served the catalog (the public Gitea repository), and a
 relative package URL is resolved against `artifact_base_url` or the catalog URL,
 so moving to another mirror host changes no recorded digest.
 

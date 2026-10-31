@@ -43,7 +43,7 @@ That dependency carried costs the project decided it no longer wants to pay:
 ### 1. The distribution repository is the catalog
 
 `OFFICIAL_CHANNEL_CATALOG_URL` is
-`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`,
+`https://gitea.hungraim.com/minih/minih-agent-plugins/raw/branch/main/catalog.json`,
 and it is the only catalog the shipped client reads
 (`crates/host-core/src/plugins/marketplace.rs`). The Marketplace page has no
 source selector. Persisted `pluginMarketSource` and `pluginMarketCustomUrl`
@@ -56,7 +56,11 @@ The repository layout stays: `catalog.json` at the root (schema v1,
 plugin sources under `plugins/<id>/`, and a `README.md`. The catalog's
 `artifact_base_url` names the repository's raw base (a relative value is also
 valid) and package URLs are relative, so the recorded sha256 verifies the bytes
-whether GitHub raw or a CNB mirror of the same repository serves them.
+served from the public Gitea raw branch. This hosting amendment (2026-10-31)
+changes no package bytes, publication dates, trust tiers, or checksum semantics.
+The repository must allow anonymous catalog and package reads; private Gitea
+repositories retain their existing access controls. No credentials belong in
+catalog or package URLs.
 
 ### 2. The resolve mechanism is removed
 
@@ -97,7 +101,7 @@ Before announcing a release, the repository preflight gates it:
 
 ```bash
 pnpm check:marketplace -- \
-  --url https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json \
+  --url https://gitea.hungraim.com/minih/minih-agent-plugins/raw/branch/main/catalog.json \
   --plugin <plugin-id>
 ```
 
