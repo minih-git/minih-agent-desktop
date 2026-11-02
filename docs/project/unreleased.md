@@ -1,4 +1,13 @@
 # Unreleased changes
+- Tool-call CJK content now participates in output budgeting, including Japanese
+  kana and Korean Hangul. HTTP 402 and explicit credit exhaustion stop retrying,
+  and structured Gemini JSON errors use their actual HTTP status.
+- Checkpoint file lists include accepted path aliases and files from the recent
+  tail folded into the summary. Resumed delegates retain Host Read images and
+  MCP resource bodies/links rather than losing their model-visible content.
+- Overflowing New launcher lists scroll inside the work panel with a pinned
+  title, full-size 40px rows and a theme-visible scroll thumb. Runtime rebuild
+  diagnostics name the changed configuration field without exposing its value.
 - Chinese IME composition keeps its native text until commit; the empty-draft
   slash alias no longer rewrites a candidate while it is still being composed.
 - MCP Market respects the selected project installation target and reports

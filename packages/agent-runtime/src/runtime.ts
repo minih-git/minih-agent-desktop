@@ -1,3 +1,6 @@
+import { collectMessageFileOperations } from "./pi-runtime-compaction-plan.js";
+import { PATH_ARG_ALIASES } from "./tool-path-arguments.js";
+import { hostContentBlockText, restoredToolResultContent } from "./tool-result-content.js";
 import {
   MAX_MUTATION_RECOVERY_FAILURES, BASH_PATCH_FAILURE_KEY,
   RECOVERABLE_MUTATION_ERROR_CODES, mutationFailureKey, isPatchCommand,
@@ -1370,14 +1373,6 @@ const MAX_ACCEPTED_COMMAND_TIMEOUT = 100_000_000;
  * those the same way rescues the turn before the model gives up on the tool
  * and silently falls back to Bash.
  */
-const PATH_ARG_ALIASES = {
-  file_path: "path",
-  filepath: "path",
-  filePath: "path",
-  filename: "path",
-  fileName: "path",
-  file: "path",
-} as const;
 const TOOL_PARAM_ALIASES: Record<string, Record<string, string>> = {
   Read: { ...PATH_ARG_ALIASES },
   Write: { ...PATH_ARG_ALIASES },
@@ -1684,33 +1679,6 @@ function selectRetainedUserMessages(
 }
 
 /**
- * Model-visible text for one host tool content block. Besides plain `text`
- * blocks, MCP servers return file bodies as embedded text resources and large
- * payloads as resource links (github-mcp-server `get_file_contents` sends a
- * status line plus one of these), so dropping them next to a sibling text
- * block hides the actual result from the model. Binary resources and other
- * block kinds have no text to show and stay out of the text channel.
- */
-function hostContentBlockText(block: unknown): string | undefined {
-  if (!isRecord(block)) return undefined;
-  if (block.type === "text" && typeof block.text === "string") return block.text;
-  if (
-    block.type === "resource" &&
-    isRecord(block.resource) &&
-    typeof block.resource.text === "string"
-  ) {
-    return block.resource.text;
-  }
-  if (block.type === "resource_link" && typeof block.uri === "string") {
-    const name = typeof block.name === "string" && block.name.trim()
-      ? `${block.name.trim()}: `
-      : "";
-    return `[resource link] ${name}${block.uri}`;
-  }
-  return undefined;
-}
-
-/**
  * JSON text fallback for a host result that produced no text blocks. Image
  * `data` and resource `blob` bytes stay off the text channel; type, mimeType,
  * and uri remain so the model still sees what was attached.
@@ -1743,65 +1711,7 @@ export function toolResultFromUi(
   timestamp: number,
 ): ToolResultMessage {
   const raw: unknown = m.toolResult;
-  const blocks: ToolResultMessage["content"] = [];
-  const rawBlocks =
-    isRecord(raw) && Array.isArray(raw.content) ? raw.content : undefined;
-  if (rawBlocks) {
-    for (const b of rawBlocks) {
-      if (!isRecord(b)) continue;
-      // Restore the same MCP resource text and links exposed by live execution.
-      // Binary resources have no text and remain outside the text channel.
-      const blockText = hostContentBlockText(b);
-      if (blockText !== undefined) {
-        blocks.push({ type: "text", text: blockText });
-      } else if (
-        b.type === "image" &&
-        typeof b.data === "string" &&
-        typeof b.mimeType === "string"
-      ) {
-        blocks.push({ type: "image", data: b.data, mimeType: b.mimeType });
-      }
-    }
-  } else if (Array.isArray(raw)) {
-    // Plugin tools may return a bare content-block array; restore its text
-    // and image blocks so a restart does not flatten them into JSON (#1360).
-    for (const b of raw) {
-      if (!isRecord(b)) continue;
-      if (b.type === "text" && typeof b.text === "string") {
-        blocks.push({ type: "text", text: b.text });
-      } else if (
-        b.type === "image" &&
-        typeof b.data === "string" &&
-        typeof b.mimeType === "string"
-      ) {
-        blocks.push({ type: "image", data: b.data, mimeType: b.mimeType });
-      }
-    }
-  } else if (typeof raw === "string" && raw.trim()) {
-    blocks.push({ type: "text", text: raw });
-  } else if (raw !== undefined && raw !== null) {
-    // A host Read of an image file returns a top-level `images` array rather
-    // than content blocks; restore those as real image content so the model
-    // sees the picture across a restart, not just the JSON text (#1073).
-    const rawObject = isRecord(raw) ? raw : undefined;
-    const images = rawObject?.images;
-    if (rawObject && Array.isArray(images)) {
-      const rest = { ...rawObject };
-      delete rest.images;
-      blocks.push({ type: "text", text: safeJson(rest) });
-      for (const image of images) {
-        if (
-          isRecord(image) &&
-          typeof image.data === "string" &&
-          typeof image.mimeType === "string"
-        ) {
-          blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
-        }
-      }
-    } else {
-      blocks.push({ type: "text", text: safeJson(raw) });
-    }
-  }
+  const blocks = restoredToolResultContent(raw);
   const interrupted = m.toolStatus === "running";
   const rawRecord: Record<string, unknown> | undefined = isRecord(raw)
     ? raw
@@ -3142,79 +3052,61 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.emit({ type: "planning_state", state, ...details });
   }
 
-  /** True when this runtime can be reused for a prompt with the given config. */
-  matches(config: RuntimeMatchConfig): boolean {
+  /** First changed field, never its value. The existing reuse rules remain authoritative. */
+  firstMismatch(config: RuntimeMatchConfig): string | null {
+    if (this.disposed) return "disposed";
     const requestedPluginTools = config.pluginTools ?? [];
     const current = safeJson([...this.pluginTools].sort((a, b) => a.name.localeCompare(b.name)));
     const next = safeJson([...requestedPluginTools].sort((a, b) => a.name.localeCompare(b.name)));
-    const currentThinkingLevels = [
-      ...(this.provider.supportedThinkingLevels ?? ["off"]),
-    ]
-      .sort()
-      .join(",");
-    const nextThinkingLevels = [
-      ...(config.provider.supportedThinkingLevels ?? ["off"]),
-    ]
-      .sort()
-      .join(",");
-    const extensionAgentMatches =
-      Boolean(this.provider.extensionAgentKey) &&
+    const currentThinkingLevels = [...(this.provider.supportedThinkingLevels ?? ["off"])].sort().join(",");
+    const nextThinkingLevels = [...(config.provider.supportedThinkingLevels ?? ["off"])].sort().join(",");
+    const extensionAgentMatches = Boolean(this.provider.extensionAgentKey) &&
       this.provider.extensionAgentKey === config.provider.extensionAgentKey &&
       this.provider.modelId === config.provider.modelId;
-    const providerMatches = extensionAgentMatches || (
-      this.provider.id === config.provider.id &&
-      this.provider.modelId === config.provider.modelId &&
-      (this.provider.baseUrl ?? "") === (config.provider.baseUrl ?? "") &&
-      // The public fallback address is part of the binding: when only it
-      // changed, the retained runtime would keep falling back to the old one.
-      (this.provider.fallbackBaseUrl ?? "") === (config.provider.fallbackBaseUrl ?? "") &&
-      this.provider.apiKey === config.provider.apiKey &&
-      this.provider.authKind === config.provider.authKind &&
-      (this.provider.apiStyle ?? "") === (config.provider.apiStyle ?? "") &&
-      providerHeadersEqual(this.provider.headers, config.provider.headers) &&
-      this.provider.supportsReasoning === config.provider.supportsReasoning &&
-      currentThinkingLevels === nextThinkingLevels &&
-      safeJson(this.provider.modelConfig ?? null) === safeJson(config.provider.modelConfig ?? null)
-    );
-    return (
-      !this.disposed &&
-      providerMatches &&
-      this.mode === config.mode &&
-      this.jevApiKey === config.jevApiKey &&
-      this.thinkingLevel ===
-        clampThinkingLevel(config.provider, config.thinkingLevel) &&
-      current === next &&
-      safeJson(this.commandShell) === safeJson(config.commandShell) &&
-      safeJson(this.baseProjectInstructions ?? null) ===
-        safeJson(config.projectInstructions ?? null) &&
-      // Editing SYSTEM.md / APPEND_SYSTEM.md retires the runtime so the next
-      // prompt recomposes from the fresh content.
-      safeJson(this.customSystemPrompt ?? null) ===
-        safeJson(config.customSystemPrompt ?? null) &&
-      // Editing a model's prompt retires the runtime for the same reason: the
-      // next prompt must recompose from the saved text.
-      (this.modelSystemPrompt ?? "") === (config.modelSystemPrompt?.trim() ?? "") &&
-      (this.projectMemory ?? "") === (config.projectMemory?.trim() ?? "") &&
-      // The learned-memory *read switch* is configuration: flipping it changes
-      // the prompt section and the tool catalog, so the next prompt rebuilds
-      // the runtime. The index itself is deliberately absent here — learned
-      // memory written during a session must never retire it (ADR §5).
-      this.learnedMemoryRead === (config.learnedMemoryRead !== false) &&
-      (this.projectPath ?? "") === (config.remoteWorkspace?.path ?? config.projectPath?.trim() ?? "") &&
-      safeJson(this.remoteWorkspace ?? null) === safeJson(config.remoteWorkspace ?? null) &&
-      (this.workspaceRoot ?? "") === (config.workspaceRoot?.trim() ?? "") &&
-      // Editing `~/.agents/subagents/*.md` must reach the next prompt. Definition
-      // bodies are part of the `Task` tool's behavior, so unlike skills they
-      // are compared in full.
-      safeJson(this.subagents) === safeJson(config.subagents ?? []) &&
-      safeJson(this.subagentProviders) === safeJson(config.subagentProviders ?? {}) &&
-      safeJson([...this.subagentModelKeys].sort()) ===
-        safeJson([...new Set(config.subagentModelKeys ?? [])].sort()) &&
-      // Enabling or disabling a trusted extension retires the runtime so the
-      // next prompt reloads the set (spec 16 §4.3).
-      trustedExtensionIds(this.trustedExtensionSpecs) ===
-        trustedExtensionIds(config.trustedExtensions ?? [])
-    );
+    if (!extensionAgentMatches) {
+      const providerChecks: Array<[string, boolean]> = [
+        ["provider.id", this.provider.id === config.provider.id],
+        ["provider.modelId", this.provider.modelId === config.provider.modelId],
+        ["provider.baseUrl", (this.provider.baseUrl ?? "") === (config.provider.baseUrl ?? "")],
+        // Minih Router's public fallback participates in the retained binding.
+        ["provider.fallbackBaseUrl", (this.provider.fallbackBaseUrl ?? "") === (config.provider.fallbackBaseUrl ?? "")],
+        ["provider.apiKey", this.provider.apiKey === config.provider.apiKey],
+        ["provider.authKind", this.provider.authKind === config.provider.authKind],
+        ["provider.apiStyle", (this.provider.apiStyle ?? "") === (config.provider.apiStyle ?? "")],
+        ["provider.headers", providerHeadersEqual(this.provider.headers, config.provider.headers)],
+        ["provider.supportsReasoning", this.provider.supportsReasoning === config.provider.supportsReasoning],
+        ["provider.supportedThinkingLevels", currentThinkingLevels === nextThinkingLevels],
+        ["provider.modelConfig", safeJson(this.provider.modelConfig ?? null) === safeJson(config.provider.modelConfig ?? null)],
+      ];
+      for (const [field, matches] of providerChecks) if (!matches) return field;
+    }
+    const checks: Array<[string, boolean]> = [
+      ["mode", this.mode === config.mode],
+      ["jevApiKey", this.jevApiKey === config.jevApiKey],
+      ["thinkingLevel", this.thinkingLevel === clampThinkingLevel(config.provider, config.thinkingLevel)],
+      ["pluginTools", current === next],
+      ["commandShell", safeJson(this.commandShell) === safeJson(config.commandShell)],
+      ["projectInstructions", safeJson(this.baseProjectInstructions ?? null) === safeJson(config.projectInstructions ?? null)],
+      ["customSystemPrompt", safeJson(this.customSystemPrompt ?? null) === safeJson(config.customSystemPrompt ?? null)],
+      ["modelSystemPrompt", (this.modelSystemPrompt ?? "") === (config.modelSystemPrompt?.trim() ?? "")],
+      ["projectMemory", (this.projectMemory ?? "") === (config.projectMemory?.trim() ?? "")],
+      // Only the read switch retires the runtime; learned-memory writes never do.
+      ["learnedMemoryRead", this.learnedMemoryRead === (config.learnedMemoryRead !== false)],
+      ["projectPath", (this.projectPath ?? "") === (config.remoteWorkspace?.path ?? config.projectPath?.trim() ?? "")],
+      ["remoteWorkspace", safeJson(this.remoteWorkspace ?? null) === safeJson(config.remoteWorkspace ?? null)],
+      ["workspaceRoot", (this.workspaceRoot ?? "") === (config.workspaceRoot?.trim() ?? "")],
+      ["subagents", safeJson(this.subagents) === safeJson(config.subagents ?? [])],
+      ["subagentProviders", safeJson(this.subagentProviders) === safeJson(config.subagentProviders ?? {})],
+      ["subagentModelKeys", safeJson([...this.subagentModelKeys].sort()) === safeJson([...new Set(config.subagentModelKeys ?? [])].sort())],
+      ["trustedExtensions", trustedExtensionIds(this.trustedExtensionSpecs) === trustedExtensionIds(config.trustedExtensions ?? [])],
+    ];
+    for (const [field, matches] of checks) if (!matches) return field;
+    return null;
+  }
+
+  /** True when this runtime can be reused for the given configuration. */
+  matches(config: RuntimeMatchConfig): boolean {
+    return this.firstMismatch(config) === null;
   }
 
   /**
@@ -7425,6 +7317,16 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       ...preparation.turnPrefixMessages,
       ...preparation.retainedTail,
     ];
+    // This tail is summarized too, unlike recent_window above. Copy the
+    // planner's sets so the preparation remains immutable for other callers.
+    const fileOps: CompactionPreparation["fileOps"] = {
+      read: new Set(preparation.fileOps.read),
+      written: new Set(preparation.fileOps.written),
+      edited: new Set(preparation.fileOps.edited),
+    };
+    for (const message of preparation.retainedTail) {
+      collectMessageFileOperations(message, fileOps);
+    }
     const latestUser = messagesToSummarize
       .filter((message): message is UserMessage => message.role === "user")
       .at(-1);
@@ -7437,6 +7339,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       turnPrefixMessages: [],
       isSplitTurn: false,
       retainedTail: selectRetainedUserMessages(candidates, retainedUserTokens),
+      fileOps,
     };
   }
 

@@ -114,13 +114,17 @@ function countCjkChars(text: string): number {
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;
     if (
-      // CJK Unified Ideographs + Extension A.
+      // Hangul Jamo, CJK punctuation, kana, and compatibility Jamo.
+      (code >= 0x1100 && code <= 0x11ff) ||
+      (code >= 0x3000 && code <= 0x30ff) ||
+      (code >= 0x3130 && code <= 0x318f) ||
+      (code >= 0x31f0 && code <= 0x31ff) ||
+      // Han, Hangul syllables, compatibility ideographs, and full-width forms.
       (code >= 0x3400 && code <= 0x9fff) ||
-      // CJK Extension B..F (historical/supplementary plane).
-      (code >= 0x20000 && code <= 0x2ebef) ||
-      // CJK punctuation and full-width forms.
-      (code >= 0x3000 && code <= 0x303f) ||
-      (code >= 0xff00 && code <= 0xffef)
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xffef) ||
+      (code >= 0x20000 && code <= 0x2ebef)
     ) {
       count += 1;
     }
@@ -169,7 +173,9 @@ function estimateMessageTokens(
     ) {
       const payload = stringifyForEstimate(b.arguments ?? b.input);
       chars += b.name.length + payload.length;
-      cjkChars += countCjkChars(b.name);
+      // Charge the same JSON spelling as the chars/4 baseline; never decode
+      // escaped Unicode again, which would count an ASCII escape twice.
+      cjkChars += countCjkChars(b.name) + countCjkChars(payload);
     } else if (b.type === "hostedSearch") {
       // 与适配器共用回放投影；搜索结果不是图片，也不是普通工具参数。
       // 投影会校验结构，失败必须保留为本地错误，不能按零成本继续请求。

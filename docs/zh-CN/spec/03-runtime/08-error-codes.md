@@ -101,7 +101,7 @@ stdio 与 Tokio 的动态阻塞池隔离，因此后一种情况
 | `AGENT_SIDECAR_CRASHED` | 不 | Node agent sidecar 进程在回合中途死亡；所属回合以中止收尾并使用此代码，而不是无关的 Plan 审批代码（issue #1077） |
 | `AGENT_SIDECAR_OOM` | 不 | sidecar 在 JavaScript 堆触及配置上限后死亡，依据其 stderr 尾部的 V8 致命错误横幅判定；在输入缩小之前，同一回合会以同样方式失败（issue #1077） |
 | `MODEL_NOT_CONFIGURED` | 不 | 未选择可用模型，或提供商因未知而拒绝所选模型 |
-| `PROVIDER_ERROR` | 是的 | 上游提供商故障；可重试的故障（5xx 网关）最多获得四次同回合重试，而格式错误的 400/422 请求，以及适配器自身拒绝的请求选项（Google 适配器遇到自定义 `fetch`，issue #1072）都是终止的 |
+| `PROVIDER_ERROR` | 是的 | 上游提供商故障；可重试的 5xx 网关故障最多获得十次同回合重试；畸形 400/422、适配器拒绝的请求选项、HTTP 402 和明确的计费／余额耗尽都是终止错误 |
 | `PROVIDER_UNAUTHORIZED` | 不 | bad/missing 提供商凭证 |
 | `PROVIDER_RATE_LIMITED` | 是的 | 供应商费率有限 |
 | `CONTEXT_TOO_LARGE` | 不 | 恢复后 prompt/context 仍超出安全模型预算、发生第二个提供程序溢出或禁用自动恢复 |
@@ -540,3 +540,12 @@ transcript 保留稳定错误码、传输 errno 和原始 details，但使用本
 明确的计费、余额、存储或 `insufficient_quota` 耗尽优先于包装它的 HTTP 429，
 映射为不可重试的终止错误 `PROVIDER_ERROR`，而不是 `PROVIDER_RATE_LIMITED`。
 真实吞吐限流继续使用原有有界回合内重试预算与等待策略。
+
+HTTP 402 即使不带余额措辞也终止。`insufficient credits`、`requires more credits`
+及 `Payment Required` 表示明确耗尽；单独出现 `credits` 或 `insufficient credentials`
+不构成余额耗尽。
+
+无前缀 JSON 错误仅从 `error` 对象内或带 Google RPC 大写下划线 `status` 的根对象
+提取 400–599 整数状态。SDK 结构化状态及显式状态前缀保持优先；数字字符串、普通根
+code 和畸形 JSON 不作为 HTTP 状态证据。随后沿用 400/422 上下文溢出、404 模型、
+429 限流及 5xx 的既有分类规则。

@@ -1,3 +1,4 @@
+import { fileOperationPath } from "./tool-path-arguments.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { estimateContextTokens, estimateTokens } from "./pi-runtime-estimates.js";
 import {
@@ -113,12 +114,11 @@ function createFileOperations(): FileOperations {
   return { read: new Set(), written: new Set(), edited: new Set() };
 }
 
-function collectMessageFileOperations(message: AgentMessage, fileOps: FileOperations): void {
+export function collectMessageFileOperations(message: AgentMessage, fileOps: FileOperations): void {
   if (message.role !== "assistant" || !Array.isArray(message.content)) return;
   for (const block of message.content) {
     if (!block || block.type !== "toolCall") continue;
-    const args = block.arguments;
-    const path = args && typeof args.path === "string" ? args.path : undefined;
+    const path = fileOperationPath(block.arguments);
     if (!path) continue;
     switch (block.name) {
       case "read": fileOps.read.add(path); break;

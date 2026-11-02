@@ -53,6 +53,7 @@
 - [Selected upstream fixes: 2026-10-25 (provenance and validation)](../project/upstream-import-2026-10-25.md)
 - [Selected upstream capabilities: 2026-10-28 (provenance and validation)](../project/upstream-import-2026-10-28.md)
 - [Selected upstream fixes: 2026-10-29 (provenance and validation)](../project/upstream-import-2026-10-29.md)
+- [Selected upstream fixes: 2026-11-01 (provenance and validation)](../project/upstream-import-2026-11-01.md)
 - [Selected upstream fixes: 2026-10-26 (provenance and validation)](../project/upstream-import-2026-10-26.md)
 
 ## 4. UX
