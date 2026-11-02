@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-02",
+    highlights: [
+      "可以替閒置會話的 prompt 快取續命：在輸入區開啟開關後，應用程式大約每 50 分鐘重送一次該會話上一次的請求，不在對話裡增加任何內容，回到長對話時不必再為整段上下文付費。輸入區顯示下次時間、今日花費和停止原因；預設關閉，連續 4 次、每個會話每天 1 美元、或某次請求發現快取已被重寫時自動停止。",
+      "閒置一段時間的會話重新開啟時，會送出與當初相同的請求，服務商快取得以重複使用，而不是重新寫一遍。",
+    ],
+  },
+
+  {
     version: "1.1.5",
     date: "2026-10-31",
     highlights: [

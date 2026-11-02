@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-02",
+    highlights: [
+      "Boşta duran bir oturumun prompt önbelleğini sıcak tutun: besteci alanından açtığınızda uygulama yaklaşık her 50 dakikada o oturumun son isteğini yeniden gönderir ve konuşmaya hiçbir şey eklemez; uzun bir sohbete döndüğünüzde tüm bağlam için yeniden ödeme yapmazsınız. Besteci alanı sıradaki isteği, bugünkü harcamayı ve neden durduğunu gösterir; başlangıçta kapalıdır ve üst üste dört istekte, oturum başına günde bir dolarda ya da önbellek yeniden yazılmış çıkarsa kendiliğinden durur.",
+      "Bir süre boşta kalan sohbet yeniden açıldığında artık başlangıçta gönderdiği istemin aynısını gönderir; sağlayıcının önbelleğe aldığı önek yeniden yazılmak yerine kullanılır.",
+    ],
+  },
+
+  {
     version: "1.1.5",
     date: "2026-10-31",
     highlights: [
