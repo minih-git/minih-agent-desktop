@@ -1,4 +1,15 @@
 import { isValidBusTopic, isValidBusTopicPattern } from "./bus-topics.js";
+//
+// The one contract this package shares with the host instead of declaring its
+// own: a keep-warm answer is the host's verdict, and a plugin that re-described
+// it could drift from what the host actually enforced.
+import type {
+  KeepWarmResult,
+  KeepWarmSkipReason,
+  KeepWarmUsage,
+} from "@minih-agent/shared";
+
+export type { KeepWarmResult, KeepWarmSkipReason, KeepWarmUsage };
 import {
   parseFsPolicy,
   resolveFsAccess,
@@ -1342,6 +1353,19 @@ export type PluginHostApi = {
       sessionId: string;
       mode?: "trash" | "purge";
     }) => Promise<{ deleted: boolean }>;
+    /**
+     * Refresh one idle session's provider prompt cache without joining the
+     * conversation (`session.keepWarm`, ADR 0339). Costs real money; requires
+     * the `session.keepWarm` permission, which the user grants at install.
+     *
+     * The host decides whether a request may be sent: a session that is busy,
+     * whose model or prompt prefix changed since its last real request, whose
+     * cache is already too old, or whose context is too small answers
+     * `{ status: "skipped", reason }` and spends nothing. The request never
+     * appends anything to the conversation, so the usage in a `warmed` answer is
+     * the only record of what it cost.
+     */
+    keepWarm: (input: { sessionId: string }) => Promise<KeepWarmResult>;
   };
   /**
    * Read-only completed-turn facts served by the host (`usage.read`). Flat
@@ -1518,6 +1542,10 @@ export const PLUGIN_PERMISSIONS = [
   "session.update.own",
   "session.delete.own",
   "session.autoTitle",
+  // Paid, host-sent request that refreshes one session's provider prompt cache
+  // without adding anything to the conversation (ADR 0339). Install-time
+  // consent only: the user has to see what it spends before it can spend it.
+  "session.keepWarm",
   // Read-only usage facts (pi.usage.listTurns):
   // completed-turn counters and session titles, never message bodies.
   "usage.read",

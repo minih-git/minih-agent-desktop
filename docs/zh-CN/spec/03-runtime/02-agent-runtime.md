@@ -1481,3 +1481,14 @@ fallback selection, usage and the visible transcript remain unchanged.
   未知或不完整尺寸继续使用既有字节规则。新附件与历史引用保留安全路径回退；
   Host Read 报告尺寸并拒绝内联。最终模型投影将超限历史图片替换为确定的文本说明，
   不改持久化原值或图片位置。原有 10 MB/30 MB 字节预算与会话根目录限制不变。
+
+## 会话缓存保活（ADR 0339）
+
+服务商的 prompt 缓存大约只活一小时，而且命中率一路衰减，所以一个空闲会话被重新打开时要为整段早就缓存过的上下文再付一次钱。宿主可以自己刷新这个缓存，不需要一次轮次：
+
+- `DesktopAgentRuntime.keepWarm({ now })` 用与真实轮次相同的路径组装请求（`provider-request.ts` 两边共用），在末尾追加一句固定的 user 消息（`Reply with OK.`），读到第一个带用量的事件就 abort。除此之外什么都不改：不写消息、不写 transcript、不跑工具、不发事件、不触发 hook，也不动活跃时间与未读状态。
+- 一次成功结束的轮次会为「下一次请求将要开始的前缀」记一次指纹（协议、端点、服务商、模型、适配器收到的 transcript），记在 sidecar 进程持有的 `KeepWarmLedger` 里，而不是运行时实例上。每条消息按线上白名单投影（`role`、`content`、`sections`、`toolsAdded`、`toolsRemoved`、`toolCallId`、`toolName`、`name`、`isError`）：系统提示在 `sections` 里，工具声明在 `toolsAdded`/`toolsRemoved` 里，少了它们指纹就看不见任何提示词与工具集变化：空闲回收在 30 分钟就会拿走运行时，而第一次保活在 50 分钟。被回收后重建的运行时从历史组装出同样的前缀，并与同一份记录比对；不一致就是 `prefix_changed`。若在请求发出时记录，则永远不会一致：那一刻 transcript 里还没有下一轮要接上的回答。
+- 所有创建 user 消息的路径（正常提问、引导消息、批准计划后的内部消息）都存成文本块数组——这正是 pi 对提问产生的形态，也是请求实际发出的形态；裸字符串在线上是不同的请求，每次重建都会新开一次服务商缓存条目。历史重建因此还原成同一形态。引导消息的位置仍会被重建改变（宿主在它打断的那条回复之前落库，pi 则在之后注入），这种情况守卫会拒绝。
+- 拒绝原因包括 `session_busy`、`already_running`、`no_prior_request`、`model_changed`、`prefix_changed`、`prefix_expired`（超过 57 分钟）、`context_too_small`（估算不足 2 万 token）、`protocol_unsupported`、`runtime_unavailable`。运行时只拒绝，不排队、不重试。
+- `agent.prompt` 在取运行时之前会调用 `abortKeepWarm()`，所以真实消息永远优先；销毁运行时也会中止它。
+- 只有 `anthropic-messages` 会在消息结束前报用量，因此只有它做到了真正不产生生成 token。`openai-completions` 与 `openai-responses` 会读到结束；其它协议直接拒绝。输出上限沿用上一次真实请求的那个值，绝不调低——在把 Responses `reasoning` 翻译成 Anthropic thinking 的网关上，更小的 `max_tokens` 会改掉思考预算，从而破坏这条请求本来要刷新的缓存前缀。

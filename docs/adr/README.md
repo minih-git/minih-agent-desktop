@@ -403,6 +403,7 @@ Each ADR includes:
 | 0336 | [Global-only configuration sync and an explicit project archive](0336-global-config-sync-and-project-archive.md) | Accepted (2026-10-21; supersedes the project-scoped half of ADR 0301) |
 | 0337 | [The html fence preview](0337-html-fence-preview.md) | Accepted (2026-10-21; opt-in per surface; scripts stay off until the reader enables them) |
 | 0338 | [A linked local page renders in the answer surface](0338-linked-local-page-renders-in-answer.md) | Accepted (2026-10-23; reuses the ADR 0337 frame; only the answer surface, scripts still off) |
+| 0339 | [Session Cache Keep-Warm](0339-session-cache-keep-warm.md) | Accepted (2026-10-31; host-side silent warm request, plugin schedules it) |
 
 | provider-metadata-client-certificate-retry | [Retry optional client-certificate failures only for provider metadata](provider-metadata-client-certificate-retry.md) | Accepted for implementation |
 | macos-window-translucency-preference | [Preserve macOS glass with a restart-bound opaque preference](macos-window-translucency-preference.md) | Accepted for implementation |

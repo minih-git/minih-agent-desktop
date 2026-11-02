@@ -2360,3 +2360,50 @@ See ADR `sidecar-idle-runtime-reclaim`.
   replaces oversized historical images with deterministic text notices, preserving
   original persisted values and image placement. The 10 MB/30 MB byte budgets and
   session-root confinement remain unchanged.
+
+## Session cache keep-warm (ADR 0339)
+
+A provider's prompt cache lives about an hour and its hit rate decays the whole
+way, so an idle session that is resumed pays for a whole context that was cached
+minutes earlier. The host can refresh that cache by itself, without a turn:
+
+- `DesktopAgentRuntime.keepWarm({ now })` assembles the request the same way a
+  turn does (`provider-request.ts` is shared by both), appends one fixed user
+  message (`Reply with OK.`), reads the first event that carries usage, and
+  aborts the request. Nothing else changes: no message, no transcript row, no
+  tool, no event, no hook, no activity or unread update.
+- A settled turn records a digest of the prefix the **next** request will start
+  from — wire API, endpoint, provider, model and the transcript the adapter
+  receives — in a `KeepWarmLedger`
+  owned by the sidecar process, not by the runtime instance. Each message is
+  projected to a wire whitelist (`role`, `content`, `sections`, `toolsAdded`,
+  `toolsRemoved`, `toolCallId`, `toolName`, `name`, `isError`): the prompt lives
+  in `sections` and the tool declarations in `toolsAdded`/`toolsRemoved`, so a
+  whitelist without them would be blind to every prompt and tool-set change:
+  the idle sweep reclaims a runtime after thirty minutes and the first warm
+  request is due at fifty. A rebuilt runtime assembles the same prefix from
+  history and is checked against the same record; a mismatch is
+  `prefix_changed`. Recording at request time would never match: at that moment
+  the transcript does not yet hold the answer the next request resumes after.
+- Every path that creates a user message — the prompt, a steering message, and
+  the internal message that starts an approved plan — stores it as a text block
+  array, which is what pi produces for a prompt and what the request carries. A
+  bare string serializes differently on the wire, so a rebuild that produced one
+  would start a new provider cache entry on every resume. Rebuilding from
+  history therefore reconstructs the same form. A steering message is still
+  re-ordered by a rebuild (the host records it before the reply it interrupted,
+  pi injects it after), which the guard refuses.
+- The refusal reasons are `session_busy`, `already_running`,
+  `no_prior_request`, `model_changed`, `prefix_changed`, `prefix_expired`
+  (past 57 minutes), `context_too_small` (under 20k estimated tokens),
+  `protocol_unsupported` and `runtime_unavailable`. The runtime refuses; it
+  never queues and never retries.
+- `abortKeepWarm()` is called by `agent.prompt` before it asks for the runtime,
+  so a real message always wins. A disposal aborts it too.
+- Only `anthropic-messages` reports usage before the message completes, so only
+  there is the request free of generated tokens. `openai-completions` and
+  `openai-responses` are read to the end; every other wire API is refused. The
+  output ceiling is the one the last real request carried — never a smaller one,
+  because on a gateway that translates Responses `reasoning` into Anthropic
+  thinking a lower `max_tokens` would change the thinking budget and break the
+  cached prefix the request exists to refresh.

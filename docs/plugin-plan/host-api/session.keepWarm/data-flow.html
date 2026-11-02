@@ -1,0 +1,140 @@
+<!-- status: implemented -->
+<!-- status: implemented -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>session.keepWarm · 数据流</title>
+<style>
+  :root{
+    --bg:#0e0e0e; --surface:#161616; --surface-2:#1b1b1b; --line:#2a2a2a; --line-2:#353535;
+    --text:#ededed; --text-2:#b0b0b0; --muted:#7d7d7d; --faint:#5c5c5c;
+    --ok:#40c977; --ok-bg:rgba(64,201,119,.10);
+    --warn:#ff8549; --warn-bg:rgba(255,133,73,.10);
+    --error:#ff6764; --error-bg:rgba(255,103,100,.10);
+    --host:#4c8dff; --plugin:#c27aff; --slot:#ff8549;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6}
+  a{color:inherit} code,kbd{font-family:var(--mono);font-size:12px;color:var(--text-2);background:var(--surface-2);padding:1px 5px;border-radius:4px}
+  pre{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);padding:12px 14px;border-radius:10px;overflow:auto;color:var(--text-2);white-space:pre-wrap}
+  .plan-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:10px 28px;background:#0c0c0c;border-bottom:1px solid var(--line);font-size:13px}
+  .plan-nav a{color:var(--text-2);text-decoration:none;padding:3px 8px;border-radius:6px}
+  .plan-nav a:hover{background:var(--surface);color:var(--text)}
+  .plan-nav a[aria-current="page"]{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
+  .plan-nav .sep{color:var(--faint);padding:0 2px} .plan-nav .spacer{flex:1}
+  .top{border-bottom:1px solid var(--line);padding:26px 28px 20px;background:linear-gradient(180deg,#141414,#0e0e0e)}
+  .top h1{margin:0 0 6px;font-size:21px} .top p{margin:0;color:var(--text-2);max-width:76ch}
+  .top .meta{margin-top:8px;color:var(--faint);font-size:12.5px}
+  main{max-width:1080px;margin:0 auto;padding:26px 28px 80px}
+  section{margin:0 0 36px}
+  section>h2{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:16.5px}
+  section>h2 .n{font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line-2);border-radius:4px;padding:1px 6px}
+  section>.lead{margin:0 0 14px;color:var(--text-2);max-width:82ch}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:0 0 12px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.id{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
+  .pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-family:var(--mono);white-space:nowrap}
+  .pill.has{color:var(--ok);background:var(--ok-bg)}
+  .pill.warn{color:var(--warn);background:var(--warn-bg)}
+  .pill.perm{color:var(--host);background:rgba(76,141,255,.12)}
+  .callout{margin:12px 0;padding:12px 14px;border-radius:10px;background:var(--surface);border-left:3px solid var(--line-2);color:var(--text-2);font-size:13px}
+  .callout.warn{border-left-color:var(--warn)}
+  .callout b{color:var(--text)}
+  ul,ol{margin:0 0 12px;padding-left:1.35em;color:var(--text-2)}
+  li{margin:0 0 4px} li b{color:var(--text)}
+</style>
+</head>
+<body>
+<nav class="plan-nav">
+  <a href="../index.html">host-api</a><span class="sep">/</span><a href="index.html">session.keepWarm</a>
+  <span class="spacer"></span>
+  <a href="index.html">目录</a>
+  <a href="requirements.html">需求</a>
+  <a href="data-flow.html" aria-current="page">数据流</a>
+</nav>
+<header class="top">
+  <div class="crumb">docs/plugin-plan · host-api · session.keepWarm</div>
+  <h1>会话缓存保活 · 数据流</h1>
+  <p>谁把什么传给谁、经过哪些进程、写到哪里、出错怎么回。</p>
+  <div class="meta">status: implemented</div>
+</header>
+<main>
+  <section>
+    <h2><span class="n">01</span>接口约定</h2>
+    <table>
+      <tr><th>面向</th><th>内容</th></tr>
+      <tr><td>插件拿到</td><td>一次请求的结论：<code>status</code>、<code>reason</code>、<code>usage</code>（各项 token、<code>costUsd</code>、<code>durationMs</code>）、<code>cacheReadRatio</code>。</td></tr>
+      <tr><td>插件能调</td><td><code>pi.session.keepWarm</code>；<code>pi.events.on("session:turnEnded")</code> 用来计时；<code>pi.session.list/get</code> 用来知道会话还在不在、模型是什么。</td></tr>
+      <tr><td>宿主组件</td><td><code>ui/composer</code> 的 <code>composerControl</code> 右侧位（props 带 <code>sessionId</code>）。</td></tr>
+      <tr><td>权限</td><td><code>session.keepWarm</code>（付费请求）；<code>session.read</code>（会话列表与模型）；<code>renderer.extension</code>（输入区控件）。</td></tr>
+    </table>
+  </section>
+  <section>
+    <h2><span class="n">02</span>数据怎么走</h2>
+    <pre>插件进程                 Electron main                     Node pi sidecar                Provider
+   │                        │                                    │                            │
+   ├─ 计时到点 ─────────────►│  pi.session.keepWarm               │                            │
+   │                        ├─ session.get / settings.get ─────► │ (host-core)                │
+   │                        ├─ resolveAgentRuntimeLaunch         │                            │
+   │                        └─ agent.keepWarm ──────────────────►│                            │
+   │                                                             ├─ 重建/复用运行时（同轮次）  │
+   │                                                             ├─ 组装前缀 + 追加 "Reply with OK."
+   │                                                             ├─ 与账本指纹比对 → 不一致就跳过
+   │                                                             ├─ 发出请求 ────────────────►│
+   │                                                             ├─ 首个带用量的事件 → abort ◄─│
+   │◄── {status, usage, cacheReadRatio} ◄───◄────────────────────┤                            │
+   │                        └─ session.keepWarm.record ────────► │(host-core: keep_warm_usage)│
+</pre>
+    <ul>
+      <li><b>计时基准。</b><code>session:turnEnded</code> 送到插件时开始计时；每次真实轮次结束都重新计时。到点时先看当前时间，再看计时器——Mac 睡醒后延后的定时器不会拿一个过期时刻去花一次钱。</li>
+      <li><b>前缀指纹。</b>一个轮次<b>结束</b>时（回答已进 transcript）把“协议 + 端点 + 服务商 + 模型 + 适配器收到的 transcript”做一次 SHA-256，每条消息按线上白名单投影（<code>role</code>、<code>content</code>、<code>sections</code>、<code>toolsAdded</code>、<code>toolsRemoved</code>、<code>toolCallId</code>、<code>toolName</code>、<code>name</code>、<code>isError</code>——系统提示在 <code>sections</code>，工具声明在 <code>toolsAdded</code>/<code>toolsRemoved</code>），记进 sidecar 进程的账本；保活请求用同一段代码重新组装前缀，指纹不同就 <code>prefix_changed</code>。在请求发出时记录是没有用的：那一刻 transcript 里还没有下一轮要接上的回答。</li>
+      <li><b>用量。</b>一次一行，写在 <code>keep_warm_usage</code>，不进 <code>turns.usage_json</code>；同时计入 token 用量历史，另带 <code>keepWarm*</code> 计数，便于区分。</li>
+    </ul>
+  </section>
+  <section>
+    <h2><span class="n">03</span>出错怎么办</h2>
+    <ul>
+      <li><b>宿主拒绝。</b>返回 <code>skipped</code> 与 reason，不抛错。插件按 reason 决定继续排期（忙）还是停下（其余）。</li>
+      <li><b>没有提前用量的协议。</b><code>openai-completions</code>／<code>openai-responses</code> 只在结束时报用量，所以读到结束；输出上限仍是真实请求那个值（不调低，否则会改掉思考预算、破坏缓存），代价是只多付「Reply with OK.」这一句的回答。</li>
+      <li><b>请求失败。</b>返回 <code>failed</code>。宿主不重试；插件停下，因为失败也是一次付费尝试。</li>
+      <li><b>用户发消息。</b>保活被 abort，返回 <code>failed/aborted</code>；用户消息不受影响。</li>
+      <li><b>会话被删。</b>返回 <code>runtime_unavailable</code>，落库时因为会话已不在而不写行。</li>
+      <li><b>插件停用 / 卸载 / 退出。</b>插件清掉所有定时器；已落库的用量不受影响。</li>
+    </ul>
+  </section>
+  <section>
+    <h2><span class="n">04</span>不提供什么</h2>
+    <ul>
+      <li><b>不提供“强制发一次”。</b>没有绕过判定或跳过指纹守卫的开关。</li>
+      <li><b>不提供自定义请求内容。</b>追加的那句话是固定的，插件不能改一个字。</li>
+      <li><b>不提供读取对话内容的通道。</b>这个 API 只回结论与用量，不回任何消息正文。</li>
+      <li><b>宿主保证：</b>请求不改对话、不写 transcript、不触发事件与 hook；真实轮次永远优先。</li>
+      <li><b>已接受代价：</b>应用重启后指纹丢失，重建前的会话会被跳过。</li>
+    </ul>
+  </section>
+  <section>
+    <h2><span class="n">05</span>相关条目</h2>
+    <ul>
+      <li><a href="../usage.listTurns/index.html"><code>host-api/usage.listTurns</code></a> — 轮次账本，保活不进去。</li>
+      <li><a href="../events.on/index.html"><code>host-api/events.on</code></a> — <code>session:turnEnded</code>。</li>
+      <li><a href="../../ui/composer/index.html"><code>ui/composer</code></a> — <code>composerControl</code> 右侧位。</li>
+      <li><a href="../../runtime/turn-continue/index.html"><code>runtime/turn-continue</code></a> — 花钱要可见的原则。</li>
+    </ul>
+  </section>
+  <section>
+    <h2><span class="n">06</span>还没定的事</h2>
+    <ul>
+      <li>输入区是否需要一个“本次会话今日累计花费”更长的时间窗（现在是当日）。</li>
+      <li>是否给用户一个全局的“所有会话今日合计”视图；现在上限是每会话的。</li>
+      <li>非 Anthropic 协议要不要做成“读到结束”之外的更好办法（供应商支持提前用量时）。</li>
+    </ul>
+  </section>
+</main>
+
+</body>
+</html>

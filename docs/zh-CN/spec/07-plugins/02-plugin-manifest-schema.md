@@ -344,6 +344,7 @@ type PluginPermission =
  | "session.update.own"
  | "session.delete.own"
  | "usage.read"
+ | "session.keepWarm"
  | "memory.read"
  | "audio.capture.background"
  | "audio.playback.background"

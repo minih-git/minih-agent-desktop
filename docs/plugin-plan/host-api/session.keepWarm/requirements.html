@@ -1,0 +1,135 @@
+<!-- status: implemented -->
+<!-- status: implemented -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>session.keepWarm · 需求</title>
+<style>
+  :root{
+    --bg:#0e0e0e; --surface:#161616; --surface-2:#1b1b1b; --line:#2a2a2a; --line-2:#353535;
+    --text:#ededed; --text-2:#b0b0b0; --muted:#7d7d7d; --faint:#5c5c5c;
+    --ok:#40c977; --ok-bg:rgba(64,201,119,.10);
+    --warn:#ff8549; --warn-bg:rgba(255,133,73,.10);
+    --error:#ff6764; --error-bg:rgba(255,103,100,.10);
+    --host:#4c8dff; --plugin:#c27aff; --slot:#ff8549;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6}
+  a{color:inherit} code,kbd{font-family:var(--mono);font-size:12px;color:var(--text-2);background:var(--surface-2);padding:1px 5px;border-radius:4px}
+  pre{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);padding:12px 14px;border-radius:10px;overflow:auto;color:var(--text-2);white-space:pre-wrap}
+  .plan-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:10px 28px;background:#0c0c0c;border-bottom:1px solid var(--line);font-size:13px}
+  .plan-nav a{color:var(--text-2);text-decoration:none;padding:3px 8px;border-radius:6px}
+  .plan-nav a:hover{background:var(--surface);color:var(--text)}
+  .plan-nav a[aria-current="page"]{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
+  .plan-nav .sep{color:var(--faint);padding:0 2px} .plan-nav .spacer{flex:1}
+  .top{border-bottom:1px solid var(--line);padding:26px 28px 20px;background:linear-gradient(180deg,#141414,#0e0e0e)}
+  .top h1{margin:0 0 6px;font-size:21px} .top p{margin:0;color:var(--text-2);max-width:76ch}
+  .top .meta{margin-top:8px;color:var(--faint);font-size:12.5px}
+  main{max-width:1080px;margin:0 auto;padding:26px 28px 80px}
+  section{margin:0 0 36px}
+  section>h2{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:16.5px}
+  section>h2 .n{font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line-2);border-radius:4px;padding:1px 6px}
+  section>.lead{margin:0 0 14px;color:var(--text-2);max-width:82ch}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:0 0 12px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.id{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
+  .pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-family:var(--mono);white-space:nowrap}
+  .pill.has{color:var(--ok);background:var(--ok-bg)}
+  .pill.warn{color:var(--warn);background:var(--warn-bg)}
+  .pill.perm{color:var(--host);background:rgba(76,141,255,.12)}
+  .callout{margin:12px 0;padding:12px 14px;border-radius:10px;background:var(--surface);border-left:3px solid var(--line-2);color:var(--text-2);font-size:13px}
+  .callout.warn{border-left-color:var(--warn)}
+  .callout b{color:var(--text)}
+  ul,ol{margin:0 0 12px;padding-left:1.35em;color:var(--text-2)}
+  li{margin:0 0 4px} li b{color:var(--text)}
+</style>
+</head>
+<body>
+<nav class="plan-nav">
+  <a href="../index.html">host-api</a><span class="sep">/</span><a href="index.html">session.keepWarm</a>
+  <span class="spacer"></span>
+  <a href="index.html">目录</a>
+  <a href="requirements.html" aria-current="page">需求</a>
+  <a href="data-flow.html">数据流</a>
+</nav>
+<header class="top">
+  <div class="crumb">docs/plugin-plan · host-api · session.keepWarm</div>
+  <h1>会话缓存保活 · 需求</h1>
+  <p>用户已经定下的部分与 agent 建议的部分分开写。拍板过的规则不改，实现里觉得可行的做法归在建议里。</p>
+  <div class="meta">status: implemented</div>
+</header>
+<main>
+  <section>
+    <h2><span class="n">01</span>用户已定</h2>
+    <ul>
+      <li><b>静默。</b>保活请求不往对话里插任何行，也不是一次对话轮次。不走 <code>agent/prompt</code>，不走 <code>continueTurn</code>。</li>
+      <li><b>可见性靠会话级状态。</b>插件在输入区右侧显示开关、下次时间、今日花费；被跳过或停止时显示原因。</li>
+      <li><b>默认值。</b>间隔 50 分钟（可调 30–55）；连续 4 次保活期间没有真实轮次就自动停；每个会话每天估算花费上限 1 美元；某次保活缓存读取占比低于 50% 判定缓存已失效并停下；上下文小于 2 万 token 不保活；模型范围默认只开 Claude，GPT 可选；每个会话的开关默认关闭。</li>
+      <li><b>宿主判定。</b>能不能发由宿主决定，不满足就返回原因：会话忙、还没有过真实请求、模型/服务商/思考强度换过、前缀变了、距上次真实请求超过约 57 分钟、协议不支持。</li>
+      <li><b>请求与真实请求一致。</b>同一条组装路径、同样的 headers 与亲和、同样的 tools 与思考参数，只在末尾追加一句固定的极短 user 消息。不为省钱调低思考强度或换模型。</li>
+      <li><b>完全隔离。</b>不执行工具、不写对话或 transcript、不触发 turn hook / <code>session:turnEnded</code> / 通知 / 标题生成 / 静默重跑 / progress 续跑，不改会话最近活跃时间与未读状态。</li>
+      <li><b>让路。</b>真实轮次开始就取消正在进行的保活，保活永远不阻塞、不排在用户消息前面。</li>
+      <li><b>用量落库。</b>新增单独的账本，不伪造 turn 行，带迁移，兼容老数据，能计入现有用量统计并能区分出来。</li>
+    </ul>
+  </section>
+  <section>
+    <h2><span class="n">02</span>接口</h2>
+    <table>
+      <tr><th>项</th><th>值</th></tr>
+      <tr><td>方法</td><td class="id">pi.session.keepWarm({ sessionId })</td></tr>
+      <tr><td>权限</td><td><span class="pill perm">session.keepWarm</span> 安装时确认；没有它调用直接被拒（<code>PERMISSION_DENIED</code>），不会走到宿主。</td></tr>
+      <tr><td>参数</td><td><code>sessionId</code>：非空字符串，≤128 字符。</td></tr>
+      <tr><td>返回</td><td><code>warmed</code> 带 <code>usage</code> 与 <code>cacheReadRatio</code>；<code>skipped</code> 带 <code>reason</code>；<code>failed</code> 带 <code>reason</code>。三种都带 <code>model: { providerId, modelId }</code>，让插件能按自己的模型范围停下而不用另开读会话的权限。</td></tr>
+      <tr><td>副作用</td><td>一次宿主发起的模型请求，一次落库。对话、transcript、事件流都不变。</td></tr>
+    </table>
+    <h2><span class="n">03</span>跳过原因</h2>
+    <table>
+      <tr><th>reason</th><th>含义</th><th>插件是否该继续排期</th></tr>
+      <tr><td class="id">session_busy</td><td>有正在跑/排队/等审批的轮次，或在压缩中</td><td>是，稍后重试</td></tr>
+      <tr><td class="id">already_running</td><td>这个会话已有一个保活请求在飞</td><td>是，稍后重试</td></tr>
+      <tr><td class="id">no_prior_request</td><td>进程启动后没见过这个会话的真实请求</td><td>否，等下一次真实轮次</td></tr>
+      <tr><td class="id">model_changed</td><td>服务商 / 模型 / 思考强度 / 协议换过</td><td>否</td></tr>
+      <tr><td class="id">prefix_changed</td><td>重新组装出来的前缀与上次真实请求的指纹不同</td><td>否</td></tr>
+      <tr><td class="id">prefix_expired</td><td>距上次真实请求超过 57 分钟</td><td>否</td></tr>
+      <tr><td class="id">context_too_small</td><td>上下文不足 2 万 token</td><td>否</td></tr>
+      <tr><td class="id">protocol_unsupported</td><td>这个协议没法在非轮次里拿到用量</td><td>否</td></tr>
+      <tr><td class="id">runtime_unavailable</td><td>会话不存在、会话已删、运行时起不来</td><td>否</td></tr>
+    </table>
+  </section>
+  <section>
+    <h2><span class="n">04</span>场景</h2>
+    <ul>
+      <li><b>正常保活。</b>会话空闲 50 分钟，前缀没变 → 一次 <code>warmed</code>，用量与缓存占比回到插件，今日花费增加。</li>
+      <li><b>提示词变了。</b>系统提示里的日期或记忆笔记更新过 → <code>prefix_changed</code>，一分钱不花，插件停下并显示原因。</li>
+      <li><b>用户回来了。</b>保活请求在飞时用户发消息 → 保活被 abort，用户消息不受影响。</li>
+      <li><b>缓存本来就在衰退。</b>某次保活缓存读取占比 31% → 插件按 50% 阈值停下，不再花钱。</li>
+      <li><b>没有该权限。</b>插件没拿到 <code>session.keepWarm</code> → 调用被拒，宿主从未收到请求。</li>
+    </ul>
+  </section>
+  <section>
+    <h2><span class="n">05</span>不做什么</h2>
+    <ul>
+      <li>不替插件排期、不重试、不做退避。失败就是失败，理由交回去。</li>
+      <li>不为了保活改模型、改思考强度、改输出上限：输出上限沿用上一次真实请求的值，因为更小的 <code>max_tokens</code> 会在把 Responses reasoning 翻译成 Anthropic thinking 的网关上改掉思考预算，反而破坏缓存。</li>
+      <li>不保活一个已经超过缓存寿命的会话。</li>
+      <li>不把保活当成轮次，也不为了让用量有地方放而造一个轮次。</li>
+    </ul>
+  </section>
+  <section>
+    <h2><span class="n">06</span>agent 建议（实现里采用的做法）</h2>
+    <ul>
+      <li>前缀指纹记在 <b>sidecar 进程</b>里而不是运行时实例上：运行时 30 分钟就被回收，首次保活在 50 分钟。重启后指纹丢失、按“还没有过真实请求”跳过，这在拍板时是可接受的。</li>
+      <li>宿主的两次判定分工：主进程判会话在不在、能不能起运行时；sidecar 判前缀、协议、上下文与时限。两边都返回同一套 reason。</li>
+      <li>用量表 <code>keep_warm_usage</code> 只追加，跳过也落一行（花费 0），这样“为什么昨晚没保活”能查。</li>
+      <li>模型身份随每次回答返回。插件拿不到别人会话的模型（<code>session.read.own</code> 只看自己导入的会话），因此“只保活 Claude”在第一次回答后生效：代价是那个会话被保活一次，之后停下。</li>
+    </ul>
+  </section>
+</main>
+
+</body>
+</html>

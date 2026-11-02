@@ -14,10 +14,20 @@ import {
   useSlotEntries,
 } from "../../../plugins/renderer-slots/use-slots";
 
-export function ComposerControlSlots({ side }: { side: PluginSlotPosition }) {
+export function ComposerControlSlots({
+  side,
+  sessionId,
+}: {
+  side: PluginSlotPosition;
+  /** The session this composer belongs to; absent on the home composer. */
+  sessionId?: string;
+}) {
   const entries = useSlotEntries("composerControl", side);
   if (entries.length === 0) return null;
-  const props: PluginComposerControlSlotProps = { position: side };
+  const props: PluginComposerControlSlotProps = {
+    position: side,
+    ...(sessionId ? { sessionId } : {}),
+  };
   return (
     <>
       {entries.map((entry) => (

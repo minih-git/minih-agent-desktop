@@ -19,6 +19,7 @@ import {
   type RuntimePromptAttachment,
   type RuntimeProviderConfig,
 } from "./runtime.js";
+import { KeepWarmLedger } from "./keep-warm.js";
 import type { PluginSkillDef } from "./plugin-skills-prompt.js";
 import type {
   LearnedMemoryIndex,
@@ -70,6 +71,14 @@ async function getNativePiService() {
 const runtimes: RuntimeMap = new Map();
 /** Last turn-level activity per session, for the idle reclaim sweep. */
 const lastActivity = new Map<string, number>();
+/**
+ * What each session's last real request sent, kept for the whole process.
+ *
+ * It outlives the runtime on purpose: the idle sweep takes a runtime away after
+ * thirty minutes, and the first keep-warm request is due at fifty. One digest
+ * per session, dropped when the session is disposed (ADR 0339).
+ */
+const keepWarmLedger = new KeepWarmLedger();
 const reclaimPolicy = reclaimPolicyFromEnv(process.env);
 const hostProxy = new ParentHostProxy();
 const testRuntimeIds = new WeakMap<DesktopAgentRuntime, string>();
@@ -310,6 +319,7 @@ async function runtimeFor(
   }
   const runtime = new DesktopAgentRuntime({
     host: hostProxy,
+    keepWarmLedger,
     sessionId,
     mode,
     turnId: params.turnId,
@@ -464,6 +474,9 @@ async function handle(method: string, params: any): Promise<unknown> {
       const attachments = Array.isArray(params.attachments)
         ? (params.attachments as RuntimePromptAttachment[])
         : undefined;
+      // A real message always wins: stop a warm request before this turn even
+      // asks for the runtime, so nothing queues or bills behind the user.
+      runtimes.get(String(params.sessionId))?.abortKeepWarm();
       const runtime = await runtimeFor(params, content);
       const userMessageId =
         typeof params.userMessageId === "string" && params.userMessageId
@@ -641,11 +654,41 @@ async function handle(method: string, params: any): Promise<unknown> {
       }
       const runtime = runtimes.get(sessionId);
       if (runtime) {
+        runtime.abortKeepWarm();
         await runtime.dispose();
         runtimes.delete(sessionId);
         lastActivity.delete(sessionId);
       }
+      // The record of what the session last sent is only useful while the
+      // session exists; a long-lived process must not keep one digest per
+      // conversation ever opened (ADR 0339).
+      keepWarmLedger.forget(sessionId);
       return { ok: true };
+    }
+    /**
+     * Refresh one idle session's provider prompt cache (ADR 0339).
+     *
+     * The runtime is rebuilt from history the same way a turn rebuilds it: at
+     * minute fifty the idle sweep has usually taken the original away, and the
+     * rebuilt one assembles the same prefix, which is exactly what the ledger
+     * then verifies.
+     */
+    case "agent.keepWarm": {
+      const sessionId = String(params.sessionId ?? "");
+      if (!sessionId.trim() || sessionId.startsWith(NATIVE_PI_SESSION_PREFIX)) {
+        return { status: "skipped", reason: "protocol_unsupported" };
+      }
+      let runtime: DesktopAgentRuntime;
+      try {
+        runtime = await runtimeFor(params);
+      } catch (error) {
+        const code = (error as { errorCode?: string } | null)?.errorCode;
+        return {
+          status: "skipped",
+          reason: code === "AGENT_BUSY" ? "session_busy" : "runtime_unavailable",
+        };
+      }
+      return runtime.keepWarm(typeof params.now === "number" ? { now: params.now } : {});
     }
     default:
       throw Object.assign(new Error(`method not found: ${method}`), {

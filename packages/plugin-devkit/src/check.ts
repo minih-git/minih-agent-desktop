@@ -43,6 +43,8 @@ export const HIGH_RISK_PERMISSIONS = [
   "project.create",
   "session.read",
   "session.autoTitle",
+  // A paid, host-sent request the conversation never shows (ADR 0339).
+  "session.keepWarm",
   "session.import",
   "session.delete.own",
   "mcp.server.local",
@@ -110,6 +112,7 @@ const PERMISSION_API_HINTS: Record<string, string[]> = {
     "browser.console",
     "browser.cdp",
   ],
+  "session.keepWarm": ["session.keepWarm"],
 };
 
 export type CheckIssue = {

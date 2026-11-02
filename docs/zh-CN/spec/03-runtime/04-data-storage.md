@@ -1,4 +1,4 @@
-# 04. 数据存储（架构 v27）
+# 04. 数据存储（架构 v28）
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/03-runtime/04-data-storage) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
@@ -1574,3 +1574,24 @@ An unknown price is distinct from a known zero price; partial known costs remain
 on the individual operations. Late usage targets its captured turn and does not
 revive it or debit the currently active turn. Immediate nested parent and owning
 Task remain separate optional transcript/event fields.
+
+## 保活用量账本（schema v28）
+
+保活请求不属于任何轮次（ADR 0339），所以它的花费不能放进 `turns.usage_json`：那一列以轮次行为键，`usage.listTurns` 读它，对话也读它。为了让花费有地方放而伪造一个轮次会把两边都弄脏，而这正是这个功能不能做的事。
+
+schema v28 增加一张只追加的表，由 `v27 -> v28` 迁移与全新安装用同一个 DDL 常量创建：
+
+```text
+keep_warm_usage(
+  id, session_id REFERENCES sessions(id) ON DELETE CASCADE,
+  status ('warmed' | 'failed' | 'skipped'), reason,
+  provider_id, model_id,
+  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+  cache_read_ratio, cost_usd, duration_ms, created_at
+)
+```
+
+- `session.keepWarm.record` 追加一行；会话已不存在时返回 `recorded: false`，迟到的写入不会把已删除的会话复活。
+- `session.keepWarm.totals` 返回某个会话在一个时间窗内的花费（默认本地自然日），插件的每日上限按它判断。
+- 被跳过的尝试也会落一行、花费为 0：原因是证据，插件要显示它。
+- `stats.getTokenUsageHistory` 把保活行计入与轮次相同的分桶，并用 `keepWarmRequests` / `keepWarmTokens` / `keepWarmCostUsd` 标出来，总额包含它，同时还能拆开看。

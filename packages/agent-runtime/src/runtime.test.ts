@@ -9,8 +9,17 @@ import {
   getCurrentSystemMessage,
   toToolDeclaration,
   type AssistantMessage,
+  type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { formatSessionMessage, type SessionMessageOrigin } from "@minih-agent/shared";
+import {
+  formatSessionMessage,
+  KEEP_WARM_MIN_CONTEXT_TOKENS,
+  KEEP_WARM_PROMPT,
+  type SessionMessageOrigin,
+} from "@minih-agent/shared";
+import { KeepWarmLedger } from "./keep-warm.js";
+import { keepWarmWireMessage } from "./keep-warm-fingerprint.js";
+import { providerRequestPrefixFingerprint } from "./provider-request.js";
 import { estimateContextTokens as estimateTranscriptTokens } from "@earendil-works/pi-ai/utils/estimate";
 import { buildSessionContext } from "./session-context.js";
 import { estimateContextTokens as estimateAgentContextTokens, estimateTokens } from "./pi-runtime-estimates.js";
@@ -188,6 +197,7 @@ function createRuntime(
     turnId: string;
     host: { call: ReturnType<typeof vi.fn>; onNotification?: ReturnType<typeof vi.fn> };
     onEvent: (envelope: unknown) => void;
+    keepWarmLedger: KeepWarmLedger;
   }> = {},
 ) {
   return new DesktopAgentRuntime({
@@ -217,6 +227,7 @@ function createRuntime(
     projectMemory: overrides.projectMemory,
     pluginSkills: overrides.pluginSkills,
     onEvent: overrides.onEvent ?? vi.fn(),
+    keepWarmLedger: overrides.keepWarmLedger,
   });
 }
 
@@ -228,6 +239,22 @@ function runtimeTool(runtime: DesktopAgentRuntime, name: string): AgentTool {
 }
 
 /** Minimal pi-ai assistant message; overrides carry the shape under test. */
+/**
+ * The text of a message's content, whatever container it is stored in.
+ *
+ * A user message is stored as a text block array — the form pi produces for a
+ * prompt and the form the request carries (ADR 0339) — so a test that looks for
+ * instructions inside one has to read the blocks.
+ */
+function contentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((block) => (block as { type?: string }).type === "text")
+    .map((block) => String((block as { text?: string }).text ?? ""))
+    .join("");
+}
+
 function assistantMessage(overrides: {
   content: unknown[];
   stopReason?: string;
@@ -3546,8 +3573,8 @@ describe("DesktopAgentRuntime plan transitions", () => {
     expect(agent.continue).toHaveBeenCalledOnce();
     const internal = (runtime as any).fullEntries.at(-1).message;
     expect(internal.role).toBe("user");
-    expect(internal.content).toContain(execution.artifact.relativePath);
-    expect(internal.content).toContain(execution.plan);
+    expect(contentText(internal.content)).toContain(execution.artifact.relativePath);
+    expect(contentText(internal.content)).toContain(execution.plan);
     expect(
       onEvent.mock.calls.some(
         ([envelope]) => (envelope as any).event?.message?.role === "user",
@@ -3627,7 +3654,7 @@ describe("DesktopAgentRuntime plan transitions", () => {
       false,
       "active_turn",
     );
-    expect((runtime as any).fullEntries.at(-1).message.content).toContain(
+    expect(contentText((runtime as any).fullEntries.at(-1).message.content)).toContain(
       execution.plan,
     );
     expect(onEvent.mock.calls.map(([envelope]) => (envelope as any).event)).toContainEqual(
@@ -4035,10 +4062,10 @@ describe("DesktopAgentRuntime plan transitions", () => {
 
     expect(runtime.getMode()).toBe("agent");
     const internal = (runtime as any).fullEntries.at(-1).message;
-    expect(internal.content).toContain("<approved-goal-markdown>");
-    expect(internal.content).toContain(execution.artifact.relativePath);
-    expect(internal.content).toContain("verify every acceptance criterion");
-    expect(internal.content).not.toContain("Execute the approved implementation plan");
+    expect(contentText(internal.content)).toContain("<approved-goal-markdown>");
+    expect(contentText(internal.content)).toContain(execution.artifact.relativePath);
+    expect(contentText(internal.content)).toContain("verify every acceptance criterion");
+    expect(contentText(internal.content)).not.toContain("Execute the approved implementation plan");
 
     await runtime.dispose();
   });
@@ -4658,10 +4685,19 @@ describe("DesktopAgentRuntime session collaboration provenance", () => {
       { id: "human", role: "user", content: "human input", status: "complete", createdAt: "2026-09-13T00:00:01.000Z" },
     ] });
     const messages = (restored as unknown as { agent: Agent }).agent.state.messages;
-    expect(messages.filter((message) => message.role === "user").map((message) => message.content)).toEqual([
-      expected,
-      "human input",
-    ]);
+    // The stored form is the text block array pi keeps for a prompted message
+    // (the live request carries the same array), so this compares the text the
+    // user sees rather than the container it arrives in.
+    const textOf = (content: unknown) =>
+      typeof content === "string"
+        ? content
+        : (content as Array<{ type?: string; text?: string }>)
+            .filter((block) => block.type === "text")
+            .map((block) => block.text ?? "")
+            .join("");
+    expect(
+      messages.filter((message) => message.role === "user").map((message) => textOf(message.content)),
+    ).toEqual([expected, "human input"]);
     await runtime.dispose();
     await restored.dispose();
   });
@@ -13051,5 +13087,761 @@ describe("the context budget follows a provider-reported usage", () => {
     expect(internal.automaticCompactionNeeded()).toBe(true);
 
     await runtime.dispose();
+  });
+});
+
+/**
+ * Session cache keep-warm (ADR 0339).
+ *
+ * Everything here runs against a fake provider stream, so no request leaves the
+ * process. The assembly under test is the real one: `streamFunction` is the
+ * runtime's own request builder, and the ledger it fills is the one `keepWarm`
+ * reads back.
+ */
+describe("DesktopAgentRuntime keep-warm (ADR 0339)", () => {
+  const NOW_MS = 1_700_000_000_000;
+
+  type Internals = {
+    agent: { state: { model: unknown; messages: unknown[]; tools: unknown[] } };
+    models: Record<string, unknown>;
+  };
+
+  /** A context large enough that the small-context floor does not decide a test. */
+  function substantialHistory(): UiMessage[] {
+    return [
+      {
+        id: "user-big",
+        role: "user",
+        content: "x".repeat(KEEP_WARM_MIN_CONTEXT_TOKENS * 5),
+        createdAt: new Date(NOW_MS).toISOString(),
+        status: "complete",
+      } as UiMessage,
+    ];
+  }
+
+  const WARM_USAGE = {
+    input: 40,
+    output: 1,
+    cacheRead: 48_000,
+    cacheWrite: 200,
+    totalTokens: 48_241,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 },
+  };
+
+  function messageStream(message: unknown) {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      stream.push({ type: "start", partial: message } as never);
+      stream.push({ type: "done", reason: "stop", message } as never);
+      stream.end(message as never);
+    });
+    return stream;
+  }
+
+  /**
+   * Run one real turn through pi's loop against a fake provider.
+   *
+   * The loop is what appends the answer and what settles the turn, so a test that
+   * wants the state a warm request actually starts from has to run it. Calling
+   * the stream function directly produces a state no user ever reaches.
+   */
+  async function runTurn(
+    runtime: DesktopAgentRuntime,
+    internals: Internals,
+    options: {
+      content?: unknown[];
+      usage?: unknown;
+      /** A first request that asks for a tool, so the turn makes two. */
+      toolCall?: { name: string };
+    } = {},
+  ) {
+    const [first, second] = options.toolCall
+      ? [
+          {
+            ...assistantMessage({
+              content: [
+                {
+                  type: "toolCall",
+                  id: "call-1",
+                  name: options.toolCall.name,
+                  arguments: {},
+                },
+              ],
+              stopReason: "toolUse",
+            }),
+            timestamp: undefined,
+          },
+          assistantMessage({ content: [{ type: "text", text: "All set." }] }),
+        ]
+      : [assistantMessage({ content: options.content ?? [{ type: "text", text: "All set." }] })];
+
+    const sequence = options.toolCall ? [first, second!] : [first];
+    let request = 0;
+    internals.models.streamSimple = () => {
+      const message = sequence[Math.min(request, sequence.length - 1)]!;
+      request += 1;
+      return messageStream(
+        options.usage && request === 1 ? { ...message, usage: options.usage } : message,
+      );
+    };
+    await runtime.prompt("Explain the build.", "user-1", "turn-1");
+  }
+
+  /** The messages the runtime would send, after the request-context transform. */
+  function prefixMessagesOf(runtime: DesktopAgentRuntime): unknown[] {
+    const internals = runtime as unknown as {
+      provider: never;
+      model: never;
+      keepWarmContext: () => { messages: unknown[] };
+    };
+    return providerRequestPrefixFingerprint({
+      provider: internals.provider,
+      model: internals.model,
+      context: internals.keepWarmContext() as never,
+    }).context.messages as unknown[];
+  }
+
+  function fingerprintOf(runtime: DesktopAgentRuntime): string {
+    const internals = runtime as unknown as {
+      provider: never;
+      model: never;
+      keepWarmContext: () => { messages: unknown[] };
+    };
+    return providerRequestPrefixFingerprint({
+      provider: internals.provider,
+      model: internals.model,
+      context: internals.keepWarmContext() as never,
+    }).fingerprint;
+  }
+
+  /**
+   * The first message index whose wire form differs, or `null` when equal.
+   *
+   * Identity and timestamps are dropped, exactly as the prefix digest drops
+   * them: they never reach the provider, so a rebuild that only moves them is
+   * not a different request.
+   */
+  function firstDifference(left: unknown[], right: unknown[]): string | null {
+    const wire = (message: unknown) => JSON.stringify(keepWarmWireMessage(message));
+    const length = Math.max(left.length, right.length);
+    for (let index = 0; index < length; index++) {
+      const a = wire(left[index]);
+      const b = wire(right[index]);
+      if (a !== b) {
+        return `message ${index}: recorded ${a?.slice(0, 200)} / rebuilt ${b?.slice(0, 200)}`;
+      }
+    }
+    return null;
+  }
+
+  it("refuses a session this process has not sent a request for", async () => {
+    const runtime = createRuntime({
+      history: substantialHistory(),
+      keepWarmLedger: new KeepWarmLedger(),
+    });
+    try {
+      await expect(runtime.keepWarm({ now: NOW_MS })).resolves.toMatchObject({
+        status: "skipped",
+        reason: "no_prior_request",
+        // Every answer names the model, so a caller enforcing its own scope
+        // learns it from a refusal instead of paying for a request.
+        model: { providerId: provider.id, modelId: provider.modelId },
+      });
+      expect(runtime.isWarming()).toBe(false);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("warms a settled session with the prefix its next request would start from", async () => {
+    const events: unknown[] = [];
+    const hostCall = vi.fn(async () => undefined);
+    const runtime = createRuntime({
+      history: substantialHistory(),
+      onEvent: (envelope) => events.push(envelope),
+      host: { call: hostCall, onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: new KeepWarmLedger(),
+    });
+    const internals = runtime as unknown as Internals;
+    const sent: Array<{ context: { messages: unknown[] }; options: SimpleStreamOptions }> = [];
+    let warm = false;
+    internals.models.streamSimple = (
+      _model: unknown,
+      context: { messages: unknown[] },
+      options: SimpleStreamOptions,
+    ) => {
+      sent.push({ context, options });
+      return messageStream(
+        warm
+          ? { ...assistantMessage({ content: [{ type: "text", text: "OK" }] }), usage: WARM_USAGE }
+          : assistantMessage({ content: [{ type: "text", text: "All set." }] }),
+      );
+    };
+    try {
+      await runtime.prompt("Explain the build.", "user-1", "turn-1");
+      warm = true;
+      const callsAfterTurn = hostCall.mock.calls.length;
+      const eventsAfterTurn = events.length;
+
+      const result = await runtime.keepWarm({ now: Date.now() });
+
+
+      expect(result.status).toBe("warmed");
+      if (result.status === "warmed") {
+        expect(result.usage.cacheReadTokens).toBe(48_000);
+        expect(result.cacheReadRatio).toBeCloseTo(48_000 / 48_240, 5);
+        expect(result.usage.providerId).toBe(provider.id);
+      }
+      // Two requests: the turn's, then the warm one. The warm request is the
+      // turn's messages plus the answer the turn appended, plus one fixed
+      // message — which is exactly the prefix the next real request starts from.
+      expect(sent).toHaveLength(2);
+      const turnMessages = sent[0]!.context.messages;
+      const warmMessages = sent[1]!.context.messages;
+      expect(warmMessages.at(-1)).toMatchObject({ role: "user", content: KEEP_WARM_PROMPT });
+      expect(warmMessages.slice(0, turnMessages.length)).toEqual(turnMessages);
+      expect(warmMessages.at(-2)).toMatchObject({ role: "assistant" });
+      // Not a turn: no transcript row, no event, no usage event.
+      expect(hostCall.mock.calls.length).toBe(callsAfterTurn);
+      expect(events.length).toBe(eventsAfterTurn);
+      expect(runtime.isWarming()).toBe(false);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("warms after a turn that called a tool and made two requests", async () => {
+    const runtime = createRuntime({
+      history: substantialHistory(),
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: new KeepWarmLedger(),
+    });
+    const internals = runtime as unknown as Internals;
+    const sent: Array<{ context: { messages: unknown[] } }> = [];
+    const usage = { ...WARM_USAGE, input: 40, output: 1, cacheRead: 48_000, cacheWrite: 200 };
+    let warm = false;
+    let request = 0;
+    internals.models.streamSimple = (
+      _model: unknown,
+      context: { messages: unknown[] },
+      _options: SimpleStreamOptions,
+    ) => {
+      sent.push({ context });
+      if (warm) {
+        return messageStream({
+          ...assistantMessage({ content: [{ type: "text", text: "OK" }] }),
+          usage,
+        });
+      }
+      request += 1;
+      return request === 1
+        ? messageStream(
+            assistantMessage({
+              content: [
+                { type: "toolCall", id: "call-1", name: "no_such_tool", arguments: {} },
+              ],
+              stopReason: "toolUse",
+            }),
+          )
+        : messageStream(assistantMessage({ content: [{ type: "text", text: "All set." }] }));
+    };
+    try {
+      await runtime.prompt("Explain the build.", "user-1", "turn-1");
+      expect(sent).toHaveLength(2);
+      warm = true;
+      await expect(runtime.keepWarm({ now: Date.now() })).resolves.toMatchObject({
+        status: "warmed",
+      });
+      // The recorded prefix belongs to the *last* request of the turn, and the
+      // warm request extends the settled transcript rather than replaying it.
+      const lastTurnMessages = sent[1]!.context.messages;
+      const warmMessages = sent[2]!.context.messages;
+      expect(warmMessages.slice(0, lastTurnMessages.length)).toEqual(lastTurnMessages);
+      expect(warmMessages.at(-1)).toMatchObject({ role: "user", content: KEEP_WARM_PROMPT });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("warms a session whose runtime was reclaimed and rebuilt from history", async () => {
+    // The sidecar's idle sweep takes the runtime away after thirty minutes and
+    // rebuilds it from host history for the first warm request. The rebuild has
+    // to assemble the same prefix; the diagnostic below names the first message
+    // that differs when it does not.
+    const ledger = new KeepWarmLedger();
+    const stored: UiMessage[] = [...substantialHistory()];
+    const hostCall = vi.fn(async (method: string, params: unknown) => {
+      if (method === "session.appendMessage") {
+        const message = (params as { message?: unknown })?.message;
+        if (message) stored.push(message as UiMessage);
+      }
+      return undefined;
+    });
+    // The real pipeline persists the reply too: the sidecar forwards the
+    // assistant `message_end` and Electron main writes it as a transcript row.
+    // Without that the rebuild would be missing the very message the next
+    // request continues from.
+    const persistAssistant = (envelope: unknown) => {
+      const event = (envelope as { event?: { type?: string; message?: Record<string, unknown> } })
+        ?.event;
+      const message = event?.message;
+      if (event?.type !== "message_end" || message?.role !== "assistant") return;
+      const blocks = Array.isArray(message.content) ? message.content : [];
+      const text = typeof message.content === "string"
+        ? message.content
+        : blocks
+            .filter((block) => (block as { type?: string }).type === "text")
+            .map((block) => String((block as { text?: string }).text ?? ""))
+            .join("");
+      const thinking = blocks
+        .filter((block) => (block as { type?: string }).type === "thinking")
+        .map((block) => String((block as { thinking?: string }).thinking ?? ""))
+        .join("");
+      stored.push({
+        id: `assistant-${stored.length}`,
+        role: "assistant",
+        content: text,
+        ...(thinking ? { thinking } : {}),
+        createdAt: new Date(NOW_MS + stored.length).toISOString(),
+        status: "complete",
+      } as UiMessage);
+    };
+    const host = { call: hostCall, onNotification: vi.fn(() => () => {}) };
+    const first = createRuntime({
+      history: [...stored],
+      host,
+      keepWarmLedger: ledger,
+      onEvent: persistAssistant,
+    });
+    let recorded: unknown[] = [];
+    try {
+      // The host stores the user row before it asks the runtime, which is what a
+      // rebuild reads back; without it the rebuilt transcript would be missing
+      // the very message this turn was about.
+      stored.push({
+        id: "user-1",
+        role: "user",
+        content: "Explain the build.",
+        createdAt: new Date(NOW_MS).toISOString(),
+        status: "complete",
+      } as UiMessage);
+      await runTurn(first, first as unknown as Internals);
+      const settled = prefixMessagesOf(first);
+      recorded = settled;
+      // The record is exactly the prefix the settled turn left behind.
+      expect(ledger.get("session-1")?.fingerprint).toBe(fingerprintOf(first));
+    } finally {
+      await first.dispose();
+    }
+    expect(stored.length).toBeGreaterThan(1);
+
+    const rebuilt = createRuntime({
+      history: [...stored],
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: ledger,
+    });
+    const rebuiltInternals = rebuilt as unknown as Internals;
+    const sent: Array<{ context: { messages: unknown[] } }> = [];
+    rebuiltInternals.models.streamSimple = (
+      _model: unknown,
+      context: { messages: unknown[] },
+      _options: SimpleStreamOptions,
+    ) => {
+      sent.push({ context });
+      return messageStream({
+        ...assistantMessage({ content: [{ type: "text", text: "OK" }] }),
+        usage: WARM_USAGE,
+      });
+    };
+    try {
+      const rebuiltMessages = prefixMessagesOf(rebuilt);
+      const difference = firstDifference(recorded, rebuiltMessages);
+      expect(difference).toBeNull();
+      const result = await rebuilt.keepWarm({ now: Date.now() });
+      // The rebuild assembles the same prefix, so the warm request is allowed and
+      // replays the bytes the session originally sent.
+      expect(result.status).toBe("warmed");
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.context.messages.at(-1)).toMatchObject({
+        role: "user",
+        content: KEEP_WARM_PROMPT,
+      });
+      expect(sent[0]!.context.messages.slice(0, -1)).toHaveLength(recorded.length);
+    } finally {
+      await rebuilt.dispose();
+    }
+  });
+
+  it("keeps the declaration rows the request gains inside the state a warm request reads", async () => {
+    // `prepareToolDeclarations` appends the rows a request needs (tool-set
+    // changes, and on models with deferred activation the activation section)
+    // and writes them back into `agent.state.messages`. If it did not, a warm
+    // request would replay a prefix the real request never sent — the one
+    // outcome this feature must never produce.
+    const runtime = createRuntime({
+      history: substantialHistory(),
+      keepWarmLedger: new KeepWarmLedger(),
+    });
+    const internals = runtime as unknown as Internals & {
+      prepareToolDeclarations: (context: {
+        messages: unknown[];
+        tools: unknown[];
+      }) => { context: { messages: unknown[] } };
+    };
+    try {
+      // A context that does not yet declare the current tools: the request gains
+      // one system row, exactly as a mid-turn tool change does.
+      const prepared = internals.prepareToolDeclarations({ messages: [], tools: [] });
+      expect(prepared.context.messages.length).toBeGreaterThan(0);
+      const state = internals.agent.state.messages;
+      for (const message of prepared.context.messages) {
+        expect(state).toContainEqual(message);
+      }
+      // And the assembly a warm request uses sees the same transcript.
+      expect(prefixMessagesOf(runtime).length).toBeGreaterThan(0);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("refuses when the system prompt changed after the turn", async () => {
+    // The prompt lives in the transcript's system `sections`, not in `content`.
+    // A digest that missed it would let a warm request rebuild a cache entry the
+    // next real request can never share — the exact spend the guard exists to
+    // prevent.
+    const runtime = createRuntime({
+      history: substantialHistory(),
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: new KeepWarmLedger(),
+    });
+    const internals = runtime as unknown as Internals;
+    try {
+      await runTurn(runtime, internals);
+      const before = fingerprintOf(runtime);
+      runtime.setMode("plan");
+      expect(fingerprintOf(runtime)).not.toBe(before);
+      await expect(runtime.keepWarm({ now: Date.now() })).resolves.toMatchObject({
+        status: "skipped",
+        reason: "prefix_changed",
+      });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("refuses when a rebuilt session runs a different tool set", async () => {
+    const ledger = new KeepWarmLedger();
+    const first = createRuntime({
+      history: substantialHistory(),
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: ledger,
+    });
+    try {
+      await runTurn(first, first as unknown as Internals);
+    } finally {
+      await first.dispose();
+    }
+    // Same session, same history, one more plugin tool than when the turn ran:
+    // the tool declarations are part of the request, so the warm request would
+    // write a new entry.
+    const rebuilt = createRuntime({
+      history: substantialHistory(),
+      pluginTools: [{ name: "plugin_demo_extra", description: "extra" }],
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: ledger,
+    });
+    try {
+      await expect(rebuilt.keepWarm({ now: Date.now() })).resolves.toMatchObject({
+        status: "skipped",
+        reason: "prefix_changed",
+      });
+    } finally {
+      await rebuilt.dispose();
+    }
+  });
+
+  it("stores a steering message in the shape a rebuild produces", async () => {
+    // A steering message never reaches pi's prompt normalization, so before this
+    // fix it was stored as a bare string while a rebuild produced a text block
+    // array — one more difference between the live transcript and a rebuild.
+    //
+    // What a rebuild still cannot reproduce is the *position*: the user sends a
+    // steering message while a reply is streaming, so the host records it before
+    // that reply, while pi injects it after. The guard therefore refuses — which
+    // is the safe outcome, and is asserted below.
+    const ledger = new KeepWarmLedger();
+    const stored: UiMessage[] = [...substantialHistory()];
+    const hostCall = vi.fn(async (method: string, params: unknown) => {
+      if (method === "session.appendMessage") {
+        const message = (params as { message?: unknown })?.message;
+        if (message) stored.push(message as UiMessage);
+      }
+      return undefined;
+    });
+    const persistAssistant = (envelope: unknown) => {
+      const event = (envelope as { event?: { type?: string; message?: Record<string, unknown> } })
+        ?.event;
+      const message = event?.message;
+      if (event?.type !== "message_end" || message?.role !== "assistant") return;
+      const text = typeof message.content === "string"
+        ? message.content
+        : (Array.isArray(message.content) ? message.content : [])
+            .filter((block) => (block as { type?: string }).type === "text")
+            .map((block) => String((block as { text?: string }).text ?? ""))
+            .join("");
+      stored.push({
+        id: `assistant-${stored.length}`,
+        role: "assistant",
+        content: text,
+        createdAt: new Date(NOW_MS + stored.length).toISOString(),
+        status: "complete",
+      } as UiMessage);
+    };
+    const host = { call: hostCall, onNotification: vi.fn(() => () => {}) };
+    const runtime = createRuntime({
+      history: [...stored],
+      host,
+      keepWarmLedger: ledger,
+      onEvent: persistAssistant,
+    });
+    const internals = runtime as unknown as Internals;
+    let release: (() => void) | null = null;
+    let requests = 0;
+    internals.models.streamSimple = () => {
+      requests += 1;
+      const stream = createAssistantMessageEventStream();
+      const finish = (text: string) =>
+        queueMicrotask(() => {
+          const message = assistantMessage({ content: [{ type: "text", text }] });
+          stream.push({ type: "start", partial: message } as never);
+          stream.push({ type: "done", reason: "stop", message } as never);
+          stream.end(message as never);
+        });
+      if (requests === 1) {
+        // Held open so the user can steer into this turn, as a real one would be.
+        release = () => finish("Paused for your note.");
+        stream.push({ type: "start", partial: assistantMessage({ content: [] }) } as never);
+      } else {
+        finish("All set.");
+      }
+      return stream;
+    };
+    try {
+      stored.push({
+        id: "user-1",
+        role: "user",
+        content: "Explain the build.",
+        createdAt: new Date(NOW_MS).toISOString(),
+        status: "complete",
+      } as UiMessage);
+      const turn = runtime.prompt("Explain the build.", "user-1", "turn-1");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(release).not.toBeNull();
+      runtime.steer({ text: "Also cover tests." }, "turn-1", {
+        id: "steer-1",
+        role: "user",
+        content: "Also cover tests.",
+        steering: true,
+        status: "complete",
+        createdAt: new Date(NOW_MS + 1).toISOString(),
+      } as UiMessage);
+      // The host persists that echo now, before the reply it interrupted.
+      stored.push({
+        id: "steer-1",
+        role: "user",
+        content: "Also cover tests.",
+        steering: true,
+        status: "complete",
+        createdAt: new Date(NOW_MS + 1).toISOString(),
+      } as UiMessage);
+      release!();
+      await turn;
+
+      // The live transcript holds the steering text as a block array…
+      const liveSteering = (internals.agent.state.messages as Array<{
+        role: string;
+        content: unknown;
+      }>)
+        .filter((message) => message.role === "user" && Array.isArray(message.content))
+        .map((message) => JSON.stringify(message.content));
+      expect(liveSteering.some((content) => content.includes("Also cover tests."))).toBe(true);
+
+      const recorded = prefixMessagesOf(runtime);
+      const rebuilt = createRuntime({
+        history: [...stored],
+        host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+        keepWarmLedger: ledger,
+      });
+      try {
+        // …and a rebuild from the persisted rows produces the same shape.
+        const rebuiltSteering = prefixMessagesOf(rebuilt).filter(
+          (message) =>
+            (message as { role?: string }).role === "user" &&
+            JSON.stringify(message).includes("Also cover tests."),
+        );
+        expect(rebuiltSteering).toHaveLength(1);
+        // Compared in wire form: identity and timestamps never reach a provider,
+        // and the digest drops them for the same reason.
+        expect(keepWarmWireMessage(rebuiltSteering[0])).toEqual(
+          keepWarmWireMessage(
+            (recorded as Array<{ role?: string }>).find((message) =>
+              JSON.stringify(message).includes("Also cover tests."),
+            ),
+          ),
+        );
+        // The position still differs, so the guard refuses instead of spending.
+        await expect(rebuilt.keepWarm({ now: Date.now() })).resolves.toMatchObject({
+          status: "skipped",
+          reason: "prefix_changed",
+        });
+      } finally {
+        await rebuilt.dispose();
+      }
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("keeps the turn's output ceiling and thinking parameter on a Responses model", async () => {
+    // A provisioned provider row can speak Responses (Minih Router among them),
+    // and the gateway may translate a Responses `reasoning` request into
+    // Anthropic thinking. A smaller `max_tokens` there would change the thinking
+    // budget, and a changed thinking parameter invalidates the message-level
+    // cache the request exists to refresh — so the warm request must ask for
+    // exactly what the turn asked for.
+    const responses: RuntimeProviderConfig = {
+      ...provider,
+      id: "router",
+      apiStyle: "responses",
+      baseUrl: "https://relay.test/v1",
+      apiKey: "sk-fixture-not-for-logs",
+      authKind: "api_key",
+    } as RuntimeProviderConfig;
+    const runtime = createRuntime({
+      provider: responses,
+      thinkingLevel: "high",
+      history: substantialHistory(),
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: new KeepWarmLedger(),
+    });
+    const internals = runtime as unknown as Internals;
+    const sent: Array<{ options: SimpleStreamOptions }> = [];
+    let warm = false;
+    internals.models.streamSimple = (
+      _model: unknown,
+      _context: unknown,
+      options: SimpleStreamOptions,
+    ) => {
+      sent.push({ options });
+      return messageStream(
+        warm
+          ? { ...assistantMessage({ content: [{ type: "text", text: "OK" }] }), usage: WARM_USAGE }
+          : assistantMessage({ content: [{ type: "text", text: "All set." }] }),
+      );
+    };
+    try {
+      await runtime.prompt("Explain the build.", "user-1", "turn-1");
+      warm = true;
+      await expect(runtime.keepWarm({ now: Date.now() })).resolves.toMatchObject({
+        status: "warmed",
+      });
+      expect(sent).toHaveLength(2);
+      const turn = sent[0]!.options;
+      const keepWarmOptions = sent[1]!.options;
+      expect(keepWarmOptions.maxTokens).toBe(turn.maxTokens);
+      expect(keepWarmOptions.reasoning).toEqual(turn.reasoning);
+      expect(turn.reasoning).toBeTruthy();
+      expect(keepWarmOptions.maxTokens).not.toBe(16);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("gives way when a real turn starts", async () => {
+    const runtime = createRuntime({
+      history: substantialHistory(),
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: new KeepWarmLedger(),
+    });
+    const internals = runtime as unknown as Internals;
+    try {
+      await runTurn(runtime, internals);
+      internals.models.streamSimple = (
+        _model: unknown,
+        _context: unknown,
+        options: SimpleStreamOptions,
+      ) => {
+        const stream = createAssistantMessageEventStream();
+        queueMicrotask(() => stream.push({ type: "start", partial: {} } as never));
+        options.signal?.addEventListener("abort", () => {
+          stream.push({ type: "error", error: { errorMessage: "aborted" } } as never);
+        });
+        return stream;
+      };
+      const pending = runtime.keepWarm({ now: Date.now() });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(runtime.isWarming()).toBe(true);
+      runtime.abortKeepWarm();
+      await expect(pending).resolves.toMatchObject({ status: "failed", reason: "aborted" });
+      expect(runtime.isWarming()).toBe(false);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("refuses a session whose model changed since the recorded request", async () => {
+    const ledger = new KeepWarmLedger();
+    const before = createRuntime({
+      history: substantialHistory(),
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: ledger,
+    });
+    try {
+      await runTurn(before, before as unknown as Internals);
+      expect(ledger.get("session-1")?.modelId).toBe(provider.modelId);
+    } finally {
+      await before.dispose();
+    }
+    const after = createRuntime({
+      history: substantialHistory(),
+      provider: { ...provider, modelId: "claude-opus" },
+      keepWarmLedger: ledger,
+    });
+    try {
+      await expect(after.keepWarm({ now: Date.now() })).resolves.toMatchObject({
+        status: "skipped",
+        reason: "model_changed",
+      });
+    } finally {
+      await after.dispose();
+    }
+  });
+
+  it("keeps no record from a turn that failed", async () => {
+    const ledger = new KeepWarmLedger();
+    const runtime = createRuntime({
+      history: substantialHistory(),
+      host: { call: vi.fn(async () => undefined), onNotification: vi.fn(() => () => {}) },
+      keepWarmLedger: ledger,
+    });
+    const internals = runtime as unknown as Internals;
+    internals.models.streamSimple = () =>
+      messageStream({
+        ...assistantMessage({ content: [], stopReason: "error" }),
+        // A non-retriable failure: the point is the missing record, not retries.
+        errorMessage: "401 invalid_api_key",
+      });
+    try {
+      await runtime.prompt("Explain the build.", "user-1", "turn-1");
+      // A failed turn is not a prefix anybody resumes from, so nothing is
+      // recorded and the next warm request refuses instead of spending.
+      expect(ledger.get("session-1")).toBeUndefined();
+      await expect(runtime.keepWarm({ now: Date.now() })).resolves.toMatchObject({
+        status: "skipped",
+        reason: "no_prior_request",
+      });
+    } finally {
+      await runtime.dispose();
+    }
   });
 });

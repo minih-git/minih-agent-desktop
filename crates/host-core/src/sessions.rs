@@ -18,6 +18,11 @@ pub use history_mutations::{
 mod model_system;
 mod usage;
 pub use usage::record_usage;
+mod keep_warm;
+pub use keep_warm::{
+    local_day_start_ms, record as record_keep_warm, session_totals as keep_warm_session_totals,
+    KeepWarmRecordInput,
+};
 
 pub const MODES: [&str; 3] = ["plan", "goal", "agent"];
 
@@ -4322,6 +4327,8 @@ struct UsageBucketAcc {
     reasoning: i64,
     turns: i64,
     timestamp: i64,
+    /// Keep-warm attempts in this bucket whose spend is already counted above.
+    keep_warm: i64,
 }
 
 impl UsageBucketAcc {
@@ -4345,6 +4352,29 @@ impl UsageBucketAcc {
         self.turns += 1;
     }
 
+    /// Add one keep-warm attempt (ADR 0412).
+    ///
+    /// Its prompt tokens are real tokens the user paid for, so they belong in
+    /// the same counters a turn feeds; the extra counter is what keeps them
+    /// distinguishable afterwards, since none of them belongs to a turn.
+    fn add_keep_warm(
+        &mut self,
+        input: i64,
+        output: i64,
+        cache_read: i64,
+        cache_write: i64,
+        ts: i64,
+    ) {
+        if self.turns == 0 && self.keep_warm == 0 {
+            self.timestamp = ts;
+        }
+        self.input += input;
+        self.output += output;
+        self.cache_read += cache_read;
+        self.cache_write += cache_write;
+        self.keep_warm += 1;
+    }
+
     fn total_tokens(&self) -> i64 {
         self.input + self.output + self.cache_read + self.cache_write
     }
@@ -4360,6 +4390,7 @@ impl UsageBucketAcc {
             "cacheWriteTokens": self.cache_write,
             "reasoningTokens": self.reasoning,
             "turnCount": self.turns,
+            "keepWarmRequests": self.keep_warm,
         })
     }
 }
@@ -4439,6 +4470,48 @@ pub fn get_token_usage_history(
         );
     }
 
+    // Keep-warm spend is history too, and leaving it out would make the totals
+    // understate what the user actually paid (ADR 0412). It is merged into the
+    // same buckets, one counter tells it apart, and a skipped attempt (which
+    // cost nothing) is excluded by the status filter rather than by zero maths.
+    let mut total_keep_warm_tokens = 0i64;
+    let mut total_keep_warm_requests = 0i64;
+    let mut total_keep_warm_cost = 0f64;
+    let mut keep_warm_stmt = db.conn().prepare_cached(
+        "SELECT created_at, input_tokens, output_tokens, cache_read_tokens,
+                cache_write_tokens, COALESCE(cost_usd, 0.0)
+         FROM keep_warm_usage
+         WHERE status <> 'skipped' AND created_at >= ?1 AND created_at <= ?2
+         ORDER BY created_at ASC",
+    )?;
+    let keep_warm_rows = keep_warm_stmt.query_map(params![range_start, range_end], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, f64>(5)?,
+        ))
+    })?;
+    for row in keep_warm_rows {
+        let (created_at, input, output, cache_read, cache_write, cost) = row?;
+        let Some(dt) = local_from_ms(created_at) else {
+            continue;
+        };
+        total_keep_warm_requests += 1;
+        total_keep_warm_tokens += input + output + cache_read + cache_write;
+        total_keep_warm_cost += cost;
+        let key = usage_bucket_key(&dt, bucket);
+        bucket_map.entry(key).or_default().add_keep_warm(
+            input,
+            output,
+            cache_read,
+            cache_write,
+            created_at,
+        );
+    }
+
     let items: Vec<Value> = filled_history_keys(range_start, range_end, bucket)
         .into_iter()
         .map(|(date, timestamp)| {
@@ -4463,6 +4536,9 @@ pub fn get_token_usage_history(
             "cacheWriteTokens": total_cache_write,
             "reasoningTokens": total_reasoning,
             "turnCount": total_turns,
+            "keepWarmRequests": total_keep_warm_requests,
+            "keepWarmTokens": total_keep_warm_tokens,
+            "keepWarmCostUsd": total_keep_warm_cost,
         }
     }))
 }

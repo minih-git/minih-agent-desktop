@@ -26,6 +26,7 @@ import {
   type AppSettings,
   type CloseBehavior,
   type KeybindingOverrides,
+  type KeepWarmResult,
   type PlanExecutionFinishStatus,
 } from "@minih-agent/shared";
 import { AgentExtensionBridge } from "./agent-extensions";
@@ -82,6 +83,7 @@ import {
   createProviderCatalogRuntime,
 } from "./runtime/provider-catalog";
 import { createSessionLaunchRuntime } from "./runtime/session-launch";
+import { createSessionKeepWarm } from "./runtime/keep-warm";
 import { createSessionCoordination } from "./runtime/session-coordination";
 import { createScheduledRuntime } from "./runtime/scheduled";
 import { createDesktopServices } from "./services/desktop-services";
@@ -347,6 +349,12 @@ const vendorOAuth = new VendorOAuth({
 });
 
 let sessionLaunchRuntime: ReturnType<typeof createSessionLaunchRuntime> | null = null;
+/**
+ * A plugin may ask for a keep-warm request as soon as it loads, which happens
+ * before the launch runtime exists. The holder answers `runtime_unavailable`
+ * until the real handler is in place (ADR 0339).
+ */
+let keepWarmSessionHolder: ((sessionId: string) => Promise<KeepWarmResult>) | null = null;
 const pluginServices = createPluginServices({
   dataDir,
   logger,
@@ -375,6 +383,9 @@ const pluginServices = createPluginServices({
     return sessionLaunchRuntime.resolveRuntimeModel(...args);
   },
   vendorOAuth,
+  keepWarmSession: (sessionId) =>
+    keepWarmSessionHolder?.(sessionId) ??
+    Promise.resolve({ status: "skipped" as const, reason: "runtime_unavailable" as const }),
   // A plugin rename writes the same durable title a user rename does.
   announceTitleChange: (sessionId) => void sessionChangeNotifier.titleChanged(sessionId),
 });
@@ -424,6 +435,12 @@ const createdSessionLaunchRuntime = createSessionLaunchRuntime({
   normalizeThinkingLevel,
 });
 sessionLaunchRuntime = createdSessionLaunchRuntime;
+keepWarmSessionHolder = createSessionKeepWarm({
+  runtimeState,
+  getHost,
+  resolveAgentRuntimeLaunch: createdSessionLaunchRuntime.resolveAgentRuntimeLaunch,
+  log: (level, message, data) => logger.app("session", level, message, { data }),
+});
 const {
   refreshUserMcp,
   resolveRuntimeModel,

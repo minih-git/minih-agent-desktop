@@ -1,4 +1,4 @@
-# 04. Data Storage (Schema v27)
+# 04. Data Storage (Schema v28)
 
 ## 0. Ownership decision
 
@@ -2111,3 +2111,35 @@ An unknown price is distinct from a known zero price; partial known costs remain
 on the individual operations. Late usage targets its captured turn and does not
 revive it or debit the currently active turn. Immediate nested parent and owning
 Task remain separate optional transcript/event fields.
+
+## Keep-warm usage ledger (schema v28)
+
+A keep-warm request belongs to no turn (ADR 0339), so its spend cannot live in
+`turns.usage_json`: that column is keyed by a turn row, `usage.listTurns` reads
+it, and the transcript is what the user reads. Inventing a turn to hold the cost
+would put a row in both, which is exactly what the feature must not do.
+
+Schema v28 adds one append-only table, created by the `v27 -> v28` migration and
+by the fresh-install schema from the same DDL constant:
+
+```text
+keep_warm_usage(
+  id, session_id REFERENCES sessions(id) ON DELETE CASCADE,
+  status ('warmed' | 'failed' | 'skipped'), reason,
+  provider_id, model_id,
+  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+  cache_read_ratio, cost_usd, duration_ms, created_at
+)
+```
+
+- `session.keepWarm.record` appends one row and answers `recorded: false` when
+  the session is gone, so a late write cannot resurrect a deleted session.
+- `session.keepWarm.totals` answers one session's spend for a window (default:
+  the local calendar day), which is what the plugin's daily ceiling is checked
+  against.
+- A skipped attempt is stored with no cost: the reason is evidence, and the
+  plugin shows it.
+- `stats.getTokenUsageHistory` counts keep-warm rows into the same buckets a turn
+  feeds and marks them with `keepWarmRequests` / `keepWarmTokens` /
+  `keepWarmCostUsd`, so the totals include the spend and can still be taken
+  apart.
