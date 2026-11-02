@@ -8,6 +8,34 @@
 
 ## 1. Goals
 
+### E2E-UPSTREAM-20261101-selected-reliability
+
+- **Preconditions:** Dedicated worktree, reused dependencies, isolated Electron
+  profile, production sidecar/Agent and local provider fixtures. No user
+  application, account, paid model or production Host database.
+- **Steps:** Reopen a 110,000-Han-character Write and inspect the actual output
+  cap. Return HTTP 402 without credit wording. Manually compact Read/Write/Edit
+  calls with path aliases in the folded recent tail. Resume a settled Task
+  containing Host Read images and MCP resources. Reuse an unchanged runtime,
+  then change Router fallback, model instructions and the learned-memory switch.
+  Open New with 40 long-named tools in a short/narrow panel; scroll and focus
+  first/last rows, open the last tool and close it. Repeat with few/no contributed
+  views, light/dark themes, English/Chinese and an explicit New tab.
+- **Expected:** Full CJK input survives and output fits the window; 402 produces
+  one terminal error without retry. Checkpoint file lists and summary tags retain
+  aliased files from the summarized tail; model-switch recent-window semantics
+  remain unchanged. Resume sends genuine images and MCP text/links, not base64
+  prompt text. Rebuild diagnostics contain field names only and preserve Minih
+  reuse rules without claiming key-refresh cache repair. The title stays pinned,
+  40px rows never compress, and only the launcher list scrolls with a visible
+  themed thumb; ordering, navigation and capabilities remain unchanged.
+- **Automation:** `node scripts/e2e-upstream-runtime-reliability.mjs`,
+  `node scripts/e2e-work-panel-launcher-overflow.mjs`, selected runtime regressions
+  and `node --test apps/desktop/test/work-panel*.test.mjs`. Host persistence is
+  mocked; Rust storage and installed-app acceptance are not claimed.
+- **Status:** Development candidate; actual checks, provenance and limits are in
+  [the selected-import record](../../project/upstream-import-2026-11-01.md).
+
 ### E2E-UPSTREAM-20261028-selected-capabilities
 
 - **Preconditions:** Dedicated request worktree, reused dependencies, isolated

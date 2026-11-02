@@ -9,6 +9,27 @@
 
 ---
 
+### E2E-UPSTREAM-20261101-selected-reliability
+
+- **前提：** 独立工作树、复用依赖、隔离 Electron 配置，使用真实 sidecar／Agent 和
+  本地模型夹具，不访问用户应用、账户、付费模型或生产 Host 数据库。
+- **步骤：** 重开含 110,000 汉字的 Write 历史并检查真实输出预算；返回不带余额措辞
+  的 HTTP 402；手动压缩最近尾部带路径别名的 Read／Write／Edit；恢复含 Host Read
+  图片及 MCP 资源的 Task。复用未变运行时，再分别修改 Router 回退、模型提示和记忆
+  读取开关。在短窄面板打开含 40 个长名称工具的 New，滚动并聚焦首尾行、打开末项再
+  关闭；对照少量／无贡献视图、浅深主题、中英文及显式 New 标签。
+- **预期：** 完整中文参数保留且输出不越窗；402 只发一次请求并终止。摘要文件列表与
+  标签包含折叠尾部的别名路径，切模型 recent-window 语义不变。恢复发送真实图片及 MCP
+  文本／链接，不把 base64 变成提示文本。重建日志只记录字段名并保留 Minih 复用规则，
+  不宣称修复密钥刷新缓存。标题固定、40px 行不压缩，仅列表滚动并显示主题滑块，工具
+  顺序、导航和能力限制保持不变。
+- **自动化：** `node scripts/e2e-upstream-runtime-reliability.mjs`、
+  `node scripts/e2e-work-panel-launcher-overflow.mjs`、定向运行时回归及
+  `node --test apps/desktop/test/work-panel*.test.mjs`。Host 持久化边界为夹具，
+  不代表 Rust 存储或已安装应用验收。
+- **状态：** 开发候选；实际检查、来源及限制见
+  [选择性导入记录](../../../project/upstream-import-2026-11-01.md)。
+
 ### E2E-UPSTREAM-20261028-selected-capabilities
 
 - **前提：** 独立任务工作树、复用依赖、隔离临时配置/SQLite/文件和本地提供商夹具；不使用用户数据、运行中的桌面或付费服务。

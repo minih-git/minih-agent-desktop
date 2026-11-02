@@ -720,7 +720,11 @@ usable report arrives.
 The provider request layer also caps the concrete output budget before every
 parent, subagent, and one-shot request. It estimates the serialized input with
 the pi-ai chars/4 baseline plus a CJK correction, then reserves the larger of
-4,096 tokens or 1% of the effective window. The estimate and the request use
+4,096 tokens or 1% of the effective window. The correction includes Han, Japanese
+kana, Korean Hangul, compatibility ideographs and full-width forms, including
+characters in the serialized tool-call arguments, not only the tool name.
+ASCII escapes are measured as serialized, never decoded and charged twice.
+The estimate and the request use
 the same folded instruction projection: unless the model declares
 mid-conversation system support, superseded chronological system-transcript
 snapshots fold into the single leading system message the adapter will send,
@@ -806,6 +810,10 @@ preparation (`withPiFileOpToolNames`): nothing stored changes, and every other
 tool name is left spelled the way we register it. Without that conversion a
 checkpoint's `readFiles` / `modifiedFiles` and the `<read-files>` section of a
 summary were always empty (D618).
+Stored calls keep the argument spelling sent by the model. File collection uses
+the execution-side alias map: canonical `path` wins, then `file_path`, `filepath`,
+`filePath`, `filename`, `fileName`, and `file`, in that order. An empty or invalid
+present canonical value never falls through to another alias.
 
 A delegate (§5f) runs the same derivation against its own resolved model and
 compacts at its own turn boundaries, without a durable checkpoint chain of
@@ -1722,6 +1730,15 @@ reasoning field, never appended to visible answer text because of an account
 UUID/vendor-name mismatch. The same rule applies when `seedDelegateMessages`
 rebuilds a Task(resume) history: tag restored assistants and synthetic
 tool-call carriers with `model.provider` / `model.id`, not the account row id.
+Parent and delegate restoration share content conversion for Host Read images,
+MCP embedded text resources and resource links. Images remain image blocks,
+never base64 JSON text; each caller retains its own interrupted/error flags,
+details, ToolSearch activation metadata and missing-result placeholder.
+
+Idle runtime rebuild diagnostics name only the first mismatching field, never
+its value. Existing Minih reuse checks include Router `fallbackBaseUrl`, model
+system instructions and the learned-memory read switch. This diagnostic does
+not relax key-refresh retirement or claim improved provider cache hit rates.
 
 ### 7.0.1 User custom system prompt files (issue #542)
 

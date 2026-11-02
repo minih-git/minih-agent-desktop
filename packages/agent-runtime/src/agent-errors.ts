@@ -59,7 +59,7 @@ const EXHAUSTED_QUOTA_CODE_PATTERN =
   /\b(?:insufficient_quota|credit_balance_exhausted|organization_spend_limit_exceeded|project_spend_limit_exceeded|organization_usage_limit_exceeded)\b/i;
 
 const EXHAUSTED_QUOTA_MESSAGE_PATTERN =
-  /\b(?:billing|spending|credit|disk)\s+quotas?\b|\b(?:organization|project)\s+spend\s+limit\s+(?:reached|exceeded)\b|\bquota\b.{0,100}\b(?:plan|billing)\b/i;
+  /\b(?:billing|spending|credit|disk)\s+quotas?\b|\b(?:organization|project)\s+spend\s+limit\s+(?:reached|exceeded)\b|\bquota\b.{0,100}\b(?:plan|billing)\b|\binsufficient\s+credits\b|\brequires\s+more\s+credits\b|\bpayment\s+required\b/i;
 
 /**
  * Whether a provider message reports a context overflow.
@@ -111,7 +111,7 @@ function redactSensitiveErrorText(message: string): string {
 /**
  * Probe the HTTP status across SDK error shapes: `status`/`statusCode`
  * fields (walking the `cause` chain), then a leading "<status>:" or a
- * "(status)" / "status code NNN" marker in the message.
+ * "(status)" / "status code NNN" marker, then a structured Gemini JSON body.
  */
 function extractStatus(err: unknown, message: string): number | undefined {
   let current: any = err;
@@ -132,6 +132,34 @@ function extractStatus(err: unknown, message: string): number | undefined {
       const status = Number(match[1]);
       if (status >= 400 && status < 600) return status;
     }
+  }
+  return httpStatusFromJsonErrorBody(message);
+}
+
+function isHttpErrorStatus(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 400 && value <= 599;
+}
+
+/** Gemini's ApiError.message is an unprefixed JSON error body. Bare codes
+ * and numeric strings are not evidence of an HTTP status. */
+function httpStatusFromJsonErrorBody(message: string): number | undefined {
+  const trimmed = message.trim();
+  if (!trimmed.startsWith("{")) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const record = parsed as Record<string, unknown>;
+  const nested = record.error;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    const error = nested as Record<string, unknown>;
+    if (isHttpErrorStatus(error.code)) return error.code;
+  }
+  if (isHttpErrorStatus(record.code) && typeof record.status === "string" && /^[A-Z][A-Z0-9_]*$/.test(record.status)) {
+    return record.code;
   }
   return undefined;
 }
@@ -569,6 +597,7 @@ export function classifyAgentError(err: unknown): ClassifiedAgentError {
 
   if (status !== undefined) {
     if (status === 401 || status === 403) return result("PROVIDER_UNAUTHORIZED", false);
+    if (status === 402) return result("PROVIDER_ERROR", false);
     if (status === 408) return result("TIMEOUT", true);
     if (status === 413) return result("CONTEXT_TOO_LARGE", false);
     if (status === 429) return result("PROVIDER_RATE_LIMITED", true);

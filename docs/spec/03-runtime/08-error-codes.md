@@ -104,7 +104,7 @@ does not turn temporary thread pressure into a host process exit.
 | `AGENT_SIDECAR_CRASHED` | no | the Node agent sidecar process died mid-turn; the owning turn settles as aborted with this code instead of an unrelated plan-approval code (issue #1077) |
 | `AGENT_SIDECAR_OOM` | no | the sidecar died after its JavaScript heap hit the configured cap, diagnosed from the V8 fatal-error banner in its stderr tail; the same turn fails the same way until the input shrinks (issue #1077) |
 | `MODEL_NOT_CONFIGURED` | no | no usable model selected, or provider rejects the selected model as unknown |
-| `PROVIDER_ERROR` | yes | upstream provider failure; a retryable one (5xx gateway) gets up to ten same-turn retries, while a malformed 400/422 request or a request option the adapter itself refuses (a custom `fetch` for the Google adapters, issue #1072) is terminal |
+| `PROVIDER_ERROR` | yes | upstream provider failure; retryable 5xx gateways get up to ten same-turn retries; malformed 400/422 requests, adapter-refused options, HTTP 402 and explicit billing/credit exhaustion are terminal |
 | `PROVIDER_UNAUTHORIZED` | no | bad/missing provider credentials |
 | `PROVIDER_RATE_LIMITED` | yes | provider rate limited; runtime silently retries up to ten times across setup/stream before the terminal event |
 | `CONTEXT_TOO_LARGE` | no | prompt/context still exceeds the safe model budget after recovery, the second provider overflow occurred, or automatic recovery is disabled |
@@ -597,3 +597,13 @@ Explicit billing, credit, storage or `insufficient_quota` exhaustion takes
 precedence over a wrapped HTTP 429 status and maps to terminal `PROVIDER_ERROR`
 with retry disabled. It is not `PROVIDER_RATE_LIMITED`. Genuine throughput rate
 limits retain the existing bounded same-turn retry budget and delay policy.
+
+HTTP 402 is terminal even without credit wording. `insufficient credits`,
+`requires more credits` and `Payment Required` are explicit exhaustion; a bare
+`credits` mention or `insufficient credentials` does not imply exhaustion.
+
+Unprefixed JSON error bodies use integer codes from 400 through 599 only when
+nested under `error`, or at the root beside a Google RPC UPPER_SNAKE `status`.
+Structured SDK status and explicit status prefixes retain priority; numeric
+strings, plain root codes and malformed JSON are not status evidence. Existing
+400/422 context-overflow, 404 model, 429 and 5xx policies then apply unchanged.
