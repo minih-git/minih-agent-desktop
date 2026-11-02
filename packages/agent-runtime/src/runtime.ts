@@ -8,6 +8,16 @@ import { TOOL_ACTIVATION_SECTION, toolDeclarationPolicy, toolActivationSection, 
 import { orderSystemRows, SystemTranscriptJournal } from "./system-transcript-journal.js";
 import { planWorkspaceRequiredResult } from "./plan-workspace-error.js";
 import { accountModelStream } from "./request-usage.js";
+import {
+  assembleProviderRequest,
+  providerRequestPrefixFingerprint,
+  type AssembledProviderRequest,
+} from "./provider-request.js";
+import {
+  KeepWarmLedger,
+  keepWarmSkipReason,
+  runKeepWarmRequest,
+} from "./keep-warm.js";
 import { modeToolDenial, retainModeToolDeclaration, withModeExecutionGuard } from "./mode-tool-access.js";
 import { restoreHostedSearchReplay } from "./hosted-search-replay.js";
 import { requestExtensionUi } from "./extensions/ui-request.js";
@@ -64,6 +74,7 @@ import {
   type Model,
   type Models,
   type SimpleStreamOptions,
+  type TranscriptContext,
   type ToolResultMessage,
   type Usage,
   type UserMessage,
@@ -128,6 +139,10 @@ import {
   isCommandShellOption,
   isAskToolQuestionWithinLimit,
   isToolsOutputParams,
+  KEEP_WARM_EARLY_USAGE_APIS,
+  KEEP_WARM_PROMPT,
+  keepWarmCacheReadRatio,
+  type KeepWarmResult,
   MAX_ASK_TOOL_QUESTION_CHARS,
   MAX_SUBAGENT_CONCURRENCY,
   normalizeAskToolOption,
@@ -411,6 +426,25 @@ function promptContent(input: string | RuntimePrompt): UserMessage["content"] {
   );
   blocks.push(...trailing.map(promptImageBlock));
   return blocks;
+}
+
+/**
+ * A user message's model-facing content in the one shape every path stores.
+ *
+ * pi normalizes `agent.prompt` text into a text block array, and that array is
+ * what the request carries — the bytes the provider cached. A bare string is not
+ * the same request (verified against the completions adapter, which serializes
+ * the two forms differently). Two paths here never reach pi's normalization —
+ * a steering message and the internal message that starts an approved plan — so
+ * they stored strings while the transcript stored arrays, and a rebuilt runtime
+ * could not reproduce either. Every path that creates a user message now runs
+ * through this, so "how a user message is stored" has one answer and a rebuild
+ * does not have to know where a message came from (ADR 0339).
+ */
+function replayableUserContent(content: UserMessage["content"]): UserMessage["content"] {
+  return typeof content === "string" && content.trim()
+    ? [{ type: "text", text: content }]
+    : content;
 }
 
 function runtimeAttachmentFromMessage(
@@ -1008,12 +1042,25 @@ export type PluginToolDef = {
   planSafeActions?: readonly string[];
 };
 
+/**
+ * One keep-warm request's arguments. `now` is injected so the eligibility rules
+ * can be exercised with a controlled clock (ADR 0339).
+ */
+export type KeepWarmRequestOptions = {
+  now?: number;
+};
+
 export type AgentRuntimeOptions = {
   host: RuntimeHost;
   sessionId: string;
   mode: Mode;
   /** Durable host turn ID for the current prompt, used by plan identity. */
   turnId?: string;
+  /**
+   * Process-wide record of what each session's last real request sent. Owned by
+   * the sidecar so it survives this runtime being reclaimed (ADR 0339).
+   */
+  keepWarmLedger?: KeepWarmLedger;
   provider: RuntimeProviderConfig;
   thinkingLevel: SessionThinkingLevel;
   /** Persisted opt-in for retrying transient provider failures until success. */
@@ -2044,6 +2091,25 @@ export class DesktopAgentRuntime {
    */
   private readonly providerEndpointFallbackState: ProviderEndpointFallbackState =
     createProviderEndpointFallbackState();
+  /** Cross-process-lifetime record of what each real request sent (ADR 0339). */
+  private readonly keepWarmLedger?: KeepWarmLedger;
+  /**
+   * What the last real request carried, kept only until the turn it belongs to
+   * settles. The record a warm request compares against is written at settle,
+   * because only then does the transcript hold the answer the next request will
+   * start from.
+   */
+  private lastKeepWarmRequest?: {
+    maxTokens: number;
+    contextTokens: number;
+    requestedAt: number;
+  };
+  /**
+   * The keep-warm request in flight, if any. A real turn aborts it and never
+   * queues behind it: refreshing a cache is worth nothing if it delays the
+   * message the user is waiting for.
+   */
+  private keepWarmInFlight?: AbortController;
   private pendingProviderRetry?: ReturnType<typeof classifyAgentError>;
   /** Non-429 setup + stream failures since the last successful response. */
   private providerTransientRetryAttempt = 0;
@@ -2169,6 +2235,10 @@ export class DesktopAgentRuntime {
     this.thinkingLevel = clampThinkingLevel(opts.provider, opts.thinkingLevel);
     this.infiniteProviderRetry = opts.infiniteProviderRetry === true;
     this.jevApiKey = opts.jevApiKey;
+    // The record of what each real request sent outlives this instance: the
+    // sidecar reclaims idle runtimes long before the first warm request is due,
+    // so the ledger belongs to the process, not to the runtime (ADR 0339).
+    this.keepWarmLedger = opts.keepWarmLedger;
     this.host = opts.host;
     this.onDiagnostic = opts.onDiagnostic ?? (() => undefined);
     this.hostCloseUnsubscribe = this.host.onClose?.(() => {
@@ -2295,66 +2365,6 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // justified a rebuild does not carry into the next request (issue #234).
         this.providerFetchFailure = undefined;
         this.providerTransportHealth.reset();
-        const requestOptions: SimpleStreamOptions = withProviderHeaders(
-          withOpenCodeSessionHeaders(
-            {
-              ...options,
-              maxRetries: PROVIDER_REQUEST_MAX_RETRIES,
-              sessionId: this.sessionId,
-              // pi-ai only exposes onResponse after a request succeeds. Capture the
-              // failed response separately so a 429 can honor Retry-After headers,
-              // and capture the transport cause of a rejection while the original
-              // Error still exists (issue #234).
-              fetch: providerRequestFetch(
-                m.api,
-                captureProviderResponse(
-                  options?.fetch,
-                  (response, requestBytes, failure) => {
-                    this.providerResponseStatus = response?.status;
-                    this.providerRequestBytes = requestBytes;
-                    this.providerFetchFailure = failure;
-                    if (failure) this.recoverProviderTransport(failure);
-                    // A gateway 502/503 can also state Retry-After, so keep headers
-                    // for every status whose delay is usable, not only for 429.
-                    this.providerRetryHeaders = carriesRetryDelayHeaders(
-                      response?.status,
-                    )
-                      ? response?.headers
-                      : undefined;
-                  },
-                ),
-                this.provider.authKind,
-                {
-                  primaryBaseUrl: m.baseUrl ?? this.provider.baseUrl,
-                  fallbackBaseUrl: this.provider.fallbackBaseUrl,
-                  state: this.providerEndpointFallbackState,
-                },
-              ),
-              onResponse: async (response, responseModel) => {
-                this.providerResponseStatus = response.status;
-                await options?.onResponse?.(response, responseModel);
-              },
-            },
-            {
-              ...openCodeEndpointFromProvider(this.provider, m),
-              sessionId: this.sessionId,
-            },
-          ),
-          mergeProviderHeaders(
-            copilotRequestHeaders(this.provider, context),
-            this.provider.headers,
-          ),
-          m.api,
-        );
-        const hookedOptions = withSessionAffinityOptions(
-          this.withExtensionProviderHooks(requestOptions, m),
-          {
-            provider: this.provider,
-            api: m.api,
-            baseUrl: m.baseUrl,
-            sessionId: this.sessionId,
-          },
-        );
         // The watchdog must be able to *stop* what it abandons. It wraps the
         // retry adapter, so draining alone would let the adapter wake from its
         // backoff and open a second request for this turn while the runtime is
@@ -2363,21 +2373,45 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // with pi's own run signal (Stop must keep working): the adapter refuses
         // to start an attempt on an aborted signal, and its backoff sleep rejects.
         const stallAbort = new AbortController();
-        // Both output clamps, ours and pi-ai's inside `streamSimple`, must see
-        // the instructions the adapter sends, not every superseded snapshot.
-        const requestContext = requestTranscript(m, context);
+        // One assembly serves this request and every keep-warm request that has
+        // to replay it byte for byte (`provider-request.ts`, ADR 0339).
+        const assembled = assembleProviderRequest({
+          provider: this.provider,
+          model: m,
+          context,
+          sessionId: this.sessionId,
+          base: options ?? {},
+          baseFetch: options?.fetch,
+          withHooks: (candidate, model) => this.withExtensionProviderHooks(candidate, model),
+          maxRetries: PROVIDER_REQUEST_MAX_RETRIES,
+          // pi-ai only exposes onResponse after a request succeeds. Capture the
+          // failed response separately so a 429 can honor Retry-After headers,
+          // and capture the transport cause of a rejection while the original
+          // Error still exists (issue #234).
+          capture: (response, requestBytes, failure) => {
+            this.providerResponseStatus = response?.status;
+            this.providerRequestBytes = requestBytes;
+            this.providerFetchFailure = failure;
+            if (failure) this.recoverProviderTransport(failure);
+            // A gateway 502/503 can also state Retry-After, so keep headers
+            // for every status whose delay is usable, not only for 429.
+            this.providerRetryHeaders = carriesRetryDelayHeaders(response?.status)
+              ? response?.headers
+              : undefined;
+          },
+          onResponseSeen: async (response, responseModel) => {
+            this.providerResponseStatus = response.status;
+            await options?.onResponse?.(response, responseModel);
+          },
+          endpointFallbackState: this.providerEndpointFallbackState,
+          omitThinking: this.thinkingLevel === "omit",
+          signal: stallAbort.signal,
+        });
+        const requestContext = assembled.context;
+        const hookedOptions = assembled.options;
+        this.noteProviderRequest(assembled, this.inFlightContextEstimate?.tokens ?? 0);
         const attemptOptions: SimpleStreamOptions = {
           ...hookedOptions,
-          // Cap the output budget at the minih-agent-desktop layer so the estimate
-          // holds for both adapter branches: `streamSimple` re-derives
-          // max_tokens, but the low-level `stream` path used by
-          // `thinkingLevel: "omit"` would otherwise send it untouched, and
-          // both consume an estimate that under-counts CJK text (issue B).
-          maxTokens: clampOutputToContext(m, requestContext, hookedOptions.maxTokens),
-          signal: AbortSignal.any([
-            ...(hookedOptions.signal ? [hookedOptions.signal] : []),
-            stallAbort.signal,
-          ]),
           // Opt-in provider-stream trace (see `provider-stream-trace.ts`): counts
           // what the wire actually carried, so a turn that ends on a text-only
           // message can be attributed to the model or to a gateway that dropped
@@ -2398,7 +2432,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           attemptOptions,
           (retryOptions) => accountModelStream(m, () =>
             this.thinkingLevel === "omit"
-              ? this.models.stream(omitThinkingModel(m), requestContext, retryOptions)
+              ? this.models.stream(assembled.model, requestContext, retryOptions)
               : this.models.streamSimple(m, requestContext, retryOptions), {
                 providerId: this.provider.id,
                 nativeCost: this.provider.modelConfig?.nativeCost,
@@ -2577,6 +2611,217 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
 
   getMode(): Mode {
     return this.mode;
+  }
+
+  /**
+   * Refresh this session's provider prompt cache without joining the
+   * conversation (ADR 0339).
+   *
+   * The request is assembled by the same code a turn uses, from the same
+   * transcript, and is allowed to go out only while its prefix digest still
+   * equals the digest of the session's last real request. The one difference is
+   * the user message appended at the end: the provider caches a prefix, so a
+   * request that stops one message short of the prefix it is refreshing would
+   * write a new cache entry instead of reading the old one.
+   *
+   * Nothing here touches the transcript, the event stream, the turn hooks, the
+   * tool loop, or the session's activity: this is not a turn, and a caller that
+   * ever saw it as one would be looking at a message the model never answered.
+   */
+  async keepWarm(request: KeepWarmRequestOptions = {}): Promise<KeepWarmResult> {
+    // Every answer names the model it was about, so a caller enforcing its own
+    // scope learns it from a refusal instead of paying for a request.
+    const model = { providerId: this.provider.id, modelId: this.provider.modelId };
+    if (this.disposed) {
+      return { status: "skipped", reason: "runtime_unavailable", model };
+    }
+    if (this.getStatus().isRunning) return { status: "skipped", reason: "session_busy", model };
+    if (this.keepWarmInFlight) return { status: "skipped", reason: "already_running", model };
+    const now = request.now ?? Date.now();
+    const level = agentThinkingLevel(this.thinkingLevel);
+    const apiKey = providerRequestKey(this.provider);
+    const earlyUsage = KEEP_WARM_EARLY_USAGE_APIS.includes(this.model.api);
+    const entered = this.keepWarmLedger?.get(this.sessionId);
+    const controller = new AbortController();
+    const assembled = assembleProviderRequest({
+      provider: this.provider,
+      model: this.model,
+      context: this.keepWarmContext(),
+      sessionId: this.sessionId,
+      base: {
+        ...(level === "off" ? {} : { reasoning: level }),
+        ...(apiKey ? { apiKey } : {}),
+      },
+      withHooks: (candidate, model) => this.withExtensionProviderHooks(candidate, model),
+      // A warm request is never retried. It costs money for no answer, so a
+      // failure is a reason to stop, not to try again — and a retry could land
+      // after the message the user is already writing.
+      maxRetries: 0,
+      capture: () => undefined,
+      omitThinking: this.thinkingLevel === "omit",
+      // The output ceiling is the one the real request carried, never a smaller
+      // one: a gateway that turns a Responses `reasoning` request into Anthropic
+      // thinking would otherwise see a `max_tokens` below the thinking budget,
+      // and a changed thinking parameter breaks the message-level cache this
+      // request exists to refresh (ADR 0339). A protocol that cannot report usage
+      // early is read to the end instead, and pays for one short answer.
+      ...(entered && Number.isFinite(entered.maxTokens) && entered.maxTokens > 0
+        ? { maxOutputTokens: entered.maxTokens }
+        : {}),
+      signal: controller.signal,
+    });
+    const contextTokens = estimateContextTokens(
+      assembled.context.messages as unknown as AgentMessage[],
+      this.model,
+    ).tokens;
+    const skipped = keepWarmSkipReason({
+      busy: false,
+      running: false,
+      ...(entered ? { state: entered } : {}),
+      api: this.model.api,
+      providerId: this.provider.id,
+      modelId: this.provider.modelId,
+      thinkingLevel: this.thinkingLevel,
+      fingerprint: assembled.fingerprint,
+      contextTokens,
+      now,
+    });
+    if (skipped) return { status: "skipped", reason: skipped, model };
+    const warmed: TranscriptContext = {
+      ...assembled.context,
+      messages: [
+        ...assembled.context.messages,
+        { role: "user" as const, content: KEEP_WARM_PROMPT, timestamp: now },
+      ],
+    } as TranscriptContext;
+    this.keepWarmInFlight = controller;
+    try {
+      const outcome = await runKeepWarmRequest({
+        options: assembled.options,
+        earlyUsage,
+        abort: () => controller.abort(),
+        stream: (options) =>
+          this.thinkingLevel === "omit"
+            ? this.models.stream(assembled.model, warmed, options)
+            : this.models.streamSimple(assembled.model, warmed, options),
+      });
+      if (!outcome.ok) {
+        return {
+          status: "failed",
+          reason: outcome.reason,
+          ...(outcome.message ? { message: outcome.message } : {}),
+          model,
+        };
+      }
+      // The cache clock restarts here, but the prefix to match does not: the
+      // next warm request is assembled from the transcript, which never holds
+      // the appended message, so it still digests as the same prefix.
+      this.keepWarmLedger?.settle(this.sessionId, Date.now());
+      return {
+        status: "warmed",
+        usage: {
+          ...outcome.usage,
+          providerId: this.provider.id,
+          modelId: this.provider.modelId,
+        },
+        cacheReadRatio: keepWarmCacheReadRatio(outcome.usage),
+        model,
+      };
+    } catch (error) {
+      return {
+        status: "failed",
+        reason: "provider_error",
+        message: error instanceof Error ? error.message : String(error),
+        model,
+      };
+    } finally {
+      if (this.keepWarmInFlight === controller) this.keepWarmInFlight = undefined;
+    }
+  }
+
+  /**
+   * Stop a keep-warm request in flight.
+   *
+   * Called before a real turn starts: a warm request is the lowest-priority
+   * work this session can do, and letting it finish would either delay the
+   * user's message or bill them for an answer nobody reads.
+   */
+  abortKeepWarm(): void {
+    this.keepWarmInFlight?.abort();
+  }
+
+  /** Whether a keep-warm request is in flight. */
+  isWarming(): boolean {
+    return this.keepWarmInFlight !== undefined;
+  }
+
+  /**
+   * The transcript a warm request would send, built the way the turn path
+   * builds it for the wire, minus the journal write that belongs to a real
+   * message.
+   */
+  private keepWarmContext(): TranscriptContext {
+    const messages = this.agent.state.messages as unknown as AgentMessage[];
+    return {
+      messages: alignRetainedReasoningIdentity(
+        convertToLlm(this.dropDuplicateToolCalls(messages)),
+        this.reasoningReplayIdentity(),
+      ) as unknown as TranscriptContext["messages"],
+    } as TranscriptContext;
+  }
+
+  /**
+   * Park what this request carried. The prefix digest itself is not recorded
+   * here: it describes the request that is about to be sent, and a warm request
+   * replays the prefix of the *next* one — the answer this turn is about to
+   * append included. Recording it now would make every later comparison fail.
+   */
+  private noteProviderRequest(
+    assembled: AssembledProviderRequest,
+    contextTokens: number,
+  ): void {
+    if (!this.keepWarmLedger) return;
+    this.lastKeepWarmRequest = {
+      maxTokens: assembled.maxTokens,
+      contextTokens,
+      requestedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Record the prefix the next real request will start from (ADR 0339).
+   *
+   * Called once a turn has settled, when pi has appended the answer to the
+   * transcript. This is the only moment at which the transcript equals what the
+   * next request would send, so it is the only moment a digest is worth
+   * keeping. A turn that failed or was aborted records nothing: its last state
+   * is not a prefix anybody will resume from, and leaving the previous record in
+   * place makes the next warm request refuse rather than spend.
+   */
+  private recordSettledKeepWarmPrefix(): void {
+    const ledger = this.keepWarmLedger;
+    const last = this.lastKeepWarmRequest;
+    if (!ledger || !last) return;
+    const context = this.keepWarmContext();
+    const { fingerprint } = providerRequestPrefixFingerprint({
+      provider: this.provider,
+      model: this.model,
+      context,
+    });
+    ledger.record(this.sessionId, {
+      fingerprint,
+      api: this.model.api,
+      providerId: this.provider.id,
+      modelId: this.provider.modelId,
+      thinkingLevel: this.thinkingLevel,
+      maxTokens: last.maxTokens,
+      contextTokens: estimateContextTokens(
+        context.messages as unknown as AgentMessage[],
+        this.model,
+      ).tokens,
+      requestedAt: last.requestedAt,
+      settledAt: Date.now(),
+    });
   }
 
   private agentUsesTranscriptSystemMessages(): boolean {
@@ -3310,7 +3555,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         ) {
           continue;
         }
-        append(m.id, { role: "user", content, timestamp });
+        append(m.id, { role: "user", content: replayableUserContent(content), timestamp });
       } else if (m.role === "assistant") {
         toolCarrier = undefined;
         // Failed provider responses belong in the transcript for diagnosis,
@@ -8999,6 +9244,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         this.autonomousExecution = false;
         this.clearAgentActivity();
         this.reportMutationTermination();
+        // The turn is settled and its answer is in the transcript: this is the
+        // prefix the next request resumes from (ADR 0339).
+        if (!this.turnHadError && !this.runCancelled) this.recordSettledKeepWarmPrefix();
         this.emit({
           type: "agent_end",
           messageIds: [],
@@ -9206,7 +9454,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const internalId = `approved-${kind}:${execution.id}`;
     const internalMessage: AgentMessage = {
       role: "user",
-      content: instruction,
+      content: replayableUserContent(instruction),
       timestamp: Date.now(),
     };
     this.appendLiveEntry(internalId, internalMessage);
@@ -9536,7 +9784,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       throw Object.assign(new Error("Side notes require the independent ask channel"), { errorCode: "INVALID_ARGUMENT" });
     }
     this.steeringContext(expectedTurnId);
-    const queued: AgentMessage = { role: "user", content: promptContent(input), timestamp: Date.now() };
+    const queued: AgentMessage = {
+      role: "user",
+      content: replayableUserContent(promptContent(input)),
+      timestamp: Date.now(),
+    };
     const toolNames = this.selectedMcpTools(input);
     this.pendingSteering.set(queued, { id: message.id, toolNames });
     this.agent.steer(queued);
@@ -9688,6 +9940,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
 
   async dispose(): Promise<void> {
     if (this.disposed) return;
+    this.keepWarmInFlight?.abort();
     const runner = this.extensionRunner;
     this.extensionRunner = undefined;
     const closingExtensions = runner?.dispose();

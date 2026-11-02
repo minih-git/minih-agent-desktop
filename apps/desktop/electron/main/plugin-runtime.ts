@@ -83,6 +83,7 @@ import {
   type PluginSettingDefinition,
   type PluginComposerTransformMeta,
   type PluginWorkspaceInfo,
+  type KeepWarmResult,
   BUILTIN_SPEECH_PROTOCOL_IDS,
 } from "@minih-agent/shared";
 import {
@@ -489,6 +490,8 @@ export type PluginHostServices = {
   onPluginUnload?: (pluginId: string) => void;
   listModels?: () => Promise<PluginModelInfo[]>;
   getSessionContext?: (sessionId: string, stripToolName?: string) => Promise<PluginLlmContext>;
+  /** One host-side cache refresh for an idle session (`session.keepWarm`). */
+  keepWarm?: (sessionId: string) => Promise<KeepWarmResult>;
   complete?: (input: PluginCompleteInput & {
     sessionId?: string;
     stripToolName?: string;
@@ -597,6 +600,7 @@ const HOST_API_ALLOWLIST = new Set([
   "browser.cdp",
   "models.list",
   "session.getLlmContext",
+  "session.keepWarm",
   "session.getAutoTitleContext",
   "session.setAutoTitle",
   "session.list",
@@ -3070,6 +3074,34 @@ export class PluginRuntime {
       }
       case "session.getLlmContext": {
         return this.readSessionContext(loaded);
+      }
+      // One cache refresh for an idle session (ADR 0339). The host answers with
+      // its own verdict — warmed, or skipped with the reason — and this layer
+      // neither retries nor softens it: a plugin that cannot see why a session
+      // was refused would keep scheduling against it.
+      case "session.keepWarm": {
+        this.assertPermission(loaded, "session.keepWarm");
+        const input = normalizePluginSessionInput(args[0] ?? {}, "other");
+        const sessionId = typeof input.sessionId === "string" ? input.sessionId.trim() : "";
+        if (!sessionId || sessionId.length > 128) {
+          throw apiError("INVALID_PARAMS", "sessionId must be a non-empty string");
+        }
+        if (!this.services.keepWarm) {
+          throw apiError("UNSUPPORTED", "host api not available: session.keepWarm");
+        }
+        const result = await this.services.keepWarm(sessionId);
+        this.services.audit?.({
+          pluginId,
+          api: "session.keepWarm",
+          ok: true,
+          data: {
+            sessionId,
+            status: result.status,
+            ...(result.status === "skipped" ? { reason: result.reason } : {}),
+          },
+          ts: Date.now(),
+        });
+        return result;
       }
       case "session.getAutoTitleContext": {
         this.assertPermission(loaded, "session.autoTitle");

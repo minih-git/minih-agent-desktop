@@ -1484,3 +1484,24 @@ Renderer ES modules may import `react/jsx-runtime` or
 its runtimes alongside `react`, `react-dom`, and `react-dom/client`, before
 evaluating plugin entries. This keeps compiled JSX, hooks and context on the
 host React instance in production and development builds.
+
+## 10. Session cache keep-warm
+
+`pi.session.keepWarm({ sessionId })` asks the host to refresh one idle session's
+provider prompt cache without joining the conversation (ADR 0339). It requires
+the `session.keepWarm` permission, which is granted at install: it is the one
+plugin API that spends the user's money on something the conversation never
+shows.
+
+The host is authoritative. The answer is one of:
+
+- `{ status: "warmed", usage, cacheReadRatio }` — a real request went out and
+  the provider reported its usage;
+- `{ status: "skipped", reason }` — nothing was sent and nothing was spent.
+  The reasons are listed in `docs/plugin-plan/host-api/session.keepWarm/`;
+- `{ status: "failed", reason: "provider_error" | "aborted" }`.
+
+A plugin may poll it as often as its own schedule needs; the host neither
+retries nor queues, and a real turn aborts a request in flight. The spend is
+recorded in `keep_warm_usage` and counted into the usage history, never into a
+turn.

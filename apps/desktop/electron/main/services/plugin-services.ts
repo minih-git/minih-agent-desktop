@@ -10,6 +10,7 @@ import {
   type McpServerStatus,
   type ModelBinding,
   type ShortcutPlatform,
+  type KeepWarmResult,
   type ThinkingLevel,
   type UiMessage,
 } from "@minih-agent/shared";
@@ -83,6 +84,11 @@ export type PluginServicesDependencies = {
   resolveRuntimeModel: RuntimeModelResolver;
   vendorOAuth: VendorOAuth;
   /**
+   * Refresh one session's provider prompt cache (ADR 0339). Absent while the
+   * launch runtime is still booting, which answers `runtime_unavailable`.
+   */
+  keepWarmSession?: (sessionId: string) => Promise<KeepWarmResult>;
+  /**
    * Announce a session title a plugin wrote to the RACP Host. The renderer
    * fan-out below is local; a phone holding the session only learns the new name
    * from a `session.changed` event.
@@ -109,6 +115,7 @@ export function createPluginServices({
   resolveRuntimeModel,
   vendorOAuth,
   announceTitleChange,
+  keepWarmSession,
 }: PluginServicesDependencies) {
   // A plugin request can lose its race with host shutdown or restart.
   const isHostUnavailable = (error: unknown): boolean =>
@@ -357,6 +364,14 @@ export function createPluginServices({
         if (!isHostUnavailable(error)) throw error;
         return [];
       }
+    },
+    // Keep-warm answers with the host's own verdict, reasons included: the
+    // plugin schedules, the host decides (ADR 0339).
+    keepWarm: async (sessionId) => {
+      if (!keepWarmSession) {
+        return { status: "skipped" as const, reason: "runtime_unavailable" as const };
+      }
+      return keepWarmSession(sessionId);
     },
     getSessionContext: async (sessionId, stripToolName) => {
       if (!getHost()) {

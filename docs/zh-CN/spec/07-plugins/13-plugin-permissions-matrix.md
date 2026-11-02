@@ -55,6 +55,7 @@
 | `session.read.own` | 中等 | `pi.session.list`、`pi.session.get`、`pi.session.listMessages` | 安装时确认 | 只能读取本插件导入的会话；不能跨插件访问 |
 | `session.update.own` | 中等 | `pi.session.rename` | 安装时确认 | 只能重命名本插件拥有的活动导入会话 |
 | `session.delete.own` | 高 | `pi.session.delete` | 安装时确认 | 只能回收或清除本插件导入的会话；有频率限制 |
+| `session.keepWarm` | 高 | `pi.session.keepWarm` | 安装时确认 | 每次调用为某个空闲会话发一次真实的模型请求：会花掉用户额度，不往对话里写任何东西；在不划算时以原因拒绝（会话忙、模型或提示词前缀变了、缓存过期、上下文太短、协议不支持）。排期与上限归插件，判定归宿主 |
 | `usage.read` | 中等 | `pi.usage.listTurns` | 安装时确认 | 已完成 turn 事实行的只读列举（每回合 token 计数与标识符，keyset 分页）；不含消息正文，无写路径 |
 | `memory.read` | 高 | `pi.memory.list` | 安装时确认 | 列出用户范围与插件指定项目路径下的活跃长期记忆；不含建议、归档笔记、删除标记或详细来源信息；无写入路径 |
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
@@ -154,6 +155,7 @@ Agent，在 Plan 中不可见。主机返回 `PLUGIN_DISABLED_IN_PLAN`
 | `session.read.own` | Read sessions imported by this plugin | 读取此插件导入的会话 |
 | `session.update.own` | Rename sessions imported by this plugin | 重命名此插件导入的会话 |
 | `session.delete.own` | Trash or purge sessions imported by this plugin | 将此插件导入的会话移入回收站或清除 |
+| `session.keepWarm` | Keep a session's prompt cache warm (spends quota) | 为会话保活 prompt 缓存（会计费） |
 | `usage.read` | Read usage statistics | 读取用量统计 |
 | `memory.read` | Read learned memory | 读取长期记忆 |
 | `agent.complete` | Run a one-shot completion with your models | 用你的模型发起一次补全 |

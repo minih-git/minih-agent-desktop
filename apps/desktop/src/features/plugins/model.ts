@@ -74,6 +74,9 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "session.update.own": "medium",
   "composer.transform": "medium",
   // Per-turn counters and session titles only, per the usage.read matrix row.
+  // Paid, host-sent, and invisible in the conversation: the same tier as the
+  // other quota-spending APIs (ADR 0339).
+  "session.keepWarm": "high",
   "usage.read": "medium",
   // Learned-memory text is more sensitive than usage counters; review it as high risk.
   "memory.read": "high",

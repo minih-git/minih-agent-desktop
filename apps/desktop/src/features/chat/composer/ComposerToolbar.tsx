@@ -182,7 +182,9 @@ export function ComposerToolbar({
       </div>
 
       <div className="composer-right">
-        {localToolsAllowed ? <ComposerControlSlots side="right" /> : null}
+        {localToolsAllowed ? (
+          <ComposerControlSlots side="right" sessionId={workSessionId} />
+        ) : null}
         {contextUsage ? <ContextUsageInspector {...contextUsage} /> : null}
         <ComposerModelPicker
           t={t}

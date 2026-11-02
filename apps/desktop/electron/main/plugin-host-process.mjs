@@ -325,6 +325,10 @@ function buildApi() {
       importBatch: (input) => call("session.importBatch", [input ?? {}]),
       rename: (input) => call("session.rename", [input ?? {}]),
       delete: (input) => call("session.delete", [input ?? {}]),
+      // One paid request that refreshes a session's prompt cache without
+      // joining the conversation (ADR 0339). The host answers with its own
+      // verdict, reasons included.
+      keepWarm: (input) => call("session.keepWarm", [input ?? {}]),
     },
     // Read-only usage facts (`usage.read`). The main-process dispatch owns
     // the permission check and parameter bounds; the host returns per-turn

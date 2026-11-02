@@ -1157,3 +1157,15 @@ MCP 服务器由主机从清单中读取，因此插件无法添加
 
 所有高风险入口点都会断言声明+授予的权限并发出审核日志行。
 插件面板不再接收完整的 `pi` 对象；他们使用 `window.pluginBridge.invoke`。
+
+## 10. 会话缓存保活
+
+`pi.session.keepWarm({ sessionId })` 请宿主刷新一个空闲会话的 prompt 缓存，不进对话（ADR 0339）。它需要安装时授予的 `session.keepWarm` 权限：这是唯一一条把用户的钱花在对话看不见的地方的插件 API。
+
+宿主持有决定权。回答只有三种：
+
+- `{ status: "warmed", usage, cacheReadRatio }` —— 真的发了一次请求，服务商报了用量；
+- `{ status: "skipped", reason }` —— 什么都没发，也没花钱，原因见 `docs/plugin-plan/host-api/session.keepWarm/`；
+- `{ status: "failed", reason: "provider_error" | "aborted" }`。
+
+插件可以按自己的排期轮询；宿主不重试、不排队，真实轮次会中止在飞的请求。花费记在 `keep_warm_usage`，计入用量历史，永远不会算到某个轮次上。

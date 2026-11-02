@@ -3928,6 +3928,54 @@ async fn handle_request(
             Ok(json!({ "hits": hits }))
         }
 
+        // Keep-warm spend (ADR 0412). It is not a turn, so it is not written
+        // through `session.endTurn` and it never appears in `usage.listTurns`:
+        // the only caller is Electron main, which reads the result of the
+        // request it just sent. `recorded: false` means the session was deleted
+        // while the request was in flight, and nothing was stored.
+        "session.keepWarm.record" => {
+            let session_id = params
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))?;
+            let text = |key: &str| params.get(key).and_then(Value::as_str);
+            let count = |key: &str| params.get(key).and_then(Value::as_i64).unwrap_or(0);
+            let input = sessions::KeepWarmRecordInput {
+                session_id,
+                status: text("status").unwrap_or("skipped"),
+                reason: text("reason"),
+                provider_id: text("providerId"),
+                model_id: text("modelId"),
+                input_tokens: count("inputTokens"),
+                output_tokens: count("outputTokens"),
+                cache_read_tokens: count("cacheReadTokens"),
+                cache_write_tokens: count("cacheWriteTokens"),
+                cache_read_ratio: params.get("cacheReadRatio").and_then(Value::as_f64),
+                cost_usd: params.get("costUsd").and_then(Value::as_f64),
+                duration_ms: count("durationMs"),
+            };
+            let st = state.lock().await;
+            let recorded = sessions::record_keep_warm(&st.db, &input, crate::db::now_ms())
+                .map_err(|error| rpc_err(1002, error.to_string(), "INVALID_PARAMS"))?;
+            Ok(json!({ "recorded": recorded }))
+        }
+
+        "session.keepWarm.totals" => {
+            let session_id = params
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))?;
+            let now = crate::db::now_ms();
+            let from_ms = params
+                .get("fromMs")
+                .and_then(Value::as_i64)
+                .unwrap_or_else(|| sessions::local_day_start_ms(now));
+            let to_ms = params.get("toMs").and_then(Value::as_i64).unwrap_or(now);
+            let st = state.lock().await;
+            sessions::keep_warm_session_totals(&st.db, session_id, from_ms, to_ms)
+                .map_err(|error| rpc_err(1000, error.to_string(), "INTERNAL"))
+        }
+
         "stats.getTokenUsageHistory" => {
             let bucket = params
                 .get("bucket")

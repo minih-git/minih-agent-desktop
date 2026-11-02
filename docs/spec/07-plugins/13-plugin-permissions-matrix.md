@@ -52,6 +52,7 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `session.read.own` | medium | `pi.session.list`, `pi.session.get`, `pi.session.listMessages` | Confirm at install | Reads only sessions imported by the calling plugin; no cross-plugin access |
 | `session.update.own` | medium | `pi.session.rename` | Confirm at install | Renames only the calling plugin's active imported sessions |
 | `session.delete.own` | high | `pi.session.delete` | Confirm at install | Trash/purge only the calling plugin's imported sessions; rate-limited |
+| `session.keepWarm` | high | `pi.session.keepWarm` | Confirm at install | One real provider request per call for an idle session: spends user quota, writes nothing to the conversation, and is refused with a reason when it cannot pay off (busy session, changed model or prompt prefix, expired cache, small context, unsupported protocol). The plugin owns the schedule and the ceilings; the host owns the verdict |
 | `usage.read` | medium | `pi.usage.listTurns` | Confirm at install | Read-only listing of completed-turn facts (per-turn token counters and identifiers, keyset-paginated); no message body and no write path |
 | `memory.read` | high | `pi.memory.list` | Confirm at install | Lists active learned-memory notes of the user scope and of any project path the plugin names; no suggestions, archived notes, tombstones, or provenance; no write path |
 | `agent.complete` | high | `pi.agent.complete` | Confirm at install | Host-owned one-shot; spends user quota; `includeSessionContext` also needs `session.read` |
@@ -157,6 +158,7 @@ so "Modify the files it lists" is followed by the list.
 | `session.read.own` | Read sessions imported by this plugin | 读取此插件导入的会话 |
 | `session.update.own` | Rename sessions imported by this plugin | 重命名此插件导入的会话 |
 | `session.delete.own` | Trash or purge sessions imported by this plugin | 将此插件导入的会话移入回收站或清除 |
+| `session.keepWarm` | Keep a session's prompt cache warm (spends quota) | 为会话保活 prompt 缓存（会计费） |
 | `usage.read` | Read usage statistics | 读取用量统计 |
 | `memory.read` | Read learned memory | 读取长期记忆 |
 | `agent.complete` | Run a one-shot completion with your models | 用你的模型发起一次补全 |

@@ -149,6 +149,7 @@ impl Database {
                 tx.execute_batch(WORKTREE_DDL)?;
                 tx.execute_batch(NOTIFICATIONS_DDL)?;
                 tx.execute_batch(LEARNED_MEMORY_DDL)?;
+                tx.execute_batch(KEEP_WARM_DDL)?;
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -216,6 +217,9 @@ impl Database {
             26 => {
                 super::tool_image_storage_migration::migrate(&conn, path)?;
             }
+            27 => {
+                migrate_v27_to_v28(&conn, path)?;
+            }
             legacy @ 1..=6 => {
                 let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
                 drop(conn);
@@ -278,6 +282,10 @@ impl Database {
         }
         if migrated_version == 26 {
             super::tool_image_storage_migration::migrate(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version == 27 {
+            migrate_v27_to_v28(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

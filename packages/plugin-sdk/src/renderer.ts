@@ -125,9 +125,19 @@ export type PluginBlockRendererSlotProps = {
   readonly source: string;
 };
 
-/** `composerControl` props: only where the control is mounted. */
+/**
+ * `composerControl` props: where the control is mounted, and which session the
+ * composer it sits in belongs to.
+ *
+ * `sessionId` is absent on the home composer, where no session exists yet. A
+ * control that is about one conversation (rather than about composing) needs it
+ * for the same reason the draft is per session: the same control is mounted
+ * again for every session switch, and acting on the wrong one would be
+ * invisible to the user.
+ */
 export type PluginComposerControlSlotProps = {
   readonly position: PluginSlotPosition;
+  readonly sessionId?: string;
 };
 
 /**

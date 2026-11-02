@@ -1,0 +1,96 @@
+<!-- status: implemented -->
+<!-- status: implemented -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>session.keepWarm · 目录</title>
+<style>
+  :root{
+    --bg:#0e0e0e; --surface:#161616; --surface-2:#1b1b1b; --line:#2a2a2a; --line-2:#353535;
+    --text:#ededed; --text-2:#b0b0b0; --muted:#7d7d7d; --faint:#5c5c5c;
+    --ok:#40c977; --ok-bg:rgba(64,201,119,.10);
+    --warn:#ff8549; --warn-bg:rgba(255,133,73,.10);
+    --error:#ff6764; --error-bg:rgba(255,103,100,.10);
+    --host:#4c8dff; --plugin:#c27aff; --slot:#ff8549;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6}
+  a{color:inherit} code,kbd{font-family:var(--mono);font-size:12px;color:var(--text-2);background:var(--surface-2);padding:1px 5px;border-radius:4px}
+  pre{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);padding:12px 14px;border-radius:10px;overflow:auto;color:var(--text-2);white-space:pre-wrap}
+  .plan-nav{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:10px 28px;background:#0c0c0c;border-bottom:1px solid var(--line);font-size:13px}
+  .plan-nav a{color:var(--text-2);text-decoration:none;padding:3px 8px;border-radius:6px}
+  .plan-nav a:hover{background:var(--surface);color:var(--text)}
+  .plan-nav a[aria-current="page"]{background:var(--surface);color:var(--text);box-shadow:inset 0 0 0 1px var(--line-2)}
+  .plan-nav .sep{color:var(--faint);padding:0 2px} .plan-nav .spacer{flex:1}
+  .top{border-bottom:1px solid var(--line);padding:26px 28px 20px;background:linear-gradient(180deg,#141414,#0e0e0e)}
+  .top h1{margin:0 0 6px;font-size:21px} .top p{margin:0;color:var(--text-2);max-width:76ch}
+  .top .meta{margin-top:8px;color:var(--faint);font-size:12.5px}
+  main{max-width:1080px;margin:0 auto;padding:26px 28px 80px}
+  section{margin:0 0 36px}
+  section>h2{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:16.5px}
+  section>h2 .n{font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line-2);border-radius:4px;padding:1px 6px}
+  section>.lead{margin:0 0 14px;color:var(--text-2);max-width:82ch}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin:0 0 12px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.id{font-family:var(--mono);font-size:12.5px;color:var(--text-2)}
+  .pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-family:var(--mono);white-space:nowrap}
+  .pill.has{color:var(--ok);background:var(--ok-bg)}
+  .pill.warn{color:var(--warn);background:var(--warn-bg)}
+  .pill.perm{color:var(--host);background:rgba(76,141,255,.12)}
+  .callout{margin:12px 0;padding:12px 14px;border-radius:10px;background:var(--surface);border-left:3px solid var(--line-2);color:var(--text-2);font-size:13px}
+  .callout.warn{border-left-color:var(--warn)}
+  .callout b{color:var(--text)}
+  ul,ol{margin:0 0 12px;padding-left:1.35em;color:var(--text-2)}
+  li{margin:0 0 4px} li b{color:var(--text)}
+</style>
+</head>
+<body>
+<nav class="plan-nav">
+  <a href="../index.html">host-api</a><span class="sep">/</span><a href="index.html">session.keepWarm</a>
+  <span class="spacer"></span>
+  <a href="index.html" aria-current="page">目录</a>
+  <a href="requirements.html">需求</a>
+  <a href="data-flow.html">数据流</a>
+</nav>
+<header class="top">
+  <div class="crumb">docs/plugin-plan · host-api · session.keepWarm</div>
+  <h1>会话缓存保活 · 目录</h1>
+  <p>让宿主自己去刷新某个空闲会话的 prompt 缓存。请求不进对话、不跑工具、不写任何消息，只读一次用量就停；插件只负责什么时候问、什么时候别再问。</p>
+  <div class="meta">status: implemented · folder id <code>session.keepWarm</code> · 权限 <code>session.keepWarm</code> · 决策 <a href="../../../../adr/0339-session-cache-keep-warm.md">ADR 0339</a></div>
+</header>
+<main>
+  <section>
+    <h2><span class="n">01</span>这个文件夹覆盖什么</h2>
+    <p class="lead">一次付钱但不进对话的模型请求，以及谁来决定它能不能发。插件拿到的是一个结论（已保活，或者被跳过的原因），不是一个可以强推的入口。</p>
+    <table>
+      <tr><th>页面</th><th>回答</th></tr>
+      <tr><td class="id"><a href="requirements.html">requirements.html</a></td><td>用户已定的规则、接口形状、场景、不做什么</td></tr>
+      <tr><td class="id"><a href="data-flow.html">data-flow.html</a></td><td>谁把什么传给谁、过程中写到哪里、出错怎么回</td></tr>
+    </table>
+  </section>
+  <section>
+    <h2><span class="n">02</span>一句话形状</h2>
+    <pre>const result = await pi.session.keepWarm({ sessionId });
+// { status: "warmed", usage, cacheReadRatio }
+// { status: "skipped", reason: "session_busy" | "no_prior_request" | ... }
+// { status: "failed", reason: "provider_error" | "aborted" }</pre>
+    <div class="callout warn"><b>会花钱。</b>这是应用里唯一一条“用户看不见、但要付费”的插件能力。可见性由三处补上：输入区的会话级状态、按次落库的用量、以及设计里写死的上限。</div>
+  </section>
+  <section>
+    <h2><span class="n">03</span>相邻条目</h2>
+    <ul>
+      <li><a href="../usage.listTurns/index.html"><code>usage.listTurns</code></a> — 保活用量不进这个轮次账本，单独记账。</li>
+      <li><a href="../events.on/index.html"><code>events.on</code></a> — 计时从 <code>session:turnEnded</code> 开始。</li>
+      <li><a href="../../ui/composer/index.html"><code>ui/composer</code></a> — 开关和状态的落点。</li>
+      <li><a href="../../runtime/turn-continue/index.html"><code>runtime/turn-continue</code></a> — 花钱就得可见那条原则，本 API 是它记录的例外。</li>
+    </ul>
+  </section>
+</main>
+
+</body>
+</html>

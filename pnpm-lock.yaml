@@ -636,6 +636,9 @@ importers:
 
   packages/plugin-sdk:
     dependencies:
+      '@minih-agent/shared':
+        specifier: workspace:*
+        version: link:../shared
       typebox:
         specifier: ^1.3.13
         version: 1.3.27
