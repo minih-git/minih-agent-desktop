@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-02",
+    highlights: [
+      "Mantenha o cache de prompt de uma sessão ociosa aquecido: ao ativar no compositor, o app reenvia a última solicitação daquela sessão a cada 50 minutos, sem acrescentar nada à conversa, então voltar a um chat longo não paga de novo por todo o contexto. O compositor mostra a próxima solicitação, o gasto de hoje e o motivo da parada; começa desligado e para sozinho após quatro solicitações seguidas, a um dólar por sessão por dia, ou quando uma solicitação encontra o cache já reescrito.",
+      "Uma conversa que ficou ociosa agora envia, ao ser reaberta, a mesma solicitação que enviou no início, de modo que o prefixo em cache do provedor é reutilizado em vez de ser escrito outra vez.",
+    ],
+  },
+
+  {
     version: "1.1.5",
     date: "2026-10-31",
     highlights: [

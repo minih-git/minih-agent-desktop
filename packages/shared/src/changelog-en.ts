@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-02",
+    highlights: [
+      "Keep an idle session's prompt cache warm: switch it on in the composer and the app re-sends that session's last prompt about every 50 minutes without adding anything to the conversation, so returning to a long chat does not pay for the whole context again. The composer shows the next request, today's spend and why it stopped; it starts off, and stops by itself after four requests in a row, at one dollar a session per day, or when a request finds the cache already rewritten.",
+      "A conversation reopened after sitting idle now sends the prompt it originally sent, so the provider's cached prefix is reused instead of being written a second time.",
+    ],
+  },
+
+  {
     version: "1.1.5",
     date: "2026-10-31",
     highlights: [

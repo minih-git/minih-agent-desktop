@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-02",
+    highlights: [
+      "Mantén caliente la caché de prompt de una sesión inactiva: al activarlo en el compositor, la app reenvía la última petición de esa sesión cada 50 minutos aproximadamente sin añadir nada a la conversación, así que volver a un chat largo no vuelve a pagar todo el contexto. El compositor muestra la próxima petición, el gasto de hoy y por qué se detuvo; empieza apagado y se detiene solo tras cuatro peticiones seguidas, a un dólar por sesión y día, o cuando una petición encuentra la caché ya reescrita.",
+      "Una conversación que llevaba tiempo inactiva ahora envía al reabrirse la misma petición que envió al principio, de modo que se reutiliza el prefijo en caché del proveedor en lugar de escribirlo otra vez.",
+    ],
+  },
+
+  {
     version: "1.1.5",
     date: "2026-10-31",
     highlights: [

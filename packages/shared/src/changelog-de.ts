@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-02",
+    highlights: [
+      "Den Prompt-Cache einer ruhenden Sitzung warm halten: Im Composer eingeschaltet, sendet die App etwa alle 50 Minuten die letzte Anfrage dieser Sitzung erneut, ohne der Unterhaltung etwas hinzuzufügen – ein langer Chat muss beim Zurückkommen nicht erneut für den ganzen Kontext zahlen. Der Composer zeigt die nächste Anfrage, die heutigen Kosten und den Grund für einen Stopp; standardmäßig aus, und es stoppt von selbst nach vier Anfragen in Folge, bei einem Dollar pro Sitzung und Tag oder wenn eine Anfrage den Cache bereits neu geschrieben vorfindet.",
+      "Eine längere Zeit ruhende Unterhaltung sendet beim Wiederöffnen dieselbe Anfrage wie ursprünglich, sodass das zwischengespeicherte Präfix des Anbieters wiederverwendet statt erneut geschrieben wird.",
+    ],
+  },
+
+  {
     version: "1.1.5",
     date: "2026-10-31",
     highlights: [

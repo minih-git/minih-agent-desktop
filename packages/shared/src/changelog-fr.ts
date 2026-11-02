@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-02",
+    highlights: [
+      "Gardez le cache de prompt d'une session inactive au chaud : activé depuis le compositeur, l'application renvoie la dernière requête de cette session environ toutes les 50 minutes sans rien ajouter à la conversation, si bien que revenir sur une longue discussion ne repaye plus tout le contexte. Le compositeur affiche la prochaine requête, la dépense du jour et la raison de l'arrêt ; désactivé par défaut, il s'arrête de lui-même après quatre requêtes d'affilée, à un dollar par session et par jour, ou lorsqu'une requête trouve le cache déjà réécrit.",
+      "Une conversation restée inactive envoie désormais, à sa réouverture, la requête qu'elle avait envoyée au départ : le préfixe mis en cache par le fournisseur est réutilisé au lieu d'être réécrit.",
+    ],
+  },
+
+  {
     version: "1.1.5",
     date: "2026-10-31",
     highlights: [

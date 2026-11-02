@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-11-02",
+    highlights: [
+      "可以给空闲会话的 prompt 缓存续命：在输入区打开开关后，应用大约每 50 分钟重发一次该会话上一次的请求，不在对话里增加任何内容，回到长对话时不必再为整段上下文付费。输入区显示下次时间、今日花费和停止原因；默认关闭，连续 4 次、每会话每天 1 美元、或者某次请求发现缓存已被重写时自动停止。",
+      "空闲一段时间的会话重新打开时，会发出与当初相同的请求，服务商缓存得以复用，而不是重新写一遍。",
+    ],
+  },
+
+  {
     version: "1.1.5",
     date: "2026-10-31",
     highlights: [
