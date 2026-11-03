@@ -561,6 +561,7 @@ jobs:
           set -euo pipefail
           ruby <<'RUBY'
           require "yaml"
+          require "digest"
 
           paths = Dir["latest-mac-*.yml"].sort
           expected_paths = ["latest-mac-arm64.yml", "latest-mac-x64.yml"]
@@ -574,6 +575,13 @@ jobs:
 
           files = feeds.flat_map { |feed| feed.fetch("files") }
             .uniq { |file| file.fetch("url") }
+          # Stapling changes DMG bytes after electron-builder wrote its feed.
+          files.each do |file|
+            path = file.fetch("url")
+            abort "Missing or unsafe macOS artifact: #{path}" unless File.basename(path) == path && File.file?(path)
+            file["size"] = File.size(path)
+            file["sha512"] = Digest::SHA512.file(path).base64digest
+          end
           zip = files.find { |file| file.fetch("url").end_with?(".zip") }
           abort "macOS updater feeds contain no ZIP" if zip.nil?
 

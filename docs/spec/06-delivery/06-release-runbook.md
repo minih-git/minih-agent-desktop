@@ -268,7 +268,11 @@ then checks the identity, code-signing integrity (including
 `minih-agent-desktop-host-core`), Gatekeeper `Notarized Developer ID`, and both stapled
 tickets before any artifact upload. The per-architecture `latest-mac.yml` files
 are renamed before upload; the publish job merges them into one feed after
-downloading both artifacts.
+downloading both artifacts. Before publishing, it verifies every referenced
+artifact exists and recomputes each size and SHA-512 from the final bytes:
+DMG stapling happens after electron-builder generated the original metadata.
+The merged legacy `path`/`sha512` still names a ZIP; signed installers are not
+rewritten during this metadata reconciliation.
 
 For the app ticket, the signing watchdog injects a temporary `xcrun` shim when
 `PI_STAPLER_MAX_ATTEMPTS` is set. It retries only the exact `stapler staple`
