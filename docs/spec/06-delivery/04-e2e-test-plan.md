@@ -20734,3 +20734,17 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   no approval bypass and no missing-merge-state failure.
 - **Milestone**: Maintenance.
 - **Status**: Automated; implementation candidate validation required.
+
+### E2E-RELEASE-macos-metadata-after-stapling
+
+- **Preconditions**: Both architecture feeds and ZIP/DMG artifact fixtures.
+- **Steps**: Generate feeds, append a simulated notarization ticket to each DMG,
+  then execute the production workflow's Ruby merge step. Repeat with a missing DMG.
+- **Expected**: All published sizes and SHA-512 values match final artifact bytes;
+  both architecture ZIPs remain unchanged and the legacy path/hash selects a ZIP.
+  A missing installer fails publication rather than retaining stale metadata.
+- **Automation**: `apps/desktop/test/macos-updater-metadata.test.mjs`.
+- **Specs linked**: `06-delivery/06-release-runbook.md` §4.3.
+- **Acceptance**: Release metadata integrity; no installer mutation.
+- **Milestone**: Maintenance.
+- **Status**: Automated with local filesystem fixtures and the production merge step.

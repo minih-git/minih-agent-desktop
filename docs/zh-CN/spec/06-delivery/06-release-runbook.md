@@ -217,7 +217,9 @@ macOS 矩阵使用 arm64 的 `macos-15` 和 Intel x64 的
 `macos-15-intel`。每个作业验证 `uname -m`，向 electron-builder 传入匹配
 的 `--arm64` 或 `--x64`，并在同一本机运行器上构建
 `minih-agent-desktop-host-core`。每个架构的 `latest-mac.yml` 会在上传前重命名，
-发布作业下载两个工件后再合并为一个更新源。
+发布作业下载两个工件后再合并为一个更新源。发布前会确认所引用的文件存在，
+并按最终字节重新计算大小和 SHA-512：DMG 装订发生在 electron-builder 生成元数据之后。
+合并后的旧版 `path`/`sha512` 仍指向 ZIP；核对元数据不会改写已签名安装包。
 
 共享的 electron-builder 配置在 macOS 平台级别为 ZIP 应用带架构后缀的命名模板，
 并在 DMG 目标级别覆盖该模板。两个公开架构都会明确可见：arm64 通道发布

@@ -10741,3 +10741,16 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **验收**：F / Security / Quality；无私有数据丢失、无审批绕过和缺失合并状态错误。
 - **里程碑**：维护。
 - **状态**：已自动化，需验证实施候选。
+
+### E2E-RELEASE-macos-metadata-after-stapling
+
+- **前提**：两个架构的更新源与 ZIP/DMG 文件夹具。
+- **步骤**：生成更新源后向 DMG 追加模拟公证票据，执行生产工作流的 Ruby 合并步骤；
+  再分别模拟文件缺失和引用目录外文件。
+- **预期**：文件大小与 SHA-512 匹配最终产物，两种 ZIP 保持不变，旧版路径指向 ZIP；
+  文件缺失或不安全路径必须阻止发布。
+- **自动化**：`apps/desktop/test/macos-updater-metadata.test.mjs`。
+- **关联规格**：`06-delivery/06-release-runbook.md` §4.3。
+- **验收**：发布元数据完整性，安装包字节不变。
+- **里程碑**：维护。
+- **状态**：本地文件夹具直接执行生产合并步骤，已自动化。
