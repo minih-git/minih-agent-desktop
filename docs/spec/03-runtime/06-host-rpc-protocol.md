@@ -943,6 +943,12 @@ against a live host, and replaying one after the final row would be wrong.
 - `plugins.setScope` — activation scope (ADR 0056)
 - `plugins.resolveExecution` — resolve which plugin tools/skills/MCP servers
   are active for a session's project before a turn starts
+- `plugins.settings.update({ pluginId, patch })` — internal Electron-to-Host
+  settings persistence; the runtime supplies the loaded plugin id. Requires an
+  installed plugin and an object patch; merges defaults, stored data and patch
+  under the Host mutex and atomically writes its fixed `settings.json`.
+  Returns `{ updated: true }`, never setting values. Corrupt, oversized and
+  linked files fail without overwriting them. No new plugin/renderer RPC access.
 
 ### Marketplace
 - `market.refresh` — fetch and cache the catalog from the configured URL

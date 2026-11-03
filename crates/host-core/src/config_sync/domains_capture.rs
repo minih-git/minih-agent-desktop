@@ -514,6 +514,12 @@ pub(crate) fn capture(
             .entities
             .extend(capture_plugins(st, plugin_intents)?);
     }
+    if selection.is_selected(DOMAIN_PLUGIN_SETTINGS) {
+        snapshot
+            .manifest
+            .entities
+            .extend(crate::config_sync::plugin_settings::capture(st)?);
+    }
     if selection.is_selected(DOMAIN_AUTOMATION) {
         snapshot.manifest.entities.extend(capture_automation(st)?);
     }

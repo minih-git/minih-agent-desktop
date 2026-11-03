@@ -21,6 +21,8 @@ export const CONFIG_SYNC_CATEGORIES = [
 ] as const;
 
 export type ConfigSyncCategory = (typeof CONFIG_SYNC_CATEGORIES)[number];
+/** Internal domains share existing user-facing category switches. */
+export type ConfigSyncDomain = ConfigSyncCategory | "learnedMemory" | "pluginSettings";
 
 export type ConfigSyncStatus =
   | "notConfigured"
@@ -98,7 +100,7 @@ export type ConfigSyncPreview = {
 
 export type ConfigSyncPendingApproval = {
   id: string;
-  domain: ConfigSyncCategory;
+  domain: ConfigSyncDomain;
   entityId: string;
   label: string;
   reason: "newDevice" | "securityChange" | "dependency" | "mapping" | "conflict";

@@ -27,6 +27,7 @@ mod provider_validation;
 mod providers;
 mod registry;
 mod renderer;
+pub(crate) mod settings;
 mod validation;
 
 pub use manifest::PluginManifest;

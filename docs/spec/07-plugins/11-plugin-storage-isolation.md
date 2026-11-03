@@ -66,17 +66,17 @@ Prohibited:
 
 ## 5. Settings storage
 
-Plugin settings can be stored in:
+SDK settings use the fixed `plugins/data/<plugin-id>/settings.json` format.
+Electron binds the loaded plugin identity and forwards SDK writes to the
+internal Host `plugins.settings.update` RPC. Host serializes the merge with
+configuration-sync imports and atomically replaces the file; malformed,
+oversized or linked files are refused without resetting existing data.
 
-- The host DB's `kv` table under the plugin's namespace (03-runtime/04 §4.1)
-- Or settings.json under the plugin data directory
-
-Storing centrally in the host is recommended for easier backup and uninstall cleanup.
-
-```ts
-// kv: ns = `plugin:<plugin-id>`, key, value_json, updated_at
-// uninstall cleanup = DELETE FROM kv WHERE ns = 'plugin:<plugin-id>'
-```
+Cloud sync's Plugins category also carries declared portable settings after
+local approval. Only `contributes.settings` keys with valid portable values
+travel; undeclared/reserved fields, credentials, absolute paths, databases,
+caches and permissions stay local. See [configuration sync](../03-runtime/22-config-sync.md).
+This is not a full plugin-data backup; existing SDK signatures are unchanged.
 
 ## 6. Log isolation
 

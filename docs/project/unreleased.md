@@ -1,4 +1,10 @@
 # Unreleased changes
+- Cloud sync no longer aborts when an acknowledged configuration record is
+  missing on one side: edited values remain reviewable beside the deletion.
+  The Plugins category now includes declared portable settings with local
+  approval, preserving private data, credentials and local paths. Upgrade all
+  vault devices before using plugin-settings sync. The Memory category is
+  correctly labeled Personal learned memory; project memory remains local.
 - Tool-call CJK content now participates in output budgeting, including Japanese
   kana and Korean Hangul. HTTP 402 and explicit credit exhaustion stop retrying,
   and structured Gemini JSON errors use their actual HTTP status.

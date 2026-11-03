@@ -225,6 +225,9 @@ pub(super) fn validate_remote_manifest(
         {
             bail!("CONFIG_SYNC_LIMIT_EXCEEDED: remote entity is too large");
         }
+        if entity.domain == domains::DOMAIN_PLUGIN_SETTINGS {
+            crate::config_sync::plugin_settings::validate(entity)?;
+        }
     }
     let mut resource_ids = BTreeSet::new();
     for entity in &manifest.entities {

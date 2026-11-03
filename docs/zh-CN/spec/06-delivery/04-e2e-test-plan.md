@@ -10726,3 +10726,18 @@ host-created files. The full app's file-preview viewer is covered separately.
 | E2E-MCP-MARKET-explicit-install-owner | Project 仅写入所选项目，All/Global 仍写入全局；其他归属的同名安装不阻止当前目标安装。未选项目时，入口和直接安装路径均拒绝项目安装，不回退全局。 | `node --test apps/desktop/test/mcp-market-owner-user-path.test.mjs`；真实设置和市场组件，模拟 IPC 边界，不进行网络安装 |
 | E2E-TRANSCRIPT-reader-takes-over-smooth-navigation | 缩略图或跳转的平滑滚动期间，手动滚动、展开或历史导航在当前偏移取消旧导航。按钮空格键、select、编辑区按键及嵌套滚动输入不取消祖先导航；子代理遵守同一归属规则。 | 滚动输入单测及隔离的 `scripts/e2e-transcript-disclosure-anchor.mjs` 生产钩子交互探针 |
 | E2E-TRANSCRIPT-non-tail-turn-stays-live | 会话运行时，steering 旁注或系统行后的流式轮次仍活动；普通用户消息界定当前运行边界，历史阅读窗口不激活旧流式行。结束后恢复原折叠规则，不覆盖用户选择。 | `turn-process.test.mjs`、`transcript-live-turn.test.mjs`；行边界回归及真实转录组件渲染 |
+
+### E2E-CONFIG-SYNC-plugin-settings-and-missing-entities
+
+- **前提**：隔离 Host、本地 Router 夹具、独立数据目录与声明设置的全局插件。
+- **步骤**：一端保存可移植值与私有字段；同步后先检查审批前无写入，再审批并读回。
+  保留另一端本机路径与私有字段时更新设置，重复同步，随后移除一个覆盖值并同步重置。
+  分别合并一侧编辑、另一侧缺项，以及未修改和显式删除的对称情况。
+- **预期**：审批前不写入，不自动启用插件；可移植值与重置到达，路径与私有字段不被覆盖。
+  无修改不创建新版本。缺项不再中止同步，编辑与删除形成明确冲突，删除记录无资源引用。
+- **自动化**：`pnpm test:e2e:config-sync`；`config_sync::plugin_settings::tests`、
+  `plugins::settings::tests`、`config_sync::merge::merge_missing_tests`。
+- **关联规格**：`03-runtime/22-config-sync.md`、`07-plugins/11-plugin-storage-isolation.md`。
+- **验收**：F / Security / Quality；无私有数据丢失、无审批绕过和缺失合并状态错误。
+- **里程碑**：维护。
+- **状态**：已自动化，需验证实施候选。

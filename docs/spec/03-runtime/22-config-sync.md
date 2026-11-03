@@ -145,6 +145,35 @@ a revision that carries it: the manifest decode refuses an unknown domain
 with it every later sync and restore, until it is upgraded. Shipping a new
 domain therefore requires every device of a vault to run a build that knows it.
 
+### Declared plugin settings
+
+The `plugins` category covers installation records and the separate
+`pluginSettings` domain. A global plugin's saved `settings.json` contributes
+only keys declared in `contributes.settings`, validated against their types.
+The payload contains the plugin id, managed keys and saved values: a managed
+key without a value is an explicit reset. Fresh installations without a saved
+file contribute nothing. Each record is bounded to 256 keys and 64 KiB.
+
+Undeclared or host-reserved fields, credentials, absolute filesystem paths,
+plugin databases, caches, permissions and activation remain device-local.
+Nested JSON is checked as well. The receiver validates the installed plugin's
+declarations before any write, preserves private/local fields, and stages
+missing plugins or model providers as dependency approvals. Every settings
+import requires local approval; it never installs or enables a plugin.
+Cloud deletion of a settings record does not erase the receiving plugin's
+private file; declared field resets are the explicit cross-device reset path.
+
+SDK writes use internal `plugins.settings.update` through Electron Main and
+the Host settings repository. The existing file format and SDK signatures are
+unchanged. Host serializes atomic replacement with sync application and refuses
+linked, malformed or oversized files rather than replacing them with defaults.
+Plugins caching settings may need to reload after an approved restore.
+
+This domain has the version requirement above: upgrade every vault device
+before synchronizing plugin settings. Older revisions without the domain stay
+readable and do not reset local plugin settings. Installation intent remains
+in its existing domain, separate from the settings file.
+
 ### 2.1 The global boundary is enforced on every path
 
 The scope test reads the entity itself — the `mappingRequired` marker and the
@@ -269,6 +298,11 @@ merge by declared entity unit; provider, MCP, skill, and automation records are
 not merged as arbitrary arrays. Tombstones carry deletion state and refreshed
 digests and remain in subsequent baselines. An unselected category is not a
 deletion.
+A previously acknowledged entity missing from one manifest is normalized to
+a deletion tombstone with cleared resource references and a refreshed digest.
+An unchanged peer converges to that deletion; an edited peer retains both the
+edit and deletion as an explicit conflict. Neither direction throws a missing
+merge-state error. Category opt-outs still carry the baseline, never a delete.
 
 In `backup` mode, a run publishes a local snapshot to `backup-head`. It reads
 head metadata for CAS/history but does not download or apply remote

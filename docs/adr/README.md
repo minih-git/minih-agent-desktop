@@ -411,3 +411,4 @@ Each ADR includes:
 | sidecar-idle-runtime-reclaim | [Reclaim idle agent runtimes in the sidecar](sidecar-idle-runtime-reclaim.md) | Accepted for implementation |
 | browser-execution-presentation-lifecycle | [Browser execution outlives presentation](browser-execution-presentation-lifecycle.md) | Accepted (2026-10-24; amends ADR retained-browser-pages-per-tab) |
 | model-reasoning-effort-override | [Explicit per-model reasoning-effort compatibility](model-reasoning-effort-override.md) | Accepted (2026-10-24; per-model `supportsReasoningEffort` overrides automatic inference) |
+| plugin-settings-configuration-sync | [Host-owned declared plugin settings synchronization](plugin-settings-configuration-sync.md) | Accepted for implementation (2026-11-03) |
