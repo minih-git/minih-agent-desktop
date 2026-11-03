@@ -2,6 +2,19 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.3.0",
+    date: "2026-11-03",
+    highlights: [
+      "Önceden paylaşılan bir yapılandırma bir cihazda eksik olduğunda bulut eşitlemesi artık durmaz; düzenleme ve silme açık çakışma seçenekleri olarak korunur.",
+      "Eklenti eşitlemesi, yerel onaydan sonra bildirilen taşınabilir ayarları geri yükler; özel veriler, kimlik bilgileri, yerel yollar ve izinler korunur.",
+      "Eklenti ayarı eşitlemesini kullanmadan önce aynı kasadaki tüm cihazları güncelleyin. Bellek seçeneği artık Kişisel öğrenilmiş bellek olarak adlandırılır; proje ve grup belleği yerel kalır.",
+      "Tükenen kredi ve HTTP 402 yeniden denemeleri durdurur. Yapılandırılmış Gemini hataları gerçek durumunu korur; araç bağımsız değişkenlerindeki CJK metni çıktı bütçesine katılır.",
+      "Sürdürülen alt ajanlar görüntü ve MCP kaynaklarını korur; konuşma sıkıştırması yol takma adları ve son mesajlarda belirtilen dosyaları saklar.",
+      "Uzun çalışma paneli araç listeleri satırları küçültmeden veya başlığı gizlemeden kayar; yerleşik model kataloğu yenilendi.",
+    ],
+  },
+
+  {
     version: "1.2.0",
     date: "2026-11-02",
     highlights: [

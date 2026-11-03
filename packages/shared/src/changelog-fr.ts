@@ -2,6 +2,19 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.3.0",
+    date: "2026-11-03",
+    highlights: [
+      "La synchronisation ne s'arrête plus lorsqu'une configuration auparavant partagée manque sur un appareil ; modifications et suppressions restent des choix explicites de conflit.",
+      "Les plugins synchronisent désormais leurs réglages portables déclarés après approbation locale, en préservant données privées, identifiants, chemins locaux et autorisations.",
+      "Mettez à jour tous les appareils d'un coffre avant de synchroniser les réglages des plugins. La mémoire est désormais nommée Mémoire personnelle apprise ; les mémoires de projets et groupes restent locales.",
+      "Un crédit épuisé ou HTTP 402 arrête les nouvelles tentatives. Les erreurs Gemini structurées gardent leur statut et les arguments CJK des outils comptent dans le budget de sortie.",
+      "Les sous-agents repris conservent images et ressources MCP ; la compaction garde les fichiers cités via des alias et les messages récents.",
+      "Les longues listes d'outils défilent sans réduire les lignes ni masquer le titre ; le catalogue de modèles intégré est actualisé.",
+    ],
+  },
+
+  {
     version: "1.2.0",
     date: "2026-11-02",
     highlights: [

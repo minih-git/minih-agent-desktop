@@ -2,6 +2,19 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.3.0",
+    date: "2026-11-03",
+    highlights: [
+      "Die Cloud-Synchronisierung bricht bei fehlenden zuvor geteilten Einstellungen nicht mehr ab; Änderungen und Löschungen bleiben als ausdrückliche Konfliktauswahl erhalten.",
+      "Die Plugin-Synchronisierung umfasst deklarierte portable Einstellungen nach lokaler Bestätigung; private Daten, Zugangsdaten, lokale Pfade und Berechtigungen bleiben erhalten.",
+      "Aktualisieren Sie alle Geräte eines Tresors vor der Synchronisierung von Plugin-Einstellungen. Die Speicheroption heißt nun Persönliche gelernte Erinnerungen; Projekt- und Gruppenerinnerungen bleiben lokal.",
+      "Erschöpftes Guthaben und HTTP 402 beenden Wiederholungen. Strukturierte Gemini-Fehler behalten ihren Status, und CJK-Inhalte in Werkzeugargumenten werden im Ausgabebudget berücksichtigt.",
+      "Fortgesetzte Unteragenten behalten Bilder und MCP-Ressourcen; die Gesprächskomprimierung bewahrt Dateien aus Pfadaliasen und den jüngsten Nachrichten.",
+      "Lange Werkzeuglisten im Arbeitsbereich scrollen ohne verkleinerte Zeilen oder verdeckten Titel; der integrierte Modellkatalog wurde aktualisiert.",
+    ],
+  },
+
+  {
     version: "1.2.0",
     date: "2026-11-02",
     highlights: [
