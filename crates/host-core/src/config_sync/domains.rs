@@ -31,6 +31,7 @@ pub const DOMAIN_MEMORY: &str = "memory";
 /// a deletion, create groups, and fail the whole revision on a user-scope entity
 /// with no mapping. A domain an older build does not know is skipped instead.
 pub const DOMAIN_LEARNED_MEMORY: &str = "learnedMemory";
+pub const DOMAIN_PLUGIN_SETTINGS: &str = "pluginSettings";
 
 pub(crate) const PORTABLE_APPLICATION_FIELDS: &[&str] = &[
     "theme",
@@ -71,7 +72,7 @@ const PROJECT_SCOPE_PAYLOAD_KEYS: &[&str] = &[
     "logicalId",
 ];
 
-pub const ALL_DOMAINS: [&str; 10] = [
+pub const ALL_DOMAINS: [&str; 11] = [
     DOMAIN_APPLICATION,
     DOMAIN_PROVIDERS,
     DOMAIN_MCP,
@@ -79,6 +80,7 @@ pub const ALL_DOMAINS: [&str; 10] = [
     DOMAIN_SUBAGENTS,
     DOMAIN_INSTRUCTIONS,
     DOMAIN_PLUGINS,
+    DOMAIN_PLUGIN_SETTINGS,
     DOMAIN_AUTOMATION,
     DOMAIN_MEMORY,
     DOMAIN_LEARNED_MEMORY,
@@ -236,10 +238,22 @@ pub const DOMAIN_ADAPTERS: &[DomainAdapterSpec] = &[
             "activation",
         ],
         identity: "plugin id",
-        references: &["future validated SDK settings only"],
+        references: &[],
         merge_granularity: "one installation intent",
         activation_policy: "explicit installation and activation",
         recovery_policy: "overlay journal",
+    },
+    DomainAdapterSpec {
+        domain: DOMAIN_PLUGIN_SETTINGS,
+        schema_version: 1,
+        exportable_fields: &["declared portable setting values", "explicit field resets"],
+        secret_fields: &[],
+        local_overlays: &["private fields", "absolute paths", "credentials", "plugin database", "permissions"],
+        identity: "plugin id",
+        references: &["installed global plugin and its setting declarations"],
+        merge_granularity: "one plugin settings record",
+        activation_policy: "installed plugin plus local approval",
+        recovery_policy: "atomic settings replacement and import journal",
     },
     DomainAdapterSpec {
         domain: DOMAIN_AUTOMATION,
@@ -367,7 +381,12 @@ impl CategorySelection {
     }
 
     pub fn is_selected(&self, domain: &str) -> bool {
-        ALL_DOMAINS.contains(&domain) && self.0.get(domain).copied().unwrap_or(true)
+        let category = if domain == DOMAIN_PLUGIN_SETTINGS {
+            DOMAIN_PLUGINS
+        } else {
+            domain
+        };
+        ALL_DOMAINS.contains(&domain) && self.0.get(category).copied().unwrap_or(true)
     }
 
     pub fn include_secrets(&self, requested: bool) -> bool {
@@ -535,13 +554,17 @@ pub fn preview(snapshot: &LocalSnapshot, selection: &CategorySelection) -> Previ
     let mut counts = PreviewCounts::default();
     let mut by_category: BTreeMap<String, CategoryPreview> = BTreeMap::new();
     for entity in &snapshot.manifest.entities {
-        let category =
-            by_category
-                .entry(entity.domain.clone())
-                .or_insert_with(|| CategoryPreview {
-                    category: entity.domain.clone(),
-                    ..CategoryPreview::default()
-                });
+        let category_id = match entity.domain.as_str() {
+            DOMAIN_PLUGIN_SETTINGS => DOMAIN_PLUGINS,
+            DOMAIN_LEARNED_MEMORY => DOMAIN_MEMORY,
+            domain => domain,
+        };
+        let category = by_category
+            .entry(category_id.to_string())
+            .or_insert_with(|| CategoryPreview {
+                category: category_id.to_string(),
+                ..CategoryPreview::default()
+            });
         if selection.is_selected(&entity.domain) {
             counts.supported += 1;
             category.supported += 1;

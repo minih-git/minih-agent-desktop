@@ -497,6 +497,9 @@ fn apply_entity(
         )?;
         return Ok(());
     }
+    if entity.domain == domains::DOMAIN_PLUGIN_SETTINGS {
+        return crate::config_sync::plugin_settings::apply(st, entity);
+    }
     if entity.domain == domains::DOMAIN_PLUGINS {
         let plugin_id = entity
             .payload

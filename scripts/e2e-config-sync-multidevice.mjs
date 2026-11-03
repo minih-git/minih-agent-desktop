@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { Host, resolveHostBinary } from "./e2e/host.mjs";
 import { startRouterFixture } from "./e2e/config-sync-router-fixture.mjs";
 import { MARKERS, PASSWORD, connectRouter, rpc, runSyncJourney, runBackupJourney } from "./e2e/config-sync-journey.mjs";
+import { runPluginSettingsJourney } from "./e2e/config-sync-plugin-settings-journey.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const label = `config-sync-${randomUUID()}`;
@@ -48,6 +49,7 @@ try {
   for (const host of hosts) await connectRouter(host, store.account);
   const context = { a, b, c, d, router: store.account, store, step };
   await runSyncJourney(context);
+  await runPluginSettingsJourney(context);
   await runBackupJourney(context);
   step("ciphertext-retention-and-disconnect");
   const inventory = await store.inventory();

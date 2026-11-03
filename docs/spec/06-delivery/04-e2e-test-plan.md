@@ -10844,7 +10844,7 @@ selection already in place shows it without waiting for another event.
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
 | C / F / Quality — Desktop automations | E2E-SCHEDULED-desktop-automation-lifecycle, E2E-SCHEDULED-run-in-activity-feed |
-| F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account |
+| F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account, E2E-CONFIG-SYNC-plugin-settings-and-missing-entities |
 | A / C — Unicode stdio framing | E2E-RPC-unicode-separators |
 | C / G / Quality — Plugins navigation | E2E-NAV-plugins-button-goes-back |
 | C / D / Quality — Sidebar row states | E2E-LAYOUT-sidebar-row-states |
@@ -20708,3 +20708,29 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 | E2E-MCP-MARKET-explicit-install-owner | Install under Project, All and Global; Project writes only to the selected project, All/Global remain global. Another owner's installation does not block this target. With no project, both the entry point and direct install path refuse project installation without global fallback. | `node --test apps/desktop/test/mcp-market-owner-user-path.test.mjs`; real settings/market components and mocked IPC boundary, no network installation |
 | E2E-TRANSCRIPT-reader-takes-over-smooth-navigation | While minimap/jump smooth scrolling runs, manual scrolling, disclosure or history navigation cancels it at the current offset. Button Space/select/editable keys and nested-scroller input do not cancel an ancestor's navigation. Delegated scrollers follow the same ownership rules. | Transcript scroll/input unit regressions and the isolated `scripts/e2e-transcript-disclosure-anchor.mjs` production-hook interaction probe |
 | E2E-TRANSCRIPT-non-tail-turn-stays-live | While a session runs, streaming rows remain active behind steering side notes or system rows. An ordinary user message bounds the current run, and a retained historical reading window never activates older streaming rows. Settling restores normal disclosure defaults without overriding explicit choices. | `turn-process.test.mjs` and `transcript-live-turn.test.mjs`; row-boundary regressions and production transcript component rendering |
+
+### E2E-CONFIG-SYNC-plugin-settings-and-missing-entities
+
+- **Preconditions**: Isolated Host processes, local Router fixture, separate
+  profiles and the same globally installed fixture plugin with declared settings.
+- **Steps**: Save portable and local/private fields on one Host; sync and read
+  the other before approval, then approve and read its settings file. Update
+  portable fields while retaining a different local path and undeclared field.
+  Repeat sync unchanged, then remove a saved override and sync its reset.
+  Separately merge an acknowledged entity with an edit on one side and absence
+  on the other, in both directions, including unchanged and explicit deletions.
+- **Expected**: No settings write before approval; portable values and resets
+  arrive without enabling the plugin or copying private fields or paths.
+  Repeated sync creates no new revision. Missing entities do not abort merge;
+  edits and deletions remain explicit conflict candidates, and unchanged cases
+  converge to canonical tombstones with no resource references.
+- **Automation**: `pnpm test:e2e:config-sync` plugin-settings journey;
+  `config_sync::plugin_settings::tests`, `plugins::settings::tests`, and
+  `config_sync::merge::merge_missing_tests` cover validation, file safety,
+  missing dependencies, symmetry and stable repeated merges.
+- **Specs linked**: `03-runtime/22-config-sync.md`,
+  `07-plugins/11-plugin-storage-isolation.md`, ADR plugin-settings-configuration-sync.
+- **Acceptance criterion**: F / Security / Quality — no lost local/private data,
+  no approval bypass and no missing-merge-state failure.
+- **Milestone**: Maintenance.
+- **Status**: Automated; implementation candidate validation required.

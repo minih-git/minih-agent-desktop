@@ -319,6 +319,8 @@ export type PluginHostServices = {
   agentExtensionsChanged?: () => void;
   getLocale?: () => string;
   getAppVersion?: () => string;
+  /** Host serializes settings writes with cloud-sync imports. */
+  updatePluginSettings: (pluginId: string, patch: Record<string, unknown>) => Promise<void>;
   /** Legacy host-owned prompt enhancement settings, used only for one-time migration. */
   getLegacyPromptEnhancementSettings?: () =>
     | LegacyPromptEnhancementSettings
@@ -1427,6 +1429,9 @@ export class PluginRuntime {
   ) {
     this.services = {
       getWorkspacePath: () => null,
+      updatePluginSettings: async () => {
+        throw apiError("UNSUPPORTED", "plugin settings persistence service missing");
+      },
       showToast: (message, level) => {
         this.toasts.push({ message, level });
       },
@@ -5347,9 +5352,9 @@ export class PluginRuntime {
             ...current,
             [THEME_VARIABLES_SETTINGS_KEY]: { ...stored, [id]: { ...previous, ...patch } },
           };
-          const dir = this.pluginDataDir(pluginId);
-          mkdirSync(dir, { recursive: true });
-          writeFileSync(settingsFile, JSON.stringify(next, null, 2), "utf8");
+          await this.services.updatePluginSettings(pluginId, {
+            [THEME_VARIABLES_SETTINGS_KEY]: next[THEME_VARIABLES_SETTINGS_KEY],
+          });
           const registered = this.themes.get(id);
           if (registered) {
             registered.variablesCss = this.themeVariablesCss(loaded, id, declarations);
@@ -5377,9 +5382,9 @@ export class PluginRuntime {
           }
         },
         setSettings: async (partial: Record<string, unknown>) => {
-          const current = await this.hostApi(loaded).plugin.getSettings();
-          const next = { ...current, ...partial };
-          writeFileSync(join(dataPath(), "settings.json"), JSON.stringify(next, null, 2), "utf8");
+          const patch = { ...partial };
+          delete patch[THEME_VARIABLES_SETTINGS_KEY];
+          await this.services.updatePluginSettings(pluginId, patch);
         },
         getDataPath: async () => dataPath(),
       },

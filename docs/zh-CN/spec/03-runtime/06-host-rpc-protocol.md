@@ -609,6 +609,10 @@ off | minimal | low | medium | high | xhigh | max
 - `plugins.setScope` — 激活作用域（ADR 0056）
 - `plugins.resolveExecution` — 在回合开始前解析某会话所属项目激活了哪些
   插件工具/技能/MCP 服务器
+- `plugins.settings.update({ pluginId, patch })` — Electron 到 Host 的内部设置持久化。
+  运行时绑定已加载插件身份；Host 合并默认值、原数据与补丁，和同步应用串行，
+  原子写入固定 `settings.json`，返回 `{ updated: true }` 而非设置值。
+  损坏、超限或符号链接文件会报错且不覆盖；不新增插件或 Renderer 的 RPC 访问权。
 
 ### 市场
 - `market.refresh` — 从配置的 URL 拉取并缓存目录

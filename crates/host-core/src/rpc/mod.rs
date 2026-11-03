@@ -3,6 +3,7 @@ mod config_sync_rpc;
 mod easytier_rpc;
 mod memory_rpc;
 mod memory_tools;
+mod plugin_settings_rpc;
 mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
@@ -1945,6 +1946,9 @@ async fn handle_request(
         return config_sync_rpc::handle(state, method, params, tx)
             .await
             .map_err(config_sync_rpc_err);
+    }
+    if method == "plugins.settings.update" {
+        return plugin_settings_rpc::update(state, params).await;
     }
     if method.starts_with("easytier.") {
         return easytier_rpc::handle(state, method, params).await;

@@ -231,6 +231,11 @@ export function createPluginServices({
   const plugins: PluginRuntime = new PluginRuntime({
     pluginShortcuts,
     pluginSockets,
+    updatePluginSettings: async (pluginId, patch) => {
+      const host = getHost();
+      if (!host) throw new Error("host unavailable");
+      await host.call("plugins.settings.update", { pluginId, patch });
+    },
     providerOAuthPrompt: (pluginId, loginId, input) =>
       vendorOAuth.promptPluginOAuth(pluginId, loginId, input),
     providerOAuthNotify: (pluginId, loginId, event) =>

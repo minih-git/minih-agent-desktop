@@ -95,6 +95,17 @@ fn conflict_candidates(
     vec![local_candidate, remote_candidate]
 }
 
+/// The canonical deletion tombstone for an acknowledged entity: the deletion
+/// flag set, no live resource references, and a digest covering that state so
+/// every device publishes the same tombstone for the same base.
+fn deletion_tombstone(base: &PortableEntity) -> PortableEntity {
+    let mut tombstone = base.clone();
+    tombstone.deleted = true;
+    tombstone.resource_ids.clear();
+    refresh_digest(&mut tombstone);
+    tombstone
+}
+
 fn merge_application_fields(
     base: &PortableEntity,
     local: &PortableEntity,
@@ -139,10 +150,12 @@ fn merge_application_fields(
 }
 
 /// Merge a captured local state and a remote revision against the last
-/// acknowledged common base. A missing entity is meaningful only when it is
-/// present in the base; callers represent that deletion as a tombstone before
-/// invoking this function. This keeps category opt-out from becoming an
-/// accidental remote delete.
+/// acknowledged common base. A side that no longer carries an entity present
+/// in the base is treated as a deletion: an unchanged side converges on a
+/// canonical tombstone, and an edited side keeps both the edit and the
+/// deletion as candidates instead of dropping either one. Callers still
+/// represent a local disappearance with an explicit tombstone first, so a
+/// category opt-out cannot become an accidental remote delete.
 pub fn three_way(
     base: Option<&RevisionManifest>,
     local: &RevisionManifest,
@@ -236,52 +249,12 @@ pub fn three_way(
                     vec![local_candidate, remote_candidate]
                 }
             }
-            (Some(base), Some(local), remote) if same_version(local, base) => {
-                remote.cloned().into_iter().collect()
+            (Some(base), Some(local), Some(remote)) if same_version(local, base) => {
+                vec![remote.clone()]
             }
-            (Some(base), local, Some(remote)) if same_version(remote, base) => {
-                local.cloned().into_iter().collect()
+            (Some(base), Some(local), Some(remote)) if same_version(remote, base) => {
+                vec![local.clone()]
             }
-            (Some(base), None, Some(remote)) if same_version(remote, base) => {
-                vec![PortableEntity {
-                    domain: base.domain.clone(),
-                    entity_id: base.entity_id.clone(),
-                    label: base.label.clone(),
-                    deleted: true,
-                    requires_approval: false,
-                    secret_bearing: base.secret_bearing,
-                    mapping_required: base.mapping_required,
-                    digest: base.digest.clone(),
-                    payload: base.payload.clone(),
-                    resource_ids: Vec::new(),
-                }]
-            }
-            (Some(base), Some(local), None) if same_version(local, base) => {
-                vec![PortableEntity {
-                    domain: base.domain.clone(),
-                    entity_id: base.entity_id.clone(),
-                    label: base.label.clone(),
-                    deleted: true,
-                    requires_approval: false,
-                    secret_bearing: base.secret_bearing,
-                    mapping_required: base.mapping_required,
-                    digest: base.digest.clone(),
-                    payload: base.payload.clone(),
-                    resource_ids: Vec::new(),
-                }]
-            }
-            (Some(base), None, None) => vec![PortableEntity {
-                domain: base.domain.clone(),
-                entity_id: base.entity_id.clone(),
-                label: base.label.clone(),
-                deleted: true,
-                requires_approval: false,
-                secret_bearing: base.secret_bearing,
-                mapping_required: base.mapping_required,
-                digest: base.digest.clone(),
-                payload: base.payload.clone(),
-                resource_ids: Vec::new(),
-            }],
             (Some(base), Some(local), Some(remote)) if is_learned_memory(local, remote) => {
                 // Both devices changed the same scope, and by now neither side
                 // equals the base. Notes are merged by fingerprint, so two
@@ -297,15 +270,43 @@ pub fn three_way(
                     ),
                 }
             }
-            (Some(base), local, remote) => {
-                let local = local.ok_or_else(|| anyhow::anyhow!("local merge state missing"))?;
-                let remote = remote.ok_or_else(|| anyhow::anyhow!("remote merge state missing"))?;
+            (Some(base), Some(local), Some(remote)) => conflict_candidates(
+                &mut conflicts,
+                base,
+                local,
+                remote,
+                conflict_reason(local, remote),
+            ),
+            (Some(base), Some(local), None) if same_version(local, base) || local.deleted => {
+                vec![deletion_tombstone(base)]
+            }
+            (Some(base), None, Some(remote)) if same_version(remote, base) || remote.deleted => {
+                vec![deletion_tombstone(base)]
+            }
+            (Some(base), None, None) => vec![deletion_tombstone(base)],
+            (Some(base), Some(local), None) => {
+                // The remote revision stopped carrying an entity the local
+                // device edited. Keep the edit and the deletion as explicit
+                // candidates instead of dropping either side.
+                let deletion = deletion_tombstone(base);
                 conflict_candidates(
                     &mut conflicts,
                     base,
                     local,
+                    &deletion,
+                    conflict_reason(local, &deletion),
+                )
+            }
+            (Some(base), None, Some(remote)) => {
+                // Mirrors the missing-remote side: keep the remote edit and
+                // the local deletion as explicit candidates.
+                let deletion = deletion_tombstone(base);
+                conflict_candidates(
+                    &mut conflicts,
+                    base,
+                    &deletion,
                     remote,
-                    conflict_reason(local, remote),
+                    conflict_reason(&deletion, remote),
                 )
             }
         };
@@ -582,3 +583,7 @@ mod tests {
         assert!(merged.entities.iter().any(|entity| !entity.deleted));
     }
 }
+
+#[cfg(test)]
+#[path = "merge_missing_tests.rs"]
+mod merge_missing_tests;

@@ -69,17 +69,16 @@ type PluginRegistry = {
 
 ## 5. 设置存储
 
-插件设置可以存储在：
+SDK 设置继续使用固定的 `plugins/data/<plugin-id>/settings.json` 格式。
+Electron 绑定已加载的插件身份，经内部 `plugins.settings.update` RPC 交给 Host；
+Host 与同步恢复串行合并并原子替换文件。损坏、超限或符号链接文件会报错，
+不会被默认值覆盖。
 
-- 插件命名空间下主机数据库的 `kv` 表 (03-runtime/04 §4.1)
-- 或者插件数据目录下的settings.json
-
-建议在主机中集中存储，以便于备份和卸载清理。
-
-```ts
-// kv: ns = `plugin:<plugin-id>`, key, value_json, updated_at
-// uninstall cleanup = DELETE FROM kv WHERE ns = 'plugin:<plugin-id>'
-```
+云同步的插件类别包含安装记录与声明的可移植设置，恢复需要本机审批。
+只有 `contributes.settings` 中声明且类型有效的可移植值参与同步；
+私有与宿主保留字段、凭据、绝对路径、数据库、缓存和权限仍留在本机。
+详见[配置同步](../03-runtime/22-config-sync.md)。
+这不是完整插件数据备份；现有 SDK 签名保持不变。
 
 ## 6. 日志隔离
 

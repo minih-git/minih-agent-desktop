@@ -3,6 +3,7 @@ pub(crate) mod domains;
 pub(crate) mod engine;
 pub(crate) mod learned_memory;
 pub(crate) mod merge;
+pub(crate) mod plugin_settings;
 mod transport;
 
 pub(crate) use crypto::{
