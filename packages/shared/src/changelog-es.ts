@@ -2,6 +2,19 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.3.0",
+    date: "2026-11-03",
+    highlights: [
+      "La sincronización ya no se detiene si falta una configuración compartida anteriormente; las ediciones y eliminaciones se conservan como opciones explícitas de conflicto.",
+      "La sincronización de plugins incluye ajustes portátiles declarados tras aprobación local, conservando datos privados, credenciales, rutas locales y permisos.",
+      "Actualiza todos los dispositivos de una bóveda antes de sincronizar ajustes de plugins. La opción de memoria ahora indica Memoria personal aprendida; la memoria de proyectos y grupos permanece local.",
+      "El crédito agotado y HTTP 402 detienen los reintentos. Los errores estructurados de Gemini conservan su estado y el contenido CJK de las herramientas cuenta en el presupuesto de salida.",
+      "Los subagentes reanudados conservan imágenes y recursos MCP; la compactación mantiene archivos citados mediante alias y mensajes recientes.",
+      "Las listas largas del panel de trabajo se desplazan sin encoger filas ni ocultar el título; se actualizó el catálogo de modelos integrado.",
+    ],
+  },
+
+  {
     version: "1.2.0",
     date: "2026-11-02",
     highlights: [

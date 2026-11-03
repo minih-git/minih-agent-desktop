@@ -2,6 +2,19 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.3.0",
+    date: "2026-11-03",
+    highlights: [
+      "Cloud sync no longer stops when a previously shared configuration is missing on one device; edits and deletions remain available as explicit conflict choices.",
+      "Plugin sync now includes declared portable settings, restored after local approval while preserving private data, credentials, local paths and permissions.",
+      "Upgrade every device sharing a vault before using plugin-settings sync. The Memory option is now labeled Personal learned memory; project and group memories remain on their own device.",
+      "Exhausted credit and HTTP 402 responses stop retrying, structured Gemini errors retain their real status, and CJK tool-call content participates in output budgeting.",
+      "Resumed subagents keep image and MCP resource context, and conversation compaction retains files referenced through aliases and the recent message tail.",
+      "Long work-panel launcher lists scroll without shrinking their rows or hiding the title; the bundled model catalog is refreshed.",
+    ],
+  },
+
+  {
     version: "1.2.0",
     date: "2026-11-02",
     highlights: [

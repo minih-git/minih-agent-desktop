@@ -2,6 +2,19 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.3.0",
+    date: "2026-11-03",
+    highlights: [
+      "A sincronização não para mais quando falta uma configuração compartilhada anteriormente; edições e exclusões permanecem como opções explícitas de conflito.",
+      "A sincronização de plugins inclui configurações portáteis declaradas após aprovação local, preservando dados privados, credenciais, caminhos locais e permissões.",
+      "Atualize todos os dispositivos de um cofre antes de sincronizar configurações de plugins. A opção agora se chama Memória pessoal aprendida; memórias de projetos e grupos permanecem locais.",
+      "Crédito esgotado e HTTP 402 interrompem novas tentativas. Erros estruturados do Gemini mantêm seu status, e texto CJK nos argumentos de ferramentas conta no orçamento de saída.",
+      "Subagentes retomados preservam imagens e recursos MCP; a compactação mantém arquivos citados por aliases e mensagens recentes.",
+      "Listas longas de ferramentas rolam sem encolher linhas nem ocultar o título; o catálogo de modelos integrado foi atualizado.",
+    ],
+  },
+
+  {
     version: "1.2.0",
     date: "2026-11-02",
     highlights: [
