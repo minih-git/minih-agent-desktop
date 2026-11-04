@@ -14,6 +14,14 @@ const histories = new Map();
 const checkpoints = new Map();
 const parentCalled = new Set();
 const fixtureErrors = [];
+const providerErrorFixtures = [
+  { modelId: "key-rejected-400", status: 400, message: "API key not valid. Please pass a valid API key.", code: "PROVIDER_UNAUTHORIZED" },
+  { modelId: "key-rejected-422", status: 422, message: "invalid_api_key", code: "PROVIDER_UNAUTHORIZED" },
+  ...[500, 502, 503].map((status) => ({
+    modelId: `wrapped-overflow-${status}`, status, code: "CONTEXT_TOO_LARGE",
+    message: "input length (9000 tokens) exceeds the model's maximum context length (8192 tokens)",
+  })),
+];
 let sequence = 0;
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
 function reply(res, body, calls) {
@@ -37,7 +45,11 @@ const server = createServer(async (req, res) => {
     for await (const part of req) raw += part;
     const body = JSON.parse(raw);
     requests.push(body);
-    if (body.model === "credit-error") {
+    const rejected = providerErrorFixtures.find((entry) => entry.modelId === body.model);
+    if (rejected) {
+      res.writeHead(rejected.status, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { code: rejected.status, message: rejected.message } }));
+    } else if (body.model === "credit-error") {
       res.writeHead(402, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: { message: "fixture account unavailable" } }));
     } else if (body.model === "resume-parent" && !parentCalled.has(body.model)) {
@@ -122,6 +134,18 @@ try {
   assert.equal(creditErrors[0].event.error.code, "PROVIDER_ERROR");
   assert.equal(creditErrors[0].event.error.retriable, false);
   console.log("PASS HTTP 402 terminal through real request and runtime");
+
+  for (const fixture of providerErrorFixtures) {
+    await prompt(fixture.modelId, model(fixture.modelId));
+    assert.equal(requests.filter((entry) => entry.model === fixture.modelId).length, 1,
+      `${fixture.modelId} must terminate without replaying the rejected request`);
+    const errors = events.filter((entry) => entry.sessionId === fixture.modelId && entry.event.type === "error");
+    assert.equal(errors.length, 1, `${fixture.modelId} reports one terminal error`);
+    assert.equal(errors[0].event.error.code, fixture.code);
+    assert.equal(errors[0].event.error.retriable, false);
+    assert.equal(errors[0].event.error.details.providerStatus, fixture.status);
+    console.log(`PASS ${fixture.modelId}: ${fixture.code}, one real HTTP request`);
+  }
 
   histories.set("compact-alias", [
     { id: "compact-user", role: "user", content: "Update the files", createdAt },

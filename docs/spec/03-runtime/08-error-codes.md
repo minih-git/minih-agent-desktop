@@ -408,6 +408,21 @@ replayed by either retry budget, and a delegate reports it as
 `Throttling error: Too many tokens, please wait before trying again.`, is
 classified first and stays `PROVIDER_RATE_LIMITED`.
 
+HTTP 500/502/503 can wrap an upstream context overflow, including Ollama MLX's
+`input length (N tokens) exceeds the model's maximum context length (M tokens)`.
+For a 5xx, context-overflow wording without rate-limit wording is terminal
+`CONTEXT_TOO_LARGE`; ordinary outages and throttles remain retryable
+`PROVIDER_ERROR`. This fixes classification and same-request retries, not the
+set of messages pi-ai can automatically recover through compaction.
+
+On HTTP 400/422, an explicit API-key rejection (`invalid api key`,
+`invalid_api_key`, `api key not valid`, or `API_KEY_INVALID`, including Gemini's
+JSON error body) is terminal `PROVIDER_UNAUTHORIZED`. Context overflow retains
+priority. Bare `unauthorized` and `permission denied` on these statuses remain
+terminal `PROVIDER_ERROR`, because they may describe a request parameter rather
+than credentials. Existing local-session Settings guidance consumes the
+credential code; remote-session action restrictions remain unchanged.
+
 An exact `terminated` provider message and equivalent premature stream-close
 messages map to `STREAM_FAILED`. Only a structured abort or the fixed phrases
 `Request aborted`, `The operation was aborted` and `Turn aborted` imply

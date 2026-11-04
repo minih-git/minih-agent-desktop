@@ -440,8 +440,12 @@ export function networkFailureDiagnostics(
   return { category: network.category, fields: networkDetailFields(network) };
 }
 
-const STATUSLESS_CREDENTIAL_PATTERN =
-  /invalid[ _]api[ _]key|api key not valid|unauthorized|permission denied/i;
+// Only explicit key rejection is safe to recognize on HTTP 400/422:
+// "unauthorized" and "permission denied" can describe request parameters.
+const API_KEY_REJECTION_PATTERN =
+  /invalid[ _]api[ _]key|api key not valid|API_KEY_INVALID/i;
+
+const STATUSLESS_CREDENTIAL_PATTERN = /unauthorized|permission denied/i;
 
 const AUTHENTICATION_WITH_CREDENTIAL_PATTERN =
   /(?:api[-_ ]?key|credentials|bearer).{0,48}\bauthentication\b|\bauthentication\b.{0,48}(?:api[-_ ]?key|credentials|bearer)/i;
@@ -451,6 +455,7 @@ const AUTHENTICATION_FAILURE_PATTERN =
 
 /** Bare authentication wording is insufficient when it describes TLS transport. */
 function isStatuslessCredentialFailure(message: string): boolean {
+  if (API_KEY_REJECTION_PATTERN.test(message)) return true;
   if (STATUSLESS_CREDENTIAL_PATTERN.test(message)) return true;
   if (isTlsTransportText(message)) return false;
   return (
@@ -602,9 +607,22 @@ export function classifyAgentError(err: unknown): ClassifiedAgentError {
     if (status === 413) return result("CONTEXT_TOO_LARGE", false);
     if (status === 429) return result("PROVIDER_RATE_LIMITED", true);
     if (status === 404) return result("MODEL_NOT_CONFIGURED", false);
-    if (status >= 500) return result("PROVIDER_ERROR", true);
+    // Gateways and Ollama's MLX runner can wrap an oversized prompt in a 5xx.
+    // A throttle saying "too many tokens" must not become a context overflow.
+    if (status >= 500) {
+      if (
+        !RATE_LIMIT_PATTERN.test(rawMessage) &&
+        isContextOverflowMessage(rawMessage)
+      ) {
+        return result("CONTEXT_TOO_LARGE", false);
+      }
+      return result("PROVIDER_ERROR", true);
+    }
     if (status === 400 || status === 422) {
       if (isContextOverflowMessage(rawMessage)) return result("CONTEXT_TOO_LARGE", false);
+      if (API_KEY_REJECTION_PATTERN.test(rawMessage)) {
+        return result("PROVIDER_UNAUTHORIZED", false);
+      }
       // Malformed request (wrong apiStyle, bad params) — retrying won't help.
       return result("PROVIDER_ERROR", false);
     }
