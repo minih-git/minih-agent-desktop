@@ -87,7 +87,7 @@ retain attribution; this record does not claim their work as new original code.
 ## Delivery state and limits
 
 The initial development checks above ran on the uncommitted working tree based
-on the main revision above. On 2026-11-03 the user separately authorized commit,
+on the main revision above. The user later separately authorized commit,
 push and integration into main. Exact task-candidate and PR-integration
 revisions, their validation results and the merge outcome are recorded in the
 delivery PR. This authorization does not include release or installation.
