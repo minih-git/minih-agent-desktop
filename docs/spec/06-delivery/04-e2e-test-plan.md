@@ -8,6 +8,31 @@
 
 ## 1. Goals
 
+### E2E-RUNTIME-terminal-provider-errors
+
+- **Preconditions:** Task-local shared/runtime builds, reused dependencies and a
+  production sidecar/Agent with a local HTTP provider fixture. Host storage is
+  mocked; no installed Desktop, user database or paid provider is used.
+- **Steps:** Submit prompts that receive explicit API-key rejection on 400/422
+  and the Ollama MLX context-length message wrapped in 500/502/503. Compare
+  ordinary malformed requests, 5xx outages and throughput throttles in the
+  classification/retry regressions.
+- **Expected:** Each rejected HTTP prompt issues one request, emits one terminal
+  error and reaches `agent_end`. API-key rejection is `PROVIDER_UNAUTHORIZED`;
+  wrapped overflow is `CONTEXT_TOO_LARGE`, with `providerStatus` retained.
+  Ordinary/throttled 5xx remain retryable; generic 400/422 permission wording
+  remains `PROVIDER_ERROR`. Stop, local failures, TLS and credit policies stay
+  unchanged. No additional automatic-compaction recovery is claimed.
+- **Automation:** `node scripts/e2e-upstream-runtime-reliability.mjs` and
+  `provider-error-classification.test.ts`, `agent-errors.test.ts`,
+  `provider-retry.test.ts`, `provider-recovery-flow.test.ts` and
+  `provider-transport-recovery.test.ts` in `packages/agent-runtime/src/`.
+- **Specs / acceptance:** Runtime error codes; provider-error reporting and
+  bounded retry acceptance (C/F/quality).
+- **Milestone / status:** 2026-11-03 selected upstream maintenance; development
+  verification only. Source revisions and actual results are in
+  [the import record](../../project/upstream-import-2026-11-03.md).
+
 ### E2E-UPSTREAM-20261101-selected-reliability
 
 - **Preconditions:** Dedicated worktree, reused dependencies, isolated Electron

@@ -9,6 +9,25 @@
 
 ---
 
+### E2E-RUNTIME-terminal-provider-errors
+
+- **前提：** 任务工作树内构建 shared／runtime，复用依赖，使用真实 sidecar／Agent
+  和本地 HTTP 提供商夹具。Host 存储为模拟边界，不访问已安装桌面、用户数据库或付费服务。
+- **步骤：** 发送提示，分别返回 400/422 明确密钥拒绝及 500/502/503 包装的 Ollama
+  MLX 上下文超限文本；分类／重试回归对照普通参数错误、5xx 故障及吞吐限流。
+- **预期：** 每个被拒绝的 HTTP 提示仅发送一次请求，输出一个终止错误并到达
+  `agent_end`。密钥拒绝归为 `PROVIDER_UNAUTHORIZED`，包装超限归为
+  `CONTEXT_TOO_LARGE`，保留 `providerStatus`。普通／限流 5xx 仍可重试，400/422
+  泛化权限措辞仍为 `PROVIDER_ERROR`。Stop、本地错误、TLS 和余额策略不变；
+  不宣称新增自动压缩恢复能力。
+- **自动化：** `node scripts/e2e-upstream-runtime-reliability.mjs` 及
+  `packages/agent-runtime/src/` 中的 `provider-error-classification.test.ts`、
+  `agent-errors.test.ts`、`provider-retry.test.ts`、`provider-recovery-flow.test.ts`、
+  `provider-transport-recovery.test.ts`。
+- **规格／验收：** 运行时错误码、提供商错误报告和有界重试（C／F／品质）。
+- **里程碑／状态：** 2026-11-03 选择性上游维护，仅开发验证；来源和实际结果见
+  [导入记录](../../../project/upstream-import-2026-11-03.md)。
+
 ### E2E-UPSTREAM-20261101-selected-reliability
 
 - **前提：** 独立工作树、复用依赖、隔离 Electron 配置，使用真实 sidecar／Agent 和

@@ -391,6 +391,18 @@ Node sidecar 将提供商 SDK 错误映射到：
 `Throttling error: Too many tokens, please wait before trying again.`）优先判定，
 仍为 `PROVIDER_RATE_LIMITED`。
 
+HTTP 500/502/503 也可能包装真正的上下文超限，例如 Ollama MLX 的
+`input length (N tokens) exceeds the model's maximum context length (M tokens)`。
+5xx 中出现超限措辞且不含限流措辞时，归为终止性 `CONTEXT_TOO_LARGE`；普通故障和
+限流仍为可重试 `PROVIDER_ERROR`。这只修复分类与重复发送同一请求的决策，不扩展
+pi-ai 自动压缩恢复能够识别的消息范围。
+
+HTTP 400/422 中明确的 API Key 拒绝（`invalid api key`、`invalid_api_key`、
+`api key not valid` 或 `API_KEY_INVALID`，包括 Gemini JSON 错误体）归为终止性
+`PROVIDER_UNAUTHORIZED`，上下文超限仍优先。裸 `unauthorized`、`permission denied`
+可能表示请求参数问题，在这些状态下仍为终止性 `PROVIDER_ERROR`。本地会话沿用
+既有鉴权错误的设置入口，远程会话的操作限制保持不变。
+
 精确的 `terminated` 提供商消息和等效的过早流关闭
 消息映射到 `STREAM_FAILED`。只有结构化取消或固定措辞 `Request aborted`、
 `The operation was aborted`、`Turn aborted` 才表示 `TURN_ABORTED`；连接中断仍为
