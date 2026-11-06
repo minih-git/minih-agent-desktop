@@ -7,6 +7,9 @@ import { RACP_HOSTLINK_CLOSE_CODES, RACP_HOSTLINK_VERSION, type RacpHostRouteCon
 import { hashToken, newDeviceToken } from "./auth.js";
 import { HostLinkGatewayMux, type HostLinkSocket } from "./hostlink.js";
 import {
+  HOSTLINK_IDLE_TIMEOUT_MS,
+  HOSTLINK_LEGACY_HEARTBEAT_MS,
+  HOSTLINK_MAX_RETRY_DELAY_MS,
   HOSTLINK_REJECTED_CLOSE_CODE,
   enrollHostLink,
   startHostLink,
@@ -435,6 +438,100 @@ describe("startHostLink", () => {
     gateway?.connections[0]?.socket.closeLink();
     await waitFor(() => observed.some((status) => status.state === "backoff" && status.nextRetryAt !== undefined));
     await waitFor(() => handle?.status().state === "connected" && (gateway?.connections.length ?? 0) > 1);
+  });
+
+  it("never waits longer than ten seconds to dial again", () => {
+    // The phone is waiting for this computer: a dead link has to be retried in
+    // seconds. The stored ceiling is checked directly because reaching it needs
+    // several failed dials, and the cap must stay under the idle window so a
+    // dropped tunnel is never detected more slowly than it is retried.
+    expect(HOSTLINK_MAX_RETRY_DELAY_MS).toBeLessThanOrEqual(10_000);
+    expect(HOSTLINK_MAX_RETRY_DELAY_MS).toBeLessThan(HOSTLINK_IDLE_TIMEOUT_MS);
+  });
+
+  it("reconnects when the Gateway goes silent on a live link", { timeout: 20_000 }, async () => {
+    // A tunnel that dies underneath the socket reports nothing: the local TCP
+    // state still says ESTABLISHED, so only the missing frames can tell. The
+    // test Gateway never pings, which is exactly that silence.
+    const { credentials } = await gatewayHarness();
+    const observed: HostLinkStatus[] = [];
+    handle = startHostLink({
+      credentials,
+      server: h.server,
+      authenticator: h.authenticator,
+      log: () => undefined,
+      backoff: { baseDelayMs: 10, maxDelayMs: 10 },
+      idleTimeoutMs: 60,
+      onStatus: (status) => observed.push(status),
+    });
+    await waitFor(() => handle?.status().state === "connected");
+    await waitFor(() => observed.some((status) => (status.lastError ?? "").includes("sent nothing")));
+    // And it comes back on its own, without the caller doing anything.
+    await waitFor(() => handle?.status().state === "connected" && (gateway?.connections.length ?? 0) > 1);
+  });
+
+  it("stays connected while the Gateway keeps sending frames", { timeout: 20_000 }, async () => {
+    // The older Gateway pings every 30 s, the new one every 15 s. Scaled down,
+    // this is the same arithmetic: a beat that arrives inside the window keeps
+    // the link, so a slow-but-alive Gateway is never mistaken for a dead tunnel.
+    const { credentials } = await gatewayHarness();
+    let pings = 0;
+    const beat = setInterval(() => {
+      const mux = gateway?.connections[0]?.mux;
+      if (!mux) return;
+      mux.ping();
+      pings += 1;
+    }, 30);
+    try {
+      handle = startHostLink({
+        credentials,
+        server: h.server,
+        authenticator: h.authenticator,
+        log: () => undefined,
+        backoff: { baseDelayMs: 10, maxDelayMs: 10 },
+        idleTimeoutMs: 150,
+      });
+      await waitFor(() => handle?.status().state === "connected");
+      // Five beats: more than the window itself, so a watchdog that ignored
+      // frames would have reconnected by now.
+      await waitFor(() => pings >= 5);
+      expect(handle.status().state).toBe("connected");
+      expect(gateway?.connections.length).toBe(1);
+    } finally {
+      clearInterval(beat);
+    }
+  });
+
+  it("dials at once when asked, instead of waiting out the backoff", { timeout: 20_000 }, async () => {
+    const { credentials } = await gatewayHarness();
+    // A minute of backoff: only an explicit reconnect can dial again here.
+    handle = startHostLink({
+      credentials,
+      server: h.server,
+      authenticator: h.authenticator,
+      log: () => undefined,
+      backoff: { baseDelayMs: 60_000, maxDelayMs: 60_000 },
+    });
+    await waitFor(() => handle?.status().state === "connected");
+    gateway?.connections[0]?.socket.closeLink();
+    await waitFor(() => handle?.status().state === "backoff");
+    expect(handle.reconnectNow()).toBe(true);
+    await waitFor(() => handle?.status().state === "connected" && (gateway?.connections.length ?? 0) > 1);
+    // A live link has no wait to skip, so the hint is declined.
+    expect(handle.reconnectNow()).toBe(false);
+    // Stopped here so the assertion above is about `reconnectNow` rather than
+    // about the afterEach cleanup.
+    await handle.stop();
+    handle = null;
+  });
+
+  it("keeps the idle window above the heartbeat an older Gateway sends", () => {
+    // Compatibility, both directions: a new Desktop against an older Gateway
+    // (30 s beat) must not treat a healthy link as dead, and an older Desktop
+    // answers `link.pong` exactly as before, so a new Gateway is satisfied.
+    expect(HOSTLINK_LEGACY_HEARTBEAT_MS).toBe(30_000);
+    expect(HOSTLINK_IDLE_TIMEOUT_MS).toBeGreaterThan(HOSTLINK_LEGACY_HEARTBEAT_MS);
+    expect(HOSTLINK_IDLE_TIMEOUT_MS).toBe(45_000);
   });
 
   it("stops retrying when the Gateway refuses this Host certificate", { timeout: 20_000 }, async () => {

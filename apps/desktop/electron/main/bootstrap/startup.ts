@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, Menu, safeStorage } from "electron";
+import { app, BrowserWindow, crashReporter, Menu, net, powerMonitor, safeStorage } from "electron";
 import { createScheduledRunner } from "../runtime/scheduled-runner";
 import {
   APP_VERSION,
@@ -385,6 +385,19 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       // Redacted push (§11.6): the link service carries the notifier to
       // `host.notify`, and the Agent Host above feeds it the four events.
       notifier: notifyHost,
+      // Protocol §11.4 rule 5: a computer that just woke up, or whose network
+      // just came back, is the moment the user expects it to answer again. The
+      // link's own idle watchdog is what detects a dead tunnel; these two hints
+      // only let it skip a pending reconnect backoff. Electron main has no
+      // network-change event, so the online state is polled through the `net`
+      // module this app already links — no new dependency.
+      wakeSources: {
+        onResume: (listener) => {
+          powerMonitor.on("resume", listener);
+          return () => powerMonitor.off("resume", listener);
+        },
+        isOnline: () => net.isOnline(),
+      },
       log: (level, message, data) =>
         logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
     });

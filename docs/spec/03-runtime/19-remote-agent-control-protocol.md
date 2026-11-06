@@ -1544,8 +1544,21 @@ Rules:
 4. `attachment.chunk` frames are followed by one binary WebSocket frame of at
    most 256 KiB and are the only binary payload permitted on the link.
 5. Loss of the link closes every logical connection with a resumable cursor.
-   The Host reconnects with bounded exponential backoff; local turns continue
-   throughout.
+   The Host reconnects with bounded exponential backoff — 1 second base, 10
+   second ceiling, half-to-full jitter — and local turns continue throughout.
+   Liveness is explicit on both sides, because a link can die without either
+   end noticing: an overlay tunnel that goes away leaves both sockets reporting
+   a healthy connection. The Gateway pings every 15 seconds and **drops a link
+   that has sent nothing for 45 seconds (three beats)**, terminating it so the
+   existing cleanup runs — the Host is reported offline and its logical
+   connections close with a resumable cursor. Any inbound frame counts as an
+   answer, not only `link.pong`. The Host closes a link that has received
+   nothing from the Gateway for 45 seconds and reconnects through the same
+   backoff. Both windows are above the 30 second beat a Gateway that predates
+   this cadence sends, and a Host that predates it answers `link.pong` exactly
+   as before, so either mix of versions is detected but never falsely dropped.
+   A Desktop additionally reconnects at once — skipping the pending backoff —
+   when the machine wakes from sleep or its network comes back.
 6. `host.capabilities`, `device.request`, `device.grant`, `device.revoke`,
    `host.joined`, and `host.revoked` exist for account mode only, and §11.5
    defines what they carry. The Host sends `host.capabilities` on every link as
@@ -2270,7 +2283,8 @@ The initial target limits are:
 | `turn/start` admission deadline | 5 seconds |
 | Approval lifetime, local default | No automatic deadline; explicit decision or cancellation |
 | Approval lifetime, remote policy | 30 minutes by default while a remote subscriber is attached; Host-configured, bounded, advertised as `approvalLifetimeMs` |
-| Heartbeat interval | 30 seconds |
+| Heartbeat interval (`RACP-WS` client connections) | 30 seconds |
+| Host link heartbeat / liveness window | 15 seconds / 45 seconds (three beats) |
 | Terminal output replay ring | 128 KiB per terminal |
 | Open terminals per session | 2 |
 | Relayed tool execution deadline | The tool's own timeout |

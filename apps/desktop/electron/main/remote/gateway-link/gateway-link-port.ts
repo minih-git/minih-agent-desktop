@@ -71,6 +71,12 @@ export type HostLinkHandle = {
    * until the delivery window closes.
    */
   revokeDevice?(deviceId: string): Promise<{ revoked: boolean; announced: boolean }>;
+  /**
+   * Skip the backoff the transport is currently waiting on and dial at once
+   * (protocol §11.4 rule 5). False when there is nothing to skip; absent means
+   * the transport has no such entry and a caller's hint is not acted on.
+   */
+  reconnectNow?(): boolean;
 };
 
 export type GatewayLinkPort = {

@@ -478,6 +478,12 @@ Keystore）交付令牌。
 能拿到它的机会——浏览器档本身就够不到 `GET /v1/hosts`（§11.2），而设备此时还没有任何
 Host 级凭据。拿不到 `hostLabel` 的客户端显示 host id，绝不能拿设备名顶替：设备名指的是
 配对的那台手机，不是电脑。
+**链路存活判定（英文源规格 §11.4 规则 5）。** 组网隧道断掉时两端 socket 仍显示连接正常，
+所以链路两端都必须自己判定存活：Gateway 每 15 秒 ping 一次，**45 秒（三拍）内没有收到任何
+入站帧就终止该链路**，走既有清理——Host 置为离线、其逻辑连接按可恢复游标关闭（任何入站帧
+都算应答，不只是 `link.pong`）；Host 侧 45 秒没收到网关任何帧就主动断开，按 1 秒起、上限
+10 秒的指数退避重连，桌面在系统唤醒或网络恢复时跳过当前退避立即重连。两个窗口都高于旧
+Gateway 的 30 秒拍，旧 Host 也照旧回 `link.pong`，因此新旧版本混搭既能发现断链、也不会误断。
 
 ### 账户模式（D666，账户目录已实现）
 
@@ -878,7 +884,8 @@ type SessionTodos = {
 | `turn/start` admission deadline | 5 seconds |
 | Approval lifetime, local default | 无自动截止时间；必须明确决定或取消 |
 | Approval lifetime, remote policy | 有远程订阅者接入时默认 30 分钟；Host 配置、有界，以 `approvalLifetimeMs` 公布 |
-| Heartbeat interval | 30 seconds |
+| Heartbeat interval（`RACP-WS` 客户端连接）| 30 秒 |
+| Host link 心跳 / 存活窗口 | 15 秒 / 45 秒（三拍）|
 | Terminal output replay ring | 每终端 128 KiB |
 | Open terminals per session | 2 |
 | Relayed tool execution deadline | 工具自身超时 |
