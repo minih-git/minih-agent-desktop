@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-06",
+    highlights: [
+      "Um túnel EasyTier derrubado não engole mais as requisições: o aplicativo mantém um estado de saúde compartilhado, desiste do túnel em segundos em vez de esperar um tempo limite inteiro, envia todas as sessões direto ao endereço público e se recupera sozinho.",
+      "Um link de controle remoto que morria em silêncio agora se reconecta em 45 segundos em vez de ficar pendurado até o tempo limite da requisição, e tenta de novo na hora quando a máquina acorda ou a rede volta.",
+      "O aplicativo de celular e web agora mostra a lista e a conversa a partir do cache local primeiro e atualiza em segundo plano, com um aviso discreto indicando se os dados estão sendo atualizados ou estão offline.",
+    ],
+  },
+
+  {
     version: "1.3.0",
     date: "2026-11-03",
     highlights: [

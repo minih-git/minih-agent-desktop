@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-06",
+    highlights: [
+      "Un tunnel EasyTier coupé n'avale plus les requêtes : l'application tient un état de santé partagé, abandonne le tunnel en quelques secondes au lieu d'attendre un délai complet, envoie toutes les sessions directement à l'adresse publique et se rétablit seule.",
+      "Une liaison de contrôle à distance morte en silence se reconnecte désormais en 45 secondes au lieu de rester bloquée jusqu'au délai de la requête, et réessaie aussitôt au réveil de la machine ou au retour du réseau.",
+      "L'application mobile et web affiche désormais la liste et la conversation depuis le cache local, puis actualise en arrière-plan, avec une indication discrète précisant si les données se mettent à jour ou sont hors ligne.",
+    ],
+  },
+
+  {
     version: "1.3.0",
     date: "2026-11-03",
     highlights: [
