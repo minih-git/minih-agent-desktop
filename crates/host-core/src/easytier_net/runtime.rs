@@ -1,7 +1,6 @@
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use easytier::instance::factory::{create_native_instance, NativeCoreInstance};
 use serde::{Deserialize, Serialize};
@@ -15,7 +14,12 @@ use super::config::{
     build_toml_config, parse_router_lan_target, EasyTierConnectionState, EasyTierEffectiveMode,
     EasyTierIdentity, EasyTierMode, EasyTierSettings, OverlayForward, DEFAULT_ROUTER_PUBLIC_URL,
 };
+use super::endpoint::{PublishedEndpoint, TunnelEndpoint};
+use super::health::{NetworkWatcher, ProbeTask, TunnelHealthMonitor, TunnelHealthSnapshot};
 use super::identity::{decide, Decision};
+use super::loopback::{
+    allocate_loopback_port, allocate_loopback_port_excluding, loopback_port_is_free,
+};
 use super::remote_gateway::{
     derive_hostlink_target, status_for, RemoteGatewayReach, RemoteGatewayStatus,
 };
@@ -111,11 +115,12 @@ enum ActiveBackend {
         spec: TunRunnerSpec,
     },
 }
-
-struct ProbeCache {
-    checked_at: Instant,
-    url: String,
-    reachable: bool,
+/// Ports a restart must keep so a running remote link is not re-registered
+/// under a new loopback address.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ReusedPorts {
+    pub router_forward_port: Option<u16>,
+    pub hostlink_forward_port: Option<u16>,
 }
 
 /// Reads the AccessKey of the Minih Router row the tunnel is built for.
@@ -136,7 +141,15 @@ pub struct EasyTierManager {
     settings: EasyTierSettings,
     backend: ActiveBackend,
     last_error: Option<String>,
-    probe_cache: Option<ProbeCache>,
+    /// Which loopback forward the running node published, and whether the
+    /// background prober currently trusts it.
+    endpoint: TunnelEndpoint,
+    /// The `/health` prober for the running node; `None` when nothing runs.
+    prober: Option<ProbeTask>,
+    /// Watches the local route for as long as the channel is enabled. Separate
+    /// from `prober` on purpose: a restart it triggers must not abort the task
+    /// that is waiting for that restart.
+    watcher: Option<NetworkWatcher>,
     /// Server-issued network identities, keyed by control-plane root + AccessKey
     /// digest.
     bootstrap_cache: BootstrapCache,
@@ -156,7 +169,9 @@ impl Default for EasyTierManager {
             settings: EasyTierSettings::default(),
             backend: ActiveBackend::Disabled,
             last_error: None,
-            probe_cache: None,
+            endpoint: TunnelEndpoint::new(TunnelHealthMonitor::new()),
+            prober: None,
+            watcher: None,
             bootstrap_cache: BootstrapCache::default(),
             bootstrap_error: None,
             active_bootstrap: None,
@@ -171,63 +186,12 @@ pub fn manager() -> &'static Mutex<EasyTierManager> {
     MANAGER.get_or_init(|| Mutex::new(EasyTierManager::default()))
 }
 
-fn allocate_loopback_port() -> Result<u16, String> {
-    let listener = TcpListener::bind(("127.0.0.1", 0))
-        .map_err(|e| format!("failed to allocate local port forward socket: {e}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("failed to inspect local port forward socket: {e}"))?
-        .port();
-    Ok(port)
-}
-
-/// Reserve a loopback port that is not already used by another forward.
-///
-/// The Router forward holds its port for the lifetime of the node, and two
-/// forwards cannot share one bind address. The probe listener is released
-/// before the node binds it, so a collision is retried instead of failing.
-fn allocate_loopback_port_excluding(excluded: &[u16]) -> Result<u16, String> {
-    const ATTEMPTS: usize = 8;
-    for _ in 0..ATTEMPTS {
-        let port = allocate_loopback_port()?;
-        if !excluded.contains(&port) {
-            return Ok(port);
-        }
-    }
-    Err("failed to allocate a distinct loopback port for the Host-link forward".to_string())
-}
-
-fn control_root_from_base_url(base_url: &str) -> String {
-    let trimmed = base_url.trim().trim_end_matches('/');
-    if let Some(root) = trimmed.strip_suffix("/v1") {
-        root.to_string()
-    } else if let Some(root) = trimmed.strip_suffix("/V1") {
-        root.to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-async fn probe_http_reachability(base_url: &str, timeout: Duration) -> bool {
-    let root = control_root_from_base_url(base_url);
-    let health_url = format!("{root}/health");
-    let Ok(client) = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(timeout)
-        .connect_timeout(timeout)
-        .build()
-    else {
-        return false;
-    };
-    match client.get(&health_url).send().await {
-        Ok(resp) => resp.status().is_success() || resp.status().is_client_error(),
-        Err(_) => false,
-    }
-}
-
 impl EasyTierManager {
     async fn stop_current(&mut self) {
-        self.probe_cache = None;
+        // Ownership of both background tasks ends here: nothing is left probing
+        // a forward that no longer exists.
+        self.prober = None;
+        self.endpoint.clear();
         let prev = std::mem::replace(&mut self.backend, ActiveBackend::Disabled);
         match prev {
             ActiveBackend::Disabled => {}
@@ -244,16 +208,29 @@ impl EasyTierManager {
         }
     }
 
+    /// Start an in-process node.
+    ///
+    /// `reuse` carries the loopback ports of the node this start replaces (a
+    /// link change restart): keeping them means the remote Host link is not
+    /// re-registered under a new local address.
     async fn start_in_process(
         &mut self,
         settings: &EasyTierSettings,
         no_tun: bool,
         effective_mode: EasyTierEffectiveMode,
+        reuse: ReusedPorts,
     ) -> Result<(), String> {
-        let local_port = allocate_loopback_port()?;
+        // The forward target is parsed before anything starts, so a bad
+        // `routerLanUrl` fails the start instead of the published address.
+        let target = parse_router_lan_target(&settings.router_lan_url)?;
+        let local_port = reuse
+            .router_forward_port
+            .filter(|port| loopback_port_is_free(*port))
+            .unwrap_or(allocate_loopback_port()?);
         // Only No-TUN mode needs the extra forward: TUN mode routes the overlay
         // address itself, so it reaches the Gateway without help.
-        let hostlink_forward = self.hostlink_forward_for_start(no_tun, local_port);
+        let hostlink_forward =
+            self.hostlink_forward_for_start(no_tun, local_port, reuse.hostlink_forward_port);
         let toml_config = build_toml_config(settings, no_tun, Some(local_port), hostlink_forward)?;
         let instance = create_native_instance(toml_config)
             .map_err(|e| format!("failed to create EasyTier instance: {e}"))?;
@@ -268,7 +245,55 @@ impl EasyTierManager {
             hostlink_forward_port: hostlink_forward.map(|forward| forward.local_port),
         };
         self.last_error = None;
+        self.publish_running_forward(
+            target.forward_base_url(local_port),
+            effective_mode,
+            settings,
+        );
         Ok(())
+    }
+
+    /// Record the forward this node installed and start watching it.
+    ///
+    /// Nothing is published until the node is up: an address that no node
+    /// forwards to is exactly the "accepted, never answered" shape this whole
+    /// module exists to keep off the request path.
+    fn publish_running_forward(
+        &mut self,
+        local_forward_url: String,
+        effective_mode: EasyTierEffectiveMode,
+        settings: &EasyTierSettings,
+    ) {
+        let virtual_ipv4 = if settings.dhcp {
+            None
+        } else {
+            settings.ipv4.clone()
+        };
+        self.endpoint.publish(PublishedEndpoint {
+            local_forward_url,
+            effective_mode,
+            virtual_ipv4,
+        });
+        // A fresh start begins in `unavailable`; the prober promotes it once
+        // the forward has answered for a stable window.
+        self.prober = Some(ProbeTask::spawn(self.endpoint.health().clone()));
+        self.ensure_network_watcher();
+    }
+
+    /// Start the link-change watcher once per enabled channel.
+    fn ensure_network_watcher(&mut self) {
+        if self.watcher.is_some() {
+            return;
+        }
+        let handle = tokio::runtime::Handle::try_current();
+        if handle.is_err() {
+            return;
+        }
+        self.watcher = Some(NetworkWatcher::spawn(std::sync::Arc::new(|| {
+            Box::pin(async {
+                restart_after_network_change().await;
+            })
+        })));
     }
 
     /// The Host-link forward to install for a start in `no_tun` mode.
@@ -278,11 +303,20 @@ impl EasyTierManager {
         &self,
         no_tun: bool,
         router_forward_port: u16,
+        reuse_port: Option<u16>,
     ) -> Option<OverlayForward> {
         if !no_tun {
             return None;
         }
-        self.hostlink_forward(router_forward_port)
+        let mut forward = self.hostlink_forward(router_forward_port)?;
+        // Keep the port the replaced node held, so a restart does not hand the
+        // remote side a new local address to dial.
+        if let Some(port) =
+            reuse_port.filter(|port| *port != router_forward_port && loopback_port_is_free(*port))
+        {
+            forward.local_port = port;
+        }
+        Some(forward)
     }
 
     /// The settings a start would use right now.
@@ -504,6 +538,9 @@ impl EasyTierManager {
             self.last_error = None;
             self.active_bootstrap = None;
             self.bootstrap_error = None;
+            // Nothing left to rebuild: the channel is off, so the watcher's
+            // ownership ends here too.
+            self.watcher = None;
             return;
         }
 
@@ -544,7 +581,12 @@ impl EasyTierManager {
 
         if try_tun_in_process {
             match self
-                .start_in_process(&effective, false, EasyTierEffectiveMode::Tun)
+                .start_in_process(
+                    &effective,
+                    false,
+                    EasyTierEffectiveMode::Tun,
+                    ReusedPorts::default(),
+                )
                 .await
             {
                 Ok(()) => return,
@@ -556,7 +598,12 @@ impl EasyTierManager {
         }
 
         if let Err(error) = self
-            .start_in_process(&effective, true, EasyTierEffectiveMode::NoTun)
+            .start_in_process(
+                &effective,
+                true,
+                EasyTierEffectiveMode::NoTun,
+                ReusedPorts::default(),
+            )
             .await
         {
             tracing::warn!(%error, "EasyTier no-tun start failed");
@@ -599,8 +646,13 @@ impl EasyTierManager {
         if is_current_process_elevated() {
             self.stop_current().await;
             self.settings.mode = EasyTierMode::Tun;
-            self.start_in_process(&resolved, false, EasyTierEffectiveMode::Tun)
-                .await?;
+            self.start_in_process(
+                &resolved,
+                false,
+                EasyTierEffectiveMode::Tun,
+                ReusedPorts::default(),
+            )
+            .await?;
             return Ok(self.status(None).await);
         }
 
@@ -618,7 +670,7 @@ impl EasyTierManager {
         let mut tun_settings = self.resolved_settings();
         tun_settings.mode = EasyTierMode::Tun;
         let spec = TunRunnerSpec {
-            settings: tun_settings,
+            settings: tun_settings.clone(),
             local_forward_port: local_port,
             status_path: status_path.clone(),
             control_path: control_path.clone(),
@@ -635,6 +687,15 @@ impl EasyTierManager {
                 let _ = std::fs::write(&control_path, b"active");
                 self.backend = ActiveBackend::ElevatedTun { spec };
                 self.last_error = None;
+                // The runner is another process, but its forward is a loopback
+                // port this process can still probe and publish.
+                if let Ok(target) = parse_router_lan_target(&tun_settings.router_lan_url) {
+                    self.publish_running_forward(
+                        target.forward_base_url(local_port),
+                        EasyTierEffectiveMode::Tun,
+                        &tun_settings,
+                    );
+                }
                 Ok(self.status(None).await)
             }
             Err(error) => {
@@ -645,36 +706,17 @@ impl EasyTierManager {
                 ));
                 if matches!(self.backend, ActiveBackend::Disabled) {
                     let _ = self
-                        .start_in_process(&resolved, true, EasyTierEffectiveMode::NoTun)
+                        .start_in_process(
+                            &resolved,
+                            true,
+                            EasyTierEffectiveMode::NoTun,
+                            ReusedPorts::default(),
+                        )
                         .await;
                 }
                 Ok(self.status(None).await)
             }
         }
-    }
-
-    async fn check_lan_reachable(&mut self, candidate_base_url: &str, has_peers: bool) -> bool {
-        if !has_peers {
-            return false;
-        }
-        if let Some(cache) = &self.probe_cache {
-            let ttl = if cache.reachable {
-                Duration::from_secs(6)
-            } else {
-                Duration::from_millis(1500)
-            };
-            if cache.url == candidate_base_url && cache.checked_at.elapsed() < ttl {
-                return cache.reachable;
-            }
-        }
-        let reachable =
-            probe_http_reachability(candidate_base_url, Duration::from_millis(1200)).await;
-        self.probe_cache = Some(ProbeCache {
-            checked_at: Instant::now(),
-            url: candidate_base_url.to_string(),
-            reachable,
-        });
-        reachable
     }
 
     pub async fn status(&mut self, fallback_public_url: Option<&str>) -> EasyTierStatus {
@@ -759,7 +801,8 @@ impl EasyTierManager {
                     .clone()
                     .unwrap_or_else(|| status.router_lan_url.clone());
                 let has_peers = !connected_peers.is_empty() || virtual_ipv4.is_some();
-                let reachable = self.check_lan_reachable(&candidate_url, has_peers).await;
+                // The prober owns the network round trip; status only reports.
+                let reachable = self.endpoint.using_lan();
                 let active_router_base_url = if !reachable {
                     fallback_url.clone()
                 } else if effective_mode == EasyTierEffectiveMode::Tun {
@@ -815,7 +858,8 @@ impl EasyTierManager {
                     .clone()
                     .unwrap_or_else(|| status.router_lan_url.clone());
                 let has_peers = !snap.peers.is_empty() || snap.virtual_ipv4.is_some();
-                let reachable = self.check_lan_reachable(&candidate_url, has_peers).await;
+                // The prober owns the network round trip; status only reports.
+                let reachable = self.endpoint.using_lan();
                 status.effective_mode = EasyTierEffectiveMode::Tun;
                 status.state = if reachable {
                     EasyTierConnectionState::Connected
@@ -845,33 +889,96 @@ impl EasyTierManager {
         }
     }
 
-    pub async fn resolve_minih_router_endpoint(
-        &mut self,
+    /// The endpoint a Minih Router request should use.
+    ///
+    /// Read-only by construction: this runs on the chat path, so it never
+    /// probes. Only a tunnel the background prober has certified as healthy
+    /// hands back its LAN address (C1).
+    pub fn resolve_minih_router_endpoint(
+        &self,
         configured_base_url: Option<&str>,
     ) -> MinihRouterResolvedEndpoint {
-        let fallback_base_url = configured_base_url
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or(DEFAULT_ROUTER_PUBLIC_URL)
-            .to_string();
-        let status = self.status(Some(&fallback_base_url)).await;
-        let using_lan = status.enabled && status.router_lan_reachable;
-        MinihRouterResolvedEndpoint {
-            active_base_url: if using_lan {
-                status.active_router_base_url
-            } else {
-                fallback_base_url.clone()
-            },
-            fallback_base_url,
-            using_lan,
-            mode: status.effective_mode,
-            effective_mode: status.effective_mode,
-            virtual_ipv4: status.virtual_ipv4,
-            local_forward_url: status.local_forward_url,
+        self.endpoint.resolve(configured_base_url)
+    }
+
+    /// A provider request failed on the tunnel address (C2).
+    ///
+    /// The runtime reports through `easytier.reportTunnelFailure` because the
+    /// No-TUN forward accepts a connection and never answers, so a real request
+    /// is often the first thing to notice the overlay is gone. One report
+    /// degrades the state every session reads, so the next request in any
+    /// session goes straight to the public endpoint.
+    pub fn report_tunnel_failure(&self, reason: &str) {
+        self.endpoint.health().report_failure(reason);
+        tracing::info!(%reason, "agent runtime reported a tunnel failure");
+    }
+
+    /// Where the tunnel health stands, for the RPC answer and the panel.
+    pub fn tunnel_health(&self) -> TunnelHealthSnapshot {
+        self.endpoint.health().snapshot()
+    }
+
+    /// Rebuild the node after the machine changed links (A3).
+    ///
+    /// The identity in hand is reused as-is: re-fetching bootstrap on every
+    /// link change would walk into the gateway's per-IP lockout, and the answer
+    /// already issued is still the one this AccessKey belongs to.
+    async fn rebuild_after_network_change(&mut self) {
+        if !self.settings.enabled {
+            return;
+        }
+        // Whatever ran before was bound to the old route: the shared state says
+        // so before anything else happens, so no session picks the dead
+        // forward while the restart is in flight.
+        self.endpoint
+            .health()
+            .report_failure("local network changed");
+        let (reuse, effective_mode) = match &self.backend {
+            ActiveBackend::InProcess {
+                local_forward_port,
+                hostlink_forward_port,
+                effective_mode,
+                ..
+            } => (
+                ReusedPorts {
+                    router_forward_port: Some(*local_forward_port),
+                    hostlink_forward_port: *hostlink_forward_port,
+                },
+                *effective_mode,
+            ),
+            // An elevated TUN runner is another process with its own lifecycle
+            // and no loopback forward to re-key; it is left to reconnect.
+            ActiveBackend::ElevatedTun { .. } | ActiveBackend::Disabled => return,
+        };
+        let settings = self.resolved_settings();
+        self.stop_current().await;
+        let no_tun = effective_mode == EasyTierEffectiveMode::NoTun;
+        match self
+            .start_in_process(&settings, no_tun, effective_mode, reuse)
+            .await
+        {
+            Ok(()) => {
+                self.last_error = None;
+                tracing::info!("EasyTier node rebuilt after a local network change");
+            }
+            Err(error) => {
+                tracing::warn!(%error, "EasyTier restart after a local network change failed");
+                self.last_error = Some(format!(
+                    "EasyTier restart after a network change failed: {error}"
+                ));
+            }
         }
     }
 }
 
+/// Rebuild the node after the local route changed.
+///
+/// Runs in its own task so the watcher that noticed the change is never the
+/// task the restart aborts.
+async fn restart_after_network_change() {
+    let mut mgr = manager().lock().await;
+    mgr.rebuild_after_network_change().await;
+}
 #[cfg(test)]
 #[path = "runtime_tests.rs"]
 mod tests;

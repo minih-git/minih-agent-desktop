@@ -13,8 +13,10 @@ import {
   createProviderEndpointFallbackState,
   createProviderModels,
   PRIMARY_LIVENESS_PROBE_TIMEOUT_MS,
+  PRIMARY_LIVENESS_RECHECK_MS,
   PRIMARY_RESPONSE_HEADER_DEADLINE_MS,
   PRIMARY_RETRY_COOLDOWN_MS,
+  TUNNEL_STREAM_IDLE_PROBE_MS,
   providerRequestFetch,
   runtimeBaseUrlForApi,
   type RuntimeProviderConfig,
@@ -2198,5 +2200,245 @@ describe("session affinity for the adapters' anonymous endpoints (#1634)", () =>
     expect(headers?.get("session_id")).toBe("session-9");
     expect(headers?.get("x-client-request-id")).toBe("session-9");
     expect(headers?.get("x-session-affinity")).toBe("session-9");
+  });
+});
+
+/**
+ * The EasyTier tunnel is the primary address, and a No-TUN forward answers
+ * nothing while the overlay is down. These cover what the request path does
+ * about it: probe early, probe again while nothing arrives, and end a stream
+ * that stopped once the tunnel stopped answering.
+ */
+describe("EasyTier tunnel health on the request path", () => {
+  const PRIMARY = "http://127.0.0.1:25890/v1";
+  const PUBLIC = "https://router.hmini.org/v1";
+  const PROBE = "http://127.0.0.1:25890/";
+
+  function tunnelFetch(
+    handlers: {
+      primary: (init: RequestInit | undefined) => Promise<Response>;
+      probe: () => Promise<Response>;
+      public?: () => Promise<Response>;
+    },
+    urls: string[] = [],
+  ) {
+    return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = input instanceof Request ? input.url : String(input);
+      urls.push(url);
+      if (url === PROBE) return handlers.probe();
+      if (url.startsWith(PRIMARY)) return handlers.primary(init);
+      return (handlers.public ?? (async () => new Response("public-ok", { status: 200 })))();
+    };
+  }
+
+  function requestWith(
+    fetchFn: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+    reports: string[],
+    state = createProviderEndpointFallbackState(),
+  ) {
+    const requestFetch = providerRequestFetch(
+      "openai-completions",
+      fetchFn,
+      "api_key_and_base_url",
+      {
+        primaryBaseUrl: PRIMARY,
+        fallbackBaseUrl: PUBLIC,
+        state,
+        onTunnelFailure: (reason) => reports.push(reason),
+      },
+    )!;
+    return { requestFetch, state };
+  }
+
+  it("reports the dead tunnel the moment the first probe fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const reports: string[] = [];
+      const urls: string[] = [];
+      const fetchFn = tunnelFetch(
+        {
+          primary: (init) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+            }),
+          probe: async () => {
+            throw new Error("connect ECONNREFUSED 127.0.0.1:25890");
+          },
+        },
+        urls,
+      );
+      const { requestFetch, state } = requestWith(fetchFn, reports);
+
+      const pending = requestFetch(`${PRIMARY}/chat/completions`);
+      await vi.advanceTimersByTimeAsync(PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
+      const response = await pending;
+
+      expect(await response.text()).toBe("public-ok");
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toContain("stopped answering");
+      // The tunnel is parked too, so this session does not pay the wait again.
+      expect(state.skipPrimaryUntil ?? 0).toBeGreaterThan(0);
+      expect(urls.at(-1)).toBe(`${PUBLIC}/chat/completions`);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps re-probing a slow tunnel and never re-sends the request", async () => {
+    vi.useFakeTimers();
+    try {
+      const reports: string[] = [];
+      const urls: string[] = [];
+      const fetchFn = tunnelFetch(
+        {
+          primary: (init) =>
+            new Promise<Response>((resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+              void new Promise((settle) => setTimeout(settle, 20_000)).then(() =>
+                resolve(new Response("lan-ok", { status: 200 })),
+              );
+            }),
+          // Any HTTP answer — even 404 — proves the tunnel carried the request.
+          probe: async () => new Response("not found", { status: 404 }),
+        },
+        urls,
+      );
+      const { requestFetch } = requestWith(fetchFn, reports);
+      const probes = () => urls.filter((url) => url === PROBE).length;
+
+      const pending = requestFetch(`${PRIMARY}/chat/completions`);
+      await vi.advanceTimersByTimeAsync(PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
+      expect(probes()).toBe(1);
+      await vi.advanceTimersByTimeAsync(PRIMARY_LIVENESS_RECHECK_MS);
+      expect(probes()).toBe(2);
+      await vi.advanceTimersByTimeAsync(PRIMARY_LIVENESS_RECHECK_MS);
+      expect(probes()).toBe(3);
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      const response = await pending;
+      expect(await response.text()).toBe("lan-ok");
+      // One request, one bill: the slow answer was never re-sent.
+      expect(urls.filter((url) => url === `${PRIMARY}/chat/completions`)).toHaveLength(1);
+      expect(urls.some((url) => url.startsWith(PUBLIC))).toBe(false);
+      expect(reports).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ends a stalled tunnel stream when the tunnel stopped answering", async () => {
+    vi.useFakeTimers();
+    try {
+      const reports: string[] = [];
+      const fetchFn = tunnelFetch({
+        primary: async () =>
+          new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          }),
+        probe: async () => {
+          throw new Error("connect ECONNREFUSED 127.0.0.1:25890");
+        },
+      });
+      const { requestFetch } = requestWith(fetchFn, reports);
+
+      const response = await requestFetch(`${PRIMARY}/chat/completions`);
+      expect(response.status).toBe(200);
+      // Attach the handler before the idle window elapses: the rejection is
+      // intentional, and an unobserved one would look like a process error.
+      const body = response.text().then(
+        (text) => ({ text }),
+        (error: unknown) => ({ error }),
+      );
+      await vi.advanceTimersByTimeAsync(TUNNEL_STREAM_IDLE_PROBE_MS);
+
+      const outcome = await body;
+      expect(outcome).not.toHaveProperty("text");
+      expect(String((outcome as { error?: unknown }).error)).toMatch(/stream lost/);
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toContain("stalled");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves a silent but healthy tunnel stream alone", async () => {
+    vi.useFakeTimers();
+    try {
+      const reports: string[] = [];
+      let push: ((chunk: Uint8Array) => void) | undefined;
+      let close: (() => void) | undefined;
+      const fetchFn = tunnelFetch({
+        primary: async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                push = (chunk) => controller.enqueue(chunk);
+                close = () => controller.close();
+              },
+            }),
+            { status: 200 },
+          ),
+        probe: async () => new Response("not found", { status: 404 }),
+      });
+      const { requestFetch } = requestWith(fetchFn, reports);
+
+      const response = await requestFetch(`${PRIMARY}/chat/completions`);
+      const body = response.text();
+      await vi.advanceTimersByTimeAsync(TUNNEL_STREAM_IDLE_PROBE_MS);
+      expect(reports).toHaveLength(0);
+
+      push!(new TextEncoder().encode("hello"));
+      close!();
+      await expect(body).resolves.toBe("hello");
+      expect(reports).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not blame the tunnel for a 5xx the gateway answered with", async () => {
+    vi.useFakeTimers();
+    try {
+      const reports: string[] = [];
+      const fetchFn = tunnelFetch({
+        primary: async () => new Response("upstream down", { status: 503 }),
+        probe: async () => new Response("ok", { status: 200 }),
+      });
+      const { requestFetch, state } = requestWith(fetchFn, reports);
+
+      const response = await requestFetch(`${PRIMARY}/chat/completions`);
+      expect(await response.text()).toBe("public-ok");
+      // The headers arrived through the tunnel, so this is the gateway's
+      // upstream failing, not the tunnel: fall back, but report nothing.
+      expect(reports).toHaveLength(0);
+      expect(state.skipPrimaryUntil ?? 0).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a business 4xx on the tunnel and reports nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      const reports: string[] = [];
+      const urls: string[] = [];
+      const fetchFn = tunnelFetch(
+        {
+          primary: async () => new Response("unauthorized", { status: 401 }),
+          probe: async () => new Response("ok", { status: 200 }),
+        },
+        urls,
+      );
+      const { requestFetch } = requestWith(fetchFn, reports);
+
+      const response = await requestFetch(`${PRIMARY}/chat/completions`);
+      expect(response.status).toBe(401);
+      expect(await response.text()).toBe("unauthorized");
+      expect(reports).toHaveLength(0);
+      expect(urls).toEqual([`${PRIMARY}/chat/completions`]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

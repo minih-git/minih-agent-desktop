@@ -66,6 +66,11 @@ export type AssembleProviderRequestInput = {
   /** `options.onResponse` of the turn path; a keep-warm request has none. */
   onResponseSeen?: NonNullable<SimpleStreamOptions["onResponse"]>;
   endpointFallbackState?: ProviderEndpointFallbackState;
+  /**
+   * Reports a proven tunnel failure to Host Core (C2). Best-effort and never
+   * awaited: the request that noticed the failure must not wait on the report.
+   */
+  onTunnelFailure?: (reason: string) => void;
   /** A turn runs on the low-level `stream` path when thinking is omitted. */
   omitThinking: boolean;
   /** An absolute output ceiling in tokens, applied before the context clamp. */
@@ -136,6 +141,7 @@ export function assembleProviderRequest(
             primaryBaseUrl: input.model.baseUrl ?? input.provider.baseUrl,
             fallbackBaseUrl: input.provider.fallbackBaseUrl,
             state: input.endpointFallbackState,
+            ...(input.onTunnelFailure ? { onTunnelFailure: input.onTunnelFailure } : {}),
           },
         ),
         ...(input.onResponseSeen

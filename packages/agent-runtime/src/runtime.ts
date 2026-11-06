@@ -2001,6 +2001,12 @@ export class DesktopAgentRuntime {
    */
   private readonly providerEndpointFallbackState: ProviderEndpointFallbackState =
     createProviderEndpointFallbackState();
+  /**
+   * When this runtime last told Host Core the tunnel is dead. Host Core
+   * degrades immediately and the background prober recovers on its own, so a
+   * burst of failing requests needs one report, not one per request.
+   */
+  private lastTunnelFailureReportAt = 0;
   /** Cross-process-lifetime record of what each real request sent (ADR 0339). */
   private readonly keepWarmLedger?: KeepWarmLedger;
   /**
@@ -2314,6 +2320,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             await options?.onResponse?.(response, responseModel);
           },
           endpointFallbackState: this.providerEndpointFallbackState,
+          onTunnelFailure: (reason) => this.reportTunnelFailure(reason),
           omitThinking: this.thinkingLevel === "omit",
           signal: stallAbort.signal,
         });
@@ -6737,6 +6744,20 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const attempt = ++this.providerTransientRetryAttempt;
     this.activeProviderRetryAttempt = attempt;
     return attempt;
+  }
+
+  private reportTunnelFailure(reason: string): void {
+    const now = Date.now();
+    // One report per window: Host Core degrades on the first one, and the
+    // background prober is what decides when the tunnel is healthy again.
+    if (now - this.lastTunnelFailureReportAt < 5_000) return;
+    this.lastTunnelFailureReportAt = now;
+    // Deliberately not awaited: the request that noticed the failure must not
+    // wait on the report, and an unavailable Host only costs the shared
+    // degradation — this runtime's own fallback already parked the tunnel.
+    void this.host
+      .call("easytier.reportTunnelFailure", { reason })
+      .catch(() => undefined);
   }
 
   private providerErrorWithDiagnostics(
