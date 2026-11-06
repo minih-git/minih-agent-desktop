@@ -4,7 +4,7 @@ import { probeAccountMode, type AccountMode } from "../lib/account-client.js";
 import { AccountFlow, type AccountFlowState } from "../lib/account-flow.js";
 import { defaultDeviceLabel, nativeDeviceLabel } from "../lib/device-label.js";
 import { unregisterPushToken } from "../lib/push.js";
-import { credentialPort, gatewayOrigin, nativePlatform } from "../lib/runtime.js";
+import { credentialPort, gatewayOrigin, hostCache, hostRegistry, nativePlatform } from "../lib/runtime.js";
 
 export type AccountAvailability = AccountMode | "checking";
 
@@ -51,7 +51,24 @@ export function useAccountFlow(deviceLabel: () => string): { state: AccountFlowS
         gatewayOrigin,
         client: nativePlatform ?? "web",
         deviceLabel: () => labelRef.current(),
-        adopt: (input) => credentialPort.adoptAccountDevice(input),
+        /**
+         * A granted device replaces the previous one on every Host it covers, so
+         * whatever the old device cached can never be read again: drop it here
+         * rather than waiting for eviction to reach it (a switched account must
+         * not leave its lists on this phone).
+         */
+        adopt: async (input) => {
+          const replaced = new Set(
+            input.hosts
+              .map((host) => hostRegistry.get(host.hostId)?.deviceId)
+              .filter((deviceId): deviceId is string => !!deviceId && deviceId !== input.deviceId),
+          );
+          const outcome = await credentialPort.adoptAccountDevice(input);
+          if (outcome.ok) {
+            for (const deviceId of replaced) hostCache.forgetDevice(deviceId);
+          }
+          return outcome;
+        },
         // Sign-out is the last moment this client can ask the Gateway to stop
         // pushing to the device, so the unregistration happens here, before the
         // account session is revoked.

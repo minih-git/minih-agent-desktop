@@ -12,6 +12,11 @@ export const ko: Record<TranslationKey, string> = {
   "common.cancel": "취소",
   "common.retry": "다시 시도",
 
+  /* The cached-first-paint line of `components/ui/CacheHint.tsx`: the rows
+     on screen are the last answer this phone read, and this says so. */
+  "cache.refreshing": "{{date}} 업데이트 내용 표시 중 · 새로 고치는 중…",
+  "cache.offline": "오프라인 · {{date}} 업데이트 내용 표시 중",
+
   "pair.title": "페어링 티켓 사용",
   "pair.intro": "호스트에서 연결 명령을 실행한 뒤 출력된 티켓을 붙여 넣으세요.",
   "pair.ticketLabel": "연결 티켓",

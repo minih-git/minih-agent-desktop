@@ -53,6 +53,7 @@ import {
   directChatService,
   dismissModelRefreshFailure,
   gatewayOrigin,
+  hostCache,
   hostRegistry,
   isNativeApp,
   modelGatewayOrigin,
@@ -561,6 +562,7 @@ export default function App() {
           hostLabel={host.label}
           credential={credential}
           {...(host.roles ? { roles: host.roles } : {})}
+          deviceId={host.deviceId}
           onOpenProject={(project) =>
             navigate({
               kind: "projectSessions",
@@ -596,6 +598,7 @@ export default function App() {
           projectLabel={screen.projectLabel}
           credential={credential}
           {...(host.roles ? { roles: host.roles } : {})}
+          deviceId={host.deviceId}
           onOpenSession={(session) => openSession(host.hostId, session, project)}
           // Switching project in the rail is a sideways move: `sync` replaces the
           // entry this screen occupies instead of stacking one, so Back still
@@ -626,6 +629,7 @@ export default function App() {
           credential={credential}
           hostLabel={host.label}
           {...(host.roles ? { roles: host.roles } : {})}
+          deviceId={host.deviceId}
           onBack={goBack}
           // A revoked session used to be a dead end here because this handler
           // was never passed, so the screen could not draw the action (B8).
@@ -637,6 +641,7 @@ export default function App() {
                 forgetHost(hostId, {
                   registry: hostRegistry,
                   credentialPort,
+                  cache: hostCache,
                   ...(isNativeApp ? { push: { gatewayOrigin } } : {}),
                 }),
               // Leaving does not wait for the unregistration: the credential is

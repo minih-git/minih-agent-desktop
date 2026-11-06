@@ -16,6 +16,11 @@ export const en = {
   "common.cancel": "Cancel",
   "common.retry": "Retry",
 
+  /* The cached-first-paint line of `components/ui/CacheHint.tsx`: the rows
+     on screen are the last answer this phone read, and this says so. */
+  "cache.refreshing": "Showing the last update from {{date}} · refreshing…",
+  "cache.offline": "Offline · showing the last update from {{date}}",
+
   "pair.title": "Use a pairing ticket",
   "pair.intro": "Run the pairing command on the host, then paste the ticket it prints.",
   "pair.ticketLabel": "Pairing ticket",

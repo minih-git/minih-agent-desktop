@@ -12,6 +12,11 @@ export const fr: Record<TranslationKey, string> = {
   "common.cancel": "Annuler",
   "common.retry": "Réessayer",
 
+  /* The cached-first-paint line of `components/ui/CacheHint.tsx`: the rows
+     on screen are the last answer this phone read, and this says so. */
+  "cache.refreshing": "Dernière mise à jour de {{date}} affichée · actualisation…",
+  "cache.offline": "Hors ligne · dernière mise à jour de {{date}} affichée",
+
   "pair.title": "Utiliser un ticket d'association",
   "pair.intro": "Lancez la commande d'association sur l'hôte, puis collez le ticket qu'il affiche.",
   "pair.ticketLabel": "Ticket d'association",

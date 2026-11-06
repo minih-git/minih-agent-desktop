@@ -12,6 +12,11 @@ export const zhCN: Record<TranslationKey, string> = {
   "common.cancel": "取消",
   "common.retry": "重试",
 
+  /* The cached-first-paint line of `components/ui/CacheHint.tsx`: the rows
+     on screen are the last answer this phone read, and this says so. */
+  "cache.refreshing": "显示上次更新（{{date}}）· 正在刷新…",
+  "cache.offline": "已离线 · 显示上次更新（{{date}}）",
+
   "pair.title": "使用配对票据",
   "pair.intro": "在主机上执行配对命令，然后粘贴它打印的配对票据。",
   "pair.ticketLabel": "配对票据",

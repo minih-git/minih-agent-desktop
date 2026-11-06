@@ -12,6 +12,11 @@ export const tr: Record<TranslationKey, string> = {
   "common.cancel": "İptal",
   "common.retry": "Yeniden dene",
 
+  /* The cached-first-paint line of `components/ui/CacheHint.tsx`: the rows
+     on screen are the last answer this phone read, and this says so. */
+  "cache.refreshing": "{{date}} tarihli son güncelleme gösteriliyor · yenileniyor…",
+  "cache.offline": "Çevrimdışı · {{date}} tarihli son güncelleme gösteriliyor",
+
   "pair.title": "Eşleştirme bileti kullan",
   "pair.intro": "Ana makinede eşleştirme komutunu çalıştırın, ardından yazdırdığı bileti yapıştırın.",
   "pair.ticketLabel": "Eşleştirme bileti",
