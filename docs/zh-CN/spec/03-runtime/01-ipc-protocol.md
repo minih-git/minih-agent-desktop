@@ -1721,6 +1721,28 @@ file/image 入口：它接受常规文件且不带类型过滤，由导入器根
 发起方 `WebContents` 的令牌之下，该令牌存活 60 秒且只能消费一次。渲染器只收到
 该令牌，绝不会收到所选的绝对路径。
 
+### composer/readClipboardDirectories
+
+```ts
+composer/readClipboardDirectories() -> {
+  items: Array<{ kind: "directory"; path: string; name: string } |
+    { kind: "file"; name: string }>;
+  token: string | null;
+} | null
+```
+
+仅受信任的主窗口可在用户明确执行 Composer 粘贴时调用，MCP 控制不能调用。
+Main 在文件系统异步读取前捕获原生文件列表，将元数据限制为 1 MiB、选择项限制
+为 20 个，并通过 `realpath`/`stat` 校验绝对路径。包含目录时仅返回规范化路径引用，
+不枚举、复制或读取目录内容；混合普通文件继续使用绑定发送者、仅可消费一次的
+picker token 和 `composer/importFiles` 限制。仅含普通文件时返回 null，保留原粘贴流程。
+
+目录引用作为经过 XML 转义的 `<dir>path</dir>` 提示文本，并附一条按任务需要读取
+相关文件的说明。它不进入结构化附件，也不授予额外的文件读取权限。会话能力校验
+保持生效，不允许远程会话借此附加本地路径。异步等待保留原会话或首页项目归属及
+期间的新编辑。普通文本优先，包括 Word 的文本与图片混合粘贴；不新增 Host RPC
+或 SQL 迁移。
+
 ### composer/importFiles
 
 ```ts

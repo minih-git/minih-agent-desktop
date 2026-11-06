@@ -5,6 +5,7 @@ import {
   TRANSCRIPT_REPIN_THRESHOLD_PX,
   TRANSCRIPT_SCROLL_GESTURE_WINDOW_MS,
   isHistoryRevealPosition,
+  isHistoryPrefetchPosition,
   isRecentScrollGesture,
   reduceTranscriptScroll,
   transcriptHasLayout,
@@ -207,4 +208,14 @@ test("a pinned overflowing transcript is suppressed anywhere in the band", () =>
     ),
     false,
   );
+});
+
+test("ahead-loading uses a capped three-viewport band and refuses hidden or pinned panes", () => {
+  const geometry = { scrollTop: 1500, scrollHeight: 8000, clientHeight: 500 };
+  assert.equal(isHistoryPrefetchPosition(geometry), true);
+  assert.equal(isHistoryPrefetchPosition({ ...geometry, scrollTop: 1501 }), false);
+  assert.equal(isHistoryPrefetchPosition({ ...geometry, scrollTop: 2400, clientHeight: 2000 }), true);
+  assert.equal(isHistoryPrefetchPosition({ ...geometry, scrollTop: 2401, clientHeight: 2000 }), false);
+  assert.equal(isHistoryPrefetchPosition({ ...geometry, clientHeight: 0 }), false);
+  assert.equal(isHistoryPrefetchPosition(geometry, true), false);
 });

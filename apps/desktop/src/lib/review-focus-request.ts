@@ -30,3 +30,10 @@ function subscribe(listener: () => void): () => void {
 export function useReviewFocusRequest(): ReviewFocusRequest | null {
   return useSyncExternalStore(subscribe, currentReviewFocusRequest, () => null);
 }
+
+/** Keep navigation inside Review; ancestor scrolling can move window chrome. */
+export function scrollReviewToAnchor(scroller: HTMLElement | null, selector: string): void {
+  const anchor = scroller?.querySelector<HTMLElement>(selector);
+  if (!scroller || !anchor) return;
+  scroller.scrollTop += anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+}

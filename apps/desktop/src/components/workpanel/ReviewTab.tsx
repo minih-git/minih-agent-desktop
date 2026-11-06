@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useReviewFocusRequest } from "../../lib/review-focus-request";
+import { scrollReviewToAnchor, useReviewFocusRequest } from "../../lib/review-focus-request";
 import { reviewChangesFromMessages, summarizeReviewChanges } from "../../lib/workspace-review";
 import { useAppStore } from "../../stores/app-store";
 import { IconDiff } from "../icons";
@@ -37,8 +37,9 @@ export function ReviewTab() {
   }, [focusRequest, entries, sessionId]);
   useEffect(() => {
     if (!focus || focus.sessionId !== sessionId) return;
-    const target = scrollRef.current?.querySelector<HTMLElement>(`[data-snapshot-id="${CSS.escape(focus.anchor)}"]`);
-    target?.scrollIntoView({ block: "start" });
+    const selector = `[data-snapshot-id="${CSS.escape(focus.anchor)}"]`;
+    scrollReviewToAnchor(scrollRef.current, selector);
+    const target = scrollRef.current?.querySelector<HTMLElement>(selector);
     target?.querySelector<HTMLButtonElement>(".review-change-card-header")?.focus({ preventScroll: true });
   }, [focus, sessionId]);
 

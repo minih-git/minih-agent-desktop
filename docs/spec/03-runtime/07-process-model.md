@@ -53,20 +53,20 @@ E2E harnesses point a build at a throwaway profile with it.
 7. Create main window / renderer
 8. Renderer performs `app/getVersion` healthcheck through main
 
-If step 3–4 fails: block app with recovery message. Before a successful host
-boot serves RPC, host-core transactionally marks prior pending approvals and
-queued/running `plan_approvals` execution states interrupted and aborts their
-running turns. This internal process-epoch fence is not serialized or sent over
-the protocol.
+If the initial `app.handshake` fails with exactly `host RPC timeout: app.handshake`,
+main disposes that child and retries Host startup once before starting the
+sidecar. A second timeout, another error (including a newer database schema),
+or shutdown reports the failure without another retry. Before a successful host
+boot serves RPC, host-core transactionally interrupts prior pending approvals
+and queued/running `plan_approvals` turns. This process-epoch fence is internal.
 
 The renderer bootstrap has no timeout of its own, so the renderer watches its own
 wait for the first state. At `STARTUP_SLOW_HINT_MS` (30s) the boot surface adds
 logs, diagnostics, and quit without calling the boot a failure; at
 `STARTUP_STALLED_MS` (180s) it becomes the recovery surface, which also offers a
-retry. Both bounds sit above the main↔host RPC ceiling
-(`DEFAULT_RPC_TIMEOUT_MS`, 130s), so a slow but successful boot is never reported
-as a failure. The watchdog never cancels the startup it watches: a boot that
-finishes replaces the surface with the shell, and the recovery surface replaces
+retry. The 180s bound can be reached during the one-time handshake retry; the
+watchdog does not cancel startup or claim the second attempt failed. A boot
+that finishes replaces the recovery surface with the shell, and recovery replaces
 the splash. The renderer-drawn window controls stay above that surface, so a
 frameless Windows/Linux window can always be closed, and quitting from it goes
 through the renderer quit channel (`minih-agent-desktop/app/quit`), which runs the same

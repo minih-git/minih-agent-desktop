@@ -10,6 +10,7 @@ export function useTranscriptSearchFocus({
   target,
   source,
   visible = true,
+  suspended = false,
   scrollRef,
   contentRef,
   contentVersion,
@@ -19,6 +20,7 @@ export function useTranscriptSearchFocus({
   target: TranscriptSearchTarget | null;
   source: string;
   visible?: boolean;
+  suspended?: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   contentVersion: unknown;
@@ -30,6 +32,11 @@ export function useTranscriptSearchFocus({
     const scroller = scrollRef.current;
     const content = contentRef.current;
     if (!visible || !target || !scroller || !content) return;
+    if (suspended && position.current.requestId === target.requestId) {
+      // An old search cannot restart alignment after latest navigation yields.
+      position.current.alignUntil = 0;
+      return;
+    }
     return installTranscriptSearchFocus({
       target,
       source,
@@ -39,7 +46,7 @@ export function useTranscriptSearchFocus({
       onNavigate,
       onPosition,
     });
-  }, [contentRef, contentVersion, onNavigate, onPosition, scrollRef, source, target, visible]);
+  }, [contentRef, contentVersion, onNavigate, onPosition, scrollRef, source, suspended, target, visible]);
 }
 
 type SearchPosition = { current: { requestId: number; alignUntil: number } };

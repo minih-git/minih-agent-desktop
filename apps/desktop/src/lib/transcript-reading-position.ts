@@ -97,15 +97,34 @@ export function captureTranscriptReadingPosition(
     return { pinned: true, offset: 0, scrollTop: scroller.scrollTop, windowSize, tailMessageId };
   }
   const viewport = scroller.getBoundingClientRect();
-  // Prefer the outer message/turn: its offset also describes reading inside an
-  // expanded tool body, whose explicit disclosure choices survive eviction.
-  for (const row of content.querySelectorAll<HTMLElement>("[data-minimap-id], [data-message-id]")) {
-    const rect = row.getBoundingClientRect();
-    if (rect.bottom <= viewport.top || rect.top >= viewport.bottom || rect.height === 0) continue;
-    const messageId = row.dataset.minimapId ?? row.dataset.messageId;
-    if (messageId) return { pinned, messageId, offset: rect.top - viewport.top,
-      scrollTop: scroller.scrollTop, windowSize, tailMessageId };
+  // A prepended page can regroup answers. Prefer the actual visible message,
+  // whose identity survives regrouping, then fall back to a turn container.
+  for (const selector of ["[data-message-id]", "[data-minimap-id]"]) {
+    for (const row of content.querySelectorAll<HTMLElement>(selector)) {
+      const rect = row.getBoundingClientRect();
+      if (rect.bottom <= viewport.top || rect.top >= viewport.bottom || rect.height === 0) continue;
+      const messageId = row.dataset.messageId ?? row.dataset.minimapId;
+      if (messageId) return { pinned, messageId, offset: rect.top - viewport.top,
+        scrollTop: scroller.scrollTop, windowSize, tailMessageId };
+    }
   }
+}
+
+function readingPositionRow(content: HTMLElement, messageId: string): HTMLElement | null {
+  const id = CSS.escape(messageId);
+  return content.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+    ?? content.querySelector<HTMLElement>(`[data-minimap-id="${id}"]`);
+}
+
+/** Test the intended position before correcting lazy-layout displacement. */
+export function isTranscriptReadingAnchorVisible(
+  scroller: HTMLElement,
+  content: HTMLElement,
+  position: TranscriptReadingPosition,
+): boolean {
+  if (!transcriptHasLayout(scroller) || !position.messageId) return false;
+  const height = readingPositionRow(content, position.messageId)?.getBoundingClientRect().height ?? 0;
+  return height > 0 && position.offset < scroller.clientHeight && position.offset + height > 0;
 }
 
 /** Returns false until the bookmarked row is actually mounted. */
@@ -116,8 +135,7 @@ export function restoreTranscriptReadingPosition(
 ): boolean {
   if (!transcriptHasLayout(scroller)) return false;
   if (position.messageId) {
-    const id = CSS.escape(position.messageId);
-    const row = content.querySelector<HTMLElement>(`[data-minimap-id="${id}"], [data-message-id="${id}"]`);
+    const row = readingPositionRow(content, position.messageId);
     if (row) {
       const rect = row.getBoundingClientRect();
       if (rect.height > 0) {

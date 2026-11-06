@@ -330,6 +330,7 @@ describe("classifyAgentError", () => {
     '429: {"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","code":"insufficient_quota"}}',
     '429: {"error":{"code":"organization_spend_limit_exceeded"}}',
     '429: {"error":{"code":"organization_usage_limit_exceeded"}}',
+    '429: {"type":"FreeUsageLimitError","message":"Free usage limit reached."}',
     "429: Billing quota exceeded",
   ])("does not retry exhausted account or disk quota: %s", (message) => {
     const classified = classifyAgentError(new Error(message));

@@ -378,6 +378,8 @@ export const es = {
     "sessionTranscriptEmpty": "No se pudo leer el historial de esta sesión. Vuelve a abrirla para intentarlo de nuevo.",
     "fileMenu": "Referencias de archivos",
     "removeFileReference": "Eliminar referencia de archivo {{name}}",
+    "directoryReference": "Carpeta",
+    "directoryPasteUnavailable": "No se puede obtener la ruta completa de la carpeta copiada. Arrastra la carpeta al cuadro de entrada.",
     "removePluginMark": "Eliminar {{name}}",
     "pluginTriggerMenu": "Sugerencias de plugins",
     "sessionTargetMenu": "Sesiones de destino",

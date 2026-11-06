@@ -29,8 +29,10 @@ export function promptAttachmentsFromDraft(
     // reference, and it never travels as a structured attachment.
     if (reference.kind === "session") return [];
     // A session target is prompt text too: it names a conversation and its id,
-    // and the session tools are how work reaches it.
-    if (reference.kind === "sessionTarget") return [];
+    // and the session tools are how work reaches it. A pasted folder is prompt
+    // text as well: it travels as an escaped directory marker the model reads on
+    // demand, never as an attachment of copied bytes.
+    if (reference.kind === "sessionTarget" || reference.kind === "directory") return [];
     const kind =
       reference.kind ??
       (/\.(avif|bmp|gif|heic|jpe?g|png|tiff?|webp)$/i.test(reference.path)

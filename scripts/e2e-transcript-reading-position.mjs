@@ -59,13 +59,18 @@ app.whenReady().then(async () => {
       captures.push(window.webContents.capturePage().then((image) =>
         require("node:fs/promises").writeFile(path.join(process.env.PI_SCRATCH_DIR, "reading-continuation.png"), image.toPNG())));
     }
+    if (event.message === "PRIORITY_NAVIGATION_SCREENSHOT" && process.env.PI_SCRATCH_DIR) {
+      captures.push(window.webContents.capturePage().then((image) =>
+        require("node:fs/promises").writeFile(path.join(process.env.PI_SCRATCH_DIR, "priority-navigation-review.png"), image.toPNG())));
+    }
   });
   try {
     await window.loadFile(path.join(__dirname, "index.html"));
     const scrolling = await window.webContents.executeJavaScript("globalThis.transcriptReadingPositionProbe()");
     const session = scrolling.ok ? await window.webContents.executeJavaScript("globalThis.sessionReadingPositionProbe()") : null;
     const continuation = session?.ok ? await window.webContents.executeJavaScript("globalThis.transcriptContinuationProbe()") : null;
-    const result = { ok: scrolling.ok && session?.ok && continuation?.ok, scrolling, session, continuation };
+    const priority = continuation?.ok ? await window.webContents.executeJavaScript("globalThis.transcriptPriorityNavigationProbe().catch(error => ({ ok: false, error: error.stack }))") : null;
+    const result = { ok: scrolling.ok && session?.ok && continuation?.ok && priority?.ok, scrolling, session, continuation, priority };
     await Promise.all(captures);
     console.log("READING_POSITION_PROBE " + JSON.stringify(result));
     app.exit(result.ok ? 0 : 1);
@@ -85,7 +90,7 @@ app.whenReady().then(async () => {
   assert(line, `No probe result (exit=${code}): ${output.slice(-4000)}`);
   const result = JSON.parse(line.slice("READING_POSITION_PROBE ".length));
   console.log(JSON.stringify(result));
-  assert.equal(code, 0, result.scrolling?.error ?? result.session?.error ?? result.continuation?.error ?? output.slice(-4000));
+  assert.equal(code, 0, result.scrolling?.error ?? result.session?.error ?? result.continuation?.error ?? result.priority?.error ?? output.slice(-4000));
   assert.equal(result.ok, true);
 } finally {
   await rm(temp, { recursive: true, force: true });

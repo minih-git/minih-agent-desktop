@@ -39,7 +39,12 @@ function readReference(value: unknown): HistoryReference | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
   if (typeof row.path !== "string" || !row.path || typeof row.name !== "string") return null;
-  const kind = row.kind === "image" || row.kind === "file" ? row.kind : undefined;
+  // A recalled entry keeps every reference kind the draft can hold, including a
+  // pasted folder and a session target, so recall restores the same chip.
+  const kind = row.kind === "image" || row.kind === "file" || row.kind === "session"
+    || row.kind === "sessionTarget" || row.kind === "directory"
+    ? row.kind
+    : undefined;
   return {
     path: row.path,
     name: row.name,

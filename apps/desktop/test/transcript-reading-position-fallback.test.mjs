@@ -8,7 +8,7 @@ register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 // `restoreTranscriptReadingPosition` escapes the id with the browser-only
 // `CSS.escape`; this suite runs the function directly in Node.
 globalThis.CSS ??= { escape: (value) => String(value).replace(/["\\]/g, "\\$&") };
-const { restoreTranscriptReadingPosition } = await import(
+const { restoreTranscriptReadingPosition, captureTranscriptReadingPosition, isTranscriptReadingAnchorVisible } = await import(
   "../src/lib/transcript-reading-position.ts"
 );
 const hookSource = await readFile(
@@ -127,4 +127,31 @@ test("the reading-position hook waits for history restore before applying fallba
   assert.match(hookSource, /if \(found\) \{\s*completedRestoreRef\.current = position;\s*restoreReadyRef\.current = true;/s);
   assert.match(hookSource, /if \(!restoreReadyRef\.current\) return;/);
   assert.match(hookSource, /if \(!position \|\| !restoreReadyRef\.current\) return;/);
+});
+
+test("capture prefers a visible message over a regroupable turn and retains the canonical tail", () => {
+  const turn = { dataset: { minimapId: "turn" }, getBoundingClientRect: () => ({ top: -40, bottom: 800, height: 840 }) };
+  const row = { dataset: { messageId: "message" }, getBoundingClientRect: () => ({ top: 24, bottom: 90, height: 66 }) };
+  const content = { querySelectorAll: selector => selector === "[data-message-id]" ? [row] : [turn] };
+  assert.deepEqual(captureTranscriptReadingPosition(fakeScroller(), content, false, 60, "tail"),
+    { pinned: false, messageId: "message", offset: 24, scrollTop: 0, windowSize: 60, tailMessageId: "tail" });
+});
+
+test("restore prefers the actual message over a group with the same marker", () => {
+  const scroller = fakeScroller({ scrollTop: 100 });
+  const content = { querySelector: selector => ({ getBoundingClientRect: () =>
+    selector === '[data-message-id="m-late"]' ? { top: 140, height: 60 } : { top: -80, height: 800 } }) };
+  assert.equal(restoreTranscriptReadingPosition(scroller, content, bookmark()), true);
+  assert.equal(scroller.scrollTop, 216);
+});
+
+test("lazy-layout anchor visibility uses the intended offset until the entire row leaves the viewport", () => {
+  const scroller = fakeScroller();
+  const content = fakeContent({ row: { getBoundingClientRect: () => ({ top: 900, height: 800 }) } });
+  for (const offset of [24, -700, 599]) {
+    assert.equal(isTranscriptReadingAnchorVisible(scroller, content, bookmark({ offset })), true);
+  }
+  for (const offset of [-800, 600]) {
+    assert.equal(isTranscriptReadingAnchorVisible(scroller, content, bookmark({ offset })), false);
+  }
 });

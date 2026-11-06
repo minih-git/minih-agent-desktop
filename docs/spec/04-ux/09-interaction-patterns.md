@@ -370,6 +370,11 @@ may be retained while exactly one workspace supplies the visible shell context.
   transcript on the same frame rather than waiting for `session.get`. The
   durable row is inserted from the `session.create` summary; send and paste wait
   for that in-flight create instead of opening a second slot (ADR 0154).
+  The shared pending operation resolves to its own durable session id, or null
+  when navigation supersedes it; input never falls back to the currently
+  selected session after waiting. Concurrent first inputs share that operation,
+  including an isolated New Task in the current project. Failure releases the
+  pending slot for an explicit retry.
 - A first-opened session settles at its newest turn. A revisited pane returns to
   the offset the user left, and a pane still pinned re-anchors to the bottom;
   activation no longer resets manual-scroll state for a revisit (ADR 0137).
@@ -742,7 +747,21 @@ may be retained while exactly one workspace supplies the visible shell context.
 - Sending a new prompt, retrying, or regenerating always re-pins follow mode and jumps to the bottom before the turn continues, even if the user had scrolled up
 - "Scroll to bottom" floating button appears as soon as manual upward scrolling
   releases follow mode
-- Click "Scroll to bottom" button: resumes auto-scroll and snaps to bottom
+- Click "Scroll to bottom": retire pending history, restoration, search alignment,
+  follow frames and the earlier gesture; keep the current reading range during a
+  short interruptible animation, then commit the live tail on arrival. Reduced
+  motion completes synchronously. Reader input cancels without committing;
+  hiding/evicting the pane preserves the accepted latest intent. A newer search
+  or navigation supersedes the old arrival callback.
+- Upward gestures prefetch older history within three viewports (capped at
+  2400px). Ahead-loading leaves input usable and tracks the current reading
+  point. At the hard edge, one owner briefly holds scroll input until its page
+  or mounted-window growth settles. Both use a visible-message id and offset,
+  correcting lazy layout before paint; a regroupable answer wrapper is fallback
+  only. Requests stay single-flight even after viewport cancellation, and
+  unchanged/failed reads require new input to retry. Hidden panes do not fetch.
+  Minih's actual-bottom sampling, canonical-tail bookmark invalidation and remote
+  opaque older-item cursors remain unchanged.
 - Stream completion: if user was auto-scrolling, keep at bottom; if manual, stay at position
 - An asynchronously completed diagram height update follows the same rule:
   ResizeObserver keeps a pinned transcript at the bottom, while a user who has

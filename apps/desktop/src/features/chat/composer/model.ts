@@ -66,7 +66,7 @@ export type ComposerFileReference = {
    * that conversation; `sessionTarget` is the `#` trigger's lightweight target,
    * which only names the conversation and its id in the prompt (D673).
    */
-  kind: "image" | "file" | "session" | "sessionTarget";
+  kind: "image" | "file" | "session" | "sessionTarget" | "directory";
   mimeType?: string;
   token?: string;
   plugin?: ComposerPluginPart;

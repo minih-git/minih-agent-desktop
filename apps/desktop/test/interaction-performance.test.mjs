@@ -67,11 +67,11 @@ test("stream rendering avoids duplicate frame state and coalesces following", ()
   assert.doesNotMatch(transcript, /setVisibleLen/);
   assert.match(transcript, /const scheduleFollowScroll = useCallback/);
   assert.match(transcript, /followFrameRef\.current !== 0/);
-  // The pane's own first commit is never deferred: its content has to be in the
-  // commit that reveals it, or the reveal shows one empty frame (ADR 0137).
+  // First reveal and an active page hold must render current rows before paint:
+  // a deferred projection would align the anchor against obsolete layout.
   assert.match(
     transcript,
-    /const renderedProjection =\s*readingWindow \|\| firstCommit \|\| paneRevealed \? projection : deferredProjection/,
+    /const renderedProjection =\s*readingWindow \|\| historyPending \|\| firstCommit \|\| paneRevealed \? projection : deferredProjection/,
   );
   assert.match(transcript, /getTranscriptProjection\(messages, compactions\)/);
   assert.match(transcript, /useDeferredValue\(projection\)/);

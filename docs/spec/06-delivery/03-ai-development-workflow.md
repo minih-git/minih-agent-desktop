@@ -16,15 +16,17 @@ The rules below govern every change to the Minih-Agent-Desktop codebase and docu
 
 - Every code, config, or UX change that alters observable behavior must update the relevant `docs/spec/` document before or alongside the change.
 - Architectural boundary changes (process model, IPC contract, storage ownership, security boundary) also require an ADR — see `docs/adr/README.md`.
-- Pure refactor that preserves behavior and API contracts does not require spec updates, but must still be committed (R2).
+- Pure behavior-preserving refactors need no product spec update; commit authorization still follows R2.
 
-### R2 — Commit-per-change
+### R2 — Commit only with user authorization
 
-> **Every completed logical change must be git committed.**
+> **Commit a completed logical change only when the user requests a commit.**
 
-- No large uncommitted piles of work. Each logical unit of work — a feature, a fix, a spec update, a chore — gets its own commit.
-- Uncommitted work at session end is a violation of this rule.
-- If a change is incomplete, either commit it as a draft with a `WIP:` prefix or roll it back.
+- Keep each authorized commit coherent and review its diff before staging.
+- Implementation-only requests may leave reviewable, verified changes in their
+  dedicated worktree. Do not infer commit, push or merge permission.
+- This follows `AGENTS.md` §17; incomplete work must be reported honestly rather
+  than committed or discarded without authorization.
 
 ### R3 — E2E coverage doc
 
@@ -277,7 +279,7 @@ Every change follows this sequence. Steps may be iterated if the implementation 
 5. Update specs / ADR / decisions-log if needed
 6. Update or add e2e scenarios when R3 applies
 7. Run targeted local checks necessary for the change's risk
-8. Commit with conventional message
+8. Commit with a conventional message when the user requests it
 9. Update BOARD if milestone-related
 10. Refresh against latest `origin/main` (`pnpm check:pr-base`) and run
     task-candidate E2E in the worktree (R7); when remote delivery is authorized,
@@ -300,7 +302,7 @@ Every change follows this sequence. Steps may be iterated if the implementation 
 | **5. Spec-sync** | Update specs per the impact list. Add ADR if architectural. Update `decisions-log.md` if an implementation default changes. | Updated docs/spec/\* and/or docs/adr/\*. |
 | **6. E2E doc** | When R3 applies, add or update scenario entries in `04-e2e-test-plan.md` and link to acceptance criteria IDs (A–H). Otherwise, confirm no scenario update is needed. | Updated e2e test plan, or confirmed not applicable. |
 | **7. Validate** | Use change risk and regression scope to select the smallest useful local checks. The relevant E2E gate for a code-bearing change runs in the request worktree after `origin/main` is incorporated (`pnpm check:pr-base`) and before any branch push or PR/MR; a suite that cannot run is recorded as `NOT RUN` and keeps delivery incomplete. | Targeted check and E2E results, or an explicit environment limitation. |
-| **8. Commit** | Git commit with conventional message (see §4). | One or more commits. |
+| **8. Commit** | When authorized, create a conventional commit (see §4). Otherwise retain the verified worktree diff. | Reviewable changes or authorized commits. |
 | **9. BOARD** | If the change completes a milestone deliverable, update `docs/project/BOARD.md`. | Updated board. |
 | **10. Refresh + gate** | Refresh against latest `origin/main`, confirm it is an ancestor of HEAD (`pnpm check:pr-base`), then run task-candidate E2E in the worktree. When remote publishing is authorized, push the request branch and open a PR/MR targeting `main` only after that gate. | Verified candidate with the E2E gate result, or a recorded `NOT RUN` limitation; reviewable remote change or a local-only delivery route. |
 | **11. Remote merge + cleanup** | For authorized remote delivery, merge the PR/MR into remote `main` through the required gates (including the PR-base check) and synchronize local `main`; rerun the affected suites when the landed executable content differs from the commit the gate ran on. Verify the expected commits and remove the merged worktree and branch. | Requested integration complete, or an explicit blocker / narrower user-requested handoff. |
@@ -538,8 +540,9 @@ Do not merge the request branch into local `main` to create an E2E candidate
 or to open a PR. Local-only delivery (no remote PR/MR) stays on the request
 branch until the user explicitly asks to integrate it.
 
-The worktree must be clean before removal; commit or discard the request's own
-leftover changes first. Use `git branch -d` rather than `-D` so an unmerged
+The worktree must be clean before removal. Do not commit or discard leftover
+changes without authorization; retain the worktree if needed. Use `git branch -d`
+instead of `-D` so an unmerged
 branch refuses to delete. If `git worktree remove` reports the worktree as dirty
 or locked, resolve that state instead of forcing removal, and never remove
 another request's worktree.
@@ -562,7 +565,8 @@ explicit branch-only or draft-only delivery scope:
    environment limitation is recorded as `NOT RUN` and delivery remains
    incomplete until that suite passes; automatically triggered remote gates
    also pass, including the PR-base ancestry check.
-6. Change is committed with a conventional message.
+6. If a commit was requested, the change is committed with a conventional message;
+   otherwise the verified implementation remains reviewable in its task worktree.
 7. BOARD is updated if a milestone deliverable completed.
 8. No secrets or local data are present in the commit.
 9. Before a PR/MR is opened or updated, `origin/main` is an ancestor of the
@@ -603,7 +607,7 @@ D164, and D260. GitHub release notes are not a substitute.
 | Practice | Why |
 |---|---|
 | Committing secrets | Security violation |
-| Large uncommitted diffs | Violates R2; loss of granularity |
+| Committing, publishing or discarding work without authorization | Violates R2 and the user's delivery scope |
 | Changing behavior without spec update | Violates R1; specs become unreliable |
 | Skipping e2e doc for user-visible changes | Violates R3; traceability gap |
 | Declaring a code-bearing change complete without successful relevant E2E after incorporating latest `origin/main` | Violates R7 and leaves cross-process behavior unverified |

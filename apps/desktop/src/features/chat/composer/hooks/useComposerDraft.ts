@@ -298,6 +298,8 @@ export function useComposerDraft({
       (token) => expandTextReferenceRef.current(token),
       (token) => openImageReferenceRef.current(token),
       (token) => openSessionReferenceRef.current(token),
+      // A folder card names its own type; its full path stays the tooltip.
+      t("chat.directoryReference"),
     );
     editorValueRef.current = nextValue;
   };

@@ -5,6 +5,7 @@ import { createQueueSlice } from "../../apps/desktop/src/stores/slices/queue-sli
 import type { SessionRuntime } from "../../apps/desktop/src/stores/runtime/session-runtime";
 import { useComposerSubmit } from "../../apps/desktop/src/features/chat/composer/hooks/useComposerSubmit";
 import { verifyComposerSubmission } from "./composer-submission";
+import "./composer-draft-race";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { createInstance } from "i18next";
@@ -40,7 +41,8 @@ import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 declare global {
   var composerPreviewPointer: (input: { type: "mousePressed" | "mouseMoved" | "mouseReleased"; x: number; y: number }) => Promise<void>;
   var composerPreviewPressKey: (key: string) => Promise<void>;
-  var composerPreviewCapture: (() => Promise<void>) | undefined;
+  /** `suffix` names an extra capture, so a probe can keep several shots. */
+  var composerPreviewCapture: ((suffix?: string) => Promise<void>) | undefined;
   var composerPasteProbe: () => Promise<unknown>;
   var composerHistoryProbe: (phase: "prepare" | "verify") => Promise<unknown>;
 }
@@ -236,6 +238,38 @@ globalThis.composerPasteProbe = async () => {
     selection.addRange(range);
   };
   try {
+    // A native Finder folder copy becomes a removable reference card: the path
+    // comes from main (Chromium exposes no File for a folder), nothing is copied,
+    // and removing the card leaves the draft empty.
+    useAppStore.setState({ sessions: [{
+      id: "paste-a",
+      title: "Folder paste fixture",
+      source: "desktop",
+      mode: "agent",
+      permissionMode: "inherit",
+      thinkingLevel: "off",
+      messageCount: 0,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    }] });
+    const directoryEditor = await paste("", [], true);
+    const directoryChip = directoryEditor.querySelector<HTMLElement>(".composer-chip");
+    assert(directoryChip?.textContent?.includes("copied folder"), "native folder metadata did not render a chip");
+    assert(
+      directoryChip?.classList.contains("composer-directory-card"),
+      "a pasted folder must render as a directory card",
+    );
+    assert(
+      directoryChip?.title.endsWith("copied folder"),
+      "the folder card keeps the full path as its tooltip",
+    );
+    assert(controller.fileReferences[0]?.kind === "directory", "folder chip must own a directory reference");
+    if (globalThis.composerPreviewCapture) await globalThis.composerPreviewCapture("directory-chip");
+    flushSync(() => directoryChip?.querySelector<HTMLButtonElement>(".composer-chip-remove")?.click());
+    assert(controller.fileReferences.length === 0, "folder chip could not be removed");
+    await new Promise(requestAnimationFrame);
+    if (globalThis.composerPreviewCapture) await globalThis.composerPreviewCapture("directory-removed");
+
     // Settings replaces ChatSurface, then remounts the composer in the same
     // workspace. Exercise the real draft hook and DOM across that lifecycle.
     render("paste-a", "/project-a");
@@ -982,6 +1016,7 @@ globalThis.composerPasteProbe = async () => {
     await verifyComposerSubmission(imageReference.path, i18n);
     return {
       ok: true,
+      nativeDirectoryMetadata: true,
       fullComposerSubmissionAndOverflow: true,
       mixedShortText: true,
       multilineAndUndoRedo: true,

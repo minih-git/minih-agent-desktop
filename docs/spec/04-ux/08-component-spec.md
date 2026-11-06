@@ -3504,6 +3504,15 @@ settling grace period, enforced in the state layer; dismissal never stops a proc
   all files lack native paths. This keeps Word text editable. Native files,
   any non-image file, and image-only/whitespace-plus-image pastes remain
   attachments. Selected text uses the same large-paste threshold (ADR 0059).
+- A pasted native folder becomes a removable atomic directory card with a
+  localized type label, leaf name and complete-path tooltip. It is a lazy local
+  path reference: neither paste nor send enumerates or copies its tree. Mixed
+  file/folder selections preserve order; regular files keep their bounded
+  session-scratch import. Pending native reads preserve newer draft edits and
+  the original session/home project; session targets and pasted conversation
+  links retain their distinct semantics. Directory references serialize as
+  XML-escaped `<dir>` markers, with one instruction to inspect only relevant
+  files on demand, and do not become structured file/image attachments.
 - Pasting one or more OS clipboard files or images saves their bytes into the
   originating session's scratch directory and adds a compact leaf-name
   reference above the textarea. A text-only paste at or below the configured
@@ -4896,6 +4905,9 @@ Selecting a file opens the existing session Review tab and requests that exact
 snapshot's expansion/focus. The request is transient and session-scoped; it does
 not modify files, roll back changes or persist a new review state. Normal Review
 refresh, keyboard access, add-on rendering and remote capabilities remain intact.
+The requested file is aligned by adjusting only the Review list's scrollTop;
+ancestor page/window chrome must not move. Keyboard focus stays on the file
+header with `preventScroll`, and session-id/message ownership remains required.
 
 The configurable steering shortcut can send the first currently sendable queued
 follow-up when the editor is empty, through the existing Send now workflow. Empty

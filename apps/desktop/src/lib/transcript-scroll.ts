@@ -53,6 +53,15 @@ export function isHistoryRevealPosition(
   return geometry.scrollTop <= HISTORY_REVEAL_THRESHOLD_PX;
 }
 
+/** Ahead-loading is driven by upward input, never an idle history drain. */
+export function isHistoryPrefetchPosition(
+  geometry: TranscriptScrollerGeometry,
+  pinned = false,
+): boolean {
+  return !pinned && transcriptHasLayout(geometry) &&
+    geometry.scrollTop <= Math.min(2400, Math.max(HISTORY_REVEAL_THRESHOLD_PX, geometry.clientHeight * 3));
+}
+
 /**
  * Whether the viewport already shows the bottom, within the re-pin band.
  *

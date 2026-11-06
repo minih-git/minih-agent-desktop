@@ -1,3 +1,4 @@
+import { readComposerDraft, readComposerDraftRevision } from "../../../../lib/composer-draft-cache";
 import {
   useState,
   useRef,
@@ -227,22 +228,36 @@ export function useComposerAttachments({
     if (isInputBlocked) return;
     const text = event.clipboardData.getData("text/plain");
     const pastedFiles = clipboardFiles(event.clipboardData);
-    const files = preferClipboardText(text, pastedFiles, api.getDroppedFilePath)
-      ? []
-      : pastedFiles;
+    // Editable text outranks native folder detection: Word selections advertise
+    // Files through a generated image, and that text must stay text.
+    const preferText = preferClipboardText(text, pastedFiles, api.getDroppedFilePath);
+    const files = preferText ? [] : pastedFiles;
+    const hasNativeFileTypes = event.clipboardData.types?.includes("Files") ?? false;
+    const nativeFilePaste = !preferText && (hasNativeFileTypes || !text);
     const textLength = Array.from(text).length;
     const isLargeTextPaste = !files.length && textLength > largePasteThreshold;
-    if (isLargeTextPaste || files.length) {
+    if (isLargeTextPaste || files.length || nativeFilePaste) {
       event.preventDefault();
       const editor = event.currentTarget;
-      const { start: selectionStart, end: selectionEnd } = editorSelectionRange(editor);
-      const sourceValue = readEditorValue(editor);
+      let { start: selectionStart, end: selectionEnd } = editorSelectionRange(editor);
+      let sourceValue = readEditorValue(editor);
       const sourceSessionId = activeSessionId;
       const sourceDraftKey = draftKey;
-      const previousReferences = snapshotReferences(sourceSessionId ?? "");
+      const sourceWorkspacePath = useAppStore.getState().workspace?.path ?? "";
+      let previousReferences = snapshotReferences(sourceSessionId ?? "");
+      const sourceRevision = readComposerDraftRevision(sourceDraftKey);
       setPasting(true);
       try {
-        const payload = files.length
+        // Folder metadata is read only for an explicit paste, never while the
+        // user is merely editing; a large text paste keeps its own path.
+        const native = !isLargeTextPaste ? await api.readClipboardDirectories() : null;
+        if (!native && !files.length && !isLargeTextPaste) {
+          // Chromium announced native files but the platform path is unavailable:
+          // say so instead of silently dropping the paste.
+          if (hasNativeFileTypes) throw new Error(t("chat.directoryPasteUnavailable"));
+          return;
+        }
+        const payload = native ? [] : files.length
           ? await Promise.all(
               files.map(async (file) => ({
                 name: file.name || undefined,
@@ -264,16 +279,55 @@ export function useComposerAttachments({
                 },
               ];
             })();
+        if (!sourceSessionId) {
+          // A home paste owns the workspace it started in: materializing a task
+          // after the user moved would attach the folder to the wrong task.
+          const current = useAppStore.getState();
+          if (current.activeSessionId || (current.workspace?.path ?? "") !== sourceWorkspacePath) return;
+        }
         let sessionId = sourceSessionId;
         if (!sessionId) sessionId = (await materializeDraftSession()) ?? "";
         if (!sessionId) throw new Error("session unavailable");
+        const targetRevision = readComposerDraftRevision(sessionId);
 
-        const result = await api.pasteFiles(sessionId, payload);
+        let result: { files: Array<{ path: string; name: string; kind: "image" | "file" | "directory"; mimeType?: string }> };
+        if (native) {
+          // Directories stay lazy path references; any regular files in the same
+          // selection arrive through the picker's sender-bound import token.
+          const imported = native.token ? await api.importFiles(sessionId, native.token) : { files: [] };
+          let index = 0;
+          result = {
+            files: native.items.map((item) => item.kind === "directory"
+              ? { path: item.path, name: item.name, kind: "directory" as const }
+              : imported.files[index++]),
+          };
+        } else {
+          result = await api.pasteFiles(sessionId, payload);
+        }
+        if (native && (readComposerDraftRevision(sourceDraftKey) !== sourceRevision ||
+          (!sourceSessionId && readComposerDraftRevision(sessionId) !== targetRevision))) {
+          // The home draft can acquire a durable owner while file import waits.
+          // Retain edits from that owner's cache even if its editor was replaced
+          // or the user selected another conversation before import settled.
+          if (useAppStore.getState().activeSessionId === sourceSessionId) {
+            sourceValue = readEditorValue(editor);
+            const selection = editorSelectionRange(editor);
+            selectionStart = selection.start;
+            selectionEnd = selection.end;
+            previousReferences = snapshotReferences(sourceSessionId ?? "");
+          } else {
+            const latest = readComposerDraft(sessionId) ?? readComposerDraft(sourceDraftKey);
+            sourceValue = latest?.text ?? sourceValue;
+            selectionStart = selectionEnd = sourceValue.length;
+            previousReferences = latest?.fileReferences ?? previousReferences;
+          }
+        }
+        if (native && !useAppStore.getState().sessions.some((session) => session.id === sessionId)) return;
         const chips = result.files.map((file) => {
           const token = nextChipToken();
           return {
             token,
-            reference: createFileReference(file.path, file.name, sessionId, {
+            reference: createFileReference(file.path, file.name, sessionId!, {
               kind: file.kind,
               mimeType: file.mimeType,
               token,
@@ -304,7 +358,9 @@ export function useComposerAttachments({
         } else if (sourceDraftKey === HOME_DRAFT_KEY) {
           deleteComposerDraft(HOME_DRAFT_KEY);
         }
-        showToast(
+        // A folder card is its own confirmation; the toast only announces a
+        // scratch copy of bytes the paste created.
+        if (!native) showToast(
           t,
           files.length ? "chat.filesPasted" : "chat.largeTextPasted",
           files.length

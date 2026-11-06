@@ -654,3 +654,47 @@ test("remote reading never fabricates a forward cursor for automatic continuatio
   assert.deepEqual(calls, []);
   assert.equal(r.get().transcriptViews[id], restored);
 });
+
+test("preparing latest keeps history visible and retires pending read completions and errors", async () => {
+  for (const fail of [false, true]) {
+    const pending = deferred();
+    const r = reader(() => pending.promise, { transcriptViews: { s: {
+      messages: [message("history")], messageStart: 20, messageEnd: 40,
+      hasMoreBefore: true, hasMoreAfter: true, focus: null, restored: true, loading: null,
+    } } });
+    const live = r.get().messages;
+    const loading = r.loadTranscriptPage("s", "before");
+    const arrive = r.prepareReturnToLatestTranscript("s");
+    assert.equal(r.view().loading, null);
+    assert.deepEqual(r.visible().map(row => row.id), ["history"]);
+    if (fail) pending.reject(new Error("obsolete read")); else pending.resolve(page([message("obsolete")]));
+    await loading;
+    assert.deepEqual(r.visible().map(row => row.id), ["history"]);
+    assert.deepEqual(r.errors, []);
+    arrive();
+    assert.equal(r.view(), undefined);
+    assert.equal(r.get().messages, live);
+    assert.deepEqual(r.visible().map(row => row.id), ["tail"]);
+  }
+});
+
+test("a newer search or latest preparation retires the old arrival callback", async () => {
+  const r = reader(async () => page([message("found")]), { transcriptViews: { s: {
+    messages: [message("history")], messageStart: 20, messageEnd: 40,
+    hasMoreBefore: true, hasMoreAfter: true, focus: null, loading: null,
+  } } });
+  const oldArrival = r.prepareReturnToLatestTranscript("s");
+  const arrive = r.prepareReturnToLatestTranscript("s");
+  const prepared = r.view();
+  oldArrival();
+  assert.equal(r.view(), prepared);
+  await r.navigateTranscript(target("found"));
+  arrive();
+  assert.equal(r.view().focus.messageId, "found");
+});
+
+test("preparing latest on the live tail does not allocate a historical view", () => {
+  const r = reader(async () => page([]));
+  r.prepareReturnToLatestTranscript("s")();
+  assert.equal(r.view(), undefined);
+});

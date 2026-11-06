@@ -8,6 +8,36 @@
 
 ## 1. Goals
 
+### E2E-UPSTREAM-priority-input-navigation-and-directory-paste
+
+- **Preconditions:** Dedicated worktree, reused local dependencies and Electron,
+  isolated synthetic sessions, profiles and temporary files. No installed app,
+  real provider, user transcript or clipboard fixture from the host account.
+- **Steps:** Send/paste while New Task creation is held, including isolated task
+  creation; supersede navigation and reject/retry creation. Exercise the initial
+  Host handshake timeout and terminal Zen quota response. Page older history
+  while input/layout changes, interrupt latest navigation, switch/evict panes,
+  then focus a Review file inside an overflowing ancestor. Paste native folders
+  with regular files, edit/switch during metadata IO, send/remove/restore cards,
+  and compare Word-text and regular file/image paste.
+- **Expected:** One correctly owned durable session; no stale-current fallback.
+  Only the exact initial handshake timeout retries once; quota exhaustion does
+  not retry. Message anchors, actual-bottom sampling, stale-tail invalidation,
+  remote cursor rules and session-scoped Review focus survive. Latest navigation
+  releases competing owners and commits only on arrival or accepted hide.
+  Directory metadata is bounded and sender-restricted, never recursively copied,
+  and serialized as escaped prompt data rather than file attachments. Minih
+  session targets/links and remote capabilities stay unchanged.
+- **Automation:** `node scripts/e2e-composer-paste.mjs`,
+  `node scripts/e2e-transcript-reading-position.mjs`, and the targeted
+  session-materialization, startup-retry, provider-retry, directory-paste,
+  transcript-reading/latest and Review scroll tests.
+- **Specs / acceptance:** IPC protocol, process/error behavior, Composer and
+  interaction specifications; acceptance B/C/E/F and accessibility.
+- **Milestone / status:** Selected maintenance candidate, development checks;
+  actual results and limitations are in
+  [the import record](../../project/upstream-import-2026-11-05.md).
+
 ### E2E-RUNTIME-terminal-provider-errors
 
 - **Preconditions:** Task-local shared/runtime builds, reused dependencies and a

@@ -98,3 +98,21 @@ amendment replaces that selection rule; the remaining decisions are unchanged.
   breaks, so paragraphs, blank and trailing lines, the replaced selection, the
   surrounding text, the caret, and native undo all survive. Clipboard HTML is
   still never read, and CRLF/CR line endings become editor LF line breaks.
+
+## Amendment (2026-11-05): lazy native directory paste
+
+An explicit Composer paste may read native file-list metadata even when
+Chromium exposes no File object. When that selection contains a directory,
+main resolves its canonical path and the renderer keeps an atomic directory
+reference; no directory tree or bytes are copied. Mixed regular files retain
+the existing sender-bound one-shot import capability and scratch limits.
+Metadata is bounded to 1 MiB and selections to 20 items. Main-window sender
+validation and MCP channel exclusion remain mandatory.
+
+This additive IPC boundary is documented in
+[the IPC specification](../spec/03-runtime/01-ipc-protocol.md#composerreadclipboarddirectories).
+Directory prompt markers are XML-escaped data and do not grant filesystem
+permissions. Minih's remote-session capability limits, session targets, session
+links and Word-text preference remain unchanged. See
+[the selected import record](../project/upstream-import-2026-11-05.md) for source
+revisions and actual verification. No storage migration or recursive import.
