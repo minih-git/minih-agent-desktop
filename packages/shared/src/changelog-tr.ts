@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-06",
+    highlights: [
+      "Düşen bir EasyTier tüneli artık istekleri yutmuyor: uygulama ortak bir sağlık durumu tutuyor, zaman aşımını beklemeden saniyeler içinde tünelden vazgeçiyor, tüm oturumları doğrudan genel adrese yönlendiriyor ve kendiliğinden toparlanıyor.",
+      "Sessizce kopan uzak denetim bağlantısı artık istek zaman aşımına uğrayana kadar asılı kalmak yerine 45 saniye içinde yeniden bağlanıyor; makine uyandığında veya ağ geri geldiğinde hemen yeniden deniyor.",
+      "Telefon ve web uygulaması artık listeyi ve konuşmayı önce yerel önbellekten gösterip arka planda yeniliyor; verinin güncellenmekte mi yoksa çevrimdışı mı olduğunu sade bir ipucuyla belirtiyor.",
+    ],
+  },
+
+  {
     version: "1.3.0",
     date: "2026-11-03",
     highlights: [

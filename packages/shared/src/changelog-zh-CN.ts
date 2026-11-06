@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-06",
+    highlights: [
+      "EasyTier 隧道断开后请求不再被吞掉：应用维护共享的健康状态，几秒内放弃隧道而不是等满超时，所有会话直接走公网地址，并自行恢复。",
+      "默默断掉的远程控制链路现在会在 45 秒内重连，而不是一直挂到请求超时；电脑唤醒或网络恢复时会立即重试。",
+      "手机与网页端会先用本地缓存显示列表和会话，再在后台刷新；界面用一条不刺眼的提示说明正在更新还是已离线。",
+    ],
+  },
+
+  {
     version: "1.3.0",
     date: "2026-11-03",
     highlights: [

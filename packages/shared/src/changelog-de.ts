@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-06",
+    highlights: [
+      "Ein abgebrochener EasyTier-Tunnel verschluckt keine Anfragen mehr: Die App führt einen gemeinsamen Gesundheitszustand, gibt den Tunnel nach Sekunden statt nach einem vollen Timeout auf, schickt alle Sitzungen direkt an die öffentliche Adresse und erholt sich selbst.",
+      "Eine still gestorbene Fernsteuerungsverbindung verbindet sich jetzt innerhalb von 45 Sekunden neu, statt bis zum Anfrage-Timeout zu hängen, und versucht es sofort erneut, wenn der Rechner aufwacht oder das Netz zurückkommt.",
+      "Telefon- und Web-App zeigen Liste und Unterhaltung zuerst aus dem lokalen Cache und aktualisieren im Hintergrund, mit einem dezenten Hinweis, ob die Daten noch aktualisiert werden oder offline sind.",
+    ],
+  },
+
+  {
     version: "1.3.0",
     date: "2026-11-03",
     highlights: [

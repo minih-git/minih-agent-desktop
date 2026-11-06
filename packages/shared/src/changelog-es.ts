@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-06",
+    highlights: [
+      "Un túnel EasyTier caído ya no se traga las peticiones: la aplicación mantiene un estado de salud compartido, abandona el túnel en segundos en lugar de esperar un tiempo de espera completo, envía todas las sesiones directamente a la dirección pública y se recupera sola.",
+      "Un enlace de control remoto que moría en silencio ahora se reconecta en 45 segundos en lugar de quedarse colgado hasta el tiempo de espera de la petición, y reintenta al instante cuando el equipo se despierta o vuelve la red.",
+      "La aplicación para teléfono y web ahora muestra la lista y la conversación desde la caché local primero y refresca en segundo plano, con un aviso discreto de si los datos se están actualizando o están sin conexión.",
+    ],
+  },
+
+  {
     version: "1.3.0",
     date: "2026-11-03",
     highlights: [

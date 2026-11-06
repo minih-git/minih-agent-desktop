@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-06",
+    highlights: [
+      "A dropped EasyTier tunnel no longer swallows requests: the app keeps a shared health state, gives up on the tunnel in seconds instead of waiting out a timeout, sends every session straight to the public address, and recovers on its own.",
+      "A remote-control link that silently died now reconnects within 45 seconds instead of hanging until the request timed out, and the app retries at once when the machine wakes or its network comes back.",
+      "The phone and web app now render the list and conversation from the local cache first and refresh in the background, with a quiet hint showing whether the data is still updating or offline.",
+    ],
+  },
+
+  {
     version: "1.3.0",
     date: "2026-11-03",
     highlights: [

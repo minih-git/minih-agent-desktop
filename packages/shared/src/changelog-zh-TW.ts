@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "1.3.1",
+    date: "2026-11-06",
+    highlights: [
+      "EasyTier 通道中斷後請求不再被吞掉：應用程式維護共用的健康狀態，幾秒內就放棄通道而不是等滿逾時，所有工作階段直接走公網位址，並自行恢復。",
+      "默默斷掉的遠端控制連線現在會在 45 秒內重新連上，而不是一直掛到請求逾時；電腦喚醒或網路恢復時會立即重試。",
+      "手機與網頁端會先用本機快取顯示清單與工作階段，再於背景重新整理；介面用一條不刺眼的提示說明正在更新或已離線。",
+    ],
+  },
+
+  {
     version: "1.3.0",
     date: "2026-11-03",
     highlights: [
