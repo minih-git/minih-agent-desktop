@@ -4,6 +4,7 @@ pub mod credentials;
 pub mod endpoint;
 pub mod health;
 pub mod identity;
+mod loopback;
 pub mod remote_gateway;
 pub mod runtime;
 pub mod tun_runner;
