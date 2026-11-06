@@ -2282,6 +2282,7 @@ The initial target limits are:
 | Read/metadata operation deadline | 15 seconds |
 | `turn/start` admission deadline | 5 seconds |
 | Approval lifetime, local default | No automatic deadline; explicit decision or cancellation |
+| Approval lifetime, remote policy | 30 minutes by default while a remote subscriber is attached; Host-configured, bounded, advertised as `approvalLifetimeMs` |
 | Heartbeat interval (`RACP-WS` client connections) | 30 seconds |
 | Host link heartbeat / liveness window | 15 seconds / 45 seconds (three beats) |
 | Terminal output replay ring | 128 KiB per terminal |
