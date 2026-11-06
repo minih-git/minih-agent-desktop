@@ -176,5 +176,48 @@ describe("forgetAllHosts", () => {
   });
 });
 
+/**
+ * The cached first paint goes with the credential (`lib/host-cache.ts`).
+ *
+ * A forgotten Host, or a device the Gateway revoked, must not leave the last
+ * answer it gave readable on this phone — the cache is cleared by the same call
+ * that drops the credential, not by a later sweep that may never run.
+ */
+describe("the cache a forget leaves behind", () => {
+  it("drops one Host's cache with its credential", async () => {
+    const registry = createHostRegistry(memoryStorage());
+    registry.save(entry("host_a", "dev_a"));
+    registry.save(entry("host_b", "dev_b"));
+    const { port } = fakePort(registry, { host_a: "pdt1.a", host_b: "pdt1.b" });
+    const cleared: string[] = [];
+
+    await forgetHost("host_a", {
+      registry,
+      credentialPort: port,
+      cache: { forgetHost: (hostId) => void cleared.push(hostId), forgetAll: () => undefined },
+    });
+
+    expect(cleared).toEqual(["host_a"]);
+  });
+
+  it("drops the whole cache on sign-out", async () => {
+    const registry = createHostRegistry(memoryStorage());
+    registry.save(entry("host_a", "dev_a"));
+    const { port } = fakePort(registry, { host_a: "pdt1.a" });
+    const events: string[] = [];
+
+    await forgetAllHosts({
+      registry,
+      credentialPort: port,
+      cache: {
+        forgetHost: (hostId) => void events.push(`host:${hostId}`),
+        forgetAll: () => void events.push("all"),
+      },
+    });
+
+    expect(events).toEqual(["all"]);
+  });
+});
+
 /** A `CredentialPort` is the only seam the forget path needs; keep it honest. */
 export type ForgetTestPort = { credentialFor(hostId: string): HostCredential | null };

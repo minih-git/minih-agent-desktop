@@ -12,6 +12,11 @@ export const ptBR: Record<TranslationKey, string> = {
   "common.cancel": "Cancelar",
   "common.retry": "Tentar novamente",
 
+  /* The cached-first-paint line of `components/ui/CacheHint.tsx`: the rows
+     on screen are the last answer this phone read, and this says so. */
+  "cache.refreshing": "Mostrando a última atualização de {{date}} · atualizando…",
+  "cache.offline": "Offline · mostrando a última atualização de {{date}}",
+
   "pair.title": "Usar ticket de emparelhamento",
   "pair.intro": "Execute o comando de emparelhamento no host e cole o ticket que ele exibe.",
   "pair.ticketLabel": "Ticket de emparelhamento",

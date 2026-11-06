@@ -18,12 +18,21 @@ import type { HostRegistry, HostRegistryEntry } from "./host-registry.js";
 import { pushAccounts, unregisterDevice } from "./push-registration.js";
 
 /**
- * What the caller must supply. Push is optional: a browser build with no push
- * plugin passes no policy and only the credential is dropped.
+ * What the caller must supply. Push and the cache are optional: a build without
+ * push passes no policy, and one that keeps no cached answer passes no cache.
  */
 export type ForgetOptions = {
   registry: HostRegistry;
   credentialPort: CredentialPort;
+  /**
+   * The cached first paint of these Hosts (`./host-cache.ts`). It goes with the
+   * credential: what a forgotten Host leaves behind is the last answer it gave,
+   * and a revoked device must not still be able to read it.
+   */
+  cache?: {
+    forgetHost(hostId: string): void;
+    forgetAll(): void;
+  };
   /** Absent in a build without push. */
   push?: {
     gatewayOrigin: string;
@@ -64,6 +73,7 @@ export async function forgetHost(hostId: string, options: ForgetOptions): Promis
     }
   }
   await options.credentialPort.forget(hostId);
+  options.cache?.forgetHost(hostId);
 }
 
 /**
@@ -89,4 +99,5 @@ export async function forgetAllHosts(options: ForgetOptions): Promise<void> {
     }
   }
   for (const entry of entries) await options.credentialPort.forget(entry.hostId);
+  options.cache?.forgetAll();
 }

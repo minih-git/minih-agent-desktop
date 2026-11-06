@@ -12,6 +12,11 @@ export const de: Record<TranslationKey, string> = {
   "common.cancel": "Abbrechen",
   "common.retry": "Erneut versuchen",
 
+  /* The cached-first-paint line of `components/ui/CacheHint.tsx`: the rows
+     on screen are the last answer this phone read, and this says so. */
+  "cache.refreshing": "Zeigt den letzten Stand von {{date}} · wird aktualisiert…",
+  "cache.offline": "Offline · zeigt den letzten Stand von {{date}}",
+
   "pair.title": "Pairing-Ticket verwenden",
   "pair.intro": "Führe den Kopplungsbefehl auf dem Host aus und füge das ausgegebene Ticket ein.",
   "pair.ticketLabel": "Kopplungsticket",

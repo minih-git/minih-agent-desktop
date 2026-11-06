@@ -9,13 +9,14 @@
  */
 import type { RacpModelSummary, RacpProjectSummary, RacpSession } from "@minih-agent/shared";
 import { Folder, Plus, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { NewSessionSheet, type NewSessionChoice } from "../components/sessions/NewSessionSheet.js";
 import { SessionRow } from "../components/sessions/SessionRow.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
+import { CacheHint } from "../components/ui/CacheHint.js";
 import { EmptyState } from "../components/ui/EmptyState.js";
 import { ListGroup } from "../components/ui/ListGroup.js";
 import { NavBar } from "../components/ui/NavBar.js";
@@ -25,8 +26,10 @@ import { Skeleton } from "../components/ui/Skeleton.js";
 import { StatusDot } from "../components/ui/StatusDot.js";
 import { SessionStatusPill } from "../components/ui/StatusMark.js";
 import type { HostStatusView } from "../hooks/useHostStatus.js";
+import { cacheHint, resolveCachedValue } from "../lib/cached-view.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
+import { cacheScope } from "../lib/host-cache.js";
 import { createHostClient, type HostClient } from "../lib/host-client.js";
 import { hostStatusFromFailure } from "../lib/host-status.js";
 import {
@@ -36,7 +39,7 @@ import {
   listSessions,
   newSessionMode,
 } from "../lib/mutations.js";
-import { gatewayOrigin } from "../lib/runtime.js";
+import { gatewayOrigin, hostCache } from "../lib/runtime.js";
 import {
   projectSessions,
   summarizeProjects,
@@ -58,6 +61,12 @@ export interface ProjectSessionsScreenProps {
   projectId: string;
   projectLabel: string;
   credential: HostCredential;
+  /**
+   * The device this phone is to that computer (`HostRegistryEntry.deviceId`),
+   * which is what the cached lists are keyed on. Absent means "not recorded",
+   * and the screen then has nothing to paint before the Host answers.
+   */
+  deviceId?: string;
   /** Roles the Gateway granted this device; absent means "not recorded yet". */
   roles?: readonly string[];
   onOpenSession: (session: RacpSession) => void;
@@ -80,6 +89,7 @@ export function ProjectSessionsScreen({
   projectId,
   projectLabel,
   credential,
+  deviceId,
   roles,
   onOpenSession,
   onSwitchProject,
@@ -100,6 +110,26 @@ export function ProjectSessionsScreen({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const clientRef = useRef<HostClient | null>(null);
   const credentialKey = credential.kind === "cookie" ? credential.csrfToken : credential.token;
+  /**
+   * The last answer this phone read from this computer, read synchronously so
+   * the rows and the project rail are painted before the first round trip
+   * returns; the live reads below still run and replace them.
+   */
+  const scope = useMemo(() => cacheScope(deviceId, hostId), [deviceId, hostId]);
+  const cached = useMemo(() => hostCache.readCatalog(scope), [scope]);
+  const shownSessions = resolveCachedValue(
+    sessions,
+    cached?.sessions
+      ? { value: cached.sessions, fetchedAt: cached.sessionsFetchedAt ?? cached.lastUsedAt }
+      : null,
+  );
+  const shownProjects = resolveCachedValue(
+    projects,
+    cached?.projects
+      ? { value: cached.projects, fetchedAt: cached.projectsFetchedAt ?? cached.lastUsedAt }
+      : null,
+  );
+  const sessionHint = cacheHint({ fromCache: shownSessions.fromCache, failed: failure !== null });
 
   /**
    * The screen names the project it shows, so there is no local copy of the
@@ -108,7 +138,13 @@ export function ProjectSessionsScreen({
   const currentProjectId = projectId;
   const currentProjectLabel = projectLabel;
 
-  const mode = newSessionMode(roles, projects);
+  /**
+   * The catalog this screen acts on: the live one, the cached one while the read
+   * is in flight, and — when the read failed and nothing was cached — an empty
+   * list, which `newSessionMode` already reads as "no project to create in".
+   */
+  const projectCatalog = shownProjects.value ?? [];
+  const mode = newSessionMode(roles, projectCatalog);
   /**
    * "Other" lists the sessions that belong to no project, and starting one there
    * is what the group is for — the Host creates it with no `projectId` — so this
@@ -141,18 +177,26 @@ export function ProjectSessionsScreen({
       setSessions(result.value);
       setFailure(null);
       setStatus({ kind: "online" });
+      // The next visit paints from this answer; a failed read keeps the last one.
+      hostCache.writeSessions(scope, result.value);
     } else {
       setFailure(result.failure);
       setStatus(hostStatusFromFailure(result.failure));
     }
-  }, []);
+  }, [scope]);
 
   const loadProjects = useCallback(async (): Promise<void> => {
     const client = clientRef.current;
     if (!client) return;
     const result = await listProjects(client);
-    setProjects(result.ok ? result.value : []);
-  }, []);
+    // A failed read leaves the state null so the cached names stay on screen;
+    // `projectCatalog` above turns that into an empty list only when there is no
+    // cache either.
+    if (result.ok) {
+      setProjects(result.value);
+      hostCache.writeProjects(scope, result.value);
+    }
+  }, [scope]);
 
   useEffect(() => {
     void load();
@@ -171,19 +215,27 @@ export function ProjectSessionsScreen({
   }, [load]);
 
   const isOnline = status.kind === "online";
+  const checking = status.kind === "checking";
   const stateOf = (session: RacpSession): SessionStateView =>
     sessionStateOf(session, sessionViews.get(hostId, session.id));
 
   const projectSummaries: ProjectSummary[] =
-    sessions === null || projects === null
+    shownSessions.value === null || shownProjects.value === null
       ? []
-      : summarizeProjects(sessions, projects, stateOf);
+      : summarizeProjects(shownSessions.value, shownProjects.value, stateOf);
 
-  const rows = sessions ?? [];
+  const rows = shownSessions.value ?? [];
+  /**
+   * The catalog decides whether a session counts as "no project"; it comes from
+   * the same answer as the rows, so a cached pair is classified by the catalog it
+   * was read with rather than by a newer one, which would move sessions between
+   * groups under the reader.
+   */
+  const catalog = shownProjects.value;
   const mine =
     currentProjectId === UNGROUPED_KEY
       ? rows.filter((session) => {
-          const known = projects?.some(
+          const known = catalog?.some(
             (project) => project.id === session.projectId && !project.archived,
           );
           return !known;
@@ -281,7 +333,7 @@ export function ProjectSessionsScreen({
     currentProjectId === UNGROUPED_KEY ? t("sessions.otherGroup") : currentProjectLabel;
   const subtitle = (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--rm-text-secondary)]">
-      <StatusDot status={isOnline ? "online" : "offline"} size="small" />
+      <StatusDot status={isOnline ? "online" : checking ? "muted" : "offline"} size="small" />
       <span className="truncate">{hostLabel}</span>
     </span>
   );
@@ -314,8 +366,15 @@ export function ProjectSessionsScreen({
           </div>
         }
       />
+      {/*
+        The rows below are the cached answer while this line is showing: muted,
+        with the moment the Host sent them, gone the instant the live read lands.
+      */}
+      {sessionHint && shownSessions.fetchedAt ? (
+        <CacheHint kind={sessionHint} fetchedAt={shownSessions.fetchedAt} />
+      ) : null}
 
-      <ScreenContent hasDock={mine.length === 0 && sessions !== null && canCreate}>
+      <ScreenContent hasDock={mine.length === 0 && shownSessions.value !== null && canCreate}>
         {failure ? (
           <div className="mb-4">
             <Banner
@@ -423,7 +482,7 @@ export function ProjectSessionsScreen({
           ) : (
             <NewSessionSheet
               open
-              projects={projects ?? []}
+              projects={shownProjects.value ?? []}
               models={models}
               modelsFailure={modelsFailure}
               initialProjectId={currentProjectId === UNGROUPED_KEY ? null : currentProjectId}
@@ -438,7 +497,7 @@ export function ProjectSessionsScreen({
           )
         ) : null}
 
-        {sessions === null ? (
+        {shownSessions.value === null ? (
           <div className="space-y-4">
             <SectionHeader title=" " />
             <ListGroup>
@@ -489,7 +548,7 @@ export function ProjectSessionsScreen({
         )}
       </ScreenContent>
 
-      {sessions !== null && mine.length === 0 && canCreate ? (
+      {shownSessions.value !== null && mine.length === 0 && canCreate ? (
         <div className="rm-dock shrink-0 border-t border-[var(--rm-separator)] bg-[var(--rm-bg-page)] px-4 pt-2">
           <Button variant="primary" size="large" onClick={() => void openNewSessionSheet()}>
             {t("sessions.create")}

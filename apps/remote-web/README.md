@@ -178,6 +178,42 @@ The session screen leads with projects, the way the desktop sidebar does.
   (`POST /v1/projects`, `GET /v1/projects:browse`), otherwise the phone gets
   `NOT_FOUND` for them.
 
+## Cached first paint
+
+Every request to a self-hosted Gateway costs 300–400 ms from a phone: one
+transatlantic hop to the Gateway, one to the computer, and 1–4 ms of work on the
+computer itself. The client therefore paints from the last answer before asking
+again (`src/lib/host-cache.ts`, `src/lib/cached-view.ts`).
+
+* **What is kept.** Per *(device, Host)*: the last successful `session/list` and
+  `project/list`, and per session the tail of the last timeline (30 rows). An
+  account device is one `deviceId` on every Host of the account, so a second
+  phone — or a second account on the same phone — reads nothing of the first.
+* **No credential, ever.** The records hold session and project summaries and
+  timeline rows; no device token, CSRF token, or pairing ticket is written, and
+  `src/lib/host-cache.test.ts` scans the store to keep it that way.
+* **Bounded.** 30 rows per timeline, 80 000 characters per record, and a 1 200 000
+  character budget for the whole cache, evicted least-recently-written first.
+  A record that does not fit, or a store that refuses the write, drops it: the
+  cache is best-effort and never the reason a screen fails.
+* **The live answer always wins.** The cache is read once on mount and only ever
+  fills a gap; every successful read overwrites it. Nothing navigates on cached
+  data — the sole-project skip in `ProjectsScreen` still waits for the live
+  `project/list`, because skipping a list is a move the user cannot undo in one
+  tap.
+* **A cached screen says so.** A muted line under the header names the moment the
+  Host sent what is on screen (`cache.refreshing`), and turns into
+  `cache.offline` when the refresh actually failed. The failure banner still
+  carries the reason, so the cached view is never presented as live.
+* **A session opens on the cached tail, and `session/attach` ends it.** The
+  cached rows are displayed until the snapshot arrives and then dropped whole —
+  never merged, and never used as a stream cursor: the snapshot's own cursor is
+  what opens the SSE subscription (protocol §5.4). The newest rows are written
+  back a second after the transcript goes quiet, never per delta.
+* **It is cleared with the credential.** `forgetHost` drops that Host's records,
+  sign-out drops all of them, and a newly granted account device drops what the
+  device it replaced left behind (`forget.ts`, `useAccountFlow.ts`).
+
 ## The session timeline
 
 The session screen renders one row per item, from one projection, whatever the

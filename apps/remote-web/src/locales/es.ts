@@ -12,6 +12,11 @@ export const es: Record<TranslationKey, string> = {
   "common.cancel": "Cancelar",
   "common.retry": "Reintentar",
 
+  /* The cached-first-paint line of `components/ui/CacheHint.tsx`: the rows
+     on screen are the last answer this phone read, and this says so. */
+  "cache.refreshing": "Mostrando la última actualización de {{date}} · actualizando…",
+  "cache.offline": "Sin conexión · mostrando la última actualización de {{date}}",
+
   "pair.title": "Usar un ticket de emparejamiento",
   "pair.intro": "Ejecuta el comando de emparejamiento en el host y pega el ticket que imprime.",
   "pair.ticketLabel": "Ticket de emparejamiento",

@@ -41,6 +41,7 @@ import {
   createMemoryStorage,
   type RegistryStorage,
 } from "./host-registry.js";
+import { createHostCache } from "./host-cache.js";
 import { createBackgroundRetention } from "./native-background.js";
 import { readConnection, type DirectChatConnection } from "./direct-chat/connection.js";
 import { resolveModelGatewayOrigin } from "./model-gateway-origin.js";
@@ -177,6 +178,16 @@ function allKnownHostIdsAcrossGateways(): Set<string> {
 }
 
 export const hostRegistry = createHostRegistry(scopedRegistryStorage(gatewayOrigin));
+
+/**
+ * The last successful read of each Host, per device (`./host-cache.ts`).
+ *
+ * One instance for the app: the screens read it on mount and write it after
+ * every successful answer, and the forget paths clear it. It shares
+ * `localStorage` with the registry but nothing else — no record in it carries a
+ * credential.
+ */
+export const hostCache = createHostCache(rawStorage);
 
 const userAgent = globalThis.navigator?.userAgent ?? "";
 

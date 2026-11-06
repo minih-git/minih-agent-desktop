@@ -22,14 +22,15 @@ import type {
   RacpPermissionMode,
   RacpTurnAdmission,
 } from "@minih-agent/shared";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { watchForeground } from "../lib/app-state.js";
+import { resolveTimelineView, type TimelineView } from "../lib/cached-view.js";
 import type { ComposerSend } from "../lib/composer-send.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
+import { cacheScope } from "../lib/host-cache.js";
 import { createHostClient, sessionEventsPath, type HostClient } from "../lib/host-client.js";
-import { readSessionMedia, type SessionMediaState } from "../lib/session-media.js";
 import { probeHostStatus } from "../lib/host-status.js";
 import {
   attachSession,
@@ -44,13 +45,13 @@ import {
   stopTurn,
   type MutationResult,
 } from "../lib/mutations.js";
-import { appStateSource } from "../lib/runtime.js";
+import { appStateSource, hostCache } from "../lib/runtime.js";
+import { readSessionMedia, type SessionMediaState } from "../lib/session-media.js";
 import { StreamSupervisor, type StreamState } from "../lib/stream-supervisor.js";
 import { createStartCursor } from "../lib/stream-cursor.js";
 import { loadOlderPages, singleFlight } from "../lib/timeline-history.js";
 import { createInitialTimelineState, snapshotItems, timelineReducer, type TimelineState } from "../lib/timeline.js";
 import type { TimelineItem } from "../lib/timeline-types.js";
-
 
 /** The composer's payload; the type lives in `lib/composer-send.ts` so the direct
  * container can use the same composer without importing this hook. */
@@ -111,6 +112,13 @@ export type SessionScreenState = {
   turnId?: string;
   /** The Host's model catalog, empty until `actions.loadModels` ran (R7). */
   models: RacpModelSummary[];
+  /**
+   * The rows to render: the live timeline once `session/attach` returned, and
+   * the cached tail of the last visit before that. Never both, never merged —
+   * the snapshot comes with the cursor the stream resumes from, so it is the
+   * only transcript this visit may continue from (`lib/cached-view.ts`).
+   */
+  rows: TimelineView;
   actions: SessionActions;
 };
 
@@ -118,10 +126,23 @@ export function useSessionScreen(options: {
   hostId: string;
   sessionId: string;
   credential: HostCredential;
+  /** The device this phone is to that Host; the cache is keyed on it. */
+  deviceId?: string;
   gatewayOrigin: string;
 }): SessionScreenState {
   const { hostId, sessionId, credential, gatewayOrigin } = options;
   const credentialKey = credential.kind === "cookie" ? credential.csrfToken : credential.token;
+  /**
+   * What the last visit showed for this session, read synchronously so the
+   * first paint is the conversation the reader left rather than an empty scroll
+   * area. It is a preview only: `attach` replaces it whole, and the cursor it
+   * carries is never used — the snapshot's own cursor opens the stream.
+   */
+  const scope = useMemo(
+    () => cacheScope(options.deviceId, hostId),
+    [options.deviceId, hostId],
+  );
+  const cached = useMemo(() => hostCache.readTimeline(scope, sessionId), [scope, sessionId]);
 
   const [timeline, dispatch] = useReducer(timelineReducer, undefined, createInitialTimelineState);
   const [streamState, setStreamState] = useState<StreamState>("idle");
@@ -474,6 +495,23 @@ export function useSessionScreen(options: {
     dismissFailure: () => setFailure(null),
   };
 
+  /**
+   * Keep the newest rows for the next visit's first paint.
+   *
+   * Debounced: a streaming answer changes `items` on every delta, and a write per
+   * delta would cost more than the cache saves. The tail is written once the
+   * conversation has been quiet for a second, and only after the snapshot — the
+   * rows shown before it are not the server's answer.
+   */
+  useEffect(() => {
+    if (!timeline.attached || timeline.items.length === 0) return;
+    const timer = setTimeout(
+      () => hostCache.writeTimeline(scope, sessionId, timeline.items),
+      1_000,
+    );
+    return () => clearTimeout(timer);
+  }, [scope, sessionId, timeline.attached, timeline.items]);
+
   return {
     timeline,
     streamState,
@@ -482,6 +520,11 @@ export function useSessionScreen(options: {
     loadingEarlier,
     ...(activeTurnId ? { turnId: activeTurnId } : {}),
     models,
+    rows: resolveTimelineView({
+      attached: timeline.attached,
+      items: timeline.items,
+      cached,
+    }),
     actions,
   };
 }

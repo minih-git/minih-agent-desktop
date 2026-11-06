@@ -27,12 +27,14 @@ import { SessionTodoBar } from "../components/chat/SessionTodoBar.js";
 import { StopSheet } from "../components/chat/StopSheet.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
+import { CacheHint } from "../components/ui/CacheHint.js";
 import { ResultState } from "../components/ui/EmptyState.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { Tag } from "../components/ui/StatusDot.js";
 import { useSessionScreen } from "../hooks/useSessionScreen.js";
 import { useTimelineScroll } from "../hooks/useTimelineScroll.js";
+import { cacheHint } from "../lib/cached-view.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import { failureReasonText } from "../lib/i18n.js";
 import { gatewayOrigin } from "../lib/runtime.js";
@@ -56,6 +58,12 @@ export interface SessionScreenProps {
    */
   hostLabel: string;
   roles?: readonly string[];
+  /**
+   * The device this phone is to that Host (`HostRegistryEntry.deviceId`), which
+   * is what the cached first paint is keyed on. Absent means "not recorded", and
+   * the screen then opens on the live snapshot alone.
+   */
+  deviceId?: string;
   /** Optional initial session snapshot (used before `session/attach` resolves or in SSR tests). */
   initialSession?: RacpSession | null;
   onBack: () => void;
@@ -69,6 +77,7 @@ export function SessionScreen({
   credential,
   hostLabel,
   roles,
+  deviceId,
   initialSession = null,
   onBack,
   onForget,
@@ -77,12 +86,13 @@ export function SessionScreen({
   const [stopSheetOpen, setStopSheetOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
 
-  const { timeline, streamState, failure, pending, loadingEarlier, turnId, models, actions } =
+  const { timeline, rows, streamState, failure, pending, loadingEarlier, turnId, models, actions } =
     useSessionScreen({
       hostId,
       sessionId,
       credential,
       gatewayOrigin,
+      ...(deviceId ? { deviceId } : {}),
     });
 
   const session = timeline.session ?? initialSession;
@@ -98,10 +108,16 @@ export function SessionScreen({
 
   const active = turnId !== undefined;
   const attention = timeline.pendingApprovals.length + timeline.pendingInputs.length;
-  const tail = timeline.items.at(-1);
+  /**
+   * The rows on screen, cached or live: the scroll maths and the transcript read
+   * one list, so a cached first paint is positioned like a live one and the jump
+   * when the snapshot replaces it is a normal "new content" adjustment rather
+   * than a second, disagreeing view.
+   */
+  const tail = rows.items.at(-1);
   const scroll = useTimelineScroll({
-    itemCount: timeline.items.length,
-    firstItemId: timeline.items[0]?.id ?? "",
+    itemCount: rows.items.length,
+    firstItemId: rows.items[0]?.id ?? "",
     lastItemId: tail?.id ?? "",
     // A streamed row grows in place rather than adding a row, so its length is
     // part of what "new content" means.
@@ -109,6 +125,8 @@ export function SessionScreen({
     attention,
   });
 
+  /** The cached-paint line, shown only while these rows are the cache (`rows`). */
+  const hint = rows.fromCache ? cacheHint({ fromCache: true, failed: failure !== null }) : null;
   const hostName = hostLabel || hostId;
   const sessionTitle = session?.title || title || t("session.untitled");
 
@@ -216,6 +234,14 @@ export function SessionScreen({
         onBack={onBack}
       />
 
+      {/*
+        These rows are the last visit's, and `session/attach` is still in flight:
+        this line is the difference between "your conversation" and "your
+        conversation as it was an hour ago". Muted, and gone the moment the
+        snapshot lands.
+      */}
+      {hint && rows.fetchedAt ? <CacheHint kind={hint} fetchedAt={rows.fetchedAt} /> : null}
+
       {/* Connection banner */}
       {connBanner.type !== "none" && connBanner.tone ? (
         <Banner
@@ -278,7 +304,7 @@ export function SessionScreen({
           </div>
         ) : null}
         <ChatTimeline
-          items={timeline.items}
+          items={rows.items}
           lastFailure={timeline.lastFailure}
           activeTurnId={turnId}
           responding={active && streamState === "open" && !hasDecision && !isStopping}

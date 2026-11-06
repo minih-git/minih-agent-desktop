@@ -33,6 +33,7 @@ import {
   appStateSource,
   credentialPort,
   gatewayOrigin,
+  hostCache,
   hostRegistry,
   isNativeApp,
 } from "../lib/runtime.js";
@@ -124,6 +125,7 @@ export function HostsScreen({
       await forgetHost(target.hostId, {
         registry: hostRegistry,
         credentialPort,
+        cache: hostCache,
         ...(isNativeApp ? { push: { gatewayOrigin } } : {}),
       });
       setToastMessage(t("hosts.sheet.forgetConfirmBtn"));
