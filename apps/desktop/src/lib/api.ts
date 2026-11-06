@@ -199,6 +199,16 @@ import {
   JEV_API_KEY_SECRET_REF,
 } from "@minih-agent/shared";
 
+/**
+ * One explicit clipboard paste that included at least one native folder: the
+ * folders stay lazy path references, and any regular files in the same
+ * selection travel through the existing sender-bound import token.
+ */
+export type ClipboardDirectoryPaste = {
+  items: Array<{ kind: "directory"; path: string; name: string } | { kind: "file"; name: string }>;
+  token: string | null;
+};
+
 export type ImportSource = "claude-code" | "opencode" | "codex" | "pi";
 // One definition, owned by the shared package (the host and sidecar use the
 // same shape); re-exported so existing renderer imports keep working.
@@ -1144,6 +1154,9 @@ export const api = {
     }),
   pickFiles: () =>
     invoke<{ token: string | null; canceled?: boolean }>(IPC.invoke.composerPickFiles),
+  /** Native folders/first copied files; `null` means this paste had no directory. */
+  readClipboardDirectories: () =>
+    invoke<ClipboardDirectoryPaste | null>(IPC.invoke.composerReadClipboardDirectories),
   getDroppedFilePath: (file: File) =>
     window.minihAgent?.getDroppedFilePath?.(file) ?? null,
   pickPhotos: () =>

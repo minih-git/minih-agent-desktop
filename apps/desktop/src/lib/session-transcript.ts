@@ -11,7 +11,7 @@ import {
 type OptimisticFileReference = {
   path: string;
   name: string;
-  kind?: "image" | "file" | "session" | "sessionTarget";
+  kind?: "image" | "file" | "session" | "sessionTarget" | "directory";
   mimeType?: string;
   /** Large-text paste tokens travel inline in the text, not as attachments. */
   token?: string;
@@ -37,9 +37,9 @@ export function optimisticUserMessage(
   // an image chip is one: it also records where its path sits, so the row shows
   // the image in place before the durable echo arrives (D288). A session target
   // is prompt text only — it names a conversation — so it has no attachment row
-  // either.
+  // either, and neither has a pasted folder, which the prompt only points at.
   const rendered = fileReferences.flatMap((reference) => {
-    if (reference.kind === "sessionTarget") return [];
+    if (reference.kind === "sessionTarget" || reference.kind === "directory") return [];
     const kind =
       reference.kind ??
       (IMAGE_PATH_PATTERN.test(reference.path) ? ("image" as const) : ("file" as const));

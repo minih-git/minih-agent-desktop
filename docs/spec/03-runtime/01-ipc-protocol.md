@@ -2336,6 +2336,33 @@ files, main stores the native paths against a token bound to the invoking
 `WebContents`, with a 60-second lifetime and one-shot consumption. The
 renderer receives the token but never receives the selected absolute paths.
 
+### composer/readClipboardDirectories
+
+```ts
+composer/readClipboardDirectories() -> {
+  items: Array<{ kind: "directory"; path: string; name: string } |
+    { kind: "file"; name: string }>;
+  token: string | null;
+} | null
+```
+
+Only the trusted main window calls this channel during an explicit Composer
+paste; MCP control cannot invoke it. Main captures the native OS file-list
+metadata before filesystem awaits, limits metadata to 1 MiB and selections to
+20 items, and resolves absolute paths through `realpath`/`stat`. If a directory
+is present, directories return canonical path references without enumeration,
+copying or content reads. Regular files share the existing sender-bound,
+single-use picker token and `composer/importFiles` bounds. A regular-file-only
+selection returns null and uses the existing paste flow.
+
+Directory references are prompt text, escaped as `<dir>path</dir>` with a single
+instruction to inspect relevant files as needed. They never enter structured
+attachments or grant new file-read authority. Session capability checks remain
+in place; this does not enable local-path attachments to remote sessions.
+Source-session/home-workspace ownership and edits made during the await are
+preserved. Ordinary text selection, including mixed Word text/images, remains
+ahead of native metadata probing. No Host RPC or SQL migration is introduced.
+
 ### composer/importFiles
 
 ```ts

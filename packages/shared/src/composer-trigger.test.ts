@@ -314,6 +314,23 @@ describe("compact file references", () => {
     expect(serializeComposerFileReferences("", [reference])).toBe("");
     expect(serializeComposerFileReferences("", [{ path: id, name: "Review", kind: "sessionTarget" }])).toBe("");
   });
+
+  it("sends a pasted directory as an escaped lazy reference with one inspection instruction", () => {
+    const references = [
+      { path: "/tmp/a & <b>", kind: "directory", token: "\uE001" },
+      { path: "/tmp/two", kind: "directory", token: "\uE002" },
+    ];
+    const expected = "Inspect <dir>/tmp/a &amp; &lt;b&gt;</dir> and <dir>/tmp/two</dir>\n"
+      + "The user provided these local directories for the current task.\n"
+      + "Inspect their structure and read relevant files as needed to fulfill the request.";
+    expect(serializeInlineComposerFileReferences("Inspect \uE001 and \uE002", references)).toBe(expected);
+    expect(serializeComposerFileReferences("Inspect \uE001 and \uE002", references)).toBe(expected);
+    // A directory is prompt data: it never becomes an appended `@path` and
+    // never travels as a structured binary attachment.
+    expect(serializeComposerFileReferences("", [{ path: "/tmp/only", kind: "directory" }]))
+      .toContain("<dir>/tmp/only</dir>");
+    expect(serializeComposerFileReferences("Removed both", references)).toBe("Removed both");
+  });
 });
 
 describe("detectTrigger — session target mode", () => {

@@ -34,11 +34,13 @@ test("composer converts oversized text paste and materializes clipboard files", 
   assert.doesNotMatch(composer, /const token = `@\$\{displayName\}`/);
   assert.match(composer, /sourceValue\.slice\(0, selectionStart\) \+/);
   assert.match(composer, /writeComposerDraft\(sessionId, \{/);
-  assert.match(composer, /if \(isLargeTextPaste \|\| files\.length\) \{/);
+  // A native folder selection is handled by the same branch, so a folder paste
+  // that Chromium exposes without a File still reaches the paste handler.
+  assert.match(composer, /if \(isLargeTextPaste \|\| files\.length \|\| nativeFilePaste\) \{/);
   assert.match(composer, /file\.arrayBuffer\(\)/);
   assert.match(
     composer,
-    /createFileReference\(file\.path, file\.name, sessionId, \{[\s\S]*kind: file\.kind/,
+    /createFileReference\(file\.path, file\.name, sessionId!, \{[\s\S]*kind: file\.kind/,
   );
   assert.match(composer, /serializeComposerFileReferences\(rawText, activeFileReferences\)/);
   assert.match(

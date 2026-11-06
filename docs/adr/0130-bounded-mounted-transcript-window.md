@@ -45,9 +45,13 @@ reference-equal, and that runs on every streamed token.
    window covers all loaded history does the transcript call `loadOlder` and
    fetch an older page. Mounting what is already loaded is strictly cheaper than
    an IPC round trip, so it goes first.
-3. Window growth and a fetched page take the **same pre-paint scroll anchor**.
-   Both add height above the reading position, so `prependHeightRef` is captured
-   for both and corrected in the same layout effect.
+3. Window growth and a fetched page take the **same pre-paint message anchor**.
+   A dedicated paging owner tracks the visible message and local offset through
+   lazy layout, instead of applying a one-time total-height difference. Upward
+   input may start background loading within three viewports (at most 2400px)
+   without blocking input; only the hard-edge fallback holds scroll input.
+   Requests are single-flight, including after navigation cancels their anchor.
+   Empty/failed pages cannot spin until another user input permits retry.
 4. The window **resets per session** and is clamped to the loaded history, so a
    grown budget inherited from the previous session for one frame cannot
    over-mount.
@@ -74,6 +78,12 @@ reference-equal, and that runs on every streamed token.
 7. The entry projection arrays are memoized on `entries`, so a re-render that
    changed no message hands `TranscriptHistory` a reference-equal array and its
    comparator bails on identity instead of deep-walking the mounted rows.
+8. Explicit latest navigation suspends competing paging, restoration and search
+   alignment. Its interruptible animation keeps the current historical range
+   visible until arrival, then commits the live tail. Reader input keeps the
+   prepared history; pane hiding/eviction commits accepted latest intent.
+   Reduced motion completes immediately. Minih's bottom sampling, canonical
+   tail staleness and remote cursor behavior stay intact.
 
 No IPC, storage, host protocol, or pagination change. `SESSION_TRANSCRIPT_PAGE_SIZE`
 and the `session.get` window contract are untouched.
@@ -87,9 +97,9 @@ and the `session.get` window contract are untouched.
 - **Full virtualization with measured row offsets:** rejected for now. Transcript
   rows have highly variable, content-dependent heights that change after mount
   (streaming, disclosure toggles, lazy Mermaid), so a measured-offset virtualizer
-  needs a height cache and invalidation for all of it. The trailing window gets
-  the same memory ceiling with a fraction of the moving parts, and the existing
-  pinned-follow and prepend-anchor logic keeps working unchanged.
+  needs a height cache and invalidation for all of it. The trailing window keeps
+  the same bounded DOM model; message anchors now correct page/layout changes
+  without introducing a full virtualizer.
 - **Unmount by distance from the viewport in both directions:** rejected. The
   transcript is read from the bottom and streams at the bottom; withholding rows
   *below* the viewport would fight pinned-follow for no benefit.

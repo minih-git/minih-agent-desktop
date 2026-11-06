@@ -219,7 +219,18 @@ export function createRuntimeLifecycle({
     logger.app("lifecycle", "info", "app boot " + currentAppName() + " " + APP_VERSION, {
       data: { protocolVersion: PROTOCOL_VERSION },
     });
-    await startHost();
+    try {
+      await startHost();
+    } catch (error) {
+      // A cold host process can miss the handshake deadline once while the
+      // machine is still busy at login. startHost already disposed the
+      // timed-out child, so one retry boots a fresh process. Everything else —
+      // schema refusals, crashes, quitting — stays fatal on the first attempt.
+      if (isQuitting() || !(error instanceof Error) ||
+          error.message !== "host RPC timeout: app.handshake") throw error;
+      logger.app("runtime", "warn", "retrying host startup after handshake timeout");
+      await startHost();
+    }
     // Plugin rows are resolved in the host, so the app language is pushed once
     // the process answers. The startup sequence re-applies it with the stored
     // settings; this keeps a host that boots without that write honest.

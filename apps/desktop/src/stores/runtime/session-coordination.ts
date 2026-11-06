@@ -344,15 +344,24 @@ export function createSessionCoordination({
   async function materializeDraftSession(
     intent?: number,
   ): Promise<string | null> {
-    const state = get();
-    const scopeKey = runtime.newSessionScopeKey(state.workspace?.path ?? null);
-    const pending = runtime.pendingNewSessionRequests.get(scopeKey);
-    if (pending) {
-      await pending;
-      const activeId = get().activeSessionId;
-      if (activeId) return activeId;
+    const projectPath = get().workspace?.path ?? null;
+    const scopeKey = runtime.newSessionScopeKey(projectPath);
+    const isolatedScope = runtime.newSessionScopeKey(projectPath, { isolated: true });
+    // Both scopes may be pending after a newer New Task supersedes an older
+    // one. Map insertion order retains that request order; join the latest
+    // matching creation rather than preferring isolation over current intent.
+    const pending = [...runtime.pendingNewSessionRequests]
+      .findLast(([scope]) => scope === scopeKey || scope === isolatedScope)?.[1];
+    if (pending) return await pending;
+    const request = persistSessionAndSelect({ intent });
+    runtime.pendingNewSessionRequests.set(scopeKey, request);
+    try {
+      return await request;
+    } finally {
+      if (runtime.pendingNewSessionRequests.get(scopeKey) === request) {
+        runtime.pendingNewSessionRequests.delete(scopeKey);
+      }
     }
-    return persistSessionAndSelect({ intent });
   }
 
   return {

@@ -1,3 +1,5 @@
+import { clipboard } from "electron";
+import { readComposerClipboardDirectories } from "../composer-clipboard-directories";
 import { existsSync, statSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -700,6 +702,16 @@ export function registerWorkspaceIpc({
       };
     },
   );
+
+  // An explicit Composer paste is the only caller: the main window reads its own
+  // clipboard here, and the picker capability stays bound to that sender.
+  handleWithEvent(IPC.invoke.composerReadClipboardDirectories, async (event) => {
+    assertMainWindowSender(event);
+    return readComposerClipboardDirectories(
+      clipboard,
+      (paths) => rememberComposerPickerSelection(paths, event.sender.id),
+    );
+  });
 
   handleWithEvent(
     IPC.invoke.clipboardRecordPaste,

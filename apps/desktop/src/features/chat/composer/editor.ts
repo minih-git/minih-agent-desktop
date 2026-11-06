@@ -39,7 +39,7 @@ export function createFileReference(
   preferredName?: string,
   sessionId = "",
   metadata?: {
-    kind?: "image" | "file" | "session" | "sessionTarget";
+    kind?: "image" | "file" | "session" | "sessionTarget" | "directory";
     mimeType?: string;
     token?: string;
     plugin?: ComposerPluginPart;
@@ -238,6 +238,8 @@ export function setEditorCaret(el: HTMLElement, index: number): void {
 
 /** One glyph per file family on attachment chips, as inline SVG strings. */
 const CHIP_ICON_SVG: Record<string, string> = {
+  // A folder is a boundary the prompt points at, not a file it carries.
+  dir: '<path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 9h18"/>',
   image:
     '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
   code: '<path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="M14.5 4 9.5 20"/>',
@@ -268,6 +270,7 @@ function chipIconKey(reference: ComposerFileReference): string {
   // A target is a session chip's sibling, not the same thing: it points at a
   // conversation the prompt only names, so it gets its own mark.
   if (reference.kind === "sessionTarget") return "sessionTarget";
+  if (reference.kind === "directory") return "dir";
   const mime = reference.mimeType ?? "";
   if (reference.kind === "image" || mime.startsWith("image/")) return "image";
   const name = reference.name;
@@ -290,6 +293,8 @@ export function isEditableTextReference(reference: ComposerFileReference): boole
   // A target's name is a conversation title, not a file name that could look
   // like a text file.
   if (reference.kind === "sessionTarget") return false;
+  // A folder named like a text file is still a folder the prompt only points at.
+  if (reference.kind === "directory") return false;
   return reference.mimeType?.toLowerCase() === "text/plain" || /\.txt$/i.test(reference.name);
 }
 
@@ -303,6 +308,7 @@ function buildChipElement(
   onExpandText: (token: string) => void,
   onOpenImage: (token: string) => void,
   onOpenSession: (token: string) => void,
+  directoryLabel?: string,
 ): HTMLElement {
   const chip = document.createElement("span");
   chip.className = "composer-chip";
@@ -315,6 +321,8 @@ function buildChipElement(
   // it points at instead of only showing a bare id.
   const target = reference.kind === "sessionTarget";
   chip.title = target ? `${sessionTargetLabel} · ${origin}` : origin;
+  const directory = reference.kind === "directory";
+  if (directory) chip.classList.add("composer-directory-card");
   // An image keeps the compact chip and opens its preview, a session chip and a
   // session target open that conversation, and only plain text expands into
   // editable draft text.
@@ -356,7 +364,7 @@ function buildChipElement(
 
   const icon = document.createElement("span");
   icon.className = "composer-chip-icon";
-  icon.innerHTML = chipSvg(chipIconKey(reference));
+  icon.innerHTML = chipSvg(chipIconKey(reference), directory ? 26 : 13);
 
   const nameSpan = document.createElement("span");
   nameSpan.className = "composer-chip-name";
@@ -380,6 +388,18 @@ function buildChipElement(
     onRemove(token);
   });
 
+  if (directory) {
+    // A folder card names what the reference is and keeps the full path as its
+    // tooltip: the prompt only points at it, so nothing is copied into scratch.
+    const details = document.createElement("span");
+    details.className = "composer-directory-details";
+    const type = document.createElement("span");
+    type.className = "composer-directory-type";
+    type.textContent = directoryLabel ?? "";
+    details.append(nameSpan, type);
+    chip.append(icon, details, remove);
+    return chip;
+  }
   chip.append(icon, nameSpan, remove);
   return chip;
 }
@@ -400,6 +420,7 @@ export function paintEditorValue(
   onExpandText: (token: string) => void,
   onOpenImage: (token: string) => void,
   onOpenSession: (token: string) => void,
+  directoryLabel?: string,
 ): void {
   el.replaceChildren();
   let textBuffer = "";
@@ -424,6 +445,7 @@ export function paintEditorValue(
             onExpandText,
             onOpenImage,
             onOpenSession,
+            directoryLabel,
           ),
         );
         continue;

@@ -208,5 +208,6 @@ test("the card stays borderless and the Review tab honors focus requests", async
   );
   assert.match(reviewTab, /useReviewFocusRequest\(\)/);
   assert.match(reviewTab, /openRequest=\{/);
-  assert.match(reviewTab, /scrollIntoView/);
+  assert.match(reviewTab, /scrollReviewToAnchor\(scrollRef\.current,/);
+  assert.doesNotMatch(reviewTab, /scrollIntoView/);
 });

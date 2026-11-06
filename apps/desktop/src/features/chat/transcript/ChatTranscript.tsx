@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useCallback, useMemo, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { PlanningState, UiMessage } from "@minih-agent/shared";
 import { proposalKindForMode } from "@minih-agent/shared";
@@ -61,6 +61,7 @@ type ChatTranscriptProps = {
   hasMoreAfter?: boolean;
   onLoadNewer?: () => Promise<void>;
   onReturnToLatest?: () => void;
+  onPrepareReturnToLatest?: () => (() => void);
   navigationLoading?: boolean;
   /** The session's canonical tail id for reading-bookmark staleness (#A100). */
   canonicalTailMessageId?: string;
@@ -98,6 +99,7 @@ function TranscriptBody({
   hasMoreAfter = false,
   onLoadNewer,
   onReturnToLatest,
+  onPrepareReturnToLatest,
   navigationLoading = false,
   canonicalTailMessageId,
 }: ChatTranscriptProps) {
@@ -147,6 +149,7 @@ function TranscriptBody({
     revealEarlierHistory,
     releaseFollow,
     jumpToLatest,
+    isLatestNavigationActive,
     disclosureAnchorNotifier,
   } = useTranscriptScroll({
     sessionId,
@@ -154,7 +157,7 @@ function TranscriptBody({
     compactions,
     hasMoreBefore,
     onLoadOlder,
-    isRunning: transcriptRunning,
+    isRunning,
     pendingPermission,
     askPending,
     approvalPending,
@@ -162,9 +165,14 @@ function TranscriptBody({
     paneVisible,
     searchTarget,
     readingWindow,
+    navigationLoading,
     onRestoreReading,
     canonicalTailMessageId,
   });
+  const returnToLatest = useCallback(() => {
+    const arrive = onPrepareReturnToLatest?.() ?? onReturnToLatest;
+    jumpToLatest(arrive);
+  }, [jumpToLatest, onPrepareReturnToLatest, onReturnToLatest]);
 
   const continuationCursor = useAppStore((state) =>
     sessionId ? state.transcriptViews[sessionId]?.messageEnd : undefined,
@@ -172,7 +180,7 @@ function TranscriptBody({
   // Remote history uses opaque older-item cursors, not local physical pages.
   const automaticContinuation = readingWindow && !searchTarget && !isRemoteSession({ id: sessionId ?? "" });
   useTranscriptContinuation({
-    scrollRef, contentRef, messages, onLoadNewer,
+    scrollRef, contentRef, messages, onLoadNewer, isNavigationActive: isLatestNavigationActive,
     enabled: automaticContinuation && hasMoreAfter && paneVisible && !veilCovering,
     cursor: continuationCursor,
     loading: navigationLoading,
@@ -252,10 +260,7 @@ function TranscriptBody({
         scrollRef,
         contentRef,
         actions: { copyText, selectText },
-        onReturnToLatest: () => {
-          onReturnToLatest?.();
-          jumpToLatest();
-        },
+        onReturnToLatest: returnToLatest,
       }),
     });
   };
@@ -397,10 +402,7 @@ function TranscriptBody({
           className="jump-latest-btn"
           ariaLabel={t("chat.scrollToBottom")}
           tooltip={t("chat.scrollToBottom")}
-          onClick={() => {
-            onReturnToLatest?.();
-            jumpToLatest();
-          }}
+          onClick={returnToLatest}
         >
           <IconArrowDown size={14} />
         </TooltipButton>

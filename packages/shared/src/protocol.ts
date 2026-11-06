@@ -473,6 +473,7 @@ export const IPC = {
     composerPickPhotos: "minih-agent-desktop/composer/pickPhotos",
     composerImportFiles: "minih-agent-desktop/composer/importFiles",
     composerPasteFiles: "minih-agent-desktop/composer/pasteFiles",
+    composerReadClipboardDirectories: "minih-agent-desktop/composer/readClipboardDirectories",
     clipboardRecordPaste: "minih-agent-desktop/clipboard/recordPaste",
     composerCommands: "minih-agent-desktop/composer/commands",
     composerFollowUpSuggestion: "minih-agent-desktop/composer/followUpSuggestion",

@@ -381,8 +381,7 @@ export function createQueueSlice({
           return false;
         }
         if (!sessionId) {
-          const intent = runtime.beginNavigationIntent();
-          const createdId = await materializeDraftSession(intent);
+          const createdId = await materializeDraftSession();
           if (!createdId) return false;
           sessionId = createdId;
           const key = `session:${createdId}`;
@@ -521,7 +520,7 @@ export function createQueueSlice({
           });
           return false;
         }
-      } catch (error) {
+      } catch {
         // Keep sendPrompt's Promise<boolean> contract so the composer can
         // restore a draft cleared before submission, even on unexpected setup errors.
         return false;

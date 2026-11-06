@@ -25,7 +25,7 @@ export type ComposerPluginPart =
 export type ComposerDraftFileReference = {
   path: string;
   name: string;
-  kind?: "image" | "file" | "session" | "sessionTarget";
+  kind?: "image" | "file" | "session" | "sessionTarget" | "directory";
   mimeType?: string;
   /** Visible inline token for a generated large-text paste reference. */
   token?: string;

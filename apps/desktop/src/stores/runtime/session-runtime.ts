@@ -32,6 +32,13 @@ export const SESSION_TRANSCRIPT_CACHE_LIMIT = 20;
 export const SESSION_TRANSCRIPT_PAGE_SIZE = 100;
 export const SESSION_TRANSCRIPT_CONTENT_LIMIT = 64 * 1024;
 
+/**
+ * An isolated New Task opens its own worktree (ADR 0329), so its pending
+ * creation never shares the ordinary project scope. The NUL separator keeps
+ * the isolated key distinct from any real project path.
+ */
+const ISOLATED_SCOPE_SUFFIX = "\u0000isolated";
+
 export type SubmittedComposerDraft = {
   messageCountBeforeSend: number;
   draft: ComposerDraftSnapshot;
@@ -48,7 +55,7 @@ export type SessionConfiguration = Pick<
 export type SessionSelection = { id: string; intent: number };
 
 export type SessionRuntime = {
-  readonly pendingNewSessionRequests: Map<string, Promise<void>>;
+  readonly pendingNewSessionRequests: Map<string, Promise<string | null>>;
   readonly sessionTranscriptCache: Map<string, UiMessage[]>;
   readonly liveSessionTranscripts: Set<string>;
   readonly sessionHistoryCache: Map<string, SessionHistoryWindow>;
@@ -57,7 +64,10 @@ export type SessionRuntime = {
   readonly sessionConfigurationFlushes: Map<string, Promise<void>>;
   beginNavigationIntent: () => number;
   navigationIntentIsCurrent: (intent: number) => boolean;
-  newSessionScopeKey: (projectPath?: string | null) => string;
+  newSessionScopeKey: (
+    projectPath?: string | null,
+    options?: { isolated?: boolean },
+  ) => string;
   latestSessionInScope: (
     sessions: SessionSummary[],
     projectPath: string | null,
@@ -126,7 +136,7 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
   let pendingSessionSelection: SessionSelection | null = null;
   let sessionWorkspaceQueue: Promise<unknown> = Promise.resolve();
 
-  const pendingNewSessionRequests = new Map<string, Promise<void>>();
+  const pendingNewSessionRequests = new Map<string, Promise<string | null>>();
   const sessionTranscriptCache = new Map<string, UiMessage[]>();
   const liveSessionTranscripts = new Set<string>();
   const sessionHistoryCache = new Map<string, SessionHistoryWindow>();
@@ -420,8 +430,10 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
     sessionConfigurationFlushes,
     beginNavigationIntent: () => navigationIntents.begin(),
     navigationIntentIsCurrent: (intent) => navigationIntents.isCurrent(intent),
-    newSessionScopeKey: (projectPath) =>
-      normalizeProjectPath(projectPath) ?? "<temporary>",
+    newSessionScopeKey: (projectPath, options) => {
+      const scope = normalizeProjectPath(projectPath) ?? "<temporary>";
+      return options?.isolated ? `${scope}${ISOLATED_SCOPE_SUFFIX}` : scope;
+    },
     latestSessionInScope: (sessions, projectPath, sessionMeta) =>
       sessions
         .filter(

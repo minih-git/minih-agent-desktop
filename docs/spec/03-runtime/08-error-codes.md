@@ -608,10 +608,11 @@ Manual Continue remains available after the cause is corrected.
 
 ### Exhausted provider quotas
 
-Explicit billing, credit, storage or `insufficient_quota` exhaustion takes
-precedence over a wrapped HTTP 429 status and maps to terminal `PROVIDER_ERROR`
-with retry disabled. It is not `PROVIDER_RATE_LIMITED`. Genuine throughput rate
-limits retain the existing bounded same-turn retry budget and delay policy.
+Explicit billing, credit, storage, `insufficient_quota`, or OpenCode Zen
+`FreeUsageLimitError` exhaustion takes precedence over a wrapped HTTP 429 and
+maps to terminal `PROVIDER_ERROR` with retry disabled. The original provider
+message is preserved. Genuine throughput limits retain the existing bounded
+same-turn retry budget and delay policy.
 
 HTTP 402 is terminal even without credit wording. `insufficient credits`,
 `requires more credits` and `Payment Required` are explicit exhaustion; a bare

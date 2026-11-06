@@ -3,6 +3,7 @@ import { useTranscriptReadingPosition } from "../../apps/desktop/src/hooks/use-t
 import { sessionReadingState, getTranscriptReadingPosition, type TranscriptReadingPosition } from "../../apps/desktop/src/lib/transcript-reading-position";
 import "./session-reading-position";
 import "./transcript-continuation";
+import "./transcript-priority-navigation";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { UiMessage } from "@minih-agent/shared";
@@ -68,7 +69,7 @@ function Pane({ id, visible, running, canonicalTail }: { id: string; visible: bo
           </TranscriptDisclosureProvider>
         </div>
       </div>
-      <button data-jump-latest onClick={scroll.jumpToLatest} style={{ position: "absolute", right: 4, top: 4 }}>Latest</button>
+      <button data-jump-latest onClick={() => scroll.jumpToLatest()} style={{ position: "absolute", right: 4, top: 4 }}>Latest</button>
     </div>
   </div>;
 }
@@ -130,17 +131,21 @@ globalThis.transcriptReadingPositionProbe = async () => {
     await frame();
     const row = a.querySelector<HTMLElement>('[data-message-id="m47"]');
     assert(row, "reading row exists");
+    const warmTop = a.scrollTop;
+    const warmRowOffset = row.getBoundingClientRect().top - a.getBoundingClientRect().top;
     select("B");
     await frame();
     select("A");
-    assert(Math.abs(a.scrollTop - 650) < 2, `warm return lost offset: ${a.scrollTop}`);
+    assert(Math.abs(row.getBoundingClientRect().top - a.getBoundingClientRect().top - warmRowOffset) < 2,
+      `warm return moved the reading row at ${a.scrollTop}`);
     flushSync(() => row.querySelector<HTMLButtonElement>("button")!.click());
     await frame();
     a.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 400 }));
-    a.scrollTop = 1100;
+    a.scrollTop += row.getBoundingClientRect().top - a.getBoundingClientRect().top - 200;
     a.dispatchEvent(new Event("scroll", { bubbles: true }));
     await frame();
     const offset = row.getBoundingClientRect().top - a.getBoundingClientRect().top;
+    const readingTop = a.scrollTop;
     // #A100: with the pane hidden, the session runs a new turn (the canonical
     // tail moves past the bookmarked one). Reopening A must land at the newest
     // turn - not at m47, and not showing the jump pill.
@@ -154,7 +159,7 @@ globalThis.transcriptReadingPositionProbe = async () => {
       "#A100 the stale bookmark must not survive as the session bookmark");
     // Same session, unchanged tail: the mid-history bookmark keeps restoring.
     sessionReadingState("A").position = {
-      pinned: false, messageId: "m47", offset, scrollTop: 650, windowSize: 80, tailMessageId: "m100",
+      pinned: false, messageId: "m47", offset, scrollTop: readingTop, windowSize: 100, tailMessageId: "m100",
     };
     select("B");
     select("A");
@@ -177,10 +182,10 @@ globalThis.transcriptReadingPositionProbe = async () => {
       `evicted return lost reading row offset: ${restoredOffset} vs ${offset}`);
     assert(restoredRow.querySelector('[data-expanded="true"]'), "explicit expansion was lost on eviction");
     restored.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 100 }));
-    restored.scrollTop = 1200;
+    restored.scrollTop = 2500;
     restored.dispatchEvent(new Event("scroll", { bubbles: true }));
     await frame();
-    assert(Math.abs(restored.scrollTop - 1200) < 2, "restoration stole the viewport back from real input");
+    assert(Math.abs(restored.scrollTop - 2500) < 2, "restoration stole the viewport back from real input");
     running = true;
     select("A");
     await until(() => bottom(restored), "starting a turn resumes follow");
@@ -216,7 +221,7 @@ globalThis.transcriptReadingPositionProbe = async () => {
     finishDeferredRestore = undefined;
     await until(() => Math.abs(deferredScroller.scrollTop - 650) < 2,
       "the saved offset applies after a successful restore lookup");
-    return { ok: true, warmOffset: 650, restoredOffset, panes: host.querySelectorAll("[data-pane]").length };
+    return { ok: true, warmOffset: warmTop, restoredOffset, panes: host.querySelectorAll("[data-pane]").length };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.stack : String(error) };
   } finally {

@@ -24,7 +24,7 @@ export type ComposerDraftFileInput = {
   sessionId?: string;
   path: string;
   name: string;
-  kind?: "image" | "file" | "session" | "sessionTarget";
+  kind?: "image" | "file" | "session" | "sessionTarget" | "directory";
   mimeType?: string;
   token?: string;
   plugin?: ComposerPluginPart;
