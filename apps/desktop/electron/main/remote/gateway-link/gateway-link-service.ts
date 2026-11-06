@@ -137,6 +137,12 @@ export type GatewayLinkService = {
    * only the decision the directory makes for the next proof.
    */
   setDesktopAutoAdmission(enabled: boolean): Promise<RemoteGatewayStatus>;
+  /**
+   * The machine woke up or its network came back: skip a pending reconnect
+   * backoff and dial now (protocol §11.4 rule 5). False when there was nothing
+   * to skip, which is the normal answer to a hint while the link is healthy.
+   */
+  reconnectNow(): boolean;
   /** Status pushes; the returned function removes the listener. */
   onChange(listener: (status: RemoteGatewayStatus) => void): () => void;
   dispose(): Promise<void>;
@@ -728,6 +734,13 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
       accountDevices?.directory.setDesktopAutoAdmission(next);
       emit();
       return snapshot();
+    },
+    reconnectNow() {
+      // A hint, not a command: the transport decides whether it has a pending
+      // retry to skip, and a live link stays exactly as it is.
+      const kicked = handle?.reconnectNow?.() ?? false;
+      if (kicked) log("info", "gateway link reconnecting on a wake hint");
+      return kicked;
     },
     onChange(listener) {
       listeners.add(listener);

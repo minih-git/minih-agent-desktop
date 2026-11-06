@@ -133,6 +133,14 @@ export type HostLinkHandle = {
    * `announced` reports only whether it went out in this call.
    */
   revokeDevice(deviceId: string): Promise<DeviceRevocationOutcome>;
+  /**
+   * Skip the backoff this link is currently waiting on and dial at once. False
+   * when there is nothing to skip: the link is live, a dial is already in
+   * flight, or no retry is scheduled. Used by the desktop when the machine wakes
+   * or its network changes, so a reconnection that would otherwise wait out its
+   * delay happens while the user is looking at the screen.
+   */
+  reconnectNow(): boolean;
 };
 
 export type StartHostLinkOptions = {
@@ -154,8 +162,16 @@ export type StartHostLinkOptions = {
    * the link is up. Absent: it advertises nothing, and no push names it.
    */
   notifier?: HostNotifier | null;
-  /** Defaults: 1 s base, 60 s ceiling, half-to-full jitter (protocol §11.4 rule 5). */
+  /** Defaults: 1 s base, 10 s ceiling, half-to-full jitter (protocol §11.4 rule 5). */
   backoff?: { baseDelayMs?: number; maxDelayMs?: number };
+  /**
+   * How long the link may stay up with nothing arriving from the Gateway before
+   * this Host treats it as dead and reconnects (protocol §11.4 rule 5). Defaults
+   * to 45 s: three beats of the Gateway's 15 s heartbeat, and still above the
+   * 30 s beat a Gateway that predates that cadence sends, so an older Gateway is
+   * never mistaken for a dead tunnel. Injectable for tests.
+   */
+  idleTimeoutMs?: number;
   /**
    * Certificate identity, when it differs from the dialled host. Defaults to
    * `credentials.tlsServerName` and then to the dialled host.
@@ -180,7 +196,28 @@ const ENROLL_TIMEOUT_MS = 15_000;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 const STOP_TIMEOUT_MS = 1_000;
 const DEFAULT_BASE_DELAY_MS = 1_000;
-const DEFAULT_MAX_DELAY_MS = 60_000;
+/**
+ * Ceiling of the reconnect backoff. A Host that lost its link has to be back
+ * within seconds, not a minute: the person on the phone is waiting for this
+ * computer, and a minute-long delay turns one dropped tunnel into a minute-long
+ * outage. The base and the jitter still spread a fleet out.
+ */
+export const HOSTLINK_MAX_RETRY_DELAY_MS = 10_000;
+/**
+ * How long the link may stay up with nothing arriving from the Gateway before
+ * this Host treats the tunnel as dead (protocol §11.4 rule 5). A half-open
+ * connection reports nothing — the local TCP state still says ESTABLISHED — so
+ * the missing beat is the only evidence. 45 s covers three beats of the
+ * Gateway's 15 s heartbeat and is above the 30 s beat older Gateways send, so
+ * neither cadence can look dead.
+ */
+export const HOSTLINK_IDLE_TIMEOUT_MS = 45_000;
+/**
+ * The beat a Gateway that predates the 15 s cadence sends, and the one this
+ * threshold must stay above. Named so the compatibility arithmetic is checked,
+ * not assumed.
+ */
+export const HOSTLINK_LEGACY_HEARTBEAT_MS = 30_000;
 /** Close code the Gateway uses for a Host whose certificate it refuses (revoked). */
 export const HOSTLINK_REJECTED_CLOSE_CODE = 4403;
 /** Socket errors that mean "no route", never "this identity is refused". */
@@ -487,7 +524,8 @@ class WebSocketHostLinkSocket implements HostLinkSocket {
 export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
   const { credentials, server, authenticator, log } = options;
   const baseDelayMs = options.backoff?.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
-  const maxDelayMs = options.backoff?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
+  const maxDelayMs = options.backoff?.maxDelayMs ?? HOSTLINK_MAX_RETRY_DELAY_MS;
+  const idleTimeoutMs = options.idleTimeoutMs ?? HOSTLINK_IDLE_TIMEOUT_MS;
   // The identity is stable for the life of the link: every dial validates the
   // name the enrollment was issued under, whatever address reaches the Gateway.
   const tlsServerName = (options.tlsServerName ?? credentials.tlsServerName ?? "").trim() || undefined;
@@ -516,6 +554,13 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
   let retry: ReturnType<typeof setTimeout> | null = null;
   /** The Host link core of the current socket; replaced on every reconnect. */
   let host: HostLinkHost | null = null;
+  /** The idle watchdog of the current attempt; owned here, cleared with it. */
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearIdleWatch = (): void => {
+    if (!idleTimer) return;
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  };
 
   const status = (): HostLinkStatus => ({
     state,
@@ -539,13 +584,16 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
     // Full-ish jitter: half the window is random so a fleet does not synchronize.
     const delay = Math.round(ceiling * (0.5 + Math.random() / 2));
     nextRetryAt = new Date(Date.now() + delay).toISOString();
-    publish("backoff", error);
-    log("warn", "host link reconnecting", { attempt, delayMs: delay });
+    // The timer is set before the status is published: a listener that answers
+    // a `backoff` report with `reconnectNow()` must find a retry to skip
+    // instead of scheduling a second dial beside this one.
     retry = setTimeout(() => {
       retry = null;
       void connect();
     }, delay);
     retry.unref?.();
+    publish("backoff", error);
+    log("warn", "host link reconnecting", { attempt, delayMs: delay });
   };
 
   const connect = async (): Promise<void> => {
@@ -571,9 +619,32 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
     });
     socket = ws;
     let failure: string | null = null;
+    /**
+     * Liveness (§11.4 rule 5): the link is only as alive as the last frame the
+     * Gateway sent. A tunnel that died underneath a still-open socket reports
+     * nothing at all — the local TCP state keeps saying ESTABLISHED — so this
+     * watchdog, not the socket, is what notices. Terminating drives the ordinary
+     * close path: the link core releases its logical connections and the usual
+     * backoff schedules the next dial.
+     */
+    const noteInbound = (): void => {
+      if (ws !== socket) return;
+      clearIdleWatch();
+      idleTimer = setTimeout(() => {
+        idleTimer = null;
+        if (ws !== socket) return;
+        failure = `the Gateway sent nothing for ${idleTimeoutMs} ms`;
+        log("warn", "host link went silent; reconnecting", { idleTimeoutMs });
+        ws.terminate();
+      }, idleTimeoutMs);
+      idleTimer.unref?.();
+    };
+    ws.on("message", noteInbound);
     ws.on("open", () => {
       if (ws !== socket) return;
       attempt = 0;
+      // The Gateway speaks first on every link; the clock starts at open.
+      noteInbound();
       // The Host link core serves every logical connection the Gateway opens.
       host = createHostLinkHost({
         server,
@@ -599,6 +670,8 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
     ws.on("close", (code: number, reason: Buffer) => {
       if (ws !== socket) return;
       socket = null;
+      // The watchdog belonged to the socket that just ended.
+      clearIdleWatch();
       // Drop the link core of the socket that just ended: a revocation racing
       // the disconnect must not be written to a dead socket.
       host = null;
@@ -618,6 +691,19 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
 
   return {
     status,
+    reconnectNow(): boolean {
+      if (stopped || rejected) return false;
+      // A live link, or a dial already under way, has nothing to skip.
+      if (state === "connected" || state === "connecting") return false;
+      const skipped = retry;
+      if (skipped) {
+        clearTimeout(skipped);
+        retry = null;
+      }
+      log("info", "host link reconnecting now", { skippedBackoff: Boolean(skipped) });
+      void connect();
+      return true;
+    },
     async revokeDevice(deviceId: string): Promise<DeviceRevocationOutcome> {
       // A live link signs, queues, and sends in one step. With no link the
       // frame is still signed and queued, so the revocation is not lost: the
@@ -634,6 +720,7 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
     async stop(): Promise<void> {
       if (stopped) return;
       stopped = true;
+      clearIdleWatch();
       if (retry) {
         clearTimeout(retry);
         retry = null;

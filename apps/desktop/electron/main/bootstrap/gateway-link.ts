@@ -30,6 +30,11 @@ import {
 } from "../remote/gateway-link/gateway-link-port.js";
 import type { EncryptionPort } from "../remote/remote-host-registry.js";
 import type { AccountJoinInput, AccountJoinOutcome } from "../remote/gateway-link/account-computers.js";
+import {
+  createLinkWakeWatch,
+  type LinkWakeSources,
+  type LinkWakeWatch,
+} from "../remote/gateway-link/link-wake-watch.js";
 
 /**
  * Backoff for a failed account join round: the Gateway refused the login or
@@ -116,6 +121,16 @@ export type GatewayLinkBootstrapOptions = {
   notifyEnabled?: boolean;
   log?: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
   now?: () => number;
+  /**
+   * System wake and network-return hints (protocol §11.4 rule 5). Electron's
+   * `powerMonitor` and `net.isOnline()` are passed in from
+   * `bootstrap/startup.ts`, so this module stays free of Electron and a test
+   * supplies its own sources. Absent: only the link's own idle watchdog notices
+   * a dead tunnel.
+   */
+  wakeSources?: LinkWakeSources;
+  /** Poll interval of the online state; a test passes a short one. */
+  wakePollMs?: number;
 };
 
 /** What the remote-gateway IPC handlers call; every method reports status. */
@@ -141,6 +156,11 @@ export type GatewayLinkController = {
 export type GatewayLinkBootstrap = {
   /** Apply the persisted switch; a no-op when the feature is off. */
   open(): Promise<void>;
+  /**
+   * Skip a pending reconnect backoff and dial now. Called when the machine
+   * wakes or its network comes back; false when there was nothing to skip.
+   */
+  reconnectNow(): boolean;
   controller(): GatewayLinkController;
   dispose(): Promise<void>;
 };
@@ -416,6 +436,28 @@ export function createGatewayLinkBootstrap(
   };
 
   /**
+   * System wake and network-return hints (protocol §11.4 rule 5). Owned by this
+   * bootstrap: created with the first activation, disposed with the link, so a
+   * hint can never reach a service that is already gone.
+   */
+  let wakeWatch: LinkWakeWatch | null = null;
+  const startWakeWatch = (): void => {
+    const sources = options.wakeSources;
+    if (wakeWatch || !sources) return;
+    wakeWatch = createLinkWakeWatch({
+      sources,
+      ...(options.wakePollMs === undefined ? {} : { pollMs: options.wakePollMs }),
+      onWake: (reason) => {
+        // The hint never dials by itself: the link knows whether it has a
+        // backoff to skip, and a healthy link answers "nothing to do".
+        const reconnected = service?.reconnectNow() ?? false;
+        log("info", "system wake hint for the gateway link", { reason, reconnected });
+      },
+      log: (level, message, data) => log(level, message, data),
+    });
+  };
+
+  /**
    * Create the service on demand and apply the switch once. Initialization is
    * idempotent per service instance so calling it from several entry points
    * cannot start the link twice.
@@ -426,6 +468,9 @@ export function createGatewayLinkBootstrap(
       serviceInitialized = true;
       await created.initialize({ enabled: configuredEnabled });
     }
+    // The link is now the owner of a socket, so it is also the owner of the
+    // wake hints that shorten its recovery.
+    startWakeWatch();
     return created;
   };
 
@@ -657,12 +702,20 @@ export function createGatewayLinkBootstrap(
       if (!configuredEnabled) return;
       await activate();
     },
+    reconnectNow() {
+      // Nothing is created by a hint: with the link never activated there is no
+      // service to ask, and the answer is simply "nothing to skip".
+      return service?.reconnectNow() ?? false;
+    },
     controller() {
       return controller;
     },
     async dispose() {
       if (disposed) return;
       disposed = true;
+      // No hint may reach a service that is about to be disposed.
+      wakeWatch?.dispose();
+      wakeWatch = null;
       // A queued retry outlives nothing: the link it would report on is gone.
       cancelAccountJoin();
       const current = service;

@@ -63,7 +63,18 @@ export type StartGatewayOptions = {
   deviceLimit?: RateLimitPolicy;
   ipLimit?: RateLimitPolicy;
   credentialLimit?: RateLimitPolicy;
+  /**
+   * The Host link heartbeat (protocol §11.4 rule 5): how often the Gateway
+   * pings each online Host. Injectable so a test does not have to wait 15
+   * seconds for the first beat.
+   */
   heartbeatMs?: number;
+  /**
+   * Silence after which a Host link is dropped. Defaults to three beats, which
+   * is the 45-second window of protocol §11.4; a shorter beat shortens it in
+   * the same proportion, so tests never wait a real 45 seconds.
+   */
+  heartbeatTimeoutMs?: number;
   /**
    * The `RACP-WS` client route's heartbeat (protocol §11.1). Injectable so a
    * test does not have to wait 30 seconds to see a half-open client dropped;
@@ -149,6 +160,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     log,
     ...(now ? { now } : {}),
     ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
+    ...(options.heartbeatTimeoutMs ? { heartbeatTimeoutMs: options.heartbeatTimeoutMs } : {}),
   });
   // The device relay is wired before the listener starts, so a Host that
   // connects immediately still receives the grants pending for its account

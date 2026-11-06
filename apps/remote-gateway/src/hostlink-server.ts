@@ -37,7 +37,21 @@ import type { GatewayStore } from "./store.js";
 /** Close code the Host treats as "this certificate is refused; do not retry". */
 export const HOST_LINK_REJECTED_CLOSE_CODE = 4403;
 
-const HEARTBEAT_INTERVAL_MS = 30_000;
+/**
+ * How often the Gateway pings a Host on its link (§11.4 rule 5). The beat is
+ * what turns a dead overlay tunnel into a detected one: a half-open TCP
+ * connection stays `ESTABLISHED` on both ends, so silence is the only
+ * evidence, and it has to be short enough that a client request is not sent
+ * into a link that has been gone for minutes.
+ */
+const HEARTBEAT_INTERVAL_MS = 15_000;
+/**
+ * Silent beats tolerated before the link is declared dead. Any inbound frame
+ * counts as liveness, not only `link.pong`, because a Host that is working
+ * hard is silent on the beat but not gone. Three beats at the default interval
+ * is the 45-second window in protocol §11.4.
+ */
+const HEARTBEAT_MISSES_ALLOWED = 3;
 const MAX_ENROLL_BODY_BYTES = 64 * 1024;
 
 export type HostLinkServerOptions = {
@@ -46,10 +60,25 @@ export type HostLinkServerOptions = {
   enrollment: EnrollmentService;
   log: GatewayLog;
   now?: () => number;
+  /** Ping interval; production default 15 s (§11.4 rule 5). */
   heartbeatMs?: number;
+  /** Silence tolerated before the link is dropped; defaults to three beats. */
+  heartbeatTimeoutMs?: number;
 };
 
-type LiveLink = { hostId: string; mux: HostLinkGatewayMux; socket: WebSocket; heartbeat: ReturnType<typeof setInterval> };
+/**
+ * Inbound liveness of one link, shared between the socket's message listener
+ * and the heartbeat so neither has to reach into the other.
+ */
+type LinkLiveness = { lastInboundAt: number };
+
+type LiveLink = {
+  hostId: string;
+  mux: HostLinkGatewayMux;
+  socket: WebSocket;
+  heartbeat: ReturnType<typeof setInterval>;
+  liveness: LinkLiveness;
+};
 
 /** A signed frame a Host sent, with the identity of the link that carried it. */
 export type HostFrameHandler<TFrame> = (frame: TFrame, hostId: string) => void;
@@ -245,6 +274,11 @@ export class HostLinkServer implements HostLinkSource {
     this.options.log("warn", "host link upgrade refused", { hostId });
   }
 
+  /** Wall clock for liveness; the same source the audit timestamps use. */
+  private nowMs(): number {
+    return (this.options.now ?? (() => Date.now()))();
+  }
+
   private nowIso(): string {
     return new Date((this.options.now ?? (() => Date.now()))()).toISOString();
   }
@@ -262,6 +296,10 @@ export class HostLinkServer implements HostLinkSource {
       return;
     }
     const previous = this.links.get(peer.hostId);
+    // Any frame from the Host proves the tunnel is alive, and the stamp is
+    // taken before the frame is parsed: a malformed one still had to cross the
+    // wire.
+    const liveness: LinkLiveness = { lastInboundAt: this.nowMs() };
     const adapter: HostLinkSocket = {
       send: (frame: string) => {
         if (socket.readyState !== socket.OPEN) return false;
@@ -272,6 +310,7 @@ export class HostLinkServer implements HostLinkSource {
       onMessage: (handler: (frame: string) => void) => {
         socket.on("message", (data, isBinary) => {
           if (isBinary) return;
+          liveness.lastInboundAt = this.nowMs();
           handler(typeof data === "string" ? data : Buffer.isBuffer(data) ? data.toString("utf8") : "");
         });
       },
@@ -279,15 +318,32 @@ export class HostLinkServer implements HostLinkSource {
       onError: (handler: (error: Error) => void) => socket.on("error", (error: Error) => handler(error)),
     };
     const mux = new HostLinkGatewayMux(adapter, this.options.log);
+    const heartbeatMs = this.options.heartbeatMs ?? HEARTBEAT_INTERVAL_MS;
+    const timeoutMs = this.options.heartbeatTimeoutMs ?? heartbeatMs * HEARTBEAT_MISSES_ALLOWED;
     const heartbeat = setInterval(() => {
+      // A half-open tunnel answers nothing and reports nothing: only the
+      // silence tells us the Host is gone (§11.4 rule 5). Terminating drives
+      // the same close path a real disconnect takes — the Host is reported
+      // offline and every logical connection is closed with a resumable cursor.
+      const silentMs = this.nowMs() - liveness.lastInboundAt;
+      if (silentMs >= timeoutMs) {
+        this.options.log("warn", "gateway host link went silent; closing it", {
+          hostId: peer.hostId,
+          silentMs,
+          timeoutMs,
+        });
+        clearInterval(heartbeat);
+        socket.terminate();
+        return;
+      }
       try {
         mux.ping();
       } catch (error) {
         this.options.log("warn", "gateway heartbeat failed", { hostId: peer.hostId, error: String(error) });
       }
-    }, this.options.heartbeatMs ?? HEARTBEAT_INTERVAL_MS);
+    }, heartbeatMs);
     heartbeat.unref?.();
-    const link: LiveLink = { hostId: peer.hostId, mux, socket, heartbeat };
+    const link: LiveLink = { hostId: peer.hostId, mux, socket, heartbeat, liveness };
     mux.onCapabilities((capabilities) => {
       // Only the link that is current may speak for this Host.
       if (this.links.get(peer.hostId) !== link) return;
