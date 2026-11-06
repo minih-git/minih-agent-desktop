@@ -81,9 +81,7 @@ async fn in_process_no_tun_allocates_forward_port_and_falls_back_until_reachable
     // A manual identity is the local one, and says so.
     assert_eq!(status.bootstrap_source, BootstrapSource::Local);
 
-    let resolved = mgr
-        .resolve_minih_router_endpoint(Some("https://router.hmini.org/v1"))
-        .await;
+    let resolved = mgr.resolve_minih_router_endpoint(Some("https://router.hmini.org/v1"));
     assert!(!resolved.using_lan);
     assert_eq!(resolved.active_base_url, "https://router.hmini.org/v1");
     assert_eq!(resolved.fallback_base_url, "https://router.hmini.org/v1");
@@ -128,9 +126,7 @@ async fn gateway_mode_without_an_answer_holds_and_stays_on_the_public_endpoint()
     assert!(status.bootstrap_network_name.is_empty());
 
     // The chat path asks the same question and gets the public answer.
-    let resolved = mgr
-        .resolve_minih_router_endpoint(Some("https://router.hmini.org/v1"))
-        .await;
+    let resolved = mgr.resolve_minih_router_endpoint(Some("https://router.hmini.org/v1"));
     assert!(!resolved.using_lan);
     assert_eq!(resolved.active_base_url, "https://router.hmini.org/v1");
     assert_eq!(resolved.effective_mode, EasyTierEffectiveMode::Disabled);
@@ -240,7 +236,7 @@ async fn without_an_announcement_the_mesh_is_unchanged() {
         .await;
 
     assert!(mgr.hostlink_forward(4000).is_none());
-    assert!(mgr.hostlink_forward_for_start(false, 4000).is_none());
+    assert!(mgr.hostlink_forward_for_start(false, 4000, None).is_none());
 
     let status = mgr.status(None).await;
     assert!(!status.remote_gateway.available);
@@ -282,9 +278,9 @@ async fn a_malformed_announcement_never_breaks_the_mesh() {
 #[test]
 fn the_host_link_forward_is_only_installed_in_no_tun_mode() {
     let mgr = manager_with(announced());
-    assert!(mgr.hostlink_forward_for_start(true, 4000).is_some());
+    assert!(mgr.hostlink_forward_for_start(true, 4000, None).is_some());
     // TUN mode routes the overlay address itself.
-    assert!(mgr.hostlink_forward_for_start(false, 4000).is_none());
+    assert!(mgr.hostlink_forward_for_start(false, 4000, None).is_none());
 }
 
 #[test]

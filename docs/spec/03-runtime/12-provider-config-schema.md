@@ -554,26 +554,53 @@ address is only a default (`customBaseUrl: true`):
   system **TUN** mode (`--easytier-tun-runner`), automatically falling back to
   `no_tun` if elevation is declined or unavailable. The elevated runner receives
   the identity already resolved inside its spec and never fetches one, so no
-  privileged process starts without an identity. When the LAN gateway is
-  reachable, `minih-router` control-plane (`/api/*`), model discovery, connection
-  test, and chat/subagent runtime requests prefer the LAN tunnel and
-  automatically retry against the row's configured public `baseUrl` on transport
-  or `502/503/504` gateway errors.
+  privileged process starts without an identity. Whether the LAN tunnel may
+  carry a request is decided by a background health probe, never on the request
+  path. Host Core runs `unavailable → probing → healthy` over the No-TUN
+  forward: it asks `<forward>/health` every 4 s, promotes the state to `healthy`
+  only after a stable 12 s streak of answers, and demotes immediately on the
+  first failed probe, on a failure the agent runtime reports
+  (`easytier.reportTunnelFailure`, see below), or on a detected local network
+  change. `easytier.resolveMinihRouterEndpoint` only *reads* that state: a
+  `healthy` tunnel hands back the loopback LAN address, and every other state
+  (disabled, held, probing, degraded) hands back the row's public `baseUrl`, so
+  a request never starts on a tunnel nobody has certified. When the LAN address
+  *is* returned, the public base URL travels with it as the fallback the runtime
+  retries against on transport errors or `502/503/504` gateway errors.
   A tunnel that is down still leaves its No-TUN forward listening, so the
   request is accepted and never answered rather than failing. A late response
   header is not evidence of that: the gateway writes headers only after the
   whole upstream answer for a non-streaming reply, and a streamed one can also
   be buffered behind an internal channel retry. Runtime requests therefore give
-  the tunnel 15 s for its response headers and, when they have not arrived,
-  probe the tunnel origin with a credential-free `GET` bounded to 3 s. Any HTTP
-  answer (401, 404, anything) means the tunnel is reachable and the in-flight
-  request simply keeps waiting — no public re-send, no parked tunnel; a rejected
-  or timed-out probe means the tunnel is gone, so that attempt is abandoned and
-  retried against the row's public `baseUrl`. The body of a streaming answer is
-  never bounded, and a caller abort never triggers either branch. After a real
-  tunnel failure the provider binding keeps using the public address for 60 s
-  before it tries the tunnel again, so one outage does not spend every request's
-  timeout budget on the dead tunnel.
+  the tunnel 3 s for its response headers and then probe the tunnel origin with
+  a credential-free `GET` bounded to 3 s, repeating that probe every 3 s for as
+  long as the answer stays silent. Any HTTP answer (401, 404, anything) means
+  the tunnel is reachable and the in-flight request simply keeps waiting — no
+  public re-send, no parked tunnel; a rejected or timed-out probe means the
+  tunnel is gone, so that attempt is abandoned and retried against the row's
+  public `baseUrl`. A body that has started but then delivers nothing for 10 s
+  is probed the same way: a probe that answers leaves the stream alone, and a
+  probe that fails ends the stream as a retryable stream failure, which the
+  existing transient retry re-runs against the public address. A caller abort
+  never triggers either branch.
+  A failure the runtime proves this way is reported once to Host Core
+  (`easytier.reportTunnelFailure`), which degrades the shared state, so the next
+  request in *every* session resolves to the public address instead of
+  rediscovering the dead tunnel. That report is fire-and-forget: an unavailable
+  Host never affects the request that noticed the failure. A `502/503/504`
+  answered through the tunnel is a gateway or upstream failure, not a tunnel
+  failure — headers arrived, so the tunnel carried them — and is retried on the
+  public address without degrading the shared state. After a real tunnel failure
+  the provider binding also keeps using the public address for 60 s before it
+  tries the tunnel again, so one outage does not spend every request's timeout
+  budget on the dead tunnel.
+  A local network change (a new interface address, or another default route) is
+  detected by sampling the route every 4 s. It degrades the shared state at once
+  and rebuilds the node from the cached bootstrap identity — never by re-fetching
+  bootstrap, which would walk into the gateway's per-IP lockout — keeping the
+  previous loopback forward ports so an established remote Host link is not
+  re-registered under a new local address. `EasyTierStatus.routerLanReachable`
+  and `activeRouterBaseUrl` report that same health state.
 
 The same token also reads the gateway's key-scoped control plane, which
 Settings uses for the balance and model plaza (§6, Minih Router account).

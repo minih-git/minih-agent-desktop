@@ -85,6 +85,16 @@ export type ProviderEndpointFallback = {
   fallbackBaseUrl?: string;
   /** Sticky memory owned by the binding holder; one-shot callers omit it. */
   state?: ProviderEndpointFallbackState;
+  /**
+   * Called when the tunnel address is proven dead: a failed liveness probe, a
+   * rejected connection, or a stream that stopped while the tunnel stopped
+   * answering. Host Core degrades the shared tunnel health on it, so every
+   * session's next request goes straight to the public address (C2).
+   *
+   * Reporting is best-effort and never awaited by the request that noticed the
+   * failure.
+   */
+  onTunnelFailure?: (reason: string) => void;
 };
 
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
@@ -171,16 +181,24 @@ function rewriteEndpointUrl(
 
 /**
  * How long the primary (EasyTier tunnel) address may take to answer with
- * response headers before its reachability is checked and — when the tunnel is
- * gone — the attempt is abandoned for the public address.
+ * response headers before its reachability is checked.
  *
  * A No-TUN forward keeps its listening socket open while the tunnel is down:
  * the connection is accepted and never answered, so no socket error ever
- * surfaces and the request would wait for the stream idle timeout instead of
- * falling back (skill `minih-project-routing` §4: LAN unreachable → retry the
- * public base URL).
+ * surfaces. Three seconds is short enough that a dead tunnel costs a request
+ * seconds rather than the stream idle budget (skill `minih-project-routing` §4:
+ * LAN unreachable → retry the public base URL).
  */
-export const PRIMARY_RESPONSE_HEADER_DEADLINE_MS = 15_000;
+export const PRIMARY_RESPONSE_HEADER_DEADLINE_MS = 3_000;
+
+/**
+ * How often a still-silent tunnel is probed again.
+ *
+ * A single probe is a moment of evidence, and the tunnel that answered it can
+ * die a second later. Repeated probes keep a request that is waiting on a slow
+ * gateway from parking the tunnel while also noticing a real collapse.
+ */
+export const PRIMARY_LIVENESS_RECHECK_MS = 3_000;
 
 /**
  * How long the reachability probe of a silent tunnel may take.
@@ -189,9 +207,20 @@ export const PRIMARY_RESPONSE_HEADER_DEADLINE_MS = 15_000;
  * writes them after the whole upstream answer for a non-streaming reply, and a
  * streamed one can also be buffered behind an internal channel retry. Aborting
  * on the deadline alone would re-send a healthy in-flight request to the public
- * address and bill the upstream twice, so the deadline only triggers a probe.
+ * address and bill the upstream twice, so a deadline only triggers a probe and
+ * a probe that answers keeps the request where it is.
  */
 export const PRIMARY_LIVENESS_PROBE_TIMEOUT_MS = 3_000;
+
+/**
+ * How long a tunnel stream may deliver nothing before it is probed.
+ *
+ * A stream that has already started but stops producing is the mid-response
+ * form of the same failure: the tunnel dies, no socket error arrives, and the
+ * turn would otherwise wait for the provider stream idle budget
+ * (`STREAM_IDLE_TIMEOUT_DEFAULT_MS`) before anything happens.
+ */
+export const TUNNEL_STREAM_IDLE_PROBE_MS = 10_000;
 
 /**
  * How long the public address keeps winning after the tunnel address failed.
@@ -257,7 +286,9 @@ async function primaryEndpointAnswers(
  * When the deadline passes without headers the attempt is not abandoned right
  * away: a short probe decides whether the tunnel is unreachable (abandon, so
  * the caller can fall back) or merely slow (keep waiting, and never park the
- * tunnel for a late response). The deadline timer is cleared as soon as the
+ * tunnel for a late response). A slow answer is re-probed every
+ * `PRIMARY_LIVENESS_RECHECK_MS`, so a tunnel that dies while the gateway is
+ * still thinking is noticed too. The deadline timer is cleared as soon as the
  * headers arrive — a streaming body may legitimately run far longer — while the
  * caller's own abort stays wired for the whole response and is detached again
  * once the response is settled.
@@ -268,34 +299,122 @@ async function fetchPrimaryWithinDeadline(
   init: RequestInit | undefined,
   callerSignal: AbortSignal | undefined,
   primaryOrigin: string,
+  onTunnelFailure: ((reason: string) => void) | undefined,
 ): Promise<Response> {
   const controller = new AbortController();
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
-  const forwardAbort = () => {
-    controller.abort(callerSignal?.reason);
+  const clearDeadline = () => {
     if (deadlineTimer) clearTimeout(deadlineTimer);
+    deadlineTimer = undefined;
+  };
+  const forwardAbort = () => {
+    clearDeadline();
+    controller.abort(callerSignal?.reason);
   };
   if (callerSignal?.aborted) {
     forwardAbort();
   } else {
     callerSignal?.addEventListener("abort", forwardAbort, { once: true });
   }
-  deadlineTimer = setTimeout(() => {
-    deadlineTimer = undefined;
-    void primaryEndpointAnswers(primaryOrigin, fetchFn).then((answers) => {
-      if (answers) return;
-      controller.abort(
-        new Error(`Primary endpoint unreachable after ${PRIMARY_RESPONSE_HEADER_DEADLINE_MS}ms`),
-      );
-    });
-  }, PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
-  (deadlineTimer as { unref?: () => void }).unref?.();
+  const scheduleProbe = (delayMs: number) => {
+    deadlineTimer = setTimeout(() => {
+      deadlineTimer = undefined;
+      void primaryEndpointAnswers(primaryOrigin, fetchFn).then((answers) => {
+        if (answers) {
+          // Slow, but the tunnel is alive: keep waiting and ask again later.
+          if (!controller.signal.aborted) scheduleProbe(PRIMARY_LIVENESS_RECHECK_MS);
+          return;
+        }
+        onTunnelFailure?.(`tracked tunnel stopped answering: ${primaryOrigin}`);
+        controller.abort(tunnelAbandonedError(primaryOrigin));
+      });
+    }, delayMs);
+    (deadlineTimer as { unref?: () => void }).unref?.();
+  };
+  scheduleProbe(PRIMARY_RESPONSE_HEADER_DEADLINE_MS);
   try {
     return await fetchFn(input, { ...(init ?? {}), signal: controller.signal });
   } finally {
-    if (deadlineTimer) clearTimeout(deadlineTimer);
+    clearDeadline();
     callerSignal?.removeEventListener("abort", forwardAbort);
   }
+}
+
+/**
+ * Watch a tunnel response body for the mid-response form of the same failure.
+ *
+ * A stream that has started but stops delivering is probed after
+ * `TUNNEL_STREAM_IDLE_PROBE_MS` of silence. A probe that answers leaves the
+ * stream alone — slow is not dead, and re-sending would bill the upstream
+ * twice — while a probe that fails ends the stream with a `STREAM_FAILED`-shaped
+ * error, which the runtime's existing transient retry already handles. The
+ * retry then finds the tunnel parked by the same failure report, so it goes
+ * straight to the public address.
+ */
+function guardTunnelStream(
+  response: Response,
+  primaryOrigin: string,
+  fetchFn: FetchFunction,
+  onTunnelFailure: ((reason: string) => void) | undefined,
+): Response {
+  if (!response.body) return response;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = undefined;
+  };
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    start(controller) {
+      armIdleProbe(controller);
+    },
+    transform(chunk, controller) {
+      controller.enqueue(chunk);
+      armIdleProbe(controller);
+    },
+    flush() {
+      clearIdle();
+    },
+  });
+  // Piped by hand rather than with `pipeThrough`: when this watchdog errors the
+  // readable side, the pipe rejects too, and an unobserved rejection would
+  // surface as an unhandled error in the host process.
+  void response.body.pipeTo(transform.writable).catch(() => undefined);
+  function armIdleProbe(controller: TransformStreamDefaultController<Uint8Array>): void {
+    clearIdle();
+    idleTimer = setTimeout(() => {
+      idleTimer = undefined;
+      void primaryEndpointAnswers(primaryOrigin, fetchFn).then((answers) => {
+        if (answers) {
+          armIdleProbe(controller);
+          return;
+        }
+        const reason = `tunnel stream stalled and the tunnel stopped answering: ${primaryOrigin}`;
+        onTunnelFailure?.(reason);
+        controller.error(new Error(`stream lost: ${reason}`));
+      });
+    }, TUNNEL_STREAM_IDLE_PROBE_MS);
+    (idleTimer as { unref?: () => void }).unref?.();
+  }
+  return new Response(transform.readable, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+/**
+ * The attempt this module itself abandoned because a probe proved the tunnel
+ * dead. It is tagged so the caller does not report the same failure twice.
+ */
+function tunnelAbandonedError(primaryOrigin: string): Error {
+  return Object.assign(
+    new Error(`Primary endpoint unreachable after ${PRIMARY_RESPONSE_HEADER_DEADLINE_MS}ms`),
+    { name: "TunnelAbandonedError", tunnelOrigin: primaryOrigin },
+  );
+}
+
+function isTunnelAbandoned(error: unknown): boolean {
+  return error instanceof Error && error.name === "TunnelAbandonedError";
 }
 
 /**
@@ -317,6 +436,7 @@ function withEndpointFallback(
   primaryBaseUrl: string,
   fallbackBaseUrl: string,
   state?: ProviderEndpointFallbackState,
+  onTunnelFailure?: (reason: string) => void,
 ): FetchFunction {
   const rawPrimary = primaryBaseUrl.trim().replace(/\/+$/, "");
   const rawFallback = fallbackBaseUrl.trim().replace(/\/+$/, "");
@@ -375,19 +495,41 @@ function withEndpointFallback(
       }
     }
     try {
-      const response = await fetchPrimaryWithinDeadline(fetchFn, input, init, signal, probeOrigin);
+      const response = await fetchPrimaryWithinDeadline(
+        fetchFn,
+        input,
+        init,
+        signal,
+        probeOrigin,
+        onTunnelFailure,
+      );
       if (
         (response.status === 502 || response.status === 503 || response.status === 504) &&
         !signal?.aborted
       ) {
+        // Headers arrived, so the tunnel carried them: this is the gateway or
+        // its upstream failing, not the tunnel. Fall back without blaming the
+        // tunnel — otherwise one upstream incident would hide a healthy tunnel
+        // from every session for a full recovery window.
         return await useFallback();
       }
-      return response;
+      return guardTunnelStream(response, probeOrigin, fetchFn, onTunnelFailure);
     } catch (error) {
       if (signal?.aborted) throw error;
+      // A probe already reported this one; reporting again would only describe
+      // the same dead tunnel twice.
+      if (!isTunnelAbandoned(error)) {
+        onTunnelFailure?.(`tunnel request failed: ${describeEndpointFailure(error)}`);
+      }
       return useFallback();
     }
   };
+}
+
+/** A short, credential-free description of a transport failure, for the report. */
+function describeEndpointFailure(error: unknown): string {
+  if (error instanceof Error) return error.message || error.name;
+  return String(error);
 }
 
 /**
@@ -419,6 +561,7 @@ export function providerRequestFetch(
       endpointFallback!.primaryBaseUrl!,
       endpointFallback!.fallbackBaseUrl!,
       endpointFallback!.state,
+      endpointFallback!.onTunnelFailure,
     );
   }
   if (authKind === "none") {

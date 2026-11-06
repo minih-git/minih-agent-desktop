@@ -102,6 +102,23 @@ pub(super) async fn handle(
             let resolved = easytier_net::resolve_minih_router_endpoint(base_url).await;
             serde_json::to_value(resolved).map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
         }
+        // A provider request found the tunnel address dead: a connection error,
+        // an unanswered connection, or a probe that did not come back. One
+        // report degrades the state every session reads, so nothing else has to
+        // rediscover it — and the reporter's own request is never affected,
+        // because the runtime fires this without awaiting it.
+        "easytier.reportTunnelFailure" => {
+            let reason = params
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("agent runtime reported a tunnel failure");
+            let health = easytier_net::report_tunnel_failure(reason).await;
+            serde_json::to_value(health).map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
+        }
+        "easytier.tunnelHealth" => {
+            let health = easytier_net::tunnel_health().await;
+            serde_json::to_value(health).map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
+        }
         _ => Err(rpc_err(
             -32601,
             format!("method not found: {method}"),

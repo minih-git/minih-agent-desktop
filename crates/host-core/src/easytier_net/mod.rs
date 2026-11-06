@@ -1,6 +1,8 @@
 pub mod bootstrap;
 pub mod config;
 pub mod credentials;
+pub mod endpoint;
+pub mod health;
 pub mod identity;
 pub mod remote_gateway;
 pub mod runtime;
@@ -13,6 +15,7 @@ use serde_json::Value;
 
 pub use config::{settings_from_app_value, validate_easytier_settings, EasyTierEffectiveMode};
 pub use credentials::AppStateCredentialProvider;
+pub use health::TunnelHealthSnapshot;
 pub use runtime::{
     manager, BootstrapCredentialProvider, EasyTierPeerSummary, EasyTierStatus,
     MinihRouterResolvedEndpoint,
@@ -112,6 +115,22 @@ pub async fn request_elevation() -> Result<EasyTierStatus, String> {
 pub async fn resolve_minih_router_endpoint(
     configured_base_url: Option<&str>,
 ) -> MinihRouterResolvedEndpoint {
-    let mut mgr = manager().lock().await;
-    mgr.resolve_minih_router_endpoint(configured_base_url).await
+    let mgr = manager().lock().await;
+    mgr.resolve_minih_router_endpoint(configured_base_url)
+}
+
+/// A provider request found the tunnel address dead (C2).
+///
+/// Returns the health state the report left behind, so the caller can log what
+/// every other session will now see.
+pub async fn report_tunnel_failure(reason: &str) -> TunnelHealthSnapshot {
+    let mgr = manager().lock().await;
+    mgr.report_tunnel_failure(reason);
+    mgr.tunnel_health()
+}
+
+/// Where the shared tunnel health stands.
+pub async fn tunnel_health() -> TunnelHealthSnapshot {
+    let mgr = manager().lock().await;
+    mgr.tunnel_health()
 }

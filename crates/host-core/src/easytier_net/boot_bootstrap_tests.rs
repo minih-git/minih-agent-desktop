@@ -212,10 +212,7 @@ async fn the_startup_apply_learns_the_gateway_identity_from_the_rows_own_address
     );
     // The gateway's own control-plane spelling replaced the local host.
     assert_eq!(status.router_lan_url, "http://11.11.11.10:3001/v1");
-    // Without a reachable LAN gateway the chat path stays on the public URL.
-    let resolved = mgr
-        .resolve_minih_router_endpoint(Some("https://router.hmini.org/v1"))
-        .await;
+    let resolved = mgr.resolve_minih_router_endpoint(Some("https://router.hmini.org/v1"));
     assert!(!resolved.using_lan);
     assert_eq!(resolved.active_base_url, "https://router.hmini.org/v1");
 }
