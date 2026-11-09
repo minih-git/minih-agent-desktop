@@ -210,6 +210,14 @@
   焦点。
 
 ### 3. 3 定时任务
+Task definitions load independently from run summaries and bounded history.
+Returning shows the renderer-lifetime successful snapshot and selection while
+refreshing. Pending/failed run reads never imply never-run tasks. Create/Edit
+loads project options lazily and exposes Retry. Host loss/restart invalidates
+cache and old reads; the next normal poll replaces invalidated pending options.
+Run now/Delete wait for known status. Host admission, live follow-up indicators,
+task-owned model settings and delete confirmation remain unchanged.
+
 任务列与所选任务的页面并排展示，支持创建、编辑、暂停、启用和确认删除。表单可为每个任务单独选择项目、权限、模型与会话模式（每次新开会话或复用同一会话）。周期保留下拉选择，并与时分统一为自定义主题菜单。每小时按一小时间隔执行，不显示时间选择；保存、启用、启动或上次自动准入后重新计时。
 间隔直接给出跨度：数量加分钟或小时单位（5 分钟至 24 小时），从准入时刻起算。
 每天通过下拉框选择上午 09:00、下午 14:00、晚上 19:00、夜间 22:00；

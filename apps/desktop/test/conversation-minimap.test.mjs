@@ -10,97 +10,45 @@ const {
 } = await import("../src/lib/conversation-minimap.ts");
 
 function message(id, role, content) {
-  return {
-    id,
-    role,
-    content,
-    createdAt: "2026-07-28T00:00:00.000Z",
-  };
+  return { id, role, content, createdAt: "2026-07-28T00:00:00.000Z" };
 }
 
 test("keeps the outline available while earlier history is outside the mounted window", () => {
-  assert.equal(
-    shouldRenderConversationMinimap({
-      markerCount: 0,
-      overflows: false,
-      hasEarlier: true,
-    }),
-    true,
-  );
+  assert.equal(shouldRenderConversationMinimap({ markerCount: 0, overflows: false, hasEarlier: true }), true);
 });
 
 test("keeps the completed one-page outline hidden", () => {
-  assert.equal(
-    shouldRenderConversationMinimap({
-      markerCount: 4,
-      overflows: false,
-      hasEarlier: false,
-    }),
-    false,
-  );
+  assert.equal(shouldRenderConversationMinimap({ markerCount: 4, overflows: false, hasEarlier: false }), false);
 });
 
-test("shows a completed outline only with enough markers and overflow", () => {
-  assert.equal(
-    shouldRenderConversationMinimap({
-      markerCount: 2,
-      overflows: true,
-      hasEarlier: false,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldRenderConversationMinimap({
-      markerCount: 1,
-      overflows: true,
-      hasEarlier: false,
-    }),
-    false,
-  );
+test("shows a completed outline only with enough user markers and overflow", () => {
+  assert.equal(shouldRenderConversationMinimap({ markerCount: 2, overflows: true, hasEarlier: false }), true);
+  assert.equal(shouldRenderConversationMinimap({ markerCount: 1, overflows: true, hasEarlier: false }), false);
 });
 
-test("uses one assistant marker for all response fragments in a user turn", () => {
+test("marks only user messages across assistant fragments, thinking and tools", () => {
   const markers = buildConversationMinimapMarkers([
     message("user-1", "user", "First question"),
+    { ...message("thinking", "assistant", ""), thinking: "Reasoning" },
     message("assistant-1a", "assistant", "First sentence."),
     message("tool-1", "tool", "tool output"),
     message("assistant-1b", "assistant", "Second sentence."),
     message("user-2", "user", "Second question"),
     message("assistant-2", "assistant", "Second response."),
   ]);
-
-  assert.deepEqual(
-    markers.map(({ id, role }) => ({ id, role })),
-    [
-      { id: "user-1", role: "user" },
-      { id: "assistant-1a", role: "assistant" },
-      { id: "user-2", role: "user" },
-      { id: "assistant-2", role: "assistant" },
-    ],
-  );
-  assert.equal(markers[1].preview, "First sentence.\n\nSecond sentence.");
+  assert.deepEqual(markers, [
+    { id: "user-1", preview: "First question" },
+    { id: "user-2", preview: "Second question" },
+  ]);
 });
 
-test("starts the assistant marker at the first contentful response fragment", () => {
-  const markers = buildConversationMinimapMarkers([
-    message("user-1", "user", "Question"),
-    { ...message("thinking", "assistant", ""), thinking: "Reasoning" },
-    message("tool-1", "tool", "tool output"),
-    message("answer", "assistant", "Final answer"),
-  ]);
-
-  assert.deepEqual(markers.map((marker) => marker.id), ["user-1", "answer"]);
+test("caps the user preview", () => {
+  const markers = buildConversationMinimapMarkers([message("user-1", "user", "a".repeat(400))]);
+  assert.equal(markers[0].preview.length, CONVERSATION_MINIMAP_PREVIEW_MAX_CHARS);
 });
 
-test("caps the combined assistant preview", () => {
-  const markers = buildConversationMinimapMarkers([
-    message("user-1", "user", "Question"),
-    message("assistant-1a", "assistant", "a".repeat(200)),
-    message("assistant-1b", "assistant", "b".repeat(200)),
-  ]);
-
-  assert.equal(
-    markers[1].preview.length,
-    CONVERSATION_MINIMAP_PREVIEW_MAX_CHARS,
-  );
+test("does not read assistant bodies or manufacture assistant-only navigation", () => {
+  const assistant = message("answer", "assistant", "");
+  Object.defineProperty(assistant, "content", { get() { throw new Error("Assistant body must not be read"); } });
+  assert.deepEqual(buildConversationMinimapMarkers([assistant, message("tool", "tool", "output")]), []);
 });

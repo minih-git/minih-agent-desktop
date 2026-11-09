@@ -30,6 +30,8 @@ function RunStatusGlyph({ status }: { status: ScheduledTaskRun["status"] }) {
  * page; opening its conversation stays a separate, explicit action. */
 export function ScheduledRunHistory({
   runs,
+  loaded = true,
+  error = "",
   selectedRunId,
   liveRunId,
   busy,
@@ -38,6 +40,8 @@ export function ScheduledRunHistory({
   onOpenSession,
 }: {
   runs: ScheduledTaskRun[];
+  loaded?: boolean;
+  error?: string;
   selectedRunId: string | null;
   /** The newest run whose conversation is executing a follow-up turn. */
   liveRunId: string | null;
@@ -53,10 +57,12 @@ export function ScheduledRunHistory({
         <h3 className="scheduled-card-title" id="scheduled-run-history">
           {t("scheduled.runs")}
         </h3>
-        <span className="scheduled-card-count">{runs.length}</span>
+        {loaded && <span className="scheduled-card-count">{runs.length}</span>}
       </div>
       {runs.length === 0 ? (
-        <p className="scheduled-hint">{t("scheduled.emptyRuns")}</p>
+        <p className="scheduled-hint" role={error ? "alert" : !loaded ? "status" : undefined}>
+          {error || t(loaded ? "scheduled.emptyRuns" : "common.loading")}
+        </p>
       ) : (
         <>
           <p className="scheduled-hint">{t("scheduled.historyHint")}</p>

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { Host, resolveHostBinary } from "./e2e/host.mjs";
 import { resolveElectronBinary } from "./e2e/boot.mjs";
+import { waitForChildExitWithEscalation } from "./e2e/wait-for-child-exit.mjs";
 import { waitFor } from "./e2e/wait.mjs";
 import { scheduledModelFixture } from "./e2e/scheduled-model.mjs";
 
@@ -172,6 +173,9 @@ try {
       button: "left",
       clickCount: 1,
     });
+    if (selector === "button" && (text === "Create task" || text === "Edit task")) {
+      await waitFor(() => evaluate(`!!document.querySelector('form textarea')`), 5000, "editor project options loaded");
+    }
   };
   const key = async (name, code) => {
     await send("Input.dispatchKeyEvent", { type: "keyDown", key: name, code: name, windowsVirtualKeyCode: code, ...(name === "Enter" ? { text: "\r" } : {}) });
@@ -235,7 +239,7 @@ try {
   assert.ok(await evaluate(`document.body.innerText.includes('Auto can run restricted actions')`));
   await click(await evaluate(`document.querySelector('.scheduled-execution-toolbar .composer-model-thinking-chip').getAttribute('aria-label')`), 'button[aria-haspopup]', true);
   await waitFor(() => evaluate(`!!document.querySelector('.composer-model-menu.is-open .composer-menu-root')`), 5000, "measured root menu");
-  await evaluate(`document.querySelector('.composer-menu-root .composer-menu-entry').click()`);
+  await evaluate(`document.querySelector('.composer-menu-root .composer-menu-entry')?.click(); document.querySelector('.composer-model-search input')?.focus()`);
   await waitFor(() => evaluate(`document.activeElement?.getAttribute('aria-label') === 'Search models'`), 5000, "model search focus");
   await fill('.composer-model-search input', 'fixture-alt');
   await waitFor(() => evaluate(`document.querySelectorAll('.composer-model-option').length === 1`), 5000, "filtered model");
@@ -318,12 +322,12 @@ try {
   await click("Edit task");
   assert.equal(await evaluate(`document.querySelector('button[aria-label="Select project"]').textContent.trim()`), "project-alt");
   assert.equal(await evaluate(`document.querySelector('button[aria-label="Permission mode"]').textContent.trim()`), "Auto");
-  assert.equal(await evaluate(`document.querySelector('.scheduled-execution-toolbar .composer-model-thinking-model').textContent.trim()`), "fixture-alt");
+  assert.equal(await evaluate(`document.querySelector('.scheduled-execution-toolbar .composer-model-thinking-model').textContent.trim()`), "Scheduled alternate model · fixture-alt");
   assert.equal(await evaluate(`document.querySelector('.scheduled-execution-toolbar .composer-model-thinking-level').textContent.trim()`), "high");
   await click(await evaluate(`document.querySelector('.scheduled-execution-toolbar .composer-model-thinking-chip').getAttribute('aria-label')`), 'button[aria-haspopup]', true);
   await waitFor(() => evaluate(`!!document.querySelector('.composer-model-menu.is-open')`), 5000, "composer model menu");
   await screenshot("after-model-menu.png");
-  await evaluate(`document.querySelector('.composer-menu-root .composer-menu-entry').click()`);
+  await evaluate(`document.querySelector('.composer-menu-root .composer-menu-entry')?.click(); document.querySelector('.composer-model-search input')?.focus()`);
   await waitFor(() => evaluate(`!!document.querySelector('.composer-model-search')`), 5000, "shared model submenu");
   await screenshot("after-model-search.png");
   await key("Escape", 27);
@@ -469,7 +473,9 @@ try {
   throw error;
 } finally {
   ws?.close();
-  child.kill();
   server.close();
+  if (child.exitCode === null && child.signalCode === null) {
+    await waitForChildExitWithEscalation(child, { termAfterMs: 0, killAfterMs: 2000 });
+  }
   // Preserve this uniquely named fixture profile for diagnosing failures.
 }

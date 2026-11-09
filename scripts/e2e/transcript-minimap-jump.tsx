@@ -26,6 +26,7 @@ const TURNS = 12;
 
 declare global {
   var transcriptMinimapJumpProbe: () => Promise<unknown>;
+  var captureMinimap: (() => Promise<void>) | undefined;
 }
 
 function assert(value: unknown, label: string): asserts value {
@@ -186,7 +187,11 @@ export async function transcriptMinimapJumpProbe() {
     const dashes = [
       ...rail.querySelectorAll<HTMLButtonElement>(".minimap-marker.user"),
     ];
-    assert(dashes.length >= 2, `outline needs user dashes, saw ${dashes.length}`);
+    assert(dashes.length === TURNS, `one dash per user message, saw ${dashes.length}`);
+    assert(!rail.querySelector(".minimap-marker.assistant"), "assistant output is not outlined");
+    const dashRect = dashes[0]!.getBoundingClientRect();
+    rail.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: dashRect.x + dashRect.width / 2, clientY: dashRect.y + dashRect.height / 2 }));
+    await until(() => host.querySelector(".minimap-popover-text")?.textContent?.startsWith("Question 0.") === true, "user preview on hover");
     const firstTurn = element<HTMLElement>(".message-row.user[data-minimap-id]");
     const turnTop = () =>
       firstTurn.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
@@ -228,6 +233,7 @@ export async function transcriptMinimapJumpProbe() {
       `the clicked turn is not on screen: ${JSON.stringify(readout())}`,
     );
     assert(errors.length === 0, `render errors: ${errors.map(String)}`);
+    await globalThis.captureMinimap?.();
     return { ok: true, dashes: dashes.length, ...readout() };
   } catch (error) {
     return {
