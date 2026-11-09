@@ -273,6 +273,13 @@ fn apply_scope(st: &AppState, scope: &MemoryScope, payload: &Value) -> Result<()
         }
         st.db.upsert_synced_memory_entry(scope, entry)?;
     }
+    // A payload from another device is a change like any other: the local
+    // curation pass has something new to look at (ADR learned-memory-consolidation
+    // §6.2). A tombstone apply rewrites the note too, so this runs once at the end
+    // rather than per entry.
+    if !synced.entries.is_empty() || !synced.tombstones.is_empty() {
+        crate::memory::curation::mark_dirty_tx(st.db.conn(), scope, now_ms())?;
+    }
     Ok(())
 }
 

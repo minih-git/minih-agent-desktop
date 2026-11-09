@@ -190,6 +190,14 @@ When enabled, an Electron main memory service (a new module, not added to
   write that pairs extraction with another status, so this path cannot store
   an active entry even if the service asks for one.
 
+With the automatic-curation switch on (`learnedMemory.curate`, ADR
+learned-memory-consolidation), a candidate stored as `suggested` is then handed
+to `memory.curation.activate` in the same host call, which promotes it to
+`active` under the pass cap and records the change so it can be undone. The
+candidate is still written and validated as a suggestion first: activation is a
+second, recorded step, not a second write path. With the switch off nothing
+changes here.
+
 This keeps ADR 0323 intact: no user flow waits on the model, and model cost is
 opt-in.
 
@@ -278,8 +286,7 @@ restoring) until it is updated.
 
 ### 8. Explicitly out of scope for v1
 
-Embeddings or vector search; a per-turn model call to select memories;
-periodic consolidation passes; automatic promotion of suggestions; memory in
+Embeddings or vector search; a per-turn model call to select memories; memory in
 subagents; writing memory into `AGENTS.md` or any workspace file; dedicated
 remote-web or mobile memory UI (those clients show the tools as generic tool
 rows).
@@ -287,6 +294,18 @@ rows).
 Amendment (D682; [plugin learned-memory read ADR](plugin-learned-memory-read.md): a
 read-only listing of active notes is allowed through `memory.read`. Plugin
 writes, suggestion APIs, and detailed provenance remain out of scope.
+
+Amendment (D688, 2026-11-09; [ADR
+learned-memory-consolidation](learned-memory-consolidation.md)): periodic
+consolidation passes and automatic promotion of suggestions are **no longer out
+of scope**. Both are part of that ADR, behind a device-local switch that is off
+by default, and this ADR's §4 output rule is amended above to match. The
+per-note review queue stays out: it is not part of that decision.
+
+What remains out of scope there: an automatic path that deletes a note or writes
+or clears a tombstone (forgetting stays the user's own action, §6); rewriting the
+wording of a note the user authored by hand; a model-callable tool that
+consolidates memory; and embedding-based similarity.
 
 ## Consequences
 

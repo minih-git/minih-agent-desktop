@@ -6,6 +6,7 @@
 //! detector, `tombstones` the identity and forgetting guarantees, and
 //! `extraction` the per-session cursor and lease the optional extractor uses.
 
+pub(crate) mod curation;
 mod experience;
 mod extraction;
 mod extraction_budget;
@@ -24,6 +25,12 @@ mod validation;
 #[path = "bot_scope_tests.rs"]
 mod bot_scope_tests;
 #[cfg(test)]
+#[path = "curation_scope_tests.rs"]
+mod curation_scope_tests;
+#[cfg(test)]
+#[path = "curation_tests.rs"]
+mod curation_tests;
+#[cfg(test)]
 #[path = "experience_tests.rs"]
 mod experience_tests;
 #[cfg(test)]
@@ -41,6 +48,7 @@ mod provenance_tests;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use curation::{CurationInputOutcome, CurationUndoReport, CURATION_LEASE_MS};
 pub(crate) use experience::{stamp_pending_tx, ExperienceCandidate};
 pub(crate) use extraction_input::ExtractionInputOutcome;
 /// Configuration sync reads and writes learned memory through these; the rules

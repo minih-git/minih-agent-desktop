@@ -482,6 +482,9 @@ impl Database {
             use_count: 0,
         };
         insert_entry(&tx, &entry)?;
+        // Automatic curation works on what changed, so the marker travels in the
+        // same transaction as the change (ADR learned-memory-consolidation §6.2).
+        super::curation::mark_dirty_tx(&tx, &entry.scope(), now)?;
         tx.commit()?;
         Ok(CreateMemoryOutcome::Created(Box::new(entry)))
     }
@@ -552,6 +555,7 @@ impl Database {
             return Ok(UpdateMemoryOutcome::RevisionConflict);
         }
         let updated = entry_by_id(&tx, &current.id)?;
+        super::curation::mark_dirty_tx(&tx, &scope, now)?;
         tx.commit()?;
         Ok(match updated {
             Some(entry) => UpdateMemoryOutcome::Updated(Box::new(entry)),
@@ -576,12 +580,14 @@ impl Database {
                 return Ok(StatusMemoryOutcome::Duplicate);
             }
         }
+        let now = now_ms();
         tx.execute(
             "UPDATE memory_entries SET status = ?1, revision = revision + 1, updated_at = ?2
              WHERE id = ?3",
-            params![status, now_ms(), id],
+            params![status, now, id],
         )?;
         let updated = entry_by_id(&tx, id)?;
+        super::curation::mark_dirty_tx(&tx, &current.scope(), now)?;
         tx.commit()?;
         Ok(match updated {
             Some(entry) => StatusMemoryOutcome::Updated(Box::new(entry)),
@@ -607,6 +613,7 @@ impl Database {
             now_ms(),
         )?;
         tx.execute("DELETE FROM memory_entries WHERE id = ?1", params![id])?;
+        super::curation::mark_dirty_tx(&tx, &entry.scope(), now_ms())?;
         tx.commit()?;
         Ok(true)
     }
@@ -632,6 +639,7 @@ impl Database {
             // The decision and its counter commit together: the acceptance
             // rate the manager shows is then never off by one.
             self.record_memory_suggestion_decision(true)?;
+            super::curation::mark_dirty_tx(&tx, &entry.scope(), now_ms())?;
             tx.commit()?;
             return Ok(match updated {
                 Some(entry) => SuggestionOutcome::Accepted(Box::new(entry)),
@@ -858,6 +866,8 @@ pub(crate) fn delete_learned_scope_tx(conn: &Connection, scope: &MemoryScope) ->
         "memory_entries",
         "memory_tombstones",
         "memory_session_state",
+        "memory_curation_state",
+        "memory_curation_rejections",
     ] {
         conn.execute(
             &format!("DELETE FROM {table} WHERE scope_kind = ?1 AND IFNULL(scope_key, '') = ?2"),

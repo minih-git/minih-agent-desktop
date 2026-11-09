@@ -17,11 +17,11 @@ mod plugin_tests;
 #[path = "memory_rpc_tests.rs"]
 mod tests;
 use crate::memory::{
-    is_known, CreateMemoryOutcome, CreateMemoryRequest, MemoryEntryRecord, MemoryScope,
-    SearchMemoryRequest, StatusMemoryOutcome, SuggestionOutcome, UpdateMemoryOutcome,
-    UpdateMemoryRequest, EVIDENCES, EVIDENCE_USER_STATED, EXTRACTION_LEASE_MS, KINDS,
-    MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER,
-    STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
+    is_known, CreateMemoryOutcome, CreateMemoryRequest, CurationInputOutcome, CurationUndoReport,
+    MemoryEntryRecord, MemoryScope, SearchMemoryRequest, StatusMemoryOutcome, SuggestionOutcome,
+    UpdateMemoryOutcome, UpdateMemoryRequest, CURATION_LEASE_MS, EVIDENCES, EVIDENCE_USER_STATED,
+    EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_USER_UI, SCOPES,
+    SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
 };
 
 pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value, JsonRpcError> {
@@ -45,6 +45,13 @@ pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value
         "memory.extraction.fail" => fail_extraction(&st.db, &params),
         "memory.extraction.budget" => extraction_budget(&st.db, &params),
         "memory.suggestions.list" => list_suggestions(&st.db, &params),
+        "memory.curation.activate" => curation_activate(&st.db, &params),
+        "memory.curation.claim" => curation_claim(&st.db, &params),
+        "memory.curation.input" => curation_input(&st.db, &params),
+        "memory.curation.complete" => curation_complete(&st.db, &params),
+        "memory.curation.fail" => curation_fail(&st.db, &params),
+        "memory.curation.list" => curation_list(&st.db, &params),
+        "memory.curation.undo" => curation_undo(&st.db, &params),
         _ => Err(rpc_err(1007, "unknown memory method", "NOT_FOUND")),
     }
 }
@@ -557,6 +564,115 @@ fn list_suggestions(db: &Database, params: &Value) -> Result<Value, JsonRpcError
         rows.push(value);
     }
     Ok(json!({ "entries": rows, "count": count }))
+}
+
+/// Turn suggestions into active notes (ADR learned-memory-consolidation §6.1).
+///
+/// The scope comes from the session or the path, exactly like every other
+/// write, and the host decides which of the named rows are eligible: only
+/// `extracted` / `suggested` rows of that scope move, and never more than the
+/// pass cap.
+fn curation_activate(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope = resolve_scope(db, params)?;
+    let ids = string_array(params, "ids")?;
+    let report = db
+        .activate_memory_suggestions(&scope, &ids, optional_str(params, "reason")?)
+        .map_err(internal)?;
+    Ok(json!({ "report": report }))
+}
+
+/// Take one scope's curation lease. A refusal says why it was refused.
+fn curation_claim(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope = resolve_scope(db, params)?;
+    let owner = required_str(params, "owner")?;
+    let day = required_day(params)?;
+    let lease_ms = optional_i64(params, "leaseMs")?.unwrap_or(CURATION_LEASE_MS);
+    let claimed = db
+        .claim_memory_curation(&scope, owner, day, lease_ms)
+        .map_err(internal)?;
+    if claimed {
+        return Ok(json!({ "claimed": true }));
+    }
+    let reason = db
+        .memory_curation_claim_refusal(&scope, day)
+        .map_err(internal)?;
+    Ok(json!({ "claimed": false, "reason": reason }))
+}
+
+/// What one pass may read: this scope's own notes, nothing else.
+fn curation_input(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope = resolve_scope(db, params)?;
+    let outcome = db.memory_curation_input(&scope).map_err(internal)?;
+    Ok(match outcome {
+        CurationInputOutcome::Input(input) => json!({ "input": input }),
+        CurationInputOutcome::Skipped(reason) => json!({ "input": null, "skipped": reason }),
+    })
+}
+
+/// Release the lease after a pass the service considers finished.
+fn curation_complete(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope = resolve_scope(db, params)?;
+    let owner = required_str(params, "owner")?;
+    let day = required_day(params)?;
+    let completed = db
+        .complete_memory_curation(&scope, owner, day)
+        .map_err(internal)?;
+    Ok(json!({ "completed": completed }))
+}
+
+fn curation_fail(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope = resolve_scope(db, params)?;
+    let owner = required_str(params, "owner")?;
+    let error = optional_str(params, "error")?.unwrap_or("CURATION_FAILED");
+    let attempts = db
+        .fail_memory_curation(&scope, owner, error)
+        .map_err(internal)?;
+    Ok(json!({ "failed": attempts.is_some(), "attempts": attempts }))
+}
+
+/// The scope's recent automatic changes, newest first, plus the count the
+/// manager's summary line shows. `sinceDays` bounds the window, default 7.
+fn curation_list(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope = resolve_scope(db, params)?;
+    let days = optional_i64(params, "sinceDays")?.unwrap_or(7).clamp(1, 90);
+    let since = now_ms() - days * 24 * 3600 * 1000;
+    let records = db
+        .memory_curation_batches(&scope, since, MAX_LIST_LIMIT)
+        .map_err(internal)?;
+    let changes = db
+        .count_memory_curation_changes(&scope, since)
+        .map_err(internal)?;
+    Ok(json!({ "records": records, "changes": changes, "days": days }))
+}
+
+/// Undo one batch. A conflict changes nothing and says so; the manager turns it
+/// into "this memory changed after the automatic pass".
+fn curation_undo(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let batch_id = required_str(params, "batchId")?;
+    match db.undo_memory_curation(batch_id).map_err(internal)? {
+        CurationUndoReport::Undone { undone } => Ok(json!({ "undone": undone })),
+        CurationUndoReport::AlreadyUndone => Err(rpc_err(
+            1008,
+            "this change was already undone",
+            "MEMORY_UNDO_ALREADY_DONE",
+        )),
+        CurationUndoReport::Conflict => Err(rpc_err(
+            1008,
+            "this memory changed after the automatic pass",
+            "MEMORY_UNDO_CONFLICT",
+        )),
+        CurationUndoReport::NotFound => Err(not_found("curation batch not found")),
+    }
+}
+
+/// The caller's local calendar day, so a scope's daily limit resets on the
+/// user's own midnight rather than on a host clock it cannot see.
+fn required_day(params: &Value) -> Result<&str, JsonRpcError> {
+    let day = required_str(params, "day")?;
+    if day.len() != 10 || day.as_bytes()[4] != b'-' || day.as_bytes()[7] != b'-' {
+        return Err(invalid_params("day must be YYYY-MM-DD"));
+    }
+    Ok(day)
 }
 
 /// A write scope comes from an explicit `path` (the desktop manager) or from the

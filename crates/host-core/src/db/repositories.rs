@@ -148,6 +148,7 @@ impl Database {
                 tx.execute_batch(crate::session_collaboration::SCHEMA)?;
                 tx.execute_batch(WORKTREE_DDL)?;
                 tx.execute_batch(NOTIFICATIONS_DDL)?;
+                tx.execute_batch(MEMORY_CURATION_DDL)?;
                 tx.execute_batch(LEARNED_MEMORY_DDL)?;
                 tx.execute_batch(KEEP_WARM_DDL)?;
                 tx.execute_batch(CONVERSATION_ARCHIVE_DDL)?;
@@ -175,6 +176,10 @@ impl Database {
                 // task's current stage was written (schema v39): the same DDL
                 // the v38 -> v39 step applies.
                 tx.execute_batch(&bot_memory_ddl())?;
+                // The audit trail, dirty markers and lease automatic curation
+                // works from (schema v41): the same DDL the v40 -> v41 step
+                // applies, so a new file ends up where the chain does.
+                tx.execute_batch(MEMORY_CURATION_DDL)?;
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -377,6 +382,13 @@ impl Database {
             // (employee mode 0.5 slice 7). Additive and idempotent, so a v38 file
             // takes every step above and this one in the same open.
             super::task_relay_migration::migrate(&conn, path)?;
+        }
+        if migrated_version <= 40 {
+            // The audit trail, dirty markers and lease the automatic-curation
+            // pass needs (ADR learned-memory-consolidation). Three new empty
+            // tables and no rewrite of any note, so it is additive and
+            // idempotent like the steps above.
+            migrate_v40_to_v41(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

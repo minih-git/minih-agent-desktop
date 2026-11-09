@@ -7,7 +7,7 @@ pub(crate) use serde_json::Value;
 pub(crate) use std::path::{Path, PathBuf};
 
 /// Current SQLite schema version.
-pub const SCHEMA_VERSION: i64 = 40;
+pub const SCHEMA_VERSION: i64 = 41;
 
 /// Absolute approval deadline for a newly submitted Plan or Goal proposal.
 pub const PLAN_APPROVAL_TIMEOUT_MS: i64 = 30 * 60 * 1000;
@@ -21,6 +21,7 @@ mod conversation_archive_migration;
 mod keep_warm_migration;
 mod learned_memory_migration;
 mod ledger_kind_migration;
+mod memory_curation_migration;
 mod migrations;
 mod model;
 mod plugin_providers_migration;
@@ -45,6 +46,7 @@ pub(crate) use bot_session_migration::migrate_v30_to_v31;
 pub(crate) use conversation_archive_migration::{migrate_v28_to_v29, CONVERSATION_ARCHIVE_DDL};
 pub(crate) use keep_warm_migration::{migrate_v27_to_v28, KEEP_WARM_DDL};
 pub(crate) use learned_memory_migration::{migrate_v25_to_v26, LEARNED_MEMORY_DDL};
+pub(crate) use memory_curation_migration::{migrate_v40_to_v41, MEMORY_CURATION_DDL};
 pub(crate) use migrations::{
     archive_legacy_db, create_migration_backup, migrate_and_validate_top_level_mode,
     migrate_app_settings, migrate_v10_to_v15, migrate_v11_to_v15, migrate_v12_to_v15,

@@ -316,6 +316,17 @@ export type LearnedMemorySettings = {
    * needs a model this machine can reach.
    */
   archive?: boolean;
+  /**
+   * Automatic curation (ADR learned-memory-consolidation): extracted candidates
+   * take effect without an inbox visit, and a background pass merges near
+   * duplicates, replaces notes a newer one contradicts, and rewrites the
+   * wording of extracted notes. Every change is recorded and can be undone.
+   *
+   * Off by default, device-local like the rest of this record, and it needs
+   * `model` first because a pass spends real quota. Off means the app behaves
+   * exactly as it did before the feature: proposals wait in the inbox.
+   */
+  curate?: boolean;
 };
 
 export type SessionTitleSettings = {

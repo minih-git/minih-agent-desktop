@@ -177,6 +177,11 @@ impl Database {
          )",
             params![NOTIFICATION_KEEP],
         )?;
+        // What automatic curation recorded is kept for 90 days after it was
+        // undone and no longer (ADR learned-memory-consolidation §5). The prune
+        // is housekeeping like the statements above, so a failure here never
+        // blocks an open.
+        let _ = self.prune_memory_curation();
         let _ = self.conn.execute_batch("PRAGMA incremental_vacuum;");
         // One-time repair: strip the Windows extended-length path prefix
         // (`//?/X:/...` → `X:/...`) from project paths stored by older versions.

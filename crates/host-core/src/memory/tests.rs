@@ -147,6 +147,9 @@ fn v25_database_gains_learned_memory_without_touching_pinned_memory() {
         "memory_entries",
         "memory_tombstones",
         "memory_session_state",
+        "memory_revisions",
+        "memory_curation_state",
+        "memory_curation_rejections",
     ] {
         let count: i64 = db
             .conn()

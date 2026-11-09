@@ -243,3 +243,78 @@ export type LearnedMemoryLocalStats = {
   /** The extraction ledger as last written, keyed by the local day. */
   extraction: LearnedMemoryExtractionStatus;
 };
+
+/**
+ * Automatic curation (ADR learned-memory-consolidation).
+ *
+ * A pass reads one scope's notes, proposes at most a handful of cleanups, and
+ * the host applies them — with a cap, a revision check, and a record. This
+ * module describes the wire shapes and the labels; the rules are the host's.
+ */
+
+/** What one automatic change did to a note. */
+export type LearnedMemoryCurationOp =
+  | "activate"
+  | "merge_new"
+  | "merge_archive"
+  | "replace_archive"
+  | "reword";
+
+/** The fields of a note an automatic pass can move. */
+export type LearnedMemoryRevisionSnapshot = {
+  content: string;
+  status: LearnedMemoryStatus;
+  supersededBy?: string;
+  revision: number;
+};
+
+/** One row of the audit trail, as the manager's "recently curated" list shows it. */
+export type LearnedMemoryRevision = {
+  id: number;
+  /** One pass is one batch; an undo applies to the whole batch. */
+  batchId: string;
+  entryId: string;
+  op: LearnedMemoryCurationOp;
+  actor: "auto";
+  /** Absent for an activation: there was nothing before it. */
+  before?: LearnedMemoryRevisionSnapshot;
+  after: LearnedMemoryRevisionSnapshot;
+  reason?: string;
+  createdAt: number;
+  undoneAt?: number;
+};
+
+/** What `memory.curation.list` returns for one scope. */
+export type LearnedMemoryCurationListResult = {
+  records: LearnedMemoryRevision[];
+  /** Automatic changes in the window, so the summary line needs no count. */
+  changes: number;
+  days: number;
+};
+
+/** What one pass may read. */
+export type LearnedMemoryCurationInputEntry = {
+  id: string;
+  kind: LearnedMemoryKind;
+  origin: LearnedMemoryOrigin;
+  evidence: LearnedMemoryEvidence;
+  content: string;
+  rationale?: string;
+  createdAt: number;
+  updatedAt: number;
+  revision: number;
+  /** False for a note the user wrote or just edited: a pass may not rewrite it. */
+  rewordable: boolean;
+  userEdited: boolean;
+};
+
+export type LearnedMemoryCurationInput = {
+  scopeKind: LearnedMemoryScopeKind;
+  scopeKey?: string;
+  changed: LearnedMemoryCurationInputEntry[];
+  neighbours: LearnedMemoryCurationInputEntry[];
+  others: LearnedMemoryCurationInputEntry[];
+  bytes: number;
+  /** How many items this pass may apply. */
+  cap: number;
+};
