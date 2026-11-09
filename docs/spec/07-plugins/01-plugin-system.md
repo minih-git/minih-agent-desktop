@@ -306,6 +306,7 @@ Namespace: `pi.plugin.*`
 - `pi.session.delete()` // `session.delete.own`
 - `pi.usage.listTurns()` // `usage.read`; read-only completed-turn facts, no message bodies
 - `pi.memory.list()` // `memory.read`; active learned-memory notes only, bounded and read-only
+- `pi.conversations.changes()` / `.summary()` / `.transcript()` // `conversation.read`; the redacted conversation archive, read-only, only while the user's archive switch is on
 - `pi.agent.complete(input)` // `agent.complete`; host-owned one-shot
 
 Skills are contributed declaratively (`contributes.skills` + `agent.prompt.inject`),

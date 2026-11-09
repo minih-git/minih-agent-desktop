@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+pub(super) use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 
 use crate::agent_capabilities::CapabilityLevel;
@@ -38,7 +38,8 @@ use crate::providers::{self, DiscoveredModelInput, ProviderCreateInput, Provider
 use crate::review;
 use crate::scratch;
 use crate::sessions::{self, UiMessage};
-use crate::state::{AppState, HOST_VERSION, PROTOCOL_VERSION};
+pub(super) use crate::state::AppState;
+use crate::state::{HOST_VERSION, PROTOCOL_VERSION};
 use crate::tools::{self, ToolsExecuteParams};
 use crate::transcripts::{self, CompactionRecord};
 use crate::turn_queue;
@@ -62,11 +63,11 @@ struct JsonRpcResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct JsonRpcError {
-    code: i64,
-    message: String,
+pub(super) struct JsonRpcError {
+    pub(super) code: i64,
+    pub(super) message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<Value>,
+    pub(super) data: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -635,7 +636,7 @@ where
     }
 }
 
-fn rpc_err(code: i64, message: impl Into<String>, error_code: &str) -> JsonRpcError {
+pub(super) fn rpc_err(code: i64, message: impl Into<String>, error_code: &str) -> JsonRpcError {
     JsonRpcError {
         code,
         message: message.into(),
@@ -3623,6 +3624,24 @@ async fn handle_request(
                 plugin_id,
                 count = page["turns"].as_array().map(Vec::len).unwrap_or(0),
                 "plugin usage rpc served"
+            );
+            Ok(page)
+        }
+
+        method
+            if method.starts_with("plugin.conversations.")
+                || method.starts_with("conversation.summary.") =>
+        {
+            // Both audiences read the same rows, so both live in one module;
+            // Electron main has already checked the plugin permission, the
+            // user's archive switch, and the daily budget before either call.
+            let plugin_id = params.get("pluginId").and_then(Value::as_str);
+            let st = state.lock().await;
+            let page = crate::conversation_archive::handle(&st, method, params.clone())?;
+            tracing::debug!(
+                method = method,
+                plugin_id,
+                "conversation archive rpc served"
             );
             Ok(page)
         }

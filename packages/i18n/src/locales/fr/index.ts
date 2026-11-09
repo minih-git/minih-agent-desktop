@@ -823,6 +823,10 @@ export const fr = {
     learnedMemoryOpen: "Ouvrir",
     learnedMemoryExtractionDesc: "Une fois une conversation terminée ou compactée, le modèle que vous choisissez lit vos propres messages et propose des notes à valider. Rien n'est enregistré sans votre confirmation. Chaque exécution consomme le quota du modèle choisi.",
     learnedMemoryExtractionNeedsModel: "Choisissez d'abord un modèle",
+    learnedMemoryArchive: "Archiver les conversations dans votre base de connaissances",
+    learnedMemoryArchiveDesc:
+      "Une fois la conversation terminée, le modèle choisi ci-dessus rédige un court résumé de toute la conversation : vos messages, les réponses de l'agent et une ligne par appel d'outil. Les plugins auxquels vous accordez « Lire l'archive des conversations » peuvent l'écrire dans vos propres notes et les synchroniser vers vos autres ordinateurs. Les résultats d'outils, le raisonnement et les pièces jointes ne sont jamais envoyés. Les exécutions partagent le budget quotidien de jetons ci-dessus.",
+    learnedMemoryArchiveNeedsModel: "Choisissez d'abord un modèle d'apprentissage",
     learnedMemoryModel: "Modèle d'apprentissage",
     learnedMemoryModelDesc: "Le modèle qui lit vos messages et propose des notes. Il ne s'exécute qu'avec l'apprentissage activé, et uniquement sur cet appareil.",
     learnedMemoryModelNone: "Aucun",
@@ -2932,6 +2936,7 @@ sklm: {
       "browser.cdp": "Contrôler le navigateur du panneau de travail",
       "usage.read": "Lire les statistiques d'utilisation",
       "memory.read": "Lire la mémoire apprise",
+      "conversation.read": "Lire l'archive des conversations",
       "session.autoTitle": "Lire le contexte du premier tour et modifier les titres automatiques"
     },
     "permissionHelp": {
@@ -2977,6 +2982,8 @@ sklm: {
         "Liste les données d'utilisation des tours terminés (compteurs de tokens par tour, paginés). Aucun contenu de message n'est inclus.",
       "memory.read":
         "Liste les notes actives de mémoire apprise (préférences, retours, faits et références) pour la portée utilisateur et les chemins de projet indiqués par le plugin. Aucune suggestion, note archivée ni information de provenance ; lecture seule.",
+      "conversation.read":
+        "Liste vos conversations archivées — chacune avec son résumé et, par session, sa transcription expurgée — pour que le plugin les écrive dans vos notes. L'archive désactivée masque tout. Les résultats d'outils, le raisonnement et les pièces jointes n'y figurent jamais.",
       "session.autoTitle":
         "Peut lire uniquement le premier message et la première réponse des sessions admissibles, puis modifier le titre s'il n'a pas été changé manuellement. Ne peut pas lire la transcription complète.",
     }

@@ -434,6 +434,26 @@ export function createPluginServices({
           () => callPluginSessionHost("plugin.memory.list", pluginId, input),
         ),
     },
+    // The archive switch is read per call, so a settings change applies to the
+    // next plugin request without a restart.
+    readSettings: async () => {
+      const host = getHost();
+      if (!host) {
+        throw Object.assign(new Error("host unavailable"), { code: "UNSUPPORTED" });
+      }
+      return host.call("settings.get");
+    },
+    // Read-only conversation archive: the host serves the redacted projection,
+    // and `plugin-runtime` has already checked the permission and the user's
+    // archive switch before either of these is reached.
+    conversations: {
+      changes: (pluginId, input) =>
+        callPluginSessionHost("plugin.conversations.changes", pluginId, input),
+      summary: (pluginId, input) =>
+        callPluginSessionHost("plugin.conversations.summary", pluginId, input),
+      transcript: (pluginId, input) =>
+        callPluginSessionHost("plugin.conversations.transcript", pluginId, input),
+    },
     complete: async (input): Promise<PluginCompleteResult> => {
       if (!getHost()) {
         throw Object.assign(new Error("host unavailable"), { code: "UNSUPPORTED" });

@@ -84,3 +84,47 @@ pub(crate) fn detect(text: &str) -> Option<&'static str> {
 pub(crate) fn looks_like_credential(text: &str) -> bool {
     detect(text).is_some()
 }
+
+/// Replace every credential-shaped fragment with `[REDACTED:<name>]`.
+///
+/// This is the *fragment* counterpart of [`detect`], used where the text itself
+/// is meant to leave the device (the conversation archive, ADR
+/// conversation-archive). The whole message is kept and only the match is
+/// rewritten, because a tool argument is exactly where a token appears next to
+/// ordinary text: refusing the line would lose the work, and keeping it would
+/// publish the secret.
+///
+/// A replacement is the marker alone, so the detector that produced it cannot
+/// match its own output and a single pass is enough.
+pub(crate) fn redact_fragments(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0usize;
+    // Matches are collected per pattern so the earliest match in the text wins;
+    // a `url_credentials` fragment therefore never gets half-rewritten by the
+    // generic `secret_assignment` shape behind it.
+    while at < text.len() {
+        let rest = &text[at..];
+        let mut best: Option<(usize, usize, &'static str)> = None;
+        for (name, pattern) in detectors() {
+            if let Some(found) = pattern.find(rest) {
+                let candidate = (found.start(), found.end(), *name);
+                if best.is_none_or(|(start, _, _)| candidate.0 < start) {
+                    best = Some(candidate);
+                }
+            }
+        }
+        let Some((start, end, name)) = best else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..start]);
+        out.push_str("[REDACTED:");
+        out.push_str(name);
+        out.push(']');
+        at += end;
+    }
+    out
+}

@@ -836,6 +836,10 @@ export const zhCN = {
     learnedMemoryOpen: "打开",
     learnedMemoryExtractionDesc: "对话结束或压缩后，由你选择的模型读取你自己写的消息，提出待审的笔记。未经你确认不会保存任何内容，每次运行会消耗所选模型的额度。",
     learnedMemoryExtractionNeedsModel: "请先选择模型",
+    learnedMemoryArchive: "会话归档到知识库",
+    learnedMemoryArchiveDesc:
+      "对话结束后，上方选择的模型会为整段对话写一份简短摘要——包括你的消息、代理的回复，以及每次工具调用的一行摘要。你授权「读取会话归档」的插件即可把它写进你自己的笔记，并同步到其他电脑。工具返回结果、思考过程与附件永远不会外发。运行与自动学习共用上面的每日 token 预算。",
+    learnedMemoryArchiveNeedsModel: "请先选择学习模型",
     learnedMemoryModel: "学习模型",
     learnedMemoryModelDesc: "读取你的消息并提出笔记的模型。仅在自动学习开启时运行，且只在本设备上运行。",
     learnedMemoryModelNone: "不选择",
@@ -2930,6 +2934,7 @@ sklm: {
       "browser.cdp": "控制工作面板浏览器",
       "usage.read": "读取用量统计",
       "memory.read": "读取长期记忆",
+      "conversation.read": "读取会话归档",
       "session.autoTitle": "读取首轮标题上下文并更新自动标题",
     },
     permissionHelp: {
@@ -2978,6 +2983,8 @@ sklm: {
         "分页列出已完成回合的用量事实（每回合 token 计数与会话标题）。不包含任何消息内容。",
       "memory.read":
         "列出用户范围与插件指定项目路径下的活跃长期记忆（偏好、反馈、事实、参考）；不含建议、归档与来源信息，只读。",
+      "conversation.read":
+        "列出你的归档会话——每段包含摘要，并可按会话读取脱敏后的原文——供插件写入你的笔记。关闭会话归档后全部隐藏。不含工具返回结果、思考过程与附件。",
       "session.autoTitle":
         "只能读取符合条件会话的首条提示和首条回复，并仅在标题未被手动修改时更新；不能读取完整会话记录。",
     },

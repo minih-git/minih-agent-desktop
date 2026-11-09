@@ -76,6 +76,7 @@ import {
 import { generateFollowUpSuggestion as generateFollowUpSuggestionImpl } from "./follow-up-suggestion-service";
 import { createSessionChangeNotifier } from "./session-change-notifier";
 import { createMemoryExtractionService } from "./memory/memory-extraction-service";
+import { createConversationSummaryService } from "./memory/conversation-summary-service";
 import { createEventPersistence } from "./runtime/event-persistence";
 import { createPlanRuntime } from "./runtime/plans";
 import { createRuntimeLifecycle } from "./runtime/lifecycle";
@@ -824,6 +825,24 @@ const memoryExtractionService = createMemoryExtractionService({
   isTurnRunning: (sessionId) => activeTurns.has(sessionId),
 });
 
+/**
+ * The conversation summary generator (ADR conversation-archive §6). It shares
+ * the extractor's triggers, its idle window, and its daily budget: one switch in
+ * Settings, one promise about what learning costs a day.
+ */
+const conversationSummaryService = createConversationSummaryService({
+  getHost,
+  getSettings: async () =>
+    (await getHost()?.call("settings.get").catch(() => null)) as
+      | AppSettings
+      | null
+      | undefined,
+  resolveRuntimeModel,
+  vendorOAuth,
+  logger,
+  isTurnRunning: (sessionId) => activeTurns.has(sessionId),
+});
+
 const sessionTitleGenerator = createSessionTitleGenerator({
   getHost,
   resolveRuntimeModel,
@@ -888,10 +907,21 @@ const sidecarRuntime = createSidecarRuntime({
   pluginActiveInProject,
   currentNetworkProxy,
   sessionCollaboration,
-  onAgentCompactionEnd: (sessionId) =>
-    memoryExtractionService.onCompactionEnd(sessionId),
-  onAgentTurnSettled: (sessionId) => memoryExtractionService.onAgentEnd(sessionId),
-  cancelMemoryExtraction: (sessionId) => memoryExtractionService.cancel(sessionId),
+  onAgentCompactionEnd: (sessionId) => {
+    memoryExtractionService.onCompactionEnd(sessionId);
+    conversationSummaryService.onCompactionEnd(sessionId);
+  },
+  onAgentTurnSettled: (sessionId) => {
+    memoryExtractionService.onAgentEnd(sessionId);
+    conversationSummaryService.onAgentEnd(sessionId);
+    // One backfill step per settled turn: the queue is only offered while the
+    // archive switch is on, and the daily budget still bounds it.
+    void conversationSummaryService.backfillOnce().catch(() => undefined);
+  },
+  cancelMemoryExtraction: (sessionId) => {
+    memoryExtractionService.cancel(sessionId);
+    conversationSummaryService.cancel(sessionId);
+  },
   generateSessionRetitle: createSessionRetitleGenerator({
     getHost,
     resolveRuntimeModel,
@@ -1004,9 +1034,14 @@ function registerIpc() {
     announceSessionTitleChanged: (sessionId) => void sessionChangeNotifier.titleChanged(sessionId),
     // The extractor's lifecycle is Main's: a deleted session and a switch that
     // went off both cancel the runs already waiting to start.
-    cancelMemoryExtraction: (sessionId) => memoryExtractionService.cancel(sessionId),
-    onLearnedMemorySettingsChanged: (settings) =>
-      memoryExtractionService.onSettingsChanged(settings),
+    cancelMemoryExtraction: (sessionId) => {
+      memoryExtractionService.cancel(sessionId);
+      conversationSummaryService.cancel(sessionId);
+    },
+    onLearnedMemorySettingsChanged: (settings) => {
+      memoryExtractionService.onSettingsChanged(settings);
+      conversationSummaryService.onSettingsChanged(settings);
+    },
     restartForStorage: () => {
       shutdownState.quitConfirmed = true;
       app.relaunch({ args: [...process.argv.slice(1).filter((arg) => arg !== "--pi-managed-storage"), "--pi-managed-storage"] });
@@ -1224,6 +1259,7 @@ registerShutdownHandlers({
   liveCallService,
   disposeSystemProxyRelay,
   disposeMemoryExtraction: () => memoryExtractionService.dispose(),
+  disposeConversationSummary: () => conversationSummaryService.dispose(),
 });
 
 registerApplicationActivation({

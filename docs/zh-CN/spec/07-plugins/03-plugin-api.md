@@ -587,6 +587,95 @@ pi.memory.list(input: {
   （`INVALID_PARAMS`），且不回显无效输入。
 - 现有插件 API 审计记录调用、结果和条目数，但不记录笔记内容。
 
+### 会话归档（需要 `conversation.read`）
+
+`pi.conversations.*` 是只读的会话归档（ADR conversation-archive）。Host 把生效中的
+转录投影成轮次，脱敏之后再返回；插件永远不读 `pi.sqlite`，也不读 JSONL 文件，投影里
+不含思考过程、工具返回结果、附件或 system 消息。每次调用还会在 Electron main 里由
+本设备的 `learnedMemory.archive` 开关把关。
+
+```ts
+pi.conversations.changes(input?: {
+  cursor?: string  // 上一页返回的 nextCursor，对插件不透明
+  limit?: number   // 1..=100，默认 50
+}): Promise<{
+  enabled: boolean
+  items: Array<{
+    sessionId: string
+    title: string
+    createdAt: number  // epoch ms
+    updatedAt: number  // epoch ms，取会话行与摘要行中较新的时间
+    project: { name: string; path: string; gitRemote?: string } | null
+    lastSeq: number            // 该会话已有的最大消息序号
+    summaryRevision: number | null  // 尚未生成摘要时为 null
+    removed: boolean           // 已删除、已彻底删除，或已排除学习
+  }>
+  nextCursor: string | null
+}>
+
+pi.conversations.summary(input: { sessionId: string }): Promise<{
+  revision: number
+  coveredSeq: number
+  summary: {
+    goal: string
+    decisions: string[]
+    outcomes: string[]
+    files: string[]
+    openItems: string[]
+    tags: string[]
+  }
+} | null>
+
+pi.conversations.transcript(input: {
+  sessionId: string
+  fromTurn?: number  // 从第几轮开始，0 起，默认 0
+  limit?: number     // 每页 1..=200 轮，默认 50
+}): Promise<{
+  turns: Array<{
+    index: number
+    startedAt: number  // epoch ms
+    user: string
+    assistant: string
+    tools: Array<{ name: string; line: string; isError: boolean }>
+    compaction?: string  // 从该轮起生效的压缩检查点
+  }>
+  nextTurn: number | null
+  lastSeq: number
+}>
+```
+
+语义：
+
+- **只有脱敏后的投影。** `user` 与 `assistant` 都取自 text 块；每次工具调用压成一行
+  ——工具名加它的关键参数（`command`、`path`、`pattern`、`id`，其它工具取参数 JSON
+  的前 160 个字符），失败时才带 `✗`。单轮文本上限 16 KiB。思考、附件、`result`
+  载荷与 system 消息永远不会出现。每一行都先过 Host 的片段脱敏，把形似凭据的片段
+  替换成 `[REDACTED:<kind>]`。
+- **开关按调用时读取。** `learnedMemory.archive` 关闭时，`changes` 直接返回
+  `{ enabled: false, items: [], nextCursor: null }` 且不访问 Host；`summary` 与
+  `transcript` 返回 `PERMISSION_DENIED`——指名某个会话的请求不能把「归档关闭」读成
+  「从未归档」。缺省即关闭；读取设置失败也按关闭处理。
+- **变更流只向前翻页。** `nextCursor` 对插件不透明，由已存储的时间戳派生，因此插件
+  重启后能接着上次的位置。会话与删除通知共用一条有序流：游标表示调用方已处理到的
+  位置，返回的是它之后的一切，按 `(updatedAt, sessionId)` 合并。
+- **没有摘要不等于没有可写的东西。** 从未生成摘要的会话会带 `summaryRevision: null`
+  和当前的 `lastSeq` 出现在流里，因为原文并不依赖模型：可以先写 L3，等后续页面报告
+  revision 时再重写摘要。正因如此，每日 token 预算用尽或模型调用失败时推迟的只是
+  L2，L3 不受影响。
+- **删除通知至少送达一次。** 读请求从不删除那条不含内容的删除记录。插件收到页面后、
+  删除文件前就退出的情况，下次带同一游标请求时仍会看到同一条 `removed: true`，
+  用户删掉的内容就不会留在同步文件夹里。只有请求能证明已处理时才会清理：它的游标
+  已经越过该通知（后续读取从这个位置开始），或者该 sessionId 又存在了、活动行本身
+  就是最新状态。因此 `deletedAt` 恰好等于游标位置的记录，只要按 id 次序还没被越过，
+  就会再送达一次，绝不会被静默跳过。
+- **同一会话在各台电脑上的身份稳定。** `project.gitRemote` 由 `origin` URL 归一成
+  `host/owner/repo`，URL 中的凭据会被去掉，worktree 的 `.git` 文件会追到主仓库。
+- **原文分页跟随生效中的转录**，绝不使用已被丢弃的重新生成分支，因此 `fromTurn` /
+  `nextTurn` 与用户看到的内容一致。
+- Electron main 在派发前校验形状与边界，Host 再校验一次，并以 `INVALID_PARAMS`
+  （`1002`）或 `NOT_FOUND`（`1007`）返回错误且不回显输入。
+- 调用审计只记录调用与条目数，从不记录内容。
+
 ### 会话协作（需要 `desktop.control`）
 
 官方 Session Orchestrator 组合了已审查的 desktop-control 目录；这不是第二套 session API，

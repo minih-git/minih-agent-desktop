@@ -822,6 +822,10 @@ export const ptBR = {
     learnedMemoryOpen: "Abrir",
     learnedMemoryExtractionDesc: "Depois que uma conversa termina ou é compactada, o modelo que você escolher lê as suas próprias mensagens e propõe notas para revisão. Nada é salvo sem a sua confirmação. Cada execução consome a cota do modelo escolhido.",
     learnedMemoryExtractionNeedsModel: "Escolha um modelo primeiro",
+    learnedMemoryArchive: "Arquivar conversas na sua base de conhecimento",
+    learnedMemoryArchiveDesc:
+      "Quando uma conversa termina, o modelo escolhido acima escreve um resumo curto de toda a conversa — suas mensagens, as respostas do agente e uma linha por chamada de ferramenta. Plugins com a permissão “Ler o arquivo de conversas” podem gravá-lo nas suas próprias notas e sincronizá-las com seus outros computadores. Resultados de ferramentas, raciocínio e anexos nunca são enviados. As execuções dividem o orçamento diário de tokens acima.",
+    learnedMemoryArchiveNeedsModel: "Escolha um modelo de aprendizado primeiro",
     learnedMemoryModel: "Modelo de aprendizado",
     learnedMemoryModelDesc: "O modelo que lê as suas mensagens e propõe notas. Ele só roda com o aprendizado ativado, e apenas neste dispositivo.",
     learnedMemoryModelNone: "Nenhum",
@@ -2897,6 +2901,7 @@ export const ptBR = {
       "browser.cdp": "Controlar o navegador do painel de trabalho",
       "usage.read": "Ler estatísticas de uso",
       "memory.read": "Ler a memória aprendida",
+      "conversation.read": "Ler o arquivo de conversas",
       "session.autoTitle": "Ler o contexto do primeiro turno e atualizar títulos automáticos"
     },
     permissionHelp: {
@@ -2941,6 +2946,8 @@ export const ptBR = {
       "browser.cdp": "Pode navegar pelo navegador do painel de trabalho, ler páginas, executar JavaScript e enviar comandos permitidos do Chrome DevTools. Métodos de cookies e armazenamento são bloqueados.",
       "usage.read": "Lista dados de uso de rodadas concluídas (contagens paginadas de tokens e títulos de sessões). Nenhum conteúdo das mensagens é incluído.",
       "memory.read": "Lista notas ativas da memória aprendida (preferências, feedback, fatos e referências) para o escopo do usuário e os caminhos de projeto informados pelo plugin. Não inclui sugestões, notas arquivadas nem informações de origem; somente leitura.",
+      "conversation.read":
+        "Lista suas conversas arquivadas — cada uma com seu resumo e, por sessão, a transcrição editada — para o plugin gravá-las nas suas notas. Desligar o arquivo oculta tudo. Resultados de ferramentas, raciocínio e anexos nunca são incluídos.",
       "session.autoTitle": "Pode ler apenas a primeira solicitação e resposta de sessões elegíveis e atualizar o título se ele não tiver sido alterado manualmente. Não pode ler a transcrição completa.",
     }
   },

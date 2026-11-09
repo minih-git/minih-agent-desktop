@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "Conversations can be archived to your own knowledge base: an opt-in switch in Global AI has the learning model summarize settled conversations — your messages, the agent's replies, and one line per tool call — and a plugin you grant the new \"Read conversation archive\" permission writes them into your notes. Tool results, reasoning, and attachments are never sent, and the runs share the learning daily token budget.",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [

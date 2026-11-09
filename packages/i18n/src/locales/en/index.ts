@@ -844,6 +844,10 @@ export const en = {
     learnedMemoryOpen: "Open",
     learnedMemoryExtractionDesc: "After a conversation settles or compacts, the model you choose reads your own messages and proposes notes for you to review. Nothing is saved without your confirmation. Every run costs the selected model's quota.",
     learnedMemoryExtractionNeedsModel: "Choose a model first",
+    learnedMemoryArchive: "Archive conversations to your knowledge base",
+    learnedMemoryArchiveDesc:
+      "After a conversation settles, the model above writes a short summary of the whole conversation — your messages, the agent's replies, and one line per tool call. Plugins you grant \"Read conversation archive\" can then write it into your own notes and sync them to your other computers. Tool results, reasoning, and attachments are never sent. Runs share the daily token budget above.",
+    learnedMemoryArchiveNeedsModel: "Choose a learning model first",
     learnedMemoryModel: "Learning model",
     learnedMemoryModelDesc: "The model that reads your messages and proposes notes. It runs only when learning is on, and only on this device.",
     learnedMemoryModelNone: "None",
@@ -2961,6 +2965,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "browser.cdp": "Control the work-panel browser",
       "usage.read": "Read usage statistics",
       "memory.read": "Read learned memory",
+      "conversation.read": "Read conversation archive",
       "session.autoTitle": "Read first-turn title context and update automatic titles",
     },
     permissionHelp: {
@@ -3022,6 +3027,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         "Lists completed-turn usage facts (paginated token counters and session titles). No message content is included.",
       "memory.read":
         "Lists active learned-memory notes (preferences, feedback, facts, references) for the user scope and project paths the plugin names. No suggestions, archived notes, or provenance; read-only.",
+      "conversation.read":
+        "Lists your archived conversations — each with its summary, and its redacted transcript by session — so the plugin can write them into your notes. Turning the archive off hides all of it. Tool results, reasoning, and attachments are never included.",
       "session.autoTitle":
         "Can read only the first prompt and reply for eligible sessions, then replace an automatic title if it has not been manually changed. It cannot read the full transcript.",
     },

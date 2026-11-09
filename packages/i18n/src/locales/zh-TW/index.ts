@@ -827,6 +827,10 @@ export const zhTW = {
     learnedMemoryOpen: "開啟",
     learnedMemoryExtractionDesc: "對話結束或壓縮後，由你選擇的模型讀取你自己寫的訊息，提出待審的筆記。未經你確認不會儲存任何內容，每次執行會消耗所選模型的額度。",
     learnedMemoryExtractionNeedsModel: "請先選擇模型",
+    learnedMemoryArchive: "工作階段歸檔到知識庫",
+    learnedMemoryArchiveDesc:
+      "對話結束後，上方選擇的模型會為整段對話寫一份簡短摘要——包含你的訊息、代理的回覆，以及每次工具呼叫的一行摘要。你授權「讀取工作階段歸檔」的插件即可把它寫進你自己的筆記，並同步到其他電腦。工具回傳結果、思考過程與附件永遠不會外送。執行與自動學習共用上方的每日 token 預算。",
+    learnedMemoryArchiveNeedsModel: "請先選擇學習模型",
     learnedMemoryModel: "學習模型",
     learnedMemoryModelDesc: "讀取你的訊息並提出筆記的模型。僅在自動學習開啟時執行，且只在本裝置上執行。",
     learnedMemoryModelNone: "不選擇",
@@ -2921,6 +2925,7 @@ sklm: {
       "browser.cdp": "控制工作面板瀏覽器",
       "usage.read": "讀取用量統計",
       "memory.read": "讀取長期記憶",
+      "conversation.read": "讀取工作階段歸檔",
       "session.autoTitle": "讀取首輪標題內容並更新自動標題",
     },
     permissionHelp: {
@@ -2968,6 +2973,8 @@ sklm: {
         "分頁列出已完成回合的用量事實（每回合的 token 計數）。不包含任何訊息內容。",
       "memory.read":
         "列出使用者範圍與外掛指定專案路徑下的活躍長期記憶（偏好、回饋、事實、參考）；不含建議、封存內容或來源資訊，僅供讀取。",
+      "conversation.read":
+        "列出你的歸檔工作階段——每段包含摘要，並可依工作階段讀取去識別化後的原文——供插件寫入你的筆記。關閉工作階段歸檔後全部隱藏。不含工具回傳結果、思考過程與附件。",
       "session.autoTitle":
         "僅能讀取符合條件工作階段的首則提示和首則回覆，並只在標題未被手動修改時更新；無法讀取完整對話記錄。",
     },

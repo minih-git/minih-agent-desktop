@@ -831,6 +831,10 @@ export const tr = {
     learnedMemoryOpen: "Aç",
     learnedMemoryExtractionDesc: "Bir konuşma bittiğinde veya sıkıştırıldığında, seçtiğiniz model kendi mesajlarınızı okur ve incelemeniz için notlar önerir. Onayınız olmadan hiçbir şey kaydedilmez. Her çalıştırma seçilen modelin kotasını harcar.",
     learnedMemoryExtractionNeedsModel: "Önce bir model seçin",
+    learnedMemoryArchive: "Sohbetleri bilgi tabanınıza arşivleyin",
+    learnedMemoryArchiveDesc:
+      "Bir sohbet tamamlandığında yukarıda seçilen model tüm sohbetin kısa bir özetini yazar: mesajlarınız, aracının yanıtları ve her araç çağrısı için bir satır. \"Sohbet arşivini oku\" izni verdiğiniz eklentiler bunu kendi notlarınıza yazıp diğer bilgisayarlarınıza eşitleyebilir. Araç sonuçları, akıl yürütme ve ekler hiçbir zaman gönderilmez. Çalışmalar yukarıdaki günlük token bütçesini paylaşır.",
+    learnedMemoryArchiveNeedsModel: "Önce bir öğrenme modeli seçin",
     learnedMemoryModel: "Öğrenme modeli",
     learnedMemoryModelDesc: "Mesajlarınızı okuyup not öneren model. Yalnızca öğrenme açıkken ve yalnızca bu cihazda çalışır.",
     learnedMemoryModelNone: "Hiçbiri",
@@ -2940,6 +2944,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "browser.cdp": "Çalışma paneli tarayıcısını kontrol et",
       "usage.read": "Kullanım istatistiklerini oku",
       "memory.read": "Öğrenilmiş belleği oku",
+      "conversation.read": "Sohbet arşivini oku",
       "session.autoTitle": "İlk tur başlık bağlamını oku ve otomatik başlıkları güncelle",
     },
     permissionHelp: {
@@ -2998,6 +3003,8 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
         "Tamamlanan turların kullanım verilerini sayfalı olarak listeler (tur başına token sayaçları). Mesaj içeriği dahil değildir.",
       "memory.read":
         "Kullanıcı kapsamındaki ve eklentinin belirttiği proje yollarındaki etkin öğrenilmiş bellek notlarını (tercihler, geri bildirim, olgular, başvurular) listeler. Öneriler, arşivlenmiş notlar veya kaynak bilgileri dahil değildir; salt okunurdur.",
+      "conversation.read":
+        "Arşivlenmiş sohbetlerinizi listeler — her biri özetiyle ve oturum bazında düzenlenmiş dökümüyle — böylece eklenti bunları notlarınıza yazabilir. Arşiv kapalıyken hepsi gizlenir. Araç sonuçları, akıl yürütme ve ekler hiçbir zaman yer almaz.",
       "session.autoTitle":
         "Yalnızca uygun oturumların ilk istemini ve ilk yanıtını okuyabilir; başlık elle değiştirilmemişse otomatik başlığı günceller. Tam dökümü okuyamaz.",
     },

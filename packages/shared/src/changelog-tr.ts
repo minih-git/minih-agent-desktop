@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "Sohbetler kendi bilgi tabanınıza arşivlenebilir: Genel AI içindeki isteğe bağlı anahtar, öğrenme modelinin sonlanmış sohbetleri özetlemesini sağlar — mesajlarınız, aracının yanıtları ve her araç çağrısı için bir satır — ve yeni \"Sohbet arşivini oku\" iznini verdiğiniz bir eklenti bunları notlarınıza yazar. Araç sonuçları, akıl yürütme ve ekler asla gönderilmez ve bu çalışmalar öğrenmenin günlük token bütçesini paylaşır.",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [

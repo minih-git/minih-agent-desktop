@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "Les conversations peuvent être archivées dans votre propre base de connaissances : un interrupteur facultatif dans IA globale fait résumer les conversations terminées par le modèle d'apprentissage — vos messages, les réponses de l'agent et une ligne par appel d'outil — et un plugin auquel vous accordez la nouvelle autorisation « Lire l'archive des conversations » les écrit dans vos notes. Les résultats d'outils, le raisonnement et les pièces jointes ne sont jamais envoyés, et ces exécutions partagent le budget quotidien de jetons de l'apprentissage.",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [

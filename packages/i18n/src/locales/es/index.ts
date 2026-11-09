@@ -823,6 +823,10 @@ export const es = {
     learnedMemoryOpen: "Abrir",
     learnedMemoryExtractionDesc: "Cuando una conversación termina o se compacta, el modelo que elijas lee tus propios mensajes y propone notas para que las revises. No se guarda nada sin tu confirmación. Cada ejecución consume cuota del modelo elegido.",
     learnedMemoryExtractionNeedsModel: "Elige primero un modelo",
+    learnedMemoryArchive: "Archivar conversaciones en tu base de conocimiento",
+    learnedMemoryArchiveDesc:
+      "Cuando una conversación termina, el modelo elegido arriba escribe un resumen breve de toda la conversación: tus mensajes, las respuestas del agente y una línea por llamada de herramienta. Los plugins a los que concedas «Leer el archivo de conversaciones» pueden escribirla en tus propias notas y sincronizarlas con tus otros ordenadores. Los resultados de herramientas, el razonamiento y los adjuntos nunca se envían. Las ejecuciones comparten el presupuesto diario de tokens de arriba.",
+    learnedMemoryArchiveNeedsModel: "Elige primero un modelo de aprendizaje",
     learnedMemoryModel: "Modelo de aprendizaje",
     learnedMemoryModelDesc: "El modelo que lee tus mensajes y propone notas. Solo se ejecuta con el aprendizaje activado y solo en este dispositivo.",
     learnedMemoryModelNone: "Ninguno",
@@ -2931,6 +2935,7 @@ sklm: {
       "browser.cdp": "Controlar el navegador del panel de trabajo",
       "usage.read": "Leer estadísticas de uso",
       "memory.read": "Leer la memoria aprendida",
+      "conversation.read": "Leer el archivo de conversaciones",
       "session.autoTitle": "Leer el contexto del primer turno y actualizar títulos automáticos"
     },
     "permissionHelp": {
@@ -2976,6 +2981,8 @@ sklm: {
         "Enumera los datos de uso de los turnos completados (contadores de tokens por turno, paginados). No incluye el contenido de los mensajes.",
       "memory.read":
         "Enumera las notas activas de la memoria aprendida (preferencias, comentarios, hechos y referencias) del ámbito del usuario y de las rutas de proyecto indicadas por el complemento. Sin sugerencias, notas archivadas ni datos de procedencia; solo lectura.",
+      "conversation.read":
+        "Enumera tus conversaciones archivadas —cada una con su resumen y, por sesión, su transcripción redactada— para que el plugin pueda escribirlas en tus notas. Al desactivar el archivo se oculta todo. Nunca incluye resultados de herramientas, razonamiento ni adjuntos.",
       "session.autoTitle":
         "Solo puede leer el primer mensaje y la primera respuesta de las sesiones aptas y actualizar el título si nadie lo cambió manualmente. No puede leer la transcripción completa.",
     }

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "Gespräche lassen sich in deiner eigenen Wissensbasis archivieren: Ein optionaler Schalter unter Globale KI lässt das Lernmodell abgeschlossene Gespräche zusammenfassen — deine Nachrichten, die Antworten des Agenten und eine Zeile pro Werkzeugaufruf — und ein Plugin, dem du die neue Berechtigung „Gesprächsarchiv lesen“ erteilst, schreibt sie in deine Notizen. Werkzeugergebnisse, Denkprozesse und Anhänge werden nie gesendet, und die Läufe teilen sich das tägliche Token-Budget des Lernens.",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [

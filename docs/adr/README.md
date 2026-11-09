@@ -412,3 +412,4 @@ Each ADR includes:
 | browser-execution-presentation-lifecycle | [Browser execution outlives presentation](browser-execution-presentation-lifecycle.md) | Accepted (2026-10-24; amends ADR retained-browser-pages-per-tab) |
 | model-reasoning-effort-override | [Explicit per-model reasoning-effort compatibility](model-reasoning-effort-override.md) | Accepted (2026-10-24; per-model `supportsReasoningEffort` overrides automatic inference) |
 | plugin-settings-configuration-sync | [Host-owned declared plugin settings synchronization](plugin-settings-configuration-sync.md) | Accepted for implementation (2026-11-03) |
+| conversation-archive | [Layered conversation archive for plugins](conversation-archive.md) | Accepted for implementation (2026-11-09, D685; amends the `plugin-learned-memory-read` wiring only) |

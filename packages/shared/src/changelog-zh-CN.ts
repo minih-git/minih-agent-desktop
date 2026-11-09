@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "会话可以归档到你自己的知识库：全局 AI 里的可选开关会让学习模型为已结束的对话生成摘要——你的消息、代理的回复，以及每次工具调用的一行摘要——你授权新增的「读取会话归档」权限的插件即可把它写进你的笔记。工具返回结果、思考过程与附件永远不会外发，摘要生成与自动学习共用每日 token 预算。",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [

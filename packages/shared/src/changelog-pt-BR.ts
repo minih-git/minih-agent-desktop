@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "As conversas podem ser arquivadas na sua própria base de conhecimento: um interruptor opcional em IA global faz o modelo de aprendizado resumir conversas encerradas — suas mensagens, as respostas do agente e uma linha por chamada de ferramenta — e um plugin com a nova permissão \"Ler arquivo de conversas\" as grava nas suas notas. Resultados de ferramentas, raciocínio e anexos nunca são enviados, e as execuções dividem o orçamento diário de tokens do aprendizado.",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [

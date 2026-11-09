@@ -748,6 +748,7 @@ describe("PLUGIN_PERMISSIONS", () => {
       "session.autoTitle",
       "usage.read",
       "memory.read",
+      "conversation.read",
       "fs.read",
       "fs.write",
       "fs.delete",
@@ -780,6 +781,19 @@ describe("validateManifest memory.read", () => {
     expect(result.ok).toBe(true);
     expect(result.manifest?.permissions).toContain("memory.read");
     expect(result.manifest?.engines?.minihAgent).toBe(">=0.26.0");
+  });
+});
+
+describe("validateManifest conversation.read", () => {
+  it("accepts the permission with its minimum Desktop engine", () => {
+    const result = validateManifest({
+      ...base,
+      permissions: ["conversation.read"],
+      engines: { minihAgent: ">=1.0.0" },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.permissions).toContain("conversation.read");
+    expect(result.manifest?.engines?.minihAgent).toBe(">=1.0.0");
   });
 });
 

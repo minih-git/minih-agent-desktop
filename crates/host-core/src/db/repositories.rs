@@ -150,6 +150,7 @@ impl Database {
                 tx.execute_batch(NOTIFICATIONS_DDL)?;
                 tx.execute_batch(LEARNED_MEMORY_DDL)?;
                 tx.execute_batch(KEEP_WARM_DDL)?;
+                tx.execute_batch(CONVERSATION_ARCHIVE_DDL)?;
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -227,11 +228,15 @@ impl Database {
                 return Self::open(path);
             }
             SCHEMA_VERSION => {}
-            other => {
+            // A file between the oldest in-place step and the newest version is
+            // migrated by the ordered chain below, not refused: only a version
+            // this build does not know at all is "newer than supported".
+            other if other > SCHEMA_VERSION => {
                 return Err(anyhow!(
                     "database schema version {other} is newer than supported {SCHEMA_VERSION}"
                 ));
             }
+            _ => {}
         }
         // Each post-match step stamps the version it produces rather than the
         // latest constant, so a second step can follow it in the same launch.
@@ -286,6 +291,10 @@ impl Database {
         }
         if migrated_version == 27 {
             migrate_v27_to_v28(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version == 28 {
+            migrate_v28_to_v29(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

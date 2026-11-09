@@ -729,6 +729,109 @@ Semantics:
 - The existing plugin API audit records the call, result, and entry count,
   never note content.
 
+### conversations (requires `conversation.read`)
+
+`pi.conversations.*` is the read-only conversation archive (ADR
+conversation-archive). The host projects the transcript in force into turns and
+returns it redacted; a plugin never reads `pi.sqlite` or a JSONL file, and the
+projection never carries thinking, tool results, attachments, or system
+messages. Every call is also gated in Electron main by the device-local
+`learnedMemory.archive` switch.
+
+```ts
+pi.conversations.changes(input?: {
+  cursor?: string  // opaque `nextCursor` from the previous page
+  limit?: number   // 1..=100, default 50
+}): Promise<{
+  enabled: boolean
+  items: Array<{
+    sessionId: string
+    title: string
+    createdAt: number  // epoch ms
+    updatedAt: number  // epoch ms, the newer of the session row and its summary
+    project: { name: string; path: string; gitRemote?: string } | null
+    lastSeq: number            // highest message sequence the session holds
+    summaryRevision: number | null  // null until the first summary is stored
+    removed: boolean           // deleted, purged, or excluded from learning
+  }>
+  nextCursor: string | null
+}>
+
+pi.conversations.summary(input: { sessionId: string }): Promise<{
+  revision: number
+  coveredSeq: number
+  summary: {
+    goal: string
+    decisions: string[]
+    outcomes: string[]
+    files: string[]
+    openItems: string[]
+    tags: string[]
+  }
+} | null>
+
+pi.conversations.transcript(input: {
+  sessionId: string
+  fromTurn?: number  // 0-based first turn, default 0
+  limit?: number     // 1..=200 turns, default 50
+}): Promise<{
+  turns: Array<{
+    index: number
+    startedAt: number  // epoch ms
+    user: string
+    assistant: string
+    tools: Array<{ name: string; line: string; isError: boolean }>
+    compaction?: string  // the checkpoint that applies from this turn onward
+  }>
+  nextTurn: number | null
+  lastSeq: number
+}>
+```
+
+Semantics:
+
+- **Redacted projection only.** `user` and `assistant` come from text blocks;
+  each tool call becomes one line — the tool name plus its key argument
+  (`command`, `path`, `pattern`, `id`, or the first 160 characters of the
+  argument JSON) and `✗` when it failed. A turn is bounded at 16 KiB. Thinking,
+  attachments, `result` payloads, and system messages never appear. Every line
+  passes the host's fragment credential redactor, which replaces a
+  credential-shaped span with `[REDACTED:<kind>]`.
+- **The switch is read at call time.** With `learnedMemory.archive` off,
+  `changes` answers `{ enabled: false, items: [], nextCursor: null }` without
+  calling the host, and `summary` / `transcript` refuse with
+  `PERMISSION_DENIED` — a named session must not read "off" as "never
+  archived". Absent means off. A failed settings read reads as off.
+- **The feed pages forward.** `nextCursor` is opaque and derived from stored
+  timestamps, so a plugin that restarts keeps its place. Sessions and removal
+  notices share one ordered stream: the cursor is the position the caller has
+  handled, and the answer contains everything after it, merged by
+  `(updatedAt, sessionId)`.
+- **No summary is not "nothing to write".** A session that has never been
+  summarized is listed with `summaryRevision: null` and its current `lastSeq`,
+  because the transcript does not depend on a model: write L3 now, and rewrite
+  the summary when a later page reports a revision. This is what keeps L3
+  available while the daily token budget is spent or a model call is failing.
+- **A removal is delivered at least once.** Reading never deletes the
+  content-free deletion record. A plugin that receives a page and then exits
+  before deleting its files finds the same `removed: true` notice on its next
+  request with the same cursor, so content the user deleted cannot live on in a
+  synced folder. The record is cleared only when a request proves it was
+  handled: its cursor has moved past the notice (a later read starts from that
+  position), or the session id exists again and the live row speaks for itself.
+  A record whose `deleted_at` equals the cursor position is therefore still
+  delivered once more when the ids order after it, never skipped.
+- **A session's identity is stable across computers.** `project.gitRemote` is
+  `host/owner/repo` normalized from the `origin` URL, with any credential in the
+  URL removed and a worktree's `.git` file followed to the main repository.
+- **Transcript paging follows the transcript in force**, never a discarded
+  regenerate branch, so `fromTurn` / `nextTurn` stay consistent with what the
+  user sees.
+- Electron main validates shape and bounds before dispatching; the host
+  re-validates and answers `INVALID_PARAMS` (`1002`) or `NOT_FOUND` (`1007`)
+  without echoing input.
+- The audit records the call and its row count only, never content.
+
 ### session collaboration (requires `desktop.control`)
 
 The official Session Orchestrator composes the reviewed desktop-control

@@ -52,12 +52,14 @@ export const HIGH_RISK_PERMISSIONS = [
   "browser.cdp",
   "audio.capture.background",
   "memory.read",
+  "conversation.read",
   "speech.adapter.register",
 ] as const;
 
 /** Host API surface each permission unlocks, used for the unused-permission hint. */
 const PERMISSION_API_HINTS: Record<string, string[]> = {
   "ui.panel": ["ui.openPanel", "ui.closePanel"],
+  "conversation.read": ["conversations.changes", "conversations.summary", "conversations.transcript"],
   notify: [
     "ui.notify",
     "ui.getNotificationPermission",

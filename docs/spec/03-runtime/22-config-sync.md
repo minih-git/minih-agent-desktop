@@ -5,8 +5,18 @@ Status: implemented router-account configuration backup and synchronization.
 Portable configuration sync is a host-owned, encrypted workflow that stores
 backups in the Minih Router backend under the signed-in account. It does not
 synchronize conversation history, project source files, attachments, runtime
-state, or model weights. The Renderer only receives redacted status, preview
-counts, conflicts, and activation summaries.
+state, or model weights.
+
+Conversation history stays out of configuration sync even with the
+conversation archive (ADR conversation-archive) in place. The archive switch
+(`learnedMemory.archive`) and the summaries are device-local: the switch is not
+a portable application field, and `conversation_summaries` is not part of any
+sync domain. What reaches another computer is the archive the *plugin* writes
+into the user's own knowledge base, which the user controls and can inspect —
+never a Host-owned replica of the conversations.
+
+The Renderer only receives redacted status, preview counts, conflicts, and
+activation summaries.
 
 ## 1. Ownership and boundaries
 

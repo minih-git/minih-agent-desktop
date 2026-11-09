@@ -12,6 +12,13 @@ import type { Stats } from "node:fs";
 import { open as openFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+
+import {
+  conversationResultCount,
+  normalizePluginConversationInput,
+  readConversationArchiveSwitch,
+  CONVERSATION_PERMISSION,
+} from "./plugin-conversation-read";
 import { pluginNetFetch, parseFetchRedirect, type PluginFetchTransport } from "./plugin-net-fetch";
 import { normalizePluginMemoryListInput, type PluginMemoryReadHostService } from "./plugin-memory-read";
 import type { LoadedSkillDocument } from "./skill-document";
@@ -517,6 +524,21 @@ export type PluginHostServices = {
   usage?: {
     listTurns: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
   };
+  /**
+   * `settings.get`, read by the archive's per-call switch check. Declared on the
+   * services rather than reached for from a host handle, so the runtime keeps one
+   * way to talk to the host: a plugin cannot see the settings record itself.
+   */
+  readSettings?: () => Promise<unknown>;
+  /**
+   * Read-only conversation archive (ADR conversation-archive). The host side is
+   * `plugin.conversations.*`; each method receives the calling plugin's id.
+   */
+  conversations?: {
+    changes: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
+    summary: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
+    transcript: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
+  };
 } & PluginMemoryReadHostService;
 
 export type PluginOAuthProvider = {
@@ -615,6 +637,9 @@ const HOST_API_ALLOWLIST = new Set([
   "memory.list",
   "agent.complete",
   "providers.oauth.prompt",
+  "conversations.changes",
+  "conversations.summary",
+  "conversations.transcript",
   "providers.oauth.notify",
   "keyboard.registerGlobalShortcut",
   "keyboard.unregisterGlobalShortcut",
@@ -3300,6 +3325,14 @@ export class PluginRuntime {
       case "agent.complete": {
         return this.runAgentComplete(loaded, (args[0] ?? {}) as PluginCompleteInput);
       }
+      case "conversations.changes":
+      case "conversations.summary":
+      case "conversations.transcript": {
+        // Read-only conversation archive (ADR conversation-archive). The
+        // permission, the input bounds, the archive switch, and the audit stay
+        // in one flat module, so this runtime grows by these lines only.
+        return this.runPluginConversationCall(loaded, api, args[0]);
+      }
       default: {
         if (!HOST_API_ALLOWLIST.has(api)) {
           this.services.audit?.({
@@ -3319,6 +3352,52 @@ export class PluginRuntime {
         return target(...args);
       }
     }
+  }
+
+  /**
+   * One `pi.conversations.*` call: permission, input bounds, the user's archive
+   * switch, the host RPC, and one audit row carrying a row count. The projection
+   * and its redaction are the host's, so no transcript text can reach a log, an
+   * error message, or an audit record from here.
+   */
+  private async runPluginConversationCall(
+    loaded: LoadedPlugin,
+    api: string,
+    rawInput: unknown,
+  ): Promise<unknown> {
+    this.assertPermission(loaded, CONVERSATION_PERMISSION);
+    const input = normalizePluginConversationInput(api, rawInput);
+    // The settings record is read through a declared service rather than by
+    // reaching for a host handle here, so the runtime keeps one way to talk to
+    // the host.
+    const enabled = await readConversationArchiveSwitch(async () =>
+      this.services.readSettings ? this.services.readSettings() : null,
+    );
+    if (!enabled) {
+      // A request for one named session must not read "archive off" as "this
+      // session was never archived"; `changes` alone answers an empty page.
+      if (api === "conversations.changes") {
+        return { enabled: false, items: [], nextCursor: null };
+      }
+      throw apiError("PERMISSION_DENIED", "conversation archive is off");
+    }
+    const member = api.slice("conversations.".length);
+    const service = (
+      this.services.conversations as
+        | Record<string, (pluginId: string, input: Record<string, unknown>) => Promise<unknown>>
+        | undefined
+    )?.[member];
+    if (!service) throw apiError("UNSUPPORTED", `host api not available: ${api}`);
+    const result = await service(loaded.manifest.id, input);
+    const count = conversationResultCount(api, result);
+    this.services.audit?.({
+      pluginId: loaded.manifest.id,
+      api,
+      ok: true,
+      ...(count === undefined ? {} : { count }),
+      ts: Date.now(),
+    });
+    return result;
   }
 
   private handleChildExit(loaded: LoadedPlugin, code: number): void {

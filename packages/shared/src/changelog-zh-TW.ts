@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "會話可以歸檔到你自己的知識庫：全域 AI 裡的可選開關會讓學習模型為已結束的對話產生摘要——你的訊息、代理的回覆，以及每次工具呼叫的一行摘要——你授權新增的「讀取會話歸檔」權限的插件即可把它寫進你的筆記。工具回傳結果、思考過程與附件永遠不會外送，摘要產生與自動學習共用每日 token 預算。",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [

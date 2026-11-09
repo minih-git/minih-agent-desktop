@@ -2035,6 +2035,10 @@ pub fn configure_session_with_thinking(
 }
 
 pub fn delete_session(db: &Database, id: &str) -> Result<bool> {
+    // Recorded before the row goes: the archive feed can then still name the
+    // conversation a plugin wrote a file for, which no table could name after
+    // this point (ADR conversation-archive §4).
+    crate::conversation_archive::record_deletion(db, id)?;
     let n = db
         .conn()
         .prepare_cached("DELETE FROM sessions WHERE id = ?1")?

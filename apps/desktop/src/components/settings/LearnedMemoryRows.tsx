@@ -62,6 +62,50 @@ export function ExtractionToggleRow({
   );
 }
 
+/**
+ * The switch that archives settled conversations (`conversation.read` for
+ * plugins).
+ *
+ * It sends the agent's replies and one line per tool call to the chosen model,
+ * which is more than automatic learning sends, so the description says so in as
+ * many words. It cannot be turned on without a model for the same reason
+ * learning cannot: the run would fail on its first attempt.
+ */
+export function ArchiveToggleRow({
+  settings,
+  saveSettings,
+}: {
+  settings: AppSettings;
+  saveSettings: (patch: Partial<AppSettings>) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const enabled = settings.learnedMemory?.archive === true;
+  const hasModel = Boolean(settings.learnedMemory?.model?.trim());
+  return (
+    <SettingsRow
+      title={t("settings.learnedMemoryArchive")}
+      description={t("settings.learnedMemoryArchiveDesc")}
+      detail={
+        hasModel ? undefined : <span>{t("settings.learnedMemoryArchiveNeedsModel")}</span>
+      }
+    >
+      <SettingsToggle
+        checked={enabled}
+        label={t("settings.learnedMemoryArchive")}
+        disabled={!hasModel}
+        onChange={() =>
+          void saveSettings({
+            learnedMemory: {
+              ...settings.learnedMemory,
+              archive: !enabled,
+            },
+          })
+        }
+      />
+    </SettingsRow>
+  );
+}
+
 export function ExtractionModelRow({
   settings,
   providers,

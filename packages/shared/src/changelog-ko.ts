@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "대화를 내 지식 베이스에 보관할 수 있습니다. 전역 AI의 선택형 스위치를 켜면 학습 모델이 종료된 대화를 요약하고(내 메시지, 에이전트의 답변, 도구 호출당 한 줄), 새로 추가된 「대화 보관함 읽기」 권한을 허용한 플러그인이 이를 노트에 기록합니다. 도구 결과, 사고 과정, 첨부 파일은 절대 전송되지 않으며, 이 작업은 자동 학습의 일일 토큰 예산을 함께 사용합니다.",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [
