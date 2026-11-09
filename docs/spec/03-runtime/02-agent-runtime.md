@@ -2125,8 +2125,12 @@ prints its date as UTC `YYYY-MM-DD`, and appends the overflow line pointing at
 `MemorySearch`. The section itself states that the entries are dated,
 user-provided context, that anything about code or the environment must be
 verified against the current workspace before it is relied on, that the current
-request and current observations win, and that a request to ignore memory means
-acting as if the section were empty.
+request and current observations win, that when two notes conflict the newer
+one wins, and that a request to ignore memory means acting as if the section
+were empty. The newer-wins rule takes effect at the next session start and is
+independent of the automatic-curation switch, so it covers the window between
+two notes beginning to conflict and the next curation pass archiving one of
+them (ADR learned-memory-consolidation §5).
 
 The index is captured once per runtime and is **excluded from the runtime reuse
 check**: a learned-memory write during a session never retires the runtime and

@@ -104,6 +104,11 @@ describe("learnedMemoryPrompt", () => {
     expect(section).toContain("- [fact · 2026-10-03] The gateway listens on 8787.");
   });
 
+  it("makes the newer note win when two notes conflict", () => {
+    const section = learnedMemoryPrompt(index([entry()]))!;
+    expect(section).toContain("When two notes conflict, the newer one wins.");
+  });
+
   it("states how many entries the host's budget left out", () => {
     const section = learnedMemoryPrompt(index([entry()], 7))!;
     expect(section).toContain("…and 7 more notes; call MemorySearch to read them.");
