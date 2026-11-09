@@ -516,10 +516,14 @@ mod tests {
             .unwrap();
             session_id = session.id;
             entry_id = push(&db, input(&session_id, "existing", None)).unwrap().id;
+            // A v19 file predates the message-id and voice-origin columns and
+            // knows no archive tables, so the upgrade chain has to add both.
             db.conn()
                 .execute_batch(
                     "ALTER TABLE turn_queue DROP COLUMN voice_origin_json;
                      ALTER TABLE turn_queue DROP COLUMN user_message_id;
+                     DROP TABLE conversation_summaries;
+                     DROP TABLE conversation_archive_tombstones;
                      PRAGMA user_version = 19;",
                 )
                 .unwrap();
@@ -532,7 +536,7 @@ mod tests {
         assert_eq!(entries[0].content, "existing");
         assert!(entries[0].user_message_id.is_none());
         assert!(entries[0].voice_origin.is_none());
-        assert_eq!(crate::db::SCHEMA_VERSION, 28);
+        assert_eq!(crate::db::SCHEMA_VERSION, 29);
     }
 
     #[test]

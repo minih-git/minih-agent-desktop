@@ -685,6 +685,24 @@ Electron main after plugin permission and manifest-source checks:
   user scope or one plugin-named project path. Electron main gates it with
   `memory.read` and the `learnedMemoryRead` setting; no write path or protocol
   version bump.
+- `plugin.conversations.changes` — one page of the conversation change feed,
+  ordered by `(changedAt, sessionId)` where `changedAt` is the newer of the
+  session row and its summary row. Sessions that are deleted, purged, or
+  excluded from learning appear with `removed: true`; a purge is delivered once
+  from `conversation_archive_tombstones` and then cleared. Electron main gates
+  it with `conversation.read` and the `learnedMemory.archive` switch.
+- `plugin.conversations.summary` — the stored fixed-field summary of one session
+  (`revision`, `coveredSeq`, `summary`), or `null`. Same gate.
+- `plugin.conversations.transcript` — one turn-ordered page of the redacted
+  transcript: user text, agent text, one line per tool call, compaction markers.
+  Thinking, attachments, and tool results are dropped by the host projection.
+  Same gate; `NOT_FOUND` for a missing or trashed session.
+- `conversation.summary.queue` / `.claim` / `.input` / `.complete` / `.fail` /
+  `.release` — the summary generator's own methods, called by Electron main
+  after the user's switch and the shared daily budget check, never by a plugin.
+  The lease, cursor, and attempt counter live in `conversation_summaries`, so a
+  restart, a duplicate trigger, or a renderer reload cannot repeat a range or
+  lose one. Additive; no protocol version bump.
 - Successful plugin session mutations cause Electron main to emit one
   `sessionsChanged` renderer event; the renderer refreshes the session list,
   and plugins do not emit this UI synchronization event.

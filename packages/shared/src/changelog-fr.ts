@@ -96,6 +96,7 @@ export const frEntries: ChangelogEntry[] = [
     date: "2026-10-24",
     highlights: [
       "Les plugins peuvent demander un accès en lecture seule aux notes actives de mémoire apprise via pi.memory.list ; la vérification à l’installation précise les portées utilisateur et des projets indiqués, et l’interrupteur de lecture existant reste appliqué.",
+      "Les conversations peuvent être archivées dans votre propre base de connaissances : une option dans IA globale demande au modèle d'apprentissage de résumer les conversations terminées — vos messages, les réponses de l'agent et une ligne par appel d'outil —, et un plugin auquel vous accordez la nouvelle permission « Lire l'archive des conversations » les écrit dans vos notes. Les résultats d'outils, le raisonnement et les pièces jointes ne sont jamais envoyés, et les exécutions partagent le budget quotidien de jetons de l'apprentissage.",
     ],
   },
   {

@@ -4,6 +4,7 @@ mod artifacts;
 mod audit;
 mod background_tasks;
 mod config_sync;
+mod conversation_archive;
 mod data_relocation;
 mod db;
 mod delegations;

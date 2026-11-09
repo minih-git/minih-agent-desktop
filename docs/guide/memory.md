@@ -116,6 +116,34 @@ can order a delete and an edit the wrong way; keep device clocks reasonably in
 sync. And at most 500 notes of one scope travel per sync: a project with more
 notes syncs its newest 500, and the rest stay on the device that has them.
 
+## Archive conversations to your knowledge base (optional)
+
+The archive is off by default and there is no way to turn it on without a
+**Learning model**, because every run spends that model's quota.
+
+- **Settings → Global AI → Archive conversations to your knowledge base** turns
+  it on. The switch is per device, like the learning settings beside it, and it
+  never travels through configuration sync.
+- While it is on, a settled conversation is summarized by the chosen model: ten
+  minutes after the last turn, or right after a compaction. The request contains
+  your own messages, the agent's replies, and one line per tool call. It never
+  contains tool results, reasoning, or attachments, and every line is checked
+  for credentials first — a token inside a command is replaced, not sent.
+- The summary is stored on this device as five short sections: goal, decisions,
+  outcomes, files, and open items. A plugin you grant **Read conversation
+  archive** can then write it, with the rest of the conversation, into your own
+  notes: those files are yours, they are what syncs to your other computers, and
+  you can delete or edit them.
+- Runs share the **Daily token budget** with automatic learning, so the ceiling
+  you set is the ceiling for both. Historical conversations are filled in from
+  newest to oldest as the budget allows; raising the budget shortens that catch-up.
+- **Read conversation archive** is a High-risk permission on the plugin's install
+  screen. It is confirmed at install, listed in the plugin's permission list, and
+  it is off for every plugin that does not declare it.
+- Turning the switch off stops new runs and hides the archive from plugins. It
+  does not delete the notes a plugin already wrote; delete those in your own
+  notes.
+
 ## What the agent can do with it
 
 Besides the short index it starts with, the agent has three tools:

@@ -96,6 +96,7 @@ export const trEntries: ChangelogEntry[] = [
     date: "2026-10-24",
     highlights: [
       "Eklentiler pi.memory.list üzerinden etkin öğrenilmiş bellek notlarına salt okunur erişim isteyebilir; kurulum incelemesi kullanıcı ve belirtilen proje kapsamlarını açıklar, mevcut bellek okuma anahtarı da geçerliliğini korur.",
+      "Sohbetler kendi bilgi tabanınıza arşivlenebilir: Genel Yapay Zekâ'daki isteğe bağlı bir anahtar, öğrenme modelinin tamamlanmış sohbetleri özetlemesini sağlar — mesajlarınız, aracının yanıtları ve her araç çağrısı için bir satır — ve yeni \"Sohbet arşivini oku\" iznini verdiğiniz bir eklenti bunları notlarınıza yazar. Araç sonuçları, akıl yürütme ve ekler hiçbir zaman gönderilmez; çalışmalar öğrenmenin günlük token bütçesini paylaşır.",
     ],
   },
   {

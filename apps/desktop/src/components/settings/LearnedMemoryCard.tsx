@@ -14,6 +14,7 @@ import type { AppSettings, ProviderPublic } from "@minih-agent/shared";
 import { Button, SettingsToggle } from "../ui";
 import { SettingsCard, SettingsRow } from "../../features/settings/primitives";
 import {
+  ArchiveToggleRow,
   ExtractionBudgetRow,
   ExtractionModelRow,
   ExtractionStatusRow,
@@ -54,6 +55,7 @@ export function LearnedMemoryCard({
       />
       <ExtractionBudgetRow settings={settings} saveSettings={saveSettings} />
       <ExtractionStatusRow settings={settings} />
+      <ArchiveToggleRow settings={settings} saveSettings={saveSettings} />
       <SettingsRow
         title={t("settings.learnedMemoryManager")}
         description={t("settings.learnedMemoryManagerDesc")}

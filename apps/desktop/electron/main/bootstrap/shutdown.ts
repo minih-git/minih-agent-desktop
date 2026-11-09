@@ -62,6 +62,12 @@ export type ShutdownDependencies = {
    * exercises no learned memory at all.
    */
   disposeMemoryExtraction?: () => void;
+  /**
+   * The conversation summary generator: same rule as the extractor, one more
+   * idle clock that must not start a model call behind the quit
+   * (ADR conversation-archive §6).
+   */
+  disposeConversationSummary?: () => void;
   /** Terminal-owner hooks the quit settlement shares with the in-app Stop path. */
   finishTurn: FinishTurn;
   lockAbortReason: (sessionId: string, turnId: string | null | undefined) => void;
@@ -95,6 +101,7 @@ export function registerShutdownHandlers({
   liveCallService,
   disposeSystemProxyRelay,
   disposeMemoryExtraction,
+  disposeConversationSummary,
 }: ShutdownDependencies): void {
   app.on("window-all-closed", () => {
     // The D216 tray is resident on every platform, so its presence says nothing
@@ -150,6 +157,7 @@ export function registerShutdownHandlers({
     // Nothing extracts while the app is closing: the pending debounces go now,
     // before any awaited cleanup, so no model call starts behind the quit.
     disposeMemoryExtraction?.();
+    disposeConversationSummary?.();
     disposePowerSaveBlockers();
     // Stop the Agent Host's housekeeping timer before the ordered shutdown: it
     // must not fire a sweep against a host that is being torn down.

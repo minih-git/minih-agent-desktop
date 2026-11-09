@@ -426,6 +426,95 @@ export type PluginMemoryListResult = {
   nextOffset: number | null;
 };
 
+/**
+ * One archived conversation, as the change feed lists it. The projection is
+ * redacted by the host: no thinking, no tool results, no attachments.
+ */
+export type PluginConversationChange = {
+  sessionId: string;
+  title: string;
+  /** Epoch ms. */
+  createdAt: number;
+  /** Epoch ms of the newer of the session row and its summary. */
+  updatedAt: number;
+  project: { name: string; path: string; gitRemote?: string } | null;
+  /** Highest message sequence the session holds; `0` when it has none. */
+  lastSeq: number;
+  /** `null` until the first summary is stored for this session. */
+  summaryRevision: number | null;
+  /** The session was deleted, purged, or excluded from learning. */
+  removed: boolean;
+};
+
+/** Input to the read-only conversation change feed (`conversation.read`). */
+export type PluginConversationChangesInput = {
+  /** Opaque cursor from a previous `nextCursor`. */
+  cursor?: string;
+  /** 1..=100 rows per page; default 50. */
+  limit?: number;
+};
+
+/** One page of the conversation change feed. */
+export type PluginConversationChangesResult = {
+  /** `false` when the user's archive switch is off; the list is then empty. */
+  enabled: boolean;
+  items: PluginConversationChange[];
+  nextCursor: string | null;
+};
+
+/** The fixed-field summary the host stored for one conversation. */
+export type PluginConversationSummary = {
+  goal: string;
+  decisions: string[];
+  outcomes: string[];
+  files: string[];
+  openItems: string[];
+  tags: string[];
+};
+
+export type PluginConversationSummaryResult = {
+  revision: number;
+  /** Messages at or before this sequence are covered by the summary. */
+  coveredSeq: number;
+  summary: PluginConversationSummary;
+};
+
+/** One tool call inside a turn, reduced to a single redacted line. */
+export type PluginConversationToolLine = {
+  name: string;
+  /** Tool name plus its key argument, already redacted and truncated. */
+  line: string;
+  isError: boolean;
+};
+
+/** One user turn of an archived conversation. */
+export type PluginConversationTurn = {
+  /** 0-based turn index; pass `nextTurn` back as `fromTurn` to continue. */
+  index: number;
+  /** Epoch ms of the turn's first message. */
+  startedAt: number;
+  user: string;
+  assistant: string;
+  tools: PluginConversationToolLine[];
+  /** The checkpoint that applies from this turn onward, if there is one. */
+  compaction?: string;
+};
+
+export type PluginConversationTranscriptInput = {
+  sessionId: string;
+  /** 0-based first turn; default 0. */
+  fromTurn?: number;
+  /** 1..=200 turns per page; default 50. */
+  limit?: number;
+};
+
+export type PluginConversationTranscriptResult = {
+  turns: PluginConversationTurn[];
+  nextTurn: number | null;
+  /** Highest message sequence the session holds at read time. */
+  lastSeq: number;
+};
+
 export type PluginSessionMessageResult = {
   id: string;
   role: "user" | "assistant" | "tool";
@@ -1396,6 +1485,23 @@ export type PluginHostApi = {
   memory: {
     list: (input: PluginMemoryListInput) => Promise<PluginMemoryListResult>;
   };
+  /**
+   * Read-only conversation archive (`conversation.read`). The host returns a
+   * redacted projection: no thinking, no tool results, no attachments. The
+   * user's archive switch must be on; `changes` says so with `enabled: false`.
+   */
+  conversations: {
+    /** Sessions changed since `cursor`, newest first. */
+    changes: (input?: PluginConversationChangesInput) => Promise<PluginConversationChangesResult>;
+    /** The stored summary of one session, or `null` when it has none yet. */
+    summary: (input: {
+      sessionId: string;
+    }) => Promise<PluginConversationSummaryResult | null>;
+    /** One turn-ordered page of a session's redacted transcript. */
+    transcript: (
+      input: PluginConversationTranscriptInput,
+    ) => Promise<PluginConversationTranscriptResult>;
+  };
   services: {
     /**
      * Register a resident service declared in `contributes.services`. Local
@@ -1551,6 +1657,9 @@ export const PLUGIN_PERMISSIONS = [
   "usage.read",
   // Active learned-memory notes only; no suggestion review or write access.
   "memory.read",
+  // Redacted conversation archive for the user's own synced knowledge base;
+  // read-only, and only while the user's archive switch is on.
+  "conversation.read",
   // Install-time escape hatch from the net.domains allowlist (issue #1201):
   // user-typed endpoints, e.g. a self-hosted server, that no manifest written
   // ahead of time can name. Enforced by net-policy's grant-aware checks.

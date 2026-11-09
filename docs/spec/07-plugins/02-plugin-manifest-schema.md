@@ -424,6 +424,7 @@ type PluginPermission =
  | "usage.read"
  | "session.keepWarm"
  | "memory.read"
+ | "conversation.read"
  | "audio.capture.background"
  | "audio.playback.background"
  | "speech.adapter.register"

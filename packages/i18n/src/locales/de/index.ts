@@ -823,6 +823,10 @@ export const de = {
     learnedMemoryOpen: "Öffnen",
     learnedMemoryExtractionDesc: "Nachdem ein Gespräch abgeschlossen oder komprimiert wurde, liest das von dir gewählte Modell deine eigenen Nachrichten und schlägt Notizen zur Prüfung vor. Ohne deine Bestätigung wird nichts gespeichert. Jeder Lauf verbraucht Kontingent des gewählten Modells.",
     learnedMemoryExtractionNeedsModel: "Zuerst ein Modell wählen",
+    learnedMemoryArchive: "Unterhaltungen ins Wissensarchiv schreiben",
+    learnedMemoryArchiveDesc:
+      "Nachdem eine Unterhaltung abgeschlossen ist, schreibt das oben gewählte Modell eine kurze Zusammenfassung der ganzen Unterhaltung — deine Nachrichten, die Antworten des Agenten und je eine Zeile pro Werkzeugaufruf. Plugins mit der Berechtigung „Unterhaltungsarchiv lesen“ können sie in deine eigenen Notizen schreiben und auf deine anderen Computer synchronisieren. Werkzeugergebnisse, Denkprozess und Anhänge werden nie gesendet. Läufe teilen sich das tägliche Token-Budget oben.",
+    learnedMemoryArchiveNeedsModel: "Zuerst ein Lernmodell wählen",
     learnedMemoryModel: "Lernmodell",
     learnedMemoryModelDesc: "Das Modell, das deine Nachrichten liest und Notizen vorschlägt. Es läuft nur bei aktiviertem Lernen und nur auf diesem Gerät.",
     learnedMemoryModelNone: "Keines",
@@ -2932,6 +2936,7 @@ sklm: {
       "browser.cdp": "Den Arbeitspanel-Browser steuern",
       "usage.read": "Nutzungsstatistiken lesen",
       "memory.read": "Gelerntes Gedächtnis lesen",
+      "conversation.read": "Unterhaltungsarchiv lesen",
       "session.autoTitle": "Kontext des ersten Durchlaufs lesen und automatische Titel ändern"
     },
     "permissionHelp": {
@@ -2977,6 +2982,8 @@ sklm: {
         "Listet Nutzungsdaten abgeschlossener Runden auf (Token-Zähler pro Runde, seitenweise). Nachrichteninhalte sind nicht enthalten.",
       "memory.read":
         "Listet aktive Notizen aus dem erlernten Gedächtnis (Einstellungen, Feedback, Fakten und Referenzen) für den Benutzerbereich und vom Plugin benannte Projektpfade auf. Keine Vorschläge, archivierten Notizen oder Herkunftsinformationen; nur lesend.",
+      "conversation.read":
+        "Listet deine archivierten Unterhaltungen auf — jeweils mit Zusammenfassung und, nach Sitzung, dem bereinigten Verlauf —, damit das Plugin sie in deine Notizen schreiben kann. Ist das Archiv aus, bleibt alles verborgen. Werkzeugergebnisse, Denkprozess und Anhänge sind nie enthalten.",
       "session.autoTitle":
         "Kann nur die erste Eingabe und Antwort geeigneter Sitzungen lesen und den Titel ändern, sofern er nicht manuell geändert wurde. Das vollständige Transkript bleibt unzugänglich.",
     }

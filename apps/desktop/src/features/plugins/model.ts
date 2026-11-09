@@ -80,6 +80,9 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "usage.read": "medium",
   // Learned-memory text is more sensitive than usage counters; review it as high risk.
   "memory.read": "high",
+  // Archived conversations carry what the user and the agent said, so they sit
+  // at the same tier as learned memory rather than beside the usage counters.
+  "conversation.read": "high",
   // Two capabilities that reach outside Minih-Agent-Desktop's own window or read its
   // live audio stream sit at the top tier with the other outbound paths.
   "net.websocket": "high",

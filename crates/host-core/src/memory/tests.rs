@@ -137,7 +137,7 @@ fn v25_database_gains_learned_memory_without_touching_pinned_memory() {
     };
 
     let db = Database::open(&path).unwrap();
-    assert_eq!(SCHEMA_VERSION, 28);
+    assert_eq!(SCHEMA_VERSION, 29);
     let version: i64 = db
         .conn()
         .query_row("PRAGMA user_version", [], |row| row.get(0))

@@ -729,6 +729,95 @@ Semantics:
 - The existing plugin API audit records the call, result, and entry count,
   never note content.
 
+### conversations (requires `conversation.read`)
+
+`pi.conversations.*` is the read-only conversation archive (ADR
+conversation-archive). The host projects the transcript in force into turns and
+returns it redacted; a plugin never reads `pi.sqlite` or a JSONL file, and the
+projection never carries thinking, tool results, attachments, or system
+messages. Every call is also gated in Electron main by the device-local
+`learnedMemory.archive` switch.
+
+```ts
+pi.conversations.changes(input?: {
+  cursor?: string  // opaque `nextCursor` from the previous page
+  limit?: number   // 1..=100, default 50
+}): Promise<{
+  enabled: boolean
+  items: Array<{
+    sessionId: string
+    title: string
+    createdAt: number  // epoch ms
+    updatedAt: number  // epoch ms, the newer of the session row and its summary
+    project: { name: string; path: string; gitRemote?: string } | null
+    lastSeq: number            // highest message sequence the session holds
+    summaryRevision: number | null  // null until the first summary is stored
+    removed: boolean           // deleted, purged, or excluded from learning
+  }>
+  nextCursor: string | null
+}>
+
+pi.conversations.summary(input: { sessionId: string }): Promise<{
+  revision: number
+  coveredSeq: number
+  summary: {
+    goal: string
+    decisions: string[]
+    outcomes: string[]
+    files: string[]
+    openItems: string[]
+    tags: string[]
+  }
+} | null>
+
+pi.conversations.transcript(input: {
+  sessionId: string
+  fromTurn?: number  // 0-based first turn, default 0
+  limit?: number     // 1..=200 turns, default 50
+}): Promise<{
+  turns: Array<{
+    index: number
+    startedAt: number  // epoch ms
+    user: string
+    assistant: string
+    tools: Array<{ name: string; line: string; isError: boolean }>
+    compaction?: string  // the checkpoint that applies from this turn onward
+  }>
+  nextTurn: number | null
+  lastSeq: number
+}>
+```
+
+Semantics:
+
+- **Redacted projection only.** `user` and `assistant` come from text blocks;
+  each tool call becomes one line — the tool name plus its key argument
+  (`command`, `path`, `pattern`, `id`, or the first 160 characters of the
+  argument JSON) and `✗` when it failed. A turn is bounded at 16 KiB. Thinking,
+  attachments, `result` payloads, and system messages never appear. Every line
+  passes the host's fragment credential redactor, which replaces a
+  credential-shaped span with `[REDACTED:<kind>]`.
+- **The switch is read at call time.** With `learnedMemory.archive` off,
+  `changes` answers `{ enabled: false, items: [], nextCursor: null }` without
+  calling the host, and `summary` / `transcript` refuse with
+  `PERMISSION_DENIED` — a named session must not read "off" as "never
+  archived". Absent means off. A failed settings read reads as off.
+- **The feed pages forward.** `nextCursor` is opaque and derived from stored
+  timestamps, so a plugin that restarts keeps its place. Sessions with neither a
+  summary nor a removal are not listed yet; their summary's `updated_at` brings
+  them back on a later page. A purge is delivered once from a content-free
+  deletion record and then forgotten.
+- **A session's identity is stable across computers.** `project.gitRemote` is
+  `host/owner/repo` normalized from the `origin` URL, with any credential in the
+  URL removed and a worktree's `.git` file followed to the main repository.
+- **Transcript paging follows the transcript in force**, never a discarded
+  regenerate branch, so `fromTurn` / `nextTurn` stay consistent with what the
+  user sees.
+- Electron main validates shape and bounds before dispatching; the host
+  re-validates and answers `INVALID_PARAMS` (`1002`) or `NOT_FOUND` (`1007`)
+  without echoing input.
+- The audit records the call and its row count only, never content.
+
 ### session collaboration (requires `desktop.control`)
 
 The official Session Orchestrator composes the reviewed desktop-control

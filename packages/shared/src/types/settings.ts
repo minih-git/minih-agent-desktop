@@ -307,6 +307,15 @@ export type LearnedMemorySettings = {
   model?: string;
   /** Daily token ceiling; absent or unusable uses 200k. 0 is not a ceiling. */
   dailyTokenBudget?: number;
+  /**
+   * Archive settled conversations (`conversation.read` for plugins).
+   *
+   * Absent and `false` keep it off. It refuses to run without `model` for the
+   * same reason `learn` does, and it lives beside `learn` rather than beside
+   * `learnedMemoryRead` because a summary run spends this machine's quota and
+   * needs a model this machine can reach.
+   */
+  archive?: boolean;
 };
 
 export type SessionTitleSettings = {

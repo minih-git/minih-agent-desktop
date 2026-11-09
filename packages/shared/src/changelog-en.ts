@@ -96,6 +96,7 @@ export const enEntries: ChangelogEntry[] = [
     date: "2026-10-24",
     highlights: [
       "Plugins can request read-only access to active learned-memory notes through pi.memory.list; the install review explains the user and named-project scopes, and the existing memory-read switch still applies.",
+      "Conversations can be archived to your own knowledge base: an opt-in switch in Global AI has the learning model summarize settled conversations — your messages, the agent's replies, and one line per tool call — and a plugin you grant the new \"Read conversation archive\" permission writes them into your notes. Tool results, reasoning, and attachments are never sent, and the runs share the learning daily token budget.",
     ],
   },
   {

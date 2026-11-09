@@ -1580,6 +1580,69 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   captured by configuration sync nor re-keyed by group lifecycle, and a missing
   or unreadable row reads as zero.
 
+### 4.16 conversation_summaries + conversation_archive_tombstones — conversation archive (schema v29, ADR conversation-archive)
+
+The archive adds no second copy of a conversation. What leaves the device is
+projected from the transcript in force on demand, and only two things are
+stored: the summary a plugin publishes and the record that a conversation is
+gone.
+
+```sql
+CREATE TABLE conversation_summaries (
+  session_id   TEXT PRIMARY KEY,       -- no FK: a purge leaves the tombstone behind
+  covered_seq  INTEGER NOT NULL DEFAULT 0,  -- next message sequence to read
+  revision     INTEGER NOT NULL DEFAULT 0,  -- 0 means "never summarized"
+  summary_json TEXT,                  -- fixed-field summary, see §4.16.1
+  model_key    TEXT,                  -- providerId/modelId that wrote it
+  lease_owner  TEXT,                  -- one summary run at a time
+  lease_until  INTEGER,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT,                  -- a code, never content
+  updated_at   INTEGER NOT NULL
+);
+CREATE INDEX idx_conversation_summaries_updated
+  ON conversation_summaries(updated_at DESC, session_id ASC);
+CREATE INDEX idx_conversation_summaries_backfill
+  ON conversation_summaries(revision, session_id);
+
+CREATE TABLE conversation_archive_tombstones (
+  session_id TEXT PRIMARY KEY,
+  deleted_at INTEGER NOT NULL
+);
+CREATE INDEX idx_conversation_archive_tombstones_deleted
+  ON conversation_archive_tombstones(deleted_at DESC, session_id ASC);
+```
+
+- **Additive.** The v28 -> v29 step creates both tables and stamps the version;
+  no existing row is rewritten and no user data is migrated. A database opened by
+  an older build fails the existing version check rather than reading a schema it
+  cannot describe. Back up before the step like every other migration
+  (`pi.sqlite.v28.bak`).
+- **Every session starts unsummarized.** `revision = 0` (or no row) is the
+  backfill queue: newest `sessions.updated_at` first, excluding trashed,
+  excluded, imported, and automation-run sessions. The daily token budget paces
+  it, so a first launch after the upgrade does not spend a day's quota at once.
+- **One run at a time, resumable.** `claim` takes the lease, `input` returns the
+  range after `covered_seq`, `complete` advances the cursor and increments
+  `revision` only while the lease is held, and `fail` releases the lease and
+  counts an attempt (three attempts, then the session waits for a new turn). A
+  crashed run's lease expires after ten minutes.
+- **The cursor is messages, not compactions.** This schema's compaction appends a
+  checkpoint and keeps the messages (§2.1), so a summary read from `covered_seq`
+  always includes the text before a compaction.
+- **Deletions.** `sessions.deleted_at` and the exclusion flag are read live.
+  A permanent purge writes `conversation_archive_tombstones` before the session
+  row disappears, because afterwards no table could name the conversation whose
+  file a plugin wrote. The change feed delivers that record once and deletes it.
+
+#### 4.16.1 `summary_json`
+
+`{"goal": string, "decisions": [string], "outcomes": [string], "files":
+[string], "openItems": [string], "tags": [string]}` — bounded on write (40
+entries per list, 400 characters per entry) and re-validated by the host, so a
+model answer with extra or oversized fields stores as the same shape every
+plugin can rely on.
+
 ### Dropped from v1
 
 | v1 table | v2 home |
@@ -1755,7 +1818,9 @@ truncating at a guessed position.
   Sessions, providers, and settings from the old file are not carried over;
   the archive remains for manual recovery. All pre-v7 migration code
   (v1 `settings.sqlite` import, v2→v6 chain) is deleted.
-- Fresh installs run the full v23 DDL directly.
+- Fresh installs run the full DDL directly, including `CONVERSATION_ARCHIVE_DDL`
+  (§4.16); the same constant is applied by the v28 -> v29 step so the two cannot
+  drift.
 - **Schema v7 first reaches v8, then uses the guarded path.** The v7→v8
   migration is followed by the same guarded v8→v15 migration; schema-v9 and
   schema-v10 databases take the same guarded path and receive an exact readable
