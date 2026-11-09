@@ -1,4 +1,4 @@
-# 04. 数据存储（架构 v28）
+# 04. 数据存储（架构 v29）
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/03-runtime/04-data-storage) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
@@ -1198,7 +1198,7 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   也不在上面任何表里，因此既不会被配置同步采集，也不会随项目组生命周期重键；
   缺失或无法读取的行按 0 处理。
 
-### 4.16 conversation_summaries + conversation_archive_tombstones —— 会话归档（架构 v27，ADR conversation-archive）
+### 4.16 conversation_summaries + conversation_archive_tombstones —— 会话归档（架构 v29，ADR conversation-archive）
 
 归档不保存对话的第二份副本。离开设备的内容是按需从生效中的转录投影出来的，
 因此只存两样东西：插件发布的摘要，以及「这段对话已经消失」的记录。
@@ -1229,9 +1229,9 @@ CREATE INDEX idx_conversation_archive_tombstones_deleted
   ON conversation_archive_tombstones(deleted_at DESC, session_id ASC);
 ```
 
-- **纯增量。** v26 → v27 只创建这两张表并写入版本号；不重写任何已有行，也不迁移
+- **纯增量。** v28 → v29 只创建这两张表并写入版本号；不重写任何已有行，也不迁移
   用户数据。旧构建打开新库时会在既有的版本检查处失败，而不会去读一个它无法描述的
-  架构。该步骤与其它迁移一样，先留下 `pi.sqlite.v26.bak` 备份。
+  架构。该步骤与其它迁移一样，先留下 `pi.sqlite.v28.bak` 备份。
 - **每个会话初始都是「未生成摘要」。** `revision = 0`（或没有行）就是补录队列：按
   `sessions.updated_at` 从新到旧，排除已进回收站、已排除、导入的和自动化运行的会话。
   补录受每日 token 预算约束，因此升级后的首次启动不会一次花掉一整天的额度。

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.4.0",
+    date: "2026-11-09",
+    highlights: [
+      "Las conversaciones pueden archivarse en tu propia base de conocimiento: un interruptor opcional en IA global hace que el modelo de aprendizaje resuma las conversaciones cerradas —tus mensajes, las respuestas del agente y una línea por llamada de herramienta— y un plugin al que concedas el nuevo permiso «Leer archivo de conversaciones» las escribe en tus notas. Los resultados de herramientas, el razonamiento y los adjuntos nunca se envían, y las ejecuciones comparten el presupuesto diario de tokens del aprendizaje.",
+    ],
+  },
+
+  {
     version: "1.3.1",
     date: "2026-11-06",
     highlights: [
@@ -96,7 +104,6 @@ export const esEntries: ChangelogEntry[] = [
     date: "2026-10-24",
     highlights: [
       "Los plugins pueden solicitar acceso de solo lectura a las notas activas de memoria aprendida mediante pi.memory.list; la revisión de instalación explica los ámbitos de usuario y de los proyectos indicados, y sigue aplicándose el interruptor de lectura existente.",
-      "Las conversaciones pueden archivarse en tu propia base de conocimiento: un interruptor opcional en IA global hace que el modelo de aprendizaje resuma las conversaciones terminadas —tus mensajes, las respuestas del agente y una línea por llamada de herramienta—, y un plugin al que concedas el nuevo permiso «Leer el archivo de conversaciones» las escribe en tus notas. Los resultados de herramientas, el razonamiento y los adjuntos nunca se envían, y las ejecuciones comparten el presupuesto diario de tokens del aprendizaje.",
     ],
   },
   {

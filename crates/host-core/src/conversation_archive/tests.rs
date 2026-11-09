@@ -727,14 +727,37 @@ fn a_session_without_a_summary_is_listed_with_a_null_revision() {
         .unwrap();
     db.complete_conversation_summary("s1", "owner", 3, "p/m", &summary)
         .unwrap();
-    // s1 now sorts after s2 (its summary moved it forward), so the page that
-    // ends at s2 is the cursor the next request starts from.
-    let first = crate::conversation_archive::feed::changes_page(&db, None, 1).unwrap();
-    let cursor = first["nextCursor"].as_str().unwrap().to_string();
-    let after = crate::conversation_archive::feed::changes_page(&db, Some(&cursor), 10).unwrap();
-    let item = &after["items"][0];
-    assert_eq!(item["sessionId"], "s1");
-    assert_eq!(item["summaryRevision"], 1);
+    // Writing the summary stamps the row, so s1 moves to the end of the feed and
+    // the remaining session is drained by the first page. The summary is
+    // asserted by id: which page it lands on depends on the clock, not on the
+    // contract, and asserting the position made this test fail whenever the
+    // lease stamp and the write fell in the same millisecond.
+    let mut cursor = String::new();
+    let mut seen: Vec<(String, Value)> = Vec::new();
+    for _ in 0..4 {
+        let page =
+            crate::conversation_archive::feed::changes_page(&db, Some(cursor.as_str()), 1).unwrap();
+        for item in page["items"].as_array().unwrap() {
+            seen.push((
+                item["sessionId"].as_str().unwrap().to_string(),
+                item["summaryRevision"].clone(),
+            ));
+        }
+        cursor = page["nextCursor"].as_str().unwrap_or_default().to_string();
+        if page["items"].as_array().unwrap().is_empty() {
+            break;
+        }
+    }
+    let s1 = seen
+        .iter()
+        .find(|(id, _)| id == "s1")
+        .expect("the summarized session is still delivered");
+    assert_eq!(s1.1, json!(1));
+    let s2 = seen
+        .iter()
+        .find(|(id, _)| id == "s2")
+        .expect("the unwritten session is still delivered");
+    assert!(s2.1.is_null());
 }
 
 #[test]

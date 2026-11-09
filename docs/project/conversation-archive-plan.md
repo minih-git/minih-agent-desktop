@@ -32,7 +32,7 @@ Electron main: summary generator (triggers, budget, model)                      
 - `crates/host-core/src/conversation_archive/` — `projection` (transcript to
   turns), `project_identity` (git remote to `host/owner/repo`), `repo` (lease,
   cursor, backfill queue, tombstone), `feed` (the plugin's three reads), `rpc`.
-- `crates/host-core/src/db/conversation_archive_migration.rs` — schema v27, two
+- `crates/host-core/src/db/conversation_archive_migration.rs` — schema v29, two
   new tables, shared with the fresh-schema DDL.
 - `apps/desktop/electron/main/memory/conversation-summary-service.ts` — the
   generator; `conversation-summary-prompt.ts` — its prompt and answer parsing.
@@ -74,7 +74,7 @@ archived conversation while the switch is on.
 
 | Level | Covers |
 |---|---|
-| host-core | projection of every tool family; thinking, attachments, tool results, and system messages never present; credential fragments replaced rather than dropped; compaction markers; remote URL normalization including credentials; worktree `.git` resolution; v26 to v27 migration on an existing database; lease, cursor, revision, attempts; excluded and trashed sessions; forward paging with removals; a removal repeated until the cursor moves past it and cleared only then; a session with no summary listed with a null revision; the cursor predicate pushed into SQL; summary input reads past a compaction; invalid bounds |
+| host-core | projection of every tool family; thinking, attachments, tool results, and system messages never present; credential fragments replaced rather than dropped; compaction markers; remote URL normalization including credentials; worktree `.git` resolution; v28 to v29 migration on an existing database (including a released v28 file); lease, cursor, revision, attempts; excluded and trashed sessions; forward paging with removals; a removal repeated until the cursor moves past it and cleared only then; a session with no summary listed with a null revision; the cursor predicate pushed into SQL; summary input reads past a compaction; invalid bounds |
 | Electron main | input bounds for all three methods; the switch read as off when absent or when the host fails; audit counts |
 | Renderer | the archive row appears beside the learning rows, needs a model, and states what is sent |
 | Plugin side (P4-P6) | path mapping, single writer, ignore filters, delete, size split |
