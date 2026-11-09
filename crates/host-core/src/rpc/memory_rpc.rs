@@ -18,11 +18,11 @@ mod plugin_tests;
 mod tests;
 use crate::memory::{
     is_known, CreateMemoryOutcome, CreateMemoryRequest, CurationInputOutcome, CurationOpRequest,
-    CURATION_OPS, CurationUndoReport,
-    MemoryEntryRecord, MemoryScope, SearchMemoryRequest, StatusMemoryOutcome, SuggestionOutcome,
-    UpdateMemoryOutcome, UpdateMemoryRequest, CURATION_LEASE_MS, EVIDENCES, EVIDENCE_USER_STATED,
-    EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_USER_UI, SCOPES,
-    SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
+    CurationUndoReport, MemoryEntryRecord, MemoryScope, SearchMemoryRequest, StatusMemoryOutcome,
+    SuggestionOutcome, UpdateMemoryOutcome, UpdateMemoryRequest, CURATION_LEASE_MS, CURATION_OPS,
+    EVIDENCES, EVIDENCE_USER_STATED, EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT,
+    ORIGINS, ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE,
+    STATUS_ARCHIVED,
 };
 
 pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value, JsonRpcError> {
