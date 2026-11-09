@@ -17,7 +17,8 @@ mod plugin_tests;
 #[path = "memory_rpc_tests.rs"]
 mod tests;
 use crate::memory::{
-    is_known, CreateMemoryOutcome, CreateMemoryRequest, CurationInputOutcome, CurationUndoReport,
+    is_known, CreateMemoryOutcome, CreateMemoryRequest, CurationInputOutcome, CurationOpRequest,
+    CURATION_OPS, CurationUndoReport,
     MemoryEntryRecord, MemoryScope, SearchMemoryRequest, StatusMemoryOutcome, SuggestionOutcome,
     UpdateMemoryOutcome, UpdateMemoryRequest, CURATION_LEASE_MS, EVIDENCES, EVIDENCE_USER_STATED,
     EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_USER_UI, SCOPES,
@@ -46,8 +47,10 @@ pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value
         "memory.extraction.budget" => extraction_budget(&st.db, &params),
         "memory.suggestions.list" => list_suggestions(&st.db, &params),
         "memory.curation.activate" => curation_activate(&st.db, &params),
+        "memory.curation.dirtyScopes" => curation_dirty_scopes(&st.db),
         "memory.curation.claim" => curation_claim(&st.db, &params),
         "memory.curation.input" => curation_input(&st.db, &params),
+        "memory.curation.apply" => curation_apply(&st.db, &params),
         "memory.curation.complete" => curation_complete(&st.db, &params),
         "memory.curation.fail" => curation_fail(&st.db, &params),
         "memory.curation.list" => curation_list(&st.db, &params),
@@ -581,6 +584,56 @@ fn curation_activate(db: &Database, params: &Value) -> Result<Value, JsonRpcErro
     Ok(json!({ "report": report }))
 }
 
+/// The scopes with something to curate, oldest change first. The service takes
+/// one at a time, so the queue order decides what a busy machine looks at first.
+fn curation_dirty_scopes(db: &Database) -> Result<Value, JsonRpcError> {
+    let scopes = db.dirty_memory_curation_scopes().map_err(internal)?;
+    let scopes: Vec<Value> = scopes
+        .into_iter()
+        .map(|scope| {
+            json!({
+                "scope": if scope.kind == SCOPE_USER { SCOPE_USER } else { SCOPE_PROJECT },
+                "key": scope.key,
+            })
+        })
+        .collect();
+    Ok(json!({ "scopes": scopes }))
+}
+
+/// Apply one pass's items. The host validates, caps, and records them; the
+/// service only proposes.
+fn curation_apply(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope = resolve_scope(db, params)?;
+    let items = params
+        .get("items")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid_params("items must be an array"))?;
+    let mut ops = Vec::with_capacity(items.len());
+    for item in items {
+        let op = required_str(item, "op")?;
+        if !CURATION_OPS.contains(&op) {
+            return Err(invalid_params("op is not a supported value"));
+        }
+        let target_ids = string_array(item, "targetIds")?;
+        let target_revisions = integer_array(item, "targetRevisions")?;
+        if target_ids.len() != target_revisions.len() {
+            return Err(invalid_params("targetIds and targetRevisions must line up"));
+        }
+        ops.push(CurationOpRequest {
+            op: op.to_string(),
+            target_ids,
+            target_revisions,
+            content: optional_str(item, "content")?.map(str::to_string),
+            reason: optional_str(item, "reason")?.map(str::to_string),
+            kind: optional_str(item, "kind")?.map(str::to_string),
+        });
+    }
+    let report = db
+        .apply_memory_curation(&scope, &ops, optional_str(params, "reason")?)
+        .map_err(internal)?;
+    Ok(json!({ "report": report }))
+}
+
 /// Take one scope's curation lease. A refusal says why it was refused.
 fn curation_claim(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
     let scope = resolve_scope(db, params)?;
@@ -776,6 +829,29 @@ fn optional_bool(params: &Value, key: &str) -> Result<Option<bool>, JsonRpcError
             .as_bool()
             .map(Some)
             .ok_or_else(|| rpc_err(1002, format!("{key} must be a boolean"), "INVALID_PARAMS")),
+    }
+}
+
+fn integer_array(params: &Value, key: &str) -> Result<Vec<i64>, JsonRpcError> {
+    match params.get(key) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| {
+                item.as_i64().ok_or_else(|| {
+                    rpc_err(
+                        1002,
+                        format!("{key} must contain integers"),
+                        "INVALID_PARAMS",
+                    )
+                })
+            })
+            .collect(),
+        Some(_) => Err(rpc_err(
+            1002,
+            format!("{key} must be an array"),
+            "INVALID_PARAMS",
+        )),
     }
 }
 

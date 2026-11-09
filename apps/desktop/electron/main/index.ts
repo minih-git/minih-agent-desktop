@@ -80,6 +80,7 @@ import { createTaskExperienceService } from "./memory/task-experience-service";
 import { createHireDrafter } from "./services/hire-draft";
 import { createTaskInspectionService } from "./services/task-inspection-service";
 import { createConversationSummaryService } from "./memory/conversation-summary-service";
+import { createMemoryCurationService } from "./memory/memory-curation-service";
 import { createEventPersistence } from "./runtime/event-persistence";
 import { createPlanRuntime } from "./runtime/plans";
 import { createRuntimeLifecycle } from "./runtime/lifecycle";
@@ -907,6 +908,26 @@ const conversationSummaryService = createConversationSummaryService({
   isTurnRunning: (sessionId) => activeTurns.has(sessionId),
 });
 
+/**
+ * Automatic curation (ADR learned-memory-consolidation §4). Off unless the user
+ * turns it on. It waits for the whole app to be idle, takes one dirty scope at a
+ * time, and asks the host to apply what the model proposes — the host enforces
+ * the cap, the quiet window, the revision check, and the record.
+ */
+const memoryCurationService = createMemoryCurationService({
+  getHost,
+  getSettings: async () =>
+    (await getHost()?.call("settings.get").catch(() => null)) as
+      | AppSettings
+      | null
+      | undefined,
+  resolveRuntimeModel,
+  vendorOAuth,
+  logger,
+  // No pass runs while any session has a turn in flight.
+  isAnyTurnRunning: () => activeTurns.size > 0,
+});
+
 const sessionTitleGenerator = createSessionTitleGenerator({
   getHost,
   resolveRuntimeModel,
@@ -982,9 +1003,13 @@ const sidecarRuntime = createSidecarRuntime({
     // archive switch is on, and the daily budget still bounds it.
     void conversationSummaryService.backfillOnce().catch(() => undefined);
   },
+  // A settled turn is also the point at which the app may go idle, so it arms
+  // the curation pass; the timer itself only fires once nothing is running.
+  onAgentTurnSettledCuration: () => memoryCurationService.scheduleIdle(),
   cancelMemoryExtraction: (sessionId) => {
     memoryExtractionService.cancel(sessionId);
     conversationSummaryService.cancel(sessionId);
+    memoryCurationService.cancelPending();
   },
   generateSessionRetitle: createSessionRetitleGenerator({
     getHost,
@@ -1106,10 +1131,12 @@ function registerIpc() {
     cancelMemoryExtraction: (sessionId) => {
       memoryExtractionService.cancel(sessionId);
       conversationSummaryService.cancel(sessionId);
+      memoryCurationService.cancelPending();
     },
     onLearnedMemorySettingsChanged: (settings) => {
       memoryExtractionService.onSettingsChanged(settings);
       conversationSummaryService.onSettingsChanged(settings);
+      memoryCurationService.onSettingsChanged(settings);
     },
     // A task left the open list: the lesson extraction it owes runs now rather
     // than at the next poll.
@@ -1339,6 +1366,7 @@ registerShutdownHandlers({
   disposeSystemProxyRelay,
   disposeMemoryExtraction: () => memoryExtractionService.dispose(),
   disposeConversationSummary: () => conversationSummaryService.dispose(),
+  disposeMemoryCuration: () => memoryCurationService.dispose(),
 });
 
 registerApplicationActivation({

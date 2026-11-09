@@ -23,7 +23,7 @@ const PROVIDERS = [
 ];
 
 /** A fake host that answers the extraction RPCs and records every call. */
-function fakeHost({ input, budget = 0, claim = true, attempts = 0 } = {}) {
+function fakeHost({ input, budget = 0, claim = true, attempts = 0, responses: extra } = {}) {
   const calls = [];
   const responses = {
     "memory.extraction.budget": { budget: { day: "2026-10-20", tokens: budget, runs: 0 } },
@@ -35,6 +35,9 @@ function fakeHost({ input, budget = 0, claim = true, attempts = 0 } = {}) {
     "memory.extraction.complete": { completed: true, state: null },
     "memory.extraction.fail": { failed: true, state: null },
     "memory.create": { entry: { id: "e1" }, duplicate: false },
+    "memory.suggestions.list": { entries: [], count: 0 },
+    ...extra,
+    "memory.curation.activate": { report: { activated: ["e1"], skipped: 0, cap: 1, capped: false } },
   };
   return {
     calls,
@@ -657,5 +660,80 @@ test("evidence follows the kind: a fact is inferred, a preference is user-stated
   // memories, so they are `inferred` rather than a claim about what was said.
   assert.equal(byContent["The gateway deploys on Fridays"], "inferred");
   assert.equal(byContent["Deploy dashboard"], "inferred");
+  service.dispose();
+});
+
+// ---- automatic curation (ADR learned-memory-consolidation §6.1) -------------
+
+test("with curation off a stored candidate stays a suggestion", async () => {
+  const host = fakeHost({ input: userInput([{ id: "m-user-1", seq: 0, text: "Use pnpm", createdAt: 1 }]) });
+  const { deps: base } = deps(host);
+  const service = createMemoryExtractionService(base);
+  const result = await service.runOnce("s1");
+  assert.equal(result.outcome, "stored");
+  // The write is still a suggestion, and nothing promotes it.
+  assert.equal(host.called("memory.create")[0].params.status, "suggested");
+  assert.equal(host.called("memory.curation.activate").length, 0);
+  service.dispose();
+});
+
+test("with curation on the run hands its suggestions to the host in the same call", async () => {
+  const host = fakeHost({ input: userInput([{ id: "m-user-1", seq: 0, text: "Use pnpm", createdAt: 1 }]) });
+  const { deps: base } = deps(host, {
+    getSettings: async () => ({
+      learnedMemory: { learn: true, curate: true, model: "p1/m1", dailyTokenBudget: 200_000 },
+    }),
+  });
+  const service = createMemoryExtractionService(base);
+  const result = await service.runOnce("s1");
+  assert.equal(result.outcome, "stored");
+  // It is still written as a suggestion first: activation is a second, recorded
+  // step, not a second write path.
+  assert.equal(host.called("memory.create")[0].params.status, "suggested");
+  const activate = host.called("memory.curation.activate");
+  assert.equal(activate.length, 1);
+  assert.deepEqual(activate[0].params.ids, ["e1"]);
+  assert.equal(activate[0].params.sessionId, "s1");
+  // The cursor still advances, so curation never re-reads the range.
+  assert.equal(host.called("memory.extraction.complete").length, 1);
+  service.dispose();
+});
+
+test("a backlog left in the scope is drained by the same activation call", async () => {
+  const host = fakeHost({
+    input: userInput([{ id: "m-user-1", seq: 0, text: "Use pnpm", createdAt: 1 }]),
+    responses: { "memory.suggestions.list": { entries: [{ id: "old-1" }, { id: "old-2" }], count: 2 } },
+  });
+  const { deps: base } = deps(host, {
+    getSettings: async () => ({
+      learnedMemory: { learn: true, curate: true, model: "p1/m1", dailyTokenBudget: 200_000 },
+    }),
+  });
+  const service = createMemoryExtractionService(base);
+  await service.runOnce("s1");
+  assert.deepEqual(host.called("memory.curation.activate")[0].params.ids, ["e1", "old-1", "old-2"]);
+  service.dispose();
+});
+
+test("an activation failure never fails the extraction run", async () => {
+  const host = fakeHost({
+    input: userInput([{ id: "m-user-1", seq: 0, text: "Use pnpm", createdAt: 1 }]),
+  });
+  const failing = {
+    ...host,
+    async call(method, params) {
+      if (method === "memory.curation.activate") throw new Error("host refused");
+      return host.call(method, params);
+    },
+  };
+  const { deps: base } = deps(failing, {
+    getSettings: async () => ({
+      learnedMemory: { learn: true, curate: true, model: "p1/m1", dailyTokenBudget: 200_000 },
+    }),
+  });
+  const service = createMemoryExtractionService(base);
+  const result = await service.runOnce("s1");
+  assert.equal(result.outcome, "stored");
+  assert.equal(failing.called("memory.extraction.complete").length, 1);
   service.dispose();
 });

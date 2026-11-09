@@ -63,6 +63,12 @@ type ExtractionInput = {
   bytes: number;
 };
 
+/**
+ * What the switch does to extraction's output (ADR learned-memory-consolidation
+ * §6.1): with curation on, a candidate is stored as a suggestion exactly as
+ * before, then handed to the host's activation in the same run. With it off the
+ * suggestion stays in the inbox, and nothing here runs.
+ */
 export type MemoryExtractionDeps = {
   getHost: () => ExtractionHost | null;
   /** The settings record read at trigger time; absent means "nothing enabled". */
@@ -283,6 +289,7 @@ export function createMemoryExtractionService(
       const settings = await deps.getSettings();
       const enabled = gate(settings);
       if (!enabled.ok) return { outcome: enabled.outcome };
+      const curate = settings?.learnedMemory?.curate === true;
       if (exhausted.has(id)) return { outcome: "attempts-exhausted" };
 
       const day = localDay();
@@ -414,6 +421,7 @@ export function createMemoryExtractionService(
       );
       let stored = 0;
       let refused = 0;
+      const storedIds: string[] = [];
       for (const candidate of candidates) {
         // One candidate's refusal is a value, not a failure: the rest still land
         // and the cursor still advances. Only a failure of the host itself
@@ -435,9 +443,19 @@ export function createMemoryExtractionService(
           sourceSessionId: id,
           sourceMessageIds: candidate.sourceMessageIds,
         })) as { entry?: unknown; refused?: unknown; rejected?: unknown } | undefined;
-        if (created?.entry) stored += 1;
-        else refused += 1;
+        if (created?.entry) {
+          stored += 1;
+          const id = (created.entry as { id?: unknown }).id;
+          if (typeof id === "string" && id) storedIds.push(id);
+        } else refused += 1;
       }
+      // With curation on, the candidates take effect now. The host does the
+      // promotion under its own cap and records it, so this is not a second
+      // write path: it is the recorded second step of the same run. A backlog
+      // from before the switch was turned on drains through the same call.
+      const activated = curate
+        ? await activateSuggestions(host, id, storedIds, input.scopeKind)
+        : 0;
       // The cursor moves only to what this run actually read, so a message that
       // did not fit the byte budget is picked up next time.
       const lastSeq = input.messages.at(-1)?.seq;
@@ -449,6 +467,7 @@ export function createMemoryExtractionService(
       log("info", "learned memory extraction finished", id, {
         candidates: candidates.length,
         stored,
+        activated,
         refused,
         droppedOutOfScope,
         sent: input.messages.length,
@@ -472,6 +491,42 @@ export function createMemoryExtractionService(
       return { outcome: "host-error" };
     } finally {
       running.delete(id);
+    }
+  }
+
+  /**
+   * Turn this run's suggestions into active notes, and with them whatever is
+   * still waiting in the session's scope.
+   *
+   * The host decides what is eligible: only `extracted` / `suggested` rows of
+   * this scope, at most one pass cap at a time. A refusal is not a failure of
+   * extraction, so a broken activation is counted and the run still completes.
+   */
+  async function activateSuggestions(
+    host: ExtractionHost,
+    sessionId: string,
+    ids: string[],
+    scopeKind: "project" | "user",
+  ): Promise<number> {
+    try {
+      const backlog = (await host.call("memory.suggestions.list", {
+        sessionId,
+        limit: 50,
+      })) as { entries?: { id?: unknown }[] } | undefined;
+      const pending = (backlog?.entries ?? [])
+        .map((entry) => entry.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      const all = [...new Set([...ids, ...pending])];
+      if (!all.length) return 0;
+      const report = (await host.call("memory.curation.activate", {
+        sessionId,
+        ...(scopeKind === "user" ? { scope: "user" } : {}),
+        ids: all,
+      })) as { report?: { activated?: unknown[] } } | undefined;
+      return Array.isArray(report?.report?.activated) ? report.report.activated.length : 0;
+    } catch {
+      // Curation is an extra: its failure changes nothing the user asked for.
+      return 0;
     }
   }
 

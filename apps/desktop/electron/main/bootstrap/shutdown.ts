@@ -72,6 +72,11 @@ export type ShutdownDependencies = {
    * (ADR conversation-archive §6).
    */
   disposeConversationSummary?: () => void;
+  /**
+   * The optional curation pass: quitting cancels its pending run for the same
+   * reason (ADR learned-memory-consolidation §4).
+   */
+  disposeMemoryCuration?: () => void;
   /** Terminal-owner hooks the quit settlement shares with the in-app Stop path. */
   finishTurn: FinishTurn;
   lockAbortReason: (sessionId: string, turnId: string | null | undefined) => void;
@@ -108,6 +113,7 @@ export function registerShutdownHandlers({
   disposeTaskExperience,
   disposeTaskInspection,
   disposeConversationSummary,
+  disposeMemoryCuration,
 }: ShutdownDependencies): void {
   app.on("window-all-closed", () => {
     // The D216 tray is resident on every platform, so its presence says nothing
@@ -166,6 +172,7 @@ export function registerShutdownHandlers({
     disposeConversationSummary?.();
     disposeTaskExperience?.();
     disposeTaskInspection?.();
+    disposeMemoryCuration?.();
     disposePowerSaveBlockers();
     // Stop the Agent Host's housekeeping timer before the ordered shutdown: it
     // must not fire a sweep against a host that is being torn down.

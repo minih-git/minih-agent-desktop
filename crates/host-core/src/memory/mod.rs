@@ -48,7 +48,9 @@ mod provenance_tests;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use curation::{CurationInputOutcome, CurationUndoReport, CURATION_LEASE_MS};
+pub(crate) use curation::{
+    CurationInputOutcome, CurationOpRequest, CurationUndoReport, CURATION_LEASE_MS, CURATION_OPS,
+};
 pub(crate) use experience::{stamp_pending_tx, ExperienceCandidate};
 pub(crate) use extraction_input::ExtractionInputOutcome;
 /// Configuration sync reads and writes learned memory through these; the rules

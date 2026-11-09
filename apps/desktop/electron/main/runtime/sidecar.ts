@@ -126,6 +126,11 @@ export type SidecarRuntimeDependencies = {
   onAgentTurnSettled?: (sessionId: string) => void;
   /** A turn is starting, or the session is gone: drop any pending extraction. */
   cancelMemoryExtraction?: (sessionId: string) => void;
+  /**
+   * A turn was fully persisted, rendered, and settled: the app may now go idle,
+   * so this arms the curation pass (ADR learned-memory-consolidation §4).
+   */
+  onAgentTurnSettledCuration?: (sessionId: string) => void;
 };
 
 export function createSidecarRuntime({
@@ -157,6 +162,7 @@ export function createSidecarRuntime({
   onAgentCompactionEnd,
   onAgentTurnSettled,
   cancelMemoryExtraction,
+  onAgentTurnSettledCuration,
   activeUserSkills,
   disabledBuiltinSkills,
   pluginActiveInProject,
@@ -418,6 +424,7 @@ export function createSidecarRuntime({
           onAgentCompactionEnd?.(envelope.sessionId);
         } else if (event.type === "agent_end") {
           onAgentTurnSettled?.(envelope.sessionId);
+          onAgentTurnSettledCuration?.(envelope.sessionId);
         }
       }
     }
