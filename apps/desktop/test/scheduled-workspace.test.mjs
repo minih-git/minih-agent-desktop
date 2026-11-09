@@ -384,6 +384,42 @@ test("a run with no stored transcript says so instead of showing an empty pane",
   });
 });
 
+test("pending or failed run reads never render as a task that has not run", async () => {
+  await withVite(async server => {
+    const props = { tasks: [TASK_A], latestRuns: new Map(), liveTaskIds: new Set(), selectedTaskId: TASK_A.id, now: NOW, locale: "en", onSelect() {} };
+    const loading = await render(server, "/src/features/scheduled/ScheduledTaskRail.tsx", "ScheduledTaskRail", { ...props, latestRunsLoaded: false });
+    assert.match(loading, /Loading/);
+    assert.doesNotMatch(loading, /Not run yet/);
+    const failed = await render(server, "/src/features/scheduled/ScheduledTaskRail.tsx", "ScheduledTaskRail", { ...props, latestRunsError: "Synthetic read failure" });
+    assert.match(failed, /Synthetic read failure/);
+    assert.doesNotMatch(failed, /Not run yet/);
+    const historyProps = { runs: [], selectedRunId: null, liveRunId: null, busy: false, locale: "en", onSelectRun() {}, onOpenSession() {} };
+    for (const state of [{ loaded: false }, { loaded: false, error: "Synthetic read failure" }]) {
+      const history = await render(server, "/src/features/scheduled/ScheduledRunHistory.tsx", "ScheduledRunHistory", { ...historyProps, ...state });
+      assert.match(history, state.error ? /Synthetic read failure/ : /Loading/);
+      assert.doesNotMatch(history, /No runs yet/);
+    }
+  });
+});
+
+test("Run now and Delete wait for known run status without blocking Edit", async () => {
+  await withVite(async server => {
+    const html = await render(server, "/src/features/scheduled/ScheduledTaskDetail.tsx", "ScheduledTaskDetail", {
+      task: TASK_A, runs: [], runsLoaded: false, selectedRunId: null, running: false,
+      runningKnown: false, liveFollowUp: false, busy: false, now: NOW, locale: "en",
+      onSelectRun() {}, onOpenSession() {}, onRunNow() {}, onEdit() {}, onToggleEnabled() {}, onDelete() {},
+    });
+    const buttons = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
+    for (const label of [catalogs.en.scheduled.runNow, catalogs.en.scheduled.delete]) {
+      const button = buttons.find(([, , text]) => text === label);
+      assert.ok(button, label);
+      assert.match(button[1], /disabled/);
+    }
+    assert.doesNotMatch(buttons.find(([, , text]) => text === catalogs.en.scheduled.edit)[1], /disabled/);
+    assert.doesNotMatch(html, /Not run yet/);
+  });
+});
+
 test("automation ownership keeps run transcripts out of the lists", async () => {
   await withVite(async (server) => {
     const { isAutomationSession } = await server.ssrLoadModule("/src/lib/session-origin.ts");

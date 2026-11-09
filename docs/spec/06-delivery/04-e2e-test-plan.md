@@ -1,5 +1,25 @@
 # 04. E2E Test Plan
 
+## E2E-SCHEDULED-independent-loading-and-route-return
+
+- **Preconditions:** Synthetic tasks and controllable task, latest-run, history
+  and project API responses; no paid provider or user profile.
+- **Steps:** Hold outcomes while definitions resolve. Select a task/run, leave
+  and return with refresh held. Open Create/Edit; fail/retry options and history.
+  Switch tasks before an old history settles. Invalidate Host while editor
+  options resolve, reject or remain pending, then advance the normal poll.
+- **Expected:** Definitions display independently. Route return retains the last
+  successful snapshot and selection. Loading/errors never mean never-run.
+  Failures retain known history. Old lifecycles cannot repopulate cache or
+  overwrite editor recovery. Project options stay lazy; failures expose Retry.
+  Run now/Delete wait for known status; Host admission and Minih follow-up turn
+  running indicators remain authoritative and intact.
+- **Specs linked:** `04-ux/01-ui-ia.md` §3.3.
+- **Coverage:** `scheduled-workspace-loading.test.mjs` exercises controlled
+  production-hook reads; `scheduled-workspace.test.mjs` checks rendered states.
+  `scripts/e2e-scheduled.mjs` covers real task CRUD, return and execution paths
+  against an isolated profile and local synthetic model.
+
 > Scope: MVP acceptance scenarios plus current shipped product increments for Minih-Agent-Desktop
 > Status: Accepted (protocol/Electron automation is active; full desktop Playwright remains planned)
 > Cross-references: [acceptance-criteria](02-acceptance-criteria.md) · [milestones](01-mvp-milestones.md) · [ai-development-workflow](03-ai-development-workflow.md) · [change-checklist](05-change-checklist.md)
@@ -3813,8 +3833,8 @@ identify the platform validation still needed.
 #### E2E-041: Conversation minimap navigates long transcripts
 
 - **Preconditions**: A session contains enough user and assistant turns to
-  scroll beyond one viewport and densely fill the minimap, including one AI
-  response emitted as multiple assistant fragments around tool activity; a
+  scroll beyond one viewport and densely fill the minimap, including assistant
+  responses emitted as multiple fragments around tool activity; a
   second session has at least two eligible turn markers that still fit in one
   viewport.
 - **Steps**: 1) Open the long session. 2) Scroll through the transcript and
@@ -3825,13 +3845,11 @@ identify the platform validation still needed.
   window taller until content no longer overflows, then shorter again. 9) At a
   short window height, inspect and activate the first and last markers near the
   minimap's vertical bounds, including from the titlebar-facing side.
-- **Expected**: The rail contains one marker per visible user turn and one per
-  AI response. Multiple assistant fragments between two user messages share a
-  single marker and combined bounded preview, while tool-only rows create no
-  marker and do not split the response. The marker near the upper-third reading
+- **Expected**: The rail contains one marker per visible user message;
+  assistant and tool rows create no marker. The marker near the upper-third reading
   anchor exposes `aria-current`; hover and focus show the same localized sender
   and preview; nearby markers magnify horizontally without shifting the stack;
-  activation smoothly scrolls to the first contentful message in that response;
+  activation smoothly scrolls to that user message;
   the rail is absent when fewer than two eligible markers exist **or** when
   content does not overflow one viewport; the rail reappears once overflow
   returns after a resize. Dense markers remain centered in the unobstructed

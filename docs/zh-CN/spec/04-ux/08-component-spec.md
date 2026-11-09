@@ -1191,10 +1191,9 @@ steering 旁注或系统行之后的流式回合仍保持活动；普通用户�
 - 切换思考条目只改变该层级，独立于整个过程、活动组和最终回答。流式更新不会重新打开
   用户已手动收起的层级；展开内容旁的左侧栏本身是可用指针和键盘聚焦操作的收起控件。
 - 悬停代码块：出现复制按钮
-- 将鼠标悬停或聚焦在小地图标记上：显示本地化的发件人和有界的
-  纯文本预览；一个用户内产生多个助手片段
-  回合合并为一个人工智能响应标记和预览；附近的标记
-  水平放大，无需对导轨进行回流焊
+- Hover or focus a minimap marker: show the localized user label and a bounded
+  plaintext preview of that user message. Nearby markers magnify horizontally
+  without reflowing the rail.
 - 单击小地图标记：在靠近顶部的位置平滑滚动其消息
   转录视口
 - 滚动文字记录：针对锚点更新活动小地图标记
@@ -1241,12 +1240,9 @@ steering 旁注或系统行之后的流式回合仍保持活动；普通用户�
 - 无内联消息分支树；每个用户的重新生成变体保持线性
   根转。会话级Create分支产生独立对话
 row 而不是在转录本中添加树镶边。
-- 小地图仅在至少存在两个符合条件的回合标记时渲染**和**
-  转录内容溢出一个视口（scrollHeight > clientHeight）。
-  每条可见的用户消息都会创建一个标记；所有内容丰富的助手
-  碎片，直到下一条用户消息创建一个锚定的 AI 响应标记
-  到第一个内容片段。仅工具行不会创建标记或
-  分割人工智能的反应，一页的文字记录永远不会显示出轨道。
+- The minimap renders when at least two user-message markers exist and the
+  transcript overflows a viewport, or while earlier history remains outside
+  the mounted/loaded window. Assistant and tool rows create no markers.
 - 标记预览的上限为 280 个源字符，并且仅供显示
 - 派生的可见行、小地图行和活动分组由
   `messages` 快照。完成消息行、组成助理回合，以及

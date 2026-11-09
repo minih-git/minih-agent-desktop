@@ -76,14 +76,22 @@ try {
       .map((path) => `<link rel="stylesheet" href="${path}">`)
       .join("")}<script src="renderer.js"></script>`,
   );
+  await writeFile(join(temp, "preload.cjs"), `
+const { contextBridge, ipcRenderer } = require("electron");
+contextBridge.exposeInMainWorld("captureMinimap", () => ipcRenderer.invoke("minimap:capture"));
+`);
   await writeFile(
     join(temp, "main.cjs"),
     `
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("node:path");
 app.setPath("userData", path.join(__dirname, "profile"));
 app.whenReady().then(async () => {
-  const window = new BrowserWindow({ show: false, width: 1200, height: 720, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  const window = new BrowserWindow({ show: false, width: 1200, height: 720, webPreferences: { preload: path.join(__dirname, "preload.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  ipcMain.handle("minimap:capture", async () => {
+    const image = await window.webContents.capturePage();
+    await require("node:fs/promises").writeFile(${JSON.stringify(join(process.env.PI_SCRATCH_DIR ?? temp, "minimap-user-jump.png"))}, image.toPNG());
+  });
   window.webContents.on("console-message", (event) => console.error(event.message));
   try {
     await window.loadFile(path.join(__dirname, "index.html"));

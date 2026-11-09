@@ -11,6 +11,7 @@ import {
 } from "./scheduled-runs";
 import type { ScheduledDraft } from "./ScheduledEditor";
 import { peekScheduledReturn } from "./scheduled-return";
+import { scheduledWorkspaceCache as cache } from "./scheduled-workspace-cache";
 
 /** Same cadence the page always used: the host owns admission, the page only
  * reflects it. */
@@ -35,6 +36,13 @@ export type ScheduledWorkspace = {
   busy: boolean;
   loaded: boolean;
   error: string;
+  latestRunsLoaded: boolean;
+  latestRunsError: string;
+  runsLoaded: boolean;
+  runsError: string;
+  projectsLoaded: boolean;
+  projectsError: string;
+  loadProjects: () => Promise<void>;
   taskIsRunning: (taskId: string) => boolean;
   selectTask: (taskId: string) => void;
   selectRun: (runId: string) => void;
@@ -56,14 +64,24 @@ export function useScheduledWorkspace(
 ): ScheduledWorkspace {
   // Coming back from a run's conversation restores the same task and run.
   const restored = peekScheduledReturn();
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [latestPerTaskRuns, setLatestPerTaskRuns] = useState<ScheduledTaskRun[]>([]);
-  const [taskRuns, setTaskRuns] = useState<ScheduledTaskRun[]>([]);
+  const snapshot = cache.snapshot;
+  const cachedTaskId = snapshot.selection?.taskId;
+  const initialTaskId = restored?.taskId ?? (snapshot.tasks?.some((task) => task.id === cachedTaskId) ? cachedTaskId : snapshot.tasks?.[0]?.id) ?? null;
+  const [tasks, setTasks] = useState<ScheduledTask[]>(snapshot.tasks ?? []);
+  const [latestPerTaskRuns, setLatestPerTaskRuns] = useState<ScheduledTaskRun[]>(snapshot.latestPerTaskRuns ?? []);
+  const [taskRuns, setTaskRuns] = useState<ScheduledTaskRun[]>(snapshot.history?.runs ?? []);
+  const [latestRunsLoaded, setLatestRunsLoaded] = useState(snapshot.latestPerTaskRuns !== undefined);
+  const [latestRunsError, setLatestRunsError] = useState("");
+  const [historyTaskId, setHistoryTaskId] = useState(snapshot.history?.taskId ?? null);
+  const [historyLoaded, setHistoryLoaded] = useState(snapshot.history !== undefined);
+  const [historyError, setHistoryError] = useState("");
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(restored?.taskId ?? null);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(restored?.runId ?? null);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [projectsError, setProjectsError] = useState("");
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTaskId);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(restored?.runId ?? (snapshot.selection?.taskId === initialTaskId ? snapshot.selection.runId : null));
   const [busy, setBusy] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(snapshot.tasks !== undefined);
   const [error, setError] = useState("");
   // A follow-up prompt in a run's conversation does not open a new ledger row,
   // so the run's stored status stays terminal while its turn is still live.
@@ -72,6 +90,8 @@ export function useScheduledWorkspace(
   const mounted = useRef(false);
   const revision = useRef(0);
   const runRevision = useRef(0);
+  const projectRevision = useRef(0);
+  const pendingProjectGeneration = useRef<number | null>(null);
   const selectedTaskIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
   const onErrorRef = useRef(onError);
@@ -85,55 +105,91 @@ export function useScheduledWorkspace(
 
   const refresh = useCallback(async () => {
     const request = ++revision.current;
-    try {
-      const [taskResult, runResult, projectResult] = await Promise.all([
-        api.listScheduled(),
-        api.listScheduledRuns({ latestPerTask: true }),
-        api.listProjects().catch(() => ({ projects: [] as ProjectRecord[] })),
-      ]);
-      if (!mounted.current || request !== revision.current) return;
-      setTasks(taskResult.tasks);
-      setLatestPerTaskRuns(runResult.runs);
-      setProjects(projectResult.projects);
-      setError("");
-      setLoaded(true);
-    } catch (failure) {
-      if (mounted.current && request === revision.current) {
-        setError(failure instanceof Error ? failure.message : String(failure));
-      }
-    }
+    const generation = cache.generation;
+    const current = () => mounted.current && request === revision.current && generation === cache.generation;
+    await Promise.all([
+      api.listScheduled().then((result) => {
+        if (!current()) return;
+        cache.snapshot.tasks = result.tasks;
+        setTasks(result.tasks);
+        setError("");
+        setLoaded(true);
+      }).catch((failure) => {
+        if (current()) setError(failure instanceof Error ? failure.message : String(failure));
+      }),
+      api.listScheduledRuns({ latestPerTask: true }).then((result) => {
+        if (!current()) return;
+        cache.snapshot.latestPerTaskRuns = result.runs;
+        setLatestPerTaskRuns(result.runs);
+        setLatestRunsLoaded(true);
+        setLatestRunsError("");
+      }).catch((failure) => {
+        if (current()) setLatestRunsError(failure instanceof Error ? failure.message : String(failure));
+      }),
+    ]);
   }, []);
 
   const readTaskRuns = useCallback(async (taskId: string) => {
     const request = ++runRevision.current;
+    const generation = cache.generation;
     try {
       const result = await api.listScheduledRuns({ taskId, limit: TASK_RUN_LIMIT });
-      if (!mounted.current || request !== runRevision.current) return;
+      if (!mounted.current || request !== runRevision.current || generation !== cache.generation) return;
+      cache.snapshot.history = { taskId, runs: result.runs };
       setTaskRuns(result.runs);
-    } catch {
-      // The rail still reports the outcome it read; an empty history with a
-      // retryable page error is better than clearing what the user is reading.
-      if (mounted.current && request === runRevision.current) setTaskRuns([]);
+      setHistoryTaskId(taskId);
+      setHistoryLoaded(true);
+      setHistoryError("");
+    } catch (failure) {
+      if (mounted.current && request === runRevision.current && generation === cache.generation) {
+        setHistoryTaskId(taskId);
+        setHistoryError(failure instanceof Error ? failure.message : String(failure));
+      }
+    }
+  }, []);
+
+  const loadProjects = useCallback(async () => {
+    const request = ++projectRevision.current;
+    const generation = cache.generation;
+    pendingProjectGeneration.current = generation;
+    setProjectsLoaded(false);
+    setProjectsError("");
+    try {
+      const result = await api.listProjects();
+      if (!mounted.current || request !== projectRevision.current || generation !== cache.generation) return;
+      setProjects(result.projects);
+      setProjectsLoaded(true);
+    } catch (failure) {
+      if (mounted.current && request === projectRevision.current && generation === cache.generation) {
+        setProjectsError(failure instanceof Error ? failure.message : String(failure));
+      }
+    } finally {
+      if (request === projectRevision.current && generation === cache.generation) {
+        pendingProjectGeneration.current = null;
+      }
     }
   }, []);
 
   useEffect(() => {
     mounted.current = true;
     void refresh();
-    const id = selectedTaskIdRef.current;
-    if (id) void readTaskRuns(id);
     const timer = setInterval(() => {
       void refresh();
       const current = selectedTaskIdRef.current;
       if (current) void readTaskRuns(current);
+      // Replace an invalidated editor read even if the old Host never settles it.
+      if (pendingProjectGeneration.current !== null && pendingProjectGeneration.current !== cache.generation) {
+        void loadProjects();
+      }
     }, REFRESH_INTERVAL_MS);
     return () => {
       mounted.current = false;
       revision.current++;
       runRevision.current++;
+      projectRevision.current++;
       clearInterval(timer);
     };
-  }, [refresh, readTaskRuns]);
+  }, [refresh, readTaskRuns, loadProjects]);
 
   // Keep one task selected: the first one, or the previous selection while it
   // still exists. A deleted task never leaves the pane pointing at nothing, and
@@ -145,12 +201,15 @@ export function useScheduledWorkspace(
   // A task switch releases the run selection, but the pair restored from a
   // conversation must survive the first mount or the reader loses the row that
   // brought them back.
-  const previousTaskRef = useRef<string | null>(restored?.taskId ?? null);
+  const previousTaskRef = useRef<string | null>(initialTaskId);
   useEffect(() => {
     if (previousTaskRef.current !== selectedTaskId) {
       previousTaskRef.current = selectedTaskId;
       setSelectedRunId(null);
+      setHistoryLoaded(false);
+      setHistoryError("");
     }
+    runRevision.current++;
     if (selectedTaskId) void readTaskRuns(selectedTaskId);
   }, [selectedTaskId, readTaskRuns]);
 
@@ -231,8 +290,15 @@ export function useScheduledWorkspace(
     [action],
   );
 
-  const selectTask = useCallback((taskId: string) => setSelectedTaskId(taskId), []);
-  const selectRun = useCallback((runId: string) => setSelectedRunId(runId), []);
+  const selectTask = useCallback((taskId: string) => {
+    cache.snapshot.selection = { taskId, runId: null };
+    setSelectedTaskId(taskId);
+  }, []);
+  const selectRun = useCallback((runId: string) => {
+    const taskId = selectedTaskIdRef.current;
+    if (taskId) cache.snapshot.selection = { taskId, runId };
+    setSelectedRunId(runId);
+  }, []);
   const runningFor = useCallback(
     (taskId: string) =>
       taskIsRunning(latestPerTaskRuns, taskId) || liveTurnTaskIds.has(taskId),
@@ -251,10 +317,20 @@ export function useScheduledWorkspace(
     busy,
     loaded,
     error,
+    latestRunsLoaded,
+    latestRunsError,
+    runsLoaded: historyTaskId === selectedTaskId && historyLoaded,
+    runsError: historyTaskId === selectedTaskId ? historyError : "",
+    projectsLoaded,
+    projectsError,
+    loadProjects,
     taskIsRunning: runningFor,
     selectTask,
     selectRun,
-    refresh,
+    refresh: async () => {
+      const id = selectedTaskIdRef.current;
+      await Promise.all([refresh(), ...(id ? [readTaskRuns(id)] : [])]);
+    },
     saveTask,
     runTaskNow,
     toggleTask,

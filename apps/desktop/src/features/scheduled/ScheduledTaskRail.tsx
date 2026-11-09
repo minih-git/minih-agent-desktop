@@ -31,6 +31,8 @@ function RunGlyph({ status }: { status: ScheduledTaskRun["status"] }) {
 export function ScheduledTaskRail({
   tasks,
   latestRuns,
+  latestRunsLoaded = true,
+  latestRunsError = "",
   liveTaskIds,
   selectedTaskId,
   now,
@@ -39,6 +41,8 @@ export function ScheduledTaskRail({
 }: {
   tasks: ScheduledTask[];
   latestRuns: Map<string, ScheduledTaskRun>;
+  latestRunsLoaded?: boolean;
+  latestRunsError?: string;
   /** Tasks whose newest run's conversation is executing a follow-up turn. */
   liveTaskIds: ReadonlySet<string>;
   selectedTaskId: string | null;
@@ -100,7 +104,9 @@ export function ScheduledTaskRail({
                     </span>
                   </span>
                 ) : (
-                  <span className="scheduled-task-last is-empty">{t("scheduled.neverRun")}</span>
+                  <span className="scheduled-task-last is-empty" role={!latestRunsLoaded && !latestRunsError ? "status" : undefined}>
+                    {latestRunsError || t(latestRunsLoaded ? "scheduled.neverRun" : "common.loading")}
+                  </span>
                 )}
               </button>
             </li>

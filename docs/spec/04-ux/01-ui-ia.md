@@ -310,6 +310,18 @@ destination, chat as the home surface, tools and permissions inline.
   focus.
 
 ### 3.3 Scheduled
+Task definitions render as soon as their own read completes; latest outcomes
+and the selected task's bounded history load independently. Pending or failed
+run reads never imply that a task has not run. Returning to the route displays
+the renderer's last successful in-memory snapshot and task/run selection while
+refreshing. Host loss or restart invalidates that snapshot and rejects late
+responses from the old lifecycle; the cache never owns execution admission.
+Project options load only when opening Create/Edit. The form waits for success
+and exposes Retry on failure. If Host invalidation interrupts that read, the
+next normal page poll replaces it even when the old request never settles.
+Run now and Delete require known run status. Minih's live follow-up turn overlay,
+task-owned provider/model settings and delete confirmation remain unchanged.
+
 A task column beside the selected task's page, with an explicit create/edit form, a cadence dropdown, time,
 next occurrence, saved project, per-task permission/model selection, a per-task conversation mode (a new conversation per run, or one conversation every run continues), pause/resume and delete confirmation. Hourly
 schedules repeat at one-hour intervals without a time selector. An interval

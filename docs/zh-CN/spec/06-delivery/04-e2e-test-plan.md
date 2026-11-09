@@ -9,6 +9,20 @@
 
 ---
 
+## E2E-SCHEDULED-independent-loading-and-route-return
+
+- **Preconditions:** Synthetic tasks and controllable API reads; isolated profile.
+- **Steps:** Hold run summaries, display definitions, select a task/run, leave
+  and return. Open Create/Edit; fail/retry options/history. Invalidate Host with
+  pending options, advance polling and resolve late old responses.
+- **Expected:** Independent definitions, cached route return and selection,
+  explicit loading/errors, retained history, lazy retryable options, stale
+  response rejection and automatic pending-option recovery. Run now/Delete
+  require known status; Minih live follow-up indicators remain unchanged.
+- **Coverage:** Production-hook Node regressions, rendered state checks and
+  isolated `scripts/e2e-scheduled.mjs` user path with a local synthetic model.
+
+
 ### E2E-RUNTIME-terminal-provider-errors
 
 - **前提：** 任务工作树内构建 shared／runtime，复用依赖，使用真实 sidecar／Agent
@@ -1510,13 +1524,10 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
   窗口变高，直到内容不再溢出，然后再次变短。 9) 在一个
   窗口高度短，检查并激活窗口附近的第一个和最后一个标记
   小地图的垂直边界，包括面向标题栏的一侧。
-- **预期**：导轨包含每个可见用户回合一个标记和每个可见用户回合一个标记
-  人工智能响应。两个用户消息之间的多个助手片段共享一个
-  单个标记和组合有界预览，而仅工具行不会创建
-  标记并且不拆分响应。靠近上三分之一读数的标记
-锚点暴露 `aria-current`；悬停和焦点显示相同的本地化发件人
-  和预览；附近的标记水平放大而不移动堆栈；
-  激活平滑地滚动到该响应中的第一条内容丰富的消息；
+- **Expected:** One marker per visible user message; assistant and tool rows
+  create none. The marker near the upper-third reading anchor exposes
+  `aria-current`. Hover/focus shows the user label and bounded preview; nearby
+  markers magnify without reflow. Activation scrolls to that user message.
   当存在少于两个合格标记时，导轨不存在**或**当
   内容不会溢出一个视口；一旦溢出，导轨就会重新出现
   调整大小后返回。密集标记保持在无障碍区域的中心

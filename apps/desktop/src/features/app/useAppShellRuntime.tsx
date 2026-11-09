@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { installRendererApi } from "../../capture/renderer-api";
 import { StartupSplash } from "../../components/StartupSplash";
 import { api } from "../../lib/api";
+import { scheduledWorkspaceCache } from "../scheduled/scheduled-workspace-cache";
 import { subscribeRemoteInteractions } from "../../lib/remote-interactions";
 import { playNotificationChime } from "../../lib/notification-sound";
 import {
@@ -679,6 +680,7 @@ export function useAppShellRuntime() {
       });
     });
     const offHostStatus = api.onHostStatus((status) => {
+      if (status.component !== "sidecar" && (!status.ok || status.restarted)) scheduledWorkspaceCache.clear();
       if (status.archMismatch) setArchMismatch(status.archMismatch);
       if (status.ok) {
         setBackendDown(null);
