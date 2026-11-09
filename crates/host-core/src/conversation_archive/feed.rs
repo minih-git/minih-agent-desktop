@@ -9,9 +9,19 @@
 //! - a soft-deleted or excluded session is still in `sessions`, and is reported
 //!   with `removed: true`;
 //! - a permanently deleted session is not, so its id lives on in
-//!   `conversation_archive_tombstones` until a reader has passed it. Clearing
-//!   the tombstone from a read is deliberate: it is the only place that knows
-//!   the row has been delivered.
+//!   `conversation_archive_tombstones` until a reader has passed it.
+//!
+//! A removal is delivered **at least once**. Reading never deletes a tombstone:
+//! a plugin that receives the page and then crashes before it deletes the file
+//! still finds the notice on its next request with the same cursor, so content
+//! the user deleted cannot survive in a synced folder. A tombstone is cleared
+//! only when a request proves the notice was handled — either its cursor has
+//! moved past the notice (a later read uses that position), or the session id
+//! exists again, so the live row speaks for itself.
+//!
+//! A session that has no summary yet is listed too, with `summaryRevision:
+//! null`: the transcript does not depend on a model, so a plugin may write L3
+//! while the budget-paced summary catches up.
 
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -28,9 +38,6 @@ use super::repo::ConversationSummaryState;
 pub(crate) const CHANGES_MAX_LIMIT: i64 = 100;
 /// Turns one page may carry.
 pub(crate) const TRANSCRIPT_MAX_LIMIT: i64 = 200;
-/// Tombstones one read may deliver, so a long-neglected plugin catches up in
-/// several pages instead of one oversized answer.
-const TOMBSTONES_PER_PAGE: i64 = 100;
 
 /// One archived session, as the change feed lists it.
 #[derive(Debug, Clone, Serialize)]
@@ -72,128 +79,198 @@ fn project_value(conn: &Connection, project_id: Option<i64>) -> Option<Value> {
     serde_json::to_value(project_identity(&name, &path)).ok()
 }
 
-/// One page of the change feed.
-pub(crate) fn changes_page(db: &Database, cursor: Option<&str>, limit: i64) -> Result<Value> {
-    let limit = limit.clamp(1, CHANGES_MAX_LIMIT);
-    let after = cursor.and_then(parse_cursor).unwrap_or((0, String::new()));
-    let conn = db.conn();
+/// One candidate row of the feed: a session, or a removal notice.
+struct FeedRow {
+    session_id: String,
+    changed_at: i64,
+    /// `Some` for a live session, `None` for a tombstone.
+    session: Option<SessionRow>,
+}
 
-    // A session that the plugin has already been told is gone, and that is still
-    // gone, must not reappear at the head of every page: `covered` marks a row
-    // whose removal the reader has consumed.
+struct SessionRow {
+    title: String,
+    created_at: i64,
+    project_id: Option<i64>,
+    last_seq: i64,
+    revision: Option<i64>,
+    removed: bool,
+}
+
+/// `sessions` rows that changed after `after`, newest page first: the cursor
+/// predicate is in SQL so the scan stops at the page instead of walking every
+/// session and filtering in Rust.
+fn session_rows(conn: &Connection, after: &(i64, String), remaining: i64) -> Result<Vec<FeedRow>> {
     let mut statement = conn.prepare_cached(
-        "SELECT s.id,
-                s.title,
-                s.created_at,
-                MAX(s.updated_at, IFNULL(cs.updated_at, s.updated_at)) AS changed_at,
-                s.project_id,
-                s.last_seq,
-                cs.revision,
-                CASE
-                  WHEN s.deleted_at IS NOT NULL THEN 1
-                  WHEN IFNULL(ms.excluded, 0) = 1 THEN 1
-                  WHEN IFNULL(cs.revision, 0) > 0 THEN 0
-                  ELSE 2
-                END AS state
-           FROM sessions s
-           LEFT JOIN conversation_summaries cs ON cs.session_id = s.id
-           LEFT JOIN memory_session_state ms ON ms.session_id = s.id
-          ORDER BY changed_at ASC, s.id ASC",
+        "WITH feed AS (
+             SELECT s.id,
+                    s.title,
+                    s.created_at,
+                    s.project_id,
+                    s.last_seq,
+                    cs.revision,
+                    CASE
+                      WHEN s.deleted_at IS NOT NULL THEN 1
+                      WHEN IFNULL(ms.excluded, 0) = 1 THEN 1
+                      ELSE 0
+                    END AS removed,
+                    MAX(s.updated_at, IFNULL(cs.updated_at, s.updated_at)) AS changed_at
+               FROM sessions s
+               LEFT JOIN conversation_summaries cs ON cs.session_id = s.id
+               LEFT JOIN memory_session_state ms ON ms.session_id = s.id
+         )
+         SELECT id, title, created_at, project_id, last_seq, revision, removed, changed_at
+           FROM feed
+          WHERE changed_at > ?1 OR (changed_at = ?1 AND id > ?2)
+          ORDER BY changed_at ASC, id ASC
+          LIMIT ?3",
     )?;
     let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, Option<i64>>(4)?,
-                row.get::<_, i64>(5)?,
-                row.get::<_, Option<i64>>(6)?,
-                row.get::<_, i64>(7)?,
-            ))
+        .query_map(params![after.0, after.1, remaining], |row| {
+            Ok(FeedRow {
+                session_id: row.get(0)?,
+                changed_at: row.get(7)?,
+                session: Some(SessionRow {
+                    title: row.get(1)?,
+                    created_at: row.get(2)?,
+                    project_id: row.get(3)?,
+                    last_seq: row.get(4)?,
+                    revision: row.get(5)?,
+                    removed: row.get::<_, i64>(6)? == 1,
+                }),
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// `conversation_archive_tombstones` rows after `after`, bounded per page.
+fn tombstone_rows(
+    conn: &Connection,
+    after: &(i64, String),
+    remaining: i64,
+) -> Result<Vec<FeedRow>> {
+    let mut statement = conn.prepare_cached(
+        "SELECT session_id, deleted_at
+           FROM conversation_archive_tombstones
+          WHERE deleted_at > ?1 OR (deleted_at = ?1 AND session_id > ?2)
+          ORDER BY deleted_at ASC, session_id ASC
+          LIMIT ?3",
+    )?;
+    let rows = statement
+        .query_map(params![after.0, after.1, remaining], |row| {
+            Ok(FeedRow {
+                session_id: row.get(0)?,
+                changed_at: row.get(1)?,
+                session: None,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Drop the tombstones the requester has provably handled.
+///
+/// `at` is the cursor position this request starts from: everything at or
+/// before it was on an earlier page, so those notices are done. `answered`
+/// holds the live sessions this request is returning: a session that exists
+/// again contradicts its own notice, and the plugin's read of the live row is
+/// the newest word either way.
+fn clear_handled_tombstones(
+    conn: &Connection,
+    at: &(i64, String),
+    answered: &[&str],
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM conversation_archive_tombstones
+          WHERE deleted_at < ?1 OR (deleted_at = ?1 AND session_id <= ?2)",
+        params![at.0, at.1],
+    )?;
+    for session_id in answered {
+        // Only a session that is still alive clears its own notice; a tombstone
+        // written while a row existed (a purge that has not finished) stays.
+        conn.execute(
+            "DELETE FROM conversation_archive_tombstones
+              WHERE session_id = ?1
+                AND EXISTS (SELECT 1 FROM sessions s WHERE s.id = ?1)",
+            params![session_id],
+        )?;
+    }
+    Ok(())
+}
+
+/// One page of the change feed.
+///
+/// The cursor the caller presents is the last position it handled. This read
+/// therefore (a) clears what that cursor proves was handled, and (b) answers
+/// everything after it, merging sessions and removal notices into one ordered
+/// stream so pages never interleave two sequences.
+pub(crate) fn changes_page(db: &Database, cursor: Option<&str>, limit: i64) -> Result<Value> {
+    let limit = limit.clamp(1, CHANGES_MAX_LIMIT);
+    let conn = db.conn();
+    let parsed = cursor.and_then(parse_cursor);
+    let after = parsed.clone().unwrap_or((0, String::new()));
+
+    // A first request has acknowledged nothing; any other request has handled
+    // everything up to its cursor.
+    let acknowledged = parsed.as_ref();
+
+    let mut candidates = session_rows(conn, &after, limit)?;
+    candidates.extend(tombstone_rows(conn, &after, limit)?);
+    candidates.sort_by(|a, b| {
+        (a.changed_at, a.session_id.as_str()).cmp(&(b.changed_at, b.session_id.as_str()))
+    });
 
     let mut items: Vec<ConversationChange> = Vec::new();
     let mut last_cursor: Option<(i64, String)> = None;
-    for (session_id, title, created_at, changed_at, project_id, last_seq, revision, state) in rows {
-        if (changed_at, session_id.as_str()) <= (after.0, after.1.as_str()) {
-            continue;
-        }
+    for row in candidates {
         if items.len() as i64 >= limit {
             break;
         }
-        // `state == 2` is a session with neither a summary nor a removal: it is
-        // still being summarized, so listing it would hand the plugin a file to
-        // write before there is anything to write. Its summary's `updated_at`
-        // brings it back on the page that follows the run.
-        if state == 2 {
-            continue;
-        }
-        let removed = state == 1;
-        items.push(ConversationChange {
-            session_id: session_id.clone(),
-            title,
-            created_at,
-            updated_at: changed_at,
-            project: if removed {
-                None
-            } else {
-                project_value(conn, project_id)
+        let item = match row.session {
+            None => ConversationChange {
+                session_id: row.session_id.clone(),
+                title: String::new(),
+                created_at: 0,
+                updated_at: row.changed_at,
+                project: None,
+                last_seq: 0,
+                summary_revision: None,
+                removed: true,
             },
-            last_seq,
-            summary_revision: if removed { None } else { revision },
-            removed,
-        });
-        last_cursor = Some((changed_at, session_id));
+            Some(session) => ConversationChange {
+                session_id: row.session_id.clone(),
+                title: session.title,
+                created_at: session.created_at,
+                updated_at: row.changed_at,
+                project: if session.removed {
+                    None
+                } else {
+                    project_value(conn, session.project_id)
+                },
+                last_seq: session.last_seq,
+                // `null` means "no summary yet": the transcript is still the
+                // plugin's to write, and the summary arrives on a later page.
+                // A row that exists but has never been written carries revision
+                // zero, which is the same answer.
+                summary_revision: if session.removed {
+                    None
+                } else {
+                    session.revision.filter(|revision| *revision > 0)
+                },
+                removed: session.removed,
+            },
+        };
+        items.push(item);
+        last_cursor = Some((row.changed_at, row.session_id));
     }
 
-    // Permanently deleted sessions have no row left to page, so the tombstones
-    // are drained here, in their own time order, and then forgotten: the page
-    // that carried them to the plugin is the last time anything needs them.
-    let mut tombstones = conn.prepare_cached(
-        "SELECT session_id, deleted_at FROM conversation_archive_tombstones
-          ORDER BY deleted_at ASC, session_id ASC LIMIT ?1",
-    )?;
-    let pending = tombstones
-        .query_map(params![TOMBSTONES_PER_PAGE], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    let mut delivered: Vec<String> = Vec::new();
-    for (session_id, deleted_at) in pending {
-        if items.len() as i64 >= limit {
-            break;
-        }
-        if (deleted_at, session_id.as_str()) <= (after.0, after.1.as_str()) {
-            continue;
-        }
-        items.push(ConversationChange {
-            session_id: session_id.clone(),
-            title: String::new(),
-            created_at: 0,
-            updated_at: deleted_at,
-            project: None,
-            last_seq: 0,
-            summary_revision: None,
-            removed: true,
-        });
-        delivered.push(session_id.clone());
-        if last_cursor
-            .as_ref()
-            .is_none_or(|(at, id)| (deleted_at, session_id.as_str()) > (*at, id.as_str()))
-        {
-            last_cursor = Some((deleted_at, session_id));
-        }
-    }
-    for session_id in &delivered {
-        // Re-created in the meantime? Then the fresh session is a live row and
-        // the plugin must not be told it is gone; the tombstone goes anyway.
-        conn.execute(
-            "DELETE FROM conversation_archive_tombstones WHERE session_id = ?1",
-            params![session_id],
-        )?;
+    if let Some(acknowledged) = acknowledged {
+        let answered: Vec<&str> = items
+            .iter()
+            .filter(|item| !item.removed)
+            .map(|item| item.session_id.as_str())
+            .collect();
+        clear_handled_tombstones(conn, acknowledged, &answered)?;
     }
 
     let next_cursor = last_cursor.map(|(at, id)| format_cursor(at, &id));

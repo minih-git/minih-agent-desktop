@@ -1633,7 +1633,10 @@ CREATE INDEX idx_conversation_archive_tombstones_deleted
 - **Deletions.** `sessions.deleted_at` and the exclusion flag are read live.
   A permanent purge writes `conversation_archive_tombstones` before the session
   row disappears, because afterwards no table could name the conversation whose
-  file a plugin wrote. The change feed delivers that record once and deletes it.
+  file a plugin wrote. The change feed delivers that record at least once: a read
+  never deletes it, and it is cleared only by a request whose cursor has moved
+  past it (or when the session id exists again), so a plugin that exits between
+  receiving the notice and deleting the file still gets the notice back.
 
 #### 4.16.1 `summary_json`
 

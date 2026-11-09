@@ -95,6 +95,20 @@ table) appear in the feed as `removed: true` items so the plugin can delete the
 files it wrote. The cursor is opaque to the plugin and stable across restarts
 because it is derived from stored timestamps, not from a process counter.
 
+Two properties make the feed safe for a file-based consumer:
+
+- **A session without a summary is still listed.** Its `summaryRevision` is
+  `null` and its `lastSeq` is current, so a plugin can write L3 immediately and
+  fill in the summary when a later page reports a revision. Summaries are paced
+  by the daily budget; the transcript is not, and a spent budget or a failing
+  model must not make a conversation unarchivable.
+- **A removal is delivered at least once.** A read never deletes the deletion
+  record: a plugin that receives the page and then crashes still sees the notice
+  on its next request with the same cursor. The record is cleared only by a
+  request whose cursor has moved past it, or when the session id exists again.
+  Deleting a conversation must not leave its content behind in a folder that
+  syncs to every computer.
+
 ### 5. Project identity
 
 Each feed item carries `project: { name, path, gitRemote? }`. `gitRemote` is

@@ -600,34 +600,152 @@ fn the_feed_pages_forward_and_reports_removals() {
 }
 
 #[test]
-fn a_purged_session_is_delivered_once_from_the_tombstone() {
+fn a_removal_is_delivered_again_until_the_cursor_moves_past_it() {
     let dir = tempfile::tempdir().unwrap();
     let db = open_db(&dir);
+    // One ordinary session first, so the plugin's cursor predates the deletion.
+    seed_session(&db, "s0", "kept", 1_000);
+    let first_page = crate::conversation_archive::feed::changes_page(&db, None, 10).unwrap();
+    let before = first_page["nextCursor"].as_str().unwrap().to_string();
     seed_session(&db, "s1", "purged", 1_000);
     crate::conversation_archive::record_deletion(&db, "s1").unwrap();
     db.conn()
         .execute("DELETE FROM sessions WHERE id = 's1'", [])
         .unwrap();
 
-    let page = crate::conversation_archive::feed::changes_page(&db, None, 10).unwrap();
+    // First read after the deletion: the notice is on the page, and reading
+    // alone deletes nothing.
+    let page = crate::conversation_archive::feed::changes_page(&db, Some(&before), 10).unwrap();
     let items = page["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["sessionId"], "s1");
     assert_eq!(items[0]["removed"], true);
     let cursor = page["nextCursor"].as_str().unwrap().to_string();
+    let tombstones = |db: &Database| -> i64 {
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_archive_tombstones",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(tombstones(&db), 1, "a read must not acknowledge the notice");
 
-    // Delivered once: the tombstone is drained by the page that carried it.
-    let again = crate::conversation_archive::feed::changes_page(&db, Some(&cursor), 10).unwrap();
-    assert_eq!(again["items"].as_array().unwrap().len(), 0);
+    // The plugin crashes before deleting the file. Its cursor is still the one
+    // from before the deletion (it never persisted this page), so the notice
+    // comes back instead of being lost.
+    let again = crate::conversation_archive::feed::changes_page(&db, Some(&before), 10).unwrap();
+    assert_eq!(again["items"].as_array().unwrap().len(), 1);
+    assert_eq!(again["items"][0]["sessionId"], "s1");
+    assert_eq!(tombstones(&db), 1);
+    // Even a plugin that did persist the page keeps the notice until its next
+    // request returns more than this row: the cursor alone acknowledges it.
+    let _ = &cursor;
+
+    // Only a cursor that has moved past the notice clears it, and then the
+    // notice is not repeated.
+    let later = "9999999999999:zzz";
+    let cleared = crate::conversation_archive::feed::changes_page(&db, Some(later), 10).unwrap();
+    assert_eq!(cleared["items"].as_array().unwrap().len(), 0);
+    assert_eq!(tombstones(&db), 0);
 }
 
 #[test]
-fn a_session_without_a_summary_is_not_listed_until_it_has_one() {
+fn a_tombstone_exactly_at_the_cursor_is_not_lost() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_db(&dir);
+    let deleted_at = 5_000;
+    db.conn()
+        .execute(
+            "INSERT INTO conversation_archive_tombstones (session_id, deleted_at) VALUES ('aaa', ?1)",
+            rusqlite::params![deleted_at],
+        )
+        .unwrap();
+    // A session changed in the same millisecond sorts after the notice by id.
+    seed_session(&db, "bbb", "live", deleted_at);
+
+    // The cursor sits exactly on the tombstone's position but was issued before
+    // it (a session with a smaller id): the notice is still delivered.
+    let page = crate::conversation_archive::feed::changes_page(&db, Some("5000:000"), 10).unwrap();
+    let items = page["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["sessionId"], "aaa");
+    assert_eq!(items[0]["removed"], true);
+    assert_eq!(items[1]["sessionId"], "bbb");
+    assert_eq!(items[1]["removed"], false);
+
+    // A cursor naming exactly that tombstone has consumed it, and the notice is
+    // not repeated for that reader.
+    let same = crate::conversation_archive::feed::changes_page(&db, Some("5000:aaa"), 10).unwrap();
+    let ids: Vec<&str> = same["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["sessionId"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, vec!["bbb"]);
+}
+
+#[test]
+fn a_session_without_a_summary_is_listed_with_a_null_revision() {
     let dir = tempfile::tempdir().unwrap();
     let db = open_db(&dir);
     seed_session(&db, "s1", "pending", 1_000);
+    // No summary row at all, and one that exists but has never been written.
+    seed_session(&db, "s2", "queued", 2_000);
+    db.claim_conversation_summary("s2", "owner", 60_000)
+        .unwrap();
+    db.release_conversation_summary("s2", "owner").unwrap();
+
     let page = crate::conversation_archive::feed::changes_page(&db, None, 10).unwrap();
-    assert_eq!(page["items"].as_array().unwrap().len(), 0);
+    let items = page["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "{page}");
+    assert_eq!(items[0]["sessionId"], "s1");
+    // The transcript does not depend on a model: L3 can be written now and the
+    // summary follows on the page its run produces.
+    assert!(items[0]["summaryRevision"].is_null());
+    assert_eq!(items[0]["removed"], false);
+    assert!(items[1]["summaryRevision"].is_null());
+
+    // Once the summary lands, the same session comes back with its revision.
+    let summary = crate::conversation_archive::repo::ConversationSummary {
+        goal: "done".into(),
+        ..Default::default()
+    };
+    db.claim_conversation_summary("s1", "owner", 60_000)
+        .unwrap();
+    db.complete_conversation_summary("s1", "owner", 3, "p/m", &summary)
+        .unwrap();
+    // s1 now sorts after s2 (its summary moved it forward), so the page that
+    // ends at s2 is the cursor the next request starts from.
+    let first = crate::conversation_archive::feed::changes_page(&db, None, 1).unwrap();
+    let cursor = first["nextCursor"].as_str().unwrap().to_string();
+    let after = crate::conversation_archive::feed::changes_page(&db, Some(&cursor), 10).unwrap();
+    let item = &after["items"][0];
+    assert_eq!(item["sessionId"], "s1");
+    assert_eq!(item["summaryRevision"], 1);
+}
+
+#[test]
+fn the_cursor_predicate_stops_the_scan_at_the_page() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_db(&dir);
+    for index in 0..10 {
+        seed_session(&db, &format!("s{index:02}"), "row", 1_000 + index as i64);
+    }
+    let first = crate::conversation_archive::feed::changes_page(&db, None, 3).unwrap();
+    assert_eq!(first["items"].as_array().unwrap().len(), 3);
+    assert_eq!(first["items"][2]["sessionId"], "s02");
+    let cursor = first["nextCursor"].as_str().unwrap().to_string();
+    let second = crate::conversation_archive::feed::changes_page(&db, Some(&cursor), 3).unwrap();
+    let ids: Vec<&str> = second["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["sessionId"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, vec!["s03", "s04", "s05"]);
 }
 
 fn ui(role: &str, content: &str) -> crate::sessions::UiMessage {

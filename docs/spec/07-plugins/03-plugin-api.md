@@ -803,10 +803,24 @@ Semantics:
   `PERMISSION_DENIED` — a named session must not read "off" as "never
   archived". Absent means off. A failed settings read reads as off.
 - **The feed pages forward.** `nextCursor` is opaque and derived from stored
-  timestamps, so a plugin that restarts keeps its place. Sessions with neither a
-  summary nor a removal are not listed yet; their summary's `updated_at` brings
-  them back on a later page. A purge is delivered once from a content-free
-  deletion record and then forgotten.
+  timestamps, so a plugin that restarts keeps its place. Sessions and removal
+  notices share one ordered stream: the cursor is the position the caller has
+  handled, and the answer contains everything after it, merged by
+  `(updatedAt, sessionId)`.
+- **No summary is not "nothing to write".** A session that has never been
+  summarized is listed with `summaryRevision: null` and its current `lastSeq`,
+  because the transcript does not depend on a model: write L3 now, and rewrite
+  the summary when a later page reports a revision. This is what keeps L3
+  available while the daily token budget is spent or a model call is failing.
+- **A removal is delivered at least once.** Reading never deletes the
+  content-free deletion record. A plugin that receives a page and then exits
+  before deleting its files finds the same `removed: true` notice on its next
+  request with the same cursor, so content the user deleted cannot live on in a
+  synced folder. The record is cleared only when a request proves it was
+  handled: its cursor has moved past the notice (a later read starts from that
+  position), or the session id exists again and the live row speaks for itself.
+  A record whose `deleted_at` equals the cursor position is therefore still
+  delivered once more when the ids order after it, never skipped.
 - **A session's identity is stable across computers.** `project.gitRemote` is
   `host/owner/repo` normalized from the `origin` URL, with any credential in the
   URL removed and a worktree's `.git` file followed to the main repository.
