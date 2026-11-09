@@ -389,6 +389,48 @@ recall tools.
 - `memory.session.get({ sessionId })` / `memory.session.setExcluded({ sessionId,
   excluded })` — per-session extraction state, including "don't learn from this
   conversation".
+- `memory.curation.activate({ scope | path | sessionId, ids, reason? })` — turn
+  suggestions of that scope into active notes (ADR learned-memory-consolidation
+  §6.1). Only `origin = extracted` / `status = suggested` rows are eligible and at
+  most one pass cap moves per call, so a backlog drains over several calls.
+  Answers `{ report: { batchId, activated, skipped, cap, capped } }`. Every
+  activation records a revision row, which is what makes the manager's undo work.
+- `memory.curation.dirtyScopes()` — the scopes with something to curate, oldest
+  change first: `{ scopes: [{ scope, key }] }`. The pass takes one at a time.
+- `memory.curation.claim({ scope | path, owner, day, leaseMs? })` — take one
+  scope's lease. Answers `{ claimed: true }` or `{ claimed: false, reason }` with
+  `already-ran-today` (this scope spent its day) or `busy` (another pass holds the
+  lease). The day is stamped at claim time.
+- `memory.curation.input({ scope | path })` — what one pass may read:
+  `{ input: { scopeKind, scopeKey, changed, neighbours, others, bytes, cap } }` or
+  `{ input: null, skipped }` with `nothing-changed`. The host assembles it from that
+  scope's own notes only — the changed ones, up to five same-kind full-text
+  neighbours of each, then the rest newest first, inside 24 KiB. Each note carries
+  `id`, `kind`, `origin`, `evidence`, dates, content, rationale, its `revision`,
+  and `rewordable` / `userEdited`. No transcript, tool output, or workspace content
+  is ever part of it.
+- `memory.curation.apply({ scope | path, items })` — apply one pass's items, each
+  `{ op, targetIds, targetRevisions, content?, reason?, kind? }`. The host
+  validates and caps them in one transaction (§ ADR learned-memory-consolidation
+  4): a per-pass cap of `min(8, max(1, 20 % of the scope's active notes))`, the
+  user's quiet window, the same write rules for a merge result, a per-target
+  revision check that voids the whole item (`stale`), and the rejection table.
+  Answers `{ report: { batchId, applied, cap, outcomes, capped } }`, where each
+  outcome's `result` is `applied`, `stale`, `capped`, `rejected`, `user-edited`,
+  `explicit-reword`, `already-undone`, `tombstoned`, or one of the
+  `MEMORY_*` refusal codes.
+- `memory.curation.complete({ scope | path, owner, day })` /
+  `memory.curation.fail({ scope | path, owner, error })` — release the lease after a
+  pass, or record its failure (which increments `attempts` and keeps the dirty
+  flag). The failed text is a code, never note content.
+- `memory.curation.list({ scope | path, sinceDays? })` — the scope's recent
+  automatic changes, newest batch first: `{ records, changes, days }`. A batch
+  whose rows were all undone is left out.
+- `memory.curation.undo({ batchId })` — undo one batch. Every row is first
+  compared against its `after` snapshot; a note that moved since (the user's edit,
+  a sync apply) answers 1008 / `MEMORY_UNDO_CONFLICT` with nothing written, and an
+  already-undone batch answers 1008 / `MEMORY_UNDO_ALREADY_DONE`. Success is
+  `{ undone }`.
 - `memory.extraction.claim({ sessionId, owner, leaseMs? })` — take the per-session
   lease. Returns `{ claimed: true, state }`, or `{ claimed: false, reason }` where
   `reason` is `busy` (another run holds the lease) or `excluded` (the user set

@@ -28,6 +28,7 @@ const english = flattenCatalog(catalogs.en);
 const learnedMemoryTitle = english["settings.learnedMemory"];
 const extractionTitle = english["settings.learnedMemoryExtraction"];
 const needsModelHint = english["settings.learnedMemoryExtractionNeedsModel"];
+const curationTitle = english["settings.learnedMemoryCurate"];
 
 /** Inline `?url` asset imports resolve to file loaders, as in the app build. */
 const urlAssets = {
@@ -58,6 +59,8 @@ const en = flattenCatalog(catalogs.en);
 const cardTitle = en["settings.learnedMemory"];
 const extractionTitle = en["settings.learnedMemoryExtraction"];
 const needsModel = en["settings.learnedMemoryExtractionNeedsModel"];
+const curationTitle = en["settings.learnedMemoryCurate"];
+const curationDesc = en["settings.learnedMemoryCurateDesc"];
 
 const rendererErrors = [];
 const originalConsoleError = console.error;
@@ -197,7 +200,20 @@ window.learnedMemoryPlacementProbe = async () => {
   const aiTitles = cardTitles();
   const aiHasCard = aiTitles.includes(cardTitle);
 
-  // (3) A chosen model with the switch off must not claim a model is missing.
+  // (3) Automatic curation is a row of this card: off by default, explained in
+  // full, and disabled without a model (ADR learned-memory-consolidation §1).
+  const curationRow = [...document.querySelectorAll(".settings-row")]
+    .find((node) => node.querySelector(".settings-row-title")?.textContent.trim().startsWith(curationTitle));
+  const curationOffByDefault = curationRow?.querySelector('[role="switch"]')?.getAttribute("aria-checked");
+  // A row's explanation is carried by its help icon (name + tooltip), not by the
+  // row's text, so the check reads the icon's accessible name.
+  const curationDescriptionShown =
+    (curationRow?.querySelector(".ui-help-icon")?.getAttribute("aria-label") ?? "").includes(
+      curationDesc.slice(0, 30),
+    );
+  const curationSwitchDisabledWithModel = curationRow?.querySelector('[role="switch"]').disabled;
+
+  // (3b) A chosen model with the switch off must not claim a model is missing.
   const modelChosenHint = rowDetail(extractionTitle);
   const modelChosenSwitchDisabled = rowSwitch(extractionTitle).disabled;
 
@@ -215,6 +231,13 @@ window.learnedMemoryPlacementProbe = async () => {
   const noModelHint = rowDetail(extractionTitle);
   const noModelSwitchDisabled = rowSwitch(extractionTitle).disabled;
 
+  const curationRowAfter = [...document.querySelectorAll(".settings-row")]
+    .find((node) => node.querySelector(".settings-row-title")?.textContent.trim().startsWith(curationTitle));
+  const curationNoModelHint = curationRowAfter?.querySelector(".settings-row-detail")?.textContent.trim() ?? "";
+  const curationNoModelSwitchDisabled = curationRowAfter
+    ? curationRowAfter.querySelector('[role="switch"]').disabled
+    : null;
+
   return {
     generalTitles,
     generalHasCard,
@@ -224,6 +247,11 @@ window.learnedMemoryPlacementProbe = async () => {
     aiTitles,
     modelChosenHint,
     modelChosenSwitchDisabled,
+    curationOffByDefault,
+    curationDescriptionShown,
+    curationSwitchDisabledWithModel,
+    curationNoModelHint,
+    curationNoModelSwitchDisabled,
     noModelHint,
     noModelSwitchDisabled,
     calls,
@@ -367,6 +395,20 @@ app.whenReady().then(async () => {
     assert.equal(result.modelChosenSwitchDisabled, false);
     assert.equal(result.noModelHint, needsModelHint);
     assert.equal(result.noModelSwitchDisabled, true);
+    // Automatic curation: present, explained, off, and gated on the model.
+    assert.equal(
+      result.curationOffByDefault,
+      "false",
+      "curation must be off unless the user turned it on",
+    );
+    assert.equal(
+      result.curationDescriptionShown,
+      true,
+      "the curation row must say what turning it on does",
+    );
+    assert.equal(result.curationSwitchDisabledWithModel, false);
+    assert.equal(result.curationNoModelHint, needsModelHint);
+    assert.equal(result.curationNoModelSwitchDisabled, true);
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
@@ -374,7 +416,14 @@ app.whenReady().then(async () => {
 
 test("settings search finds learned memory on the AI instructions page", () => {
   const lookup = (key) => english[key] ?? key;
-  for (const query of ["learned memory", "learn automatically", "learning model"]) {
+  for (const query of [
+    "learned memory",
+    "learn automatically",
+    "learning model",
+    "curate",
+    "recently curated",
+  ]) {
+
     const hits = searchSettings(query, lookup);
     assert.ok(hits.length > 0, `no settings hit for "${query}"`);
     assert.ok(

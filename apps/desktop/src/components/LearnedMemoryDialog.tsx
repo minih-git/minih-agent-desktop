@@ -22,6 +22,7 @@ import {
   sourceSessionOf,
   todayExtractionSpend,
 } from "../lib/learned-memory-manager";
+import { MemoryCurationList } from "./LearnedMemoryCuration";
 import { SuggestionBadge, SuggestionInbox } from "./LearnedMemorySuggestions";
 import { Button, OverlayBackdrop, SegmentedControl, Select, Textarea, TooltipButton } from "./ui";
 import {
@@ -52,6 +53,7 @@ export function LearnedMemoryDialog({
   onError,
   onOpenPinnedMemory,
   onOpenSourceSession,
+  curationEnabled = false,
 }: {
   /**
    * The scopes this dialog manages. An employee's lessons are not one of them:
@@ -65,6 +67,12 @@ export function LearnedMemoryDialog({
   onError: (error: unknown) => void;
   onOpenPinnedMemory?: () => void;
   onOpenSourceSession?: (sessionId: string) => void;
+  /**
+   * The automatic-curation switch (ADR learned-memory-consolidation §7). On,
+   * the inbox has nothing waiting for a decision, so it is not offered; the
+   * manager shows "recently curated" instead.
+   */
+  curationEnabled?: boolean;
 }) {
   useBlockingOverlay();
   const { t } = useTranslation();
@@ -271,15 +279,19 @@ export function LearnedMemoryDialog({
           className="learned-memory-tabs"
           options={[
             { value: "entries", label: t("memory.tabEntries") },
-            {
-              value: "suggestions",
-              label: (
-                <span className="learned-memory-tab-label">
-                  {t("memory.tabSuggestions")}
-                  <SuggestionBadge count={pendingSuggestions} />
-                </span>
-              ),
-            },
+            ...(curationEnabled
+              ? []
+              : [
+                  {
+                    value: "suggestions",
+                    label: (
+                      <span className="learned-memory-tab-label">
+                        {t("memory.tabSuggestions")}
+                        <SuggestionBadge count={pendingSuggestions} />
+                      </span>
+                    ),
+                  },
+                ]),
           ]}
         />
         {tab === "suggestions" ? (
@@ -331,6 +343,14 @@ export function LearnedMemoryDialog({
             </Button>
           ) : null}
         </div>
+        <MemoryCurationList
+          scope={scope}
+          {...(scope === "project" && projectPath ? { projectPath } : {})}
+          busy={busy}
+          onBusyChange={setBusy}
+          onError={onError}
+          onChanged={() => void load()}
+        />
         {conflict ? (
           <p className="learned-memory-conflict" role="alert">
             {t("memory.editConflict")}

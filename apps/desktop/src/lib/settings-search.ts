@@ -202,6 +202,8 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.learnedMemoryUsageDesc",
       "settings.learnedMemoryManager",
       "settings.learnedMemoryManagerDesc",
+      "settings.learnedMemoryCurate",
+      "settings.learnedMemoryCurateDesc",
       "settings.learnedMemoryOpen",
     ],
   },

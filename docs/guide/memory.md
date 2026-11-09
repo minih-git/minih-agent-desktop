@@ -91,6 +91,35 @@ and **Used today** shows where you stand; when the ceiling is reached, learning
 pauses until tomorrow and the line says so. Learning settings are per device:
 another machine picks its own model and its own budget.
 
+## Let memory tidy itself (optional)
+
+**Settings → AI → Curate learned memory** changes what learning produces. With it
+on, a note it learns is kept right away instead of waiting for you in
+**Suggestions**, and a background pass keeps the notes in order: it merges notes
+that say the same thing, archives a note that a newer one contradicts, and tidies
+the wording of notes it wrote itself. Nothing runs while a conversation is
+working; a pass waits until the app has been idle for ten minutes, handles one
+project (or your own notes) at a time, and each one gets at most one pass a day.
+
+It never forgets anything. An automatic removal is an archive, and the note it
+points at takes its place. A note you wrote, or asked the agent to remember, is
+never reworded — at most it is archived beside a newer note, which you can put
+back.
+
+**Recently curated**, at the top of the memory manager, lists what happened in
+the last seven days: each change with the note before and after and the reason.
+**Undo** reverses a whole batch. If a note changed after the pass — you edited it,
+or another computer synced a change — nothing is undone and the manager says so,
+because undoing would overwrite what you or the other computer wrote.
+
+Every pass spends the same **Daily token budget** as learning. Turning the switch
+on needs a learning model first. Turn it on for one computer only: two computers
+that tidy the same notes each make their own merged note, and the next pass has to
+merge them back.
+
+With the switch off, nothing described in this section happens: what comes back
+from learning stays a suggestion in the inbox, exactly as before.
+
 ## Sync
 
 Learned memory travels with **Settings → Cloud sync** when the opt-in **Memory**

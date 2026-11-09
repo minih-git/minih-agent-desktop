@@ -745,6 +745,7 @@ export function ProjectsPage() {
       {learnedMemoryFor ? (
         <LearnedMemoryDialog
           scope="project"
+          curationEnabled={useAppStore.getState().settings?.learnedMemory?.curate === true}
           projectPath={learnedMemoryFor.path}
           projectName={learnedMemoryFor.name}
           onClose={() => setLearnedMemoryFor(null)}

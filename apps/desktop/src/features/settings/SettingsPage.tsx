@@ -586,6 +586,7 @@ export function SettingsPage() {
         {learnedMemoryOpen ? (
           <LearnedMemoryDialog
             scope="user"
+            curationEnabled={settings?.learnedMemory?.curate === true}
             onClose={() => setLearnedMemoryOpen(false)}
             onError={(error) => console.warn("learned memory request failed", error)}
           />

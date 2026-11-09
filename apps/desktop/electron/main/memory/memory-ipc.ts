@@ -202,4 +202,33 @@ export function registerMemoryIpc({ registrar, getHost }: MemoryIpcDependencies)
   // The counters the manager shows. They are this device's own usage, so the
   // read takes no scope: the host returns the numbers it recorded here.
   registrar.handle(IPC.invoke.memoryStats, async () => forward("memory.stats", {}));
+
+  // What the automatic pass did on this device, newest batch first. The host
+  // decides the window and the order; this channel only names the scope.
+  registrar.handle(
+    IPC.invoke.memoryCurationList,
+    async (request: Record<string, unknown> = {}) => {
+      const scope = request?.scope;
+      if (scope !== "project" && scope !== "user") throw new Error("invalid memory scope");
+      const path = optionalText(request?.path, "path");
+      const sessionId = optionalText(request?.sessionId, "sessionId");
+      if (scope === "project" && !path && !sessionId) {
+        throw new Error("a project scope needs a path or a session");
+      }
+      const sinceDays = optionalCount(request?.sinceDays, "sinceDays");
+      return forward("memory.curation.list", {
+        scope,
+        ...(path ? { path } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        ...(sinceDays === undefined ? {} : { sinceDays }),
+      });
+    },
+  );
+
+  // Undo is the user's own action on a recorded batch. The host re-checks every
+  // note against the snapshot it wrote, and a note that moved since makes the
+  // whole undo a conflict with nothing changed.
+  registrar.handle(IPC.invoke.memoryCurationUndo, async (request: Record<string, unknown> = {}) =>
+    forward("memory.curation.undo", { batchId: requiredText(request?.batchId, "batchId") }),
+  );
 }

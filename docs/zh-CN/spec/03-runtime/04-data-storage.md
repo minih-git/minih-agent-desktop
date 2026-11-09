@@ -1369,7 +1369,56 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   也不在上面任何表里，因此既不会被配置同步采集，也不会随项目组生命周期重键；
   缺失或无法读取的行按 0 处理。
 
-### 4.16 conversation_summaries + conversation_archive_tombstones —— 会话归档（架构 v29，ADR conversation-archive）
+### 4.16 memory_revisions + memory_curation_state + memory_curation_rejections —— 自动整理（架构 v41，ADR learned-memory-consolidation）
+
+```sql
+CREATE TABLE memory_revisions (
+  id          INTEGER PRIMARY KEY,
+  batch_id    TEXT NOT NULL,               -- 一次整理就是一个批次
+  entry_id    TEXT NOT NULL,
+  op          TEXT NOT NULL CHECK (op IN ('activate','merge_new','merge_archive','replace_archive','reword')),
+  actor       TEXT NOT NULL CHECK (actor = 'auto'),
+  before_json TEXT,                        -- 激活没有前值，为 NULL
+  after_json  TEXT NOT NULL,               -- content/status/supersededBy/revision
+  reason      TEXT,                        -- 一行，<= 280 B
+  created_at  INTEGER NOT NULL,
+  undone_at   INTEGER
+);
+CREATE INDEX idx_memory_revisions_batch ON memory_revisions(batch_id);
+CREATE INDEX idx_memory_revisions_created ON memory_revisions(created_at DESC);
+
+CREATE TABLE memory_curation_state (
+  scope_kind   TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key    TEXT NOT NULL DEFAULT '',
+  dirty_since  INTEGER,                    -- NULL 表示「没有要整理的」
+  last_pass_day TEXT,                      -- 该作用域用掉的那个本地日
+  lease_owner  TEXT,
+  lease_until  INTEGER,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT,
+  PRIMARY KEY (scope_kind, scope_key)
+);
+CREATE INDEX idx_memory_curation_state_dirty
+  ON memory_curation_state(dirty_since) WHERE dirty_since IS NOT NULL;
+
+CREATE TABLE memory_curation_rejections (
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key          TEXT NOT NULL DEFAULT '',
+  target_fingerprint TEXT NOT NULL,        -- 整个目标集合的身份
+  created_at         INTEGER NOT NULL,
+  PRIMARY KEY (scope_kind, scope_key, target_fingerprint)
+);
+```
+
+- **为什么与笔记分开。** `memory_entries` 不新增任何列，因此 `v40 -> v41` 迁移不改写任何行：迁移后的文件多三张空表，每条笔记、每条屏蔽记录与每个会话状态行都原样保留。三张表都是本设备数据，配置同步不会采集。
+- **作用域。** 两张按作用域记账的表只接受 `project` 与 `user`。员工经验是 `bot` 作用域（架构 v39）的学习记忆，由员工层维护：本功能既不排队也不改动它们，宿主在每个入口直接拒绝该作用域，脏标记则跳过它，员工层的写入不受影响。
+- **事务。** 每次自动改动都在同一个事务里写入自己的 revision 行，记录与改动不可能分叉。`before_json` 是撤销要还原的内容，`after_json` 是撤销前先比对的内容。
+- **脏标记。** 新建、编辑、状态变更、删除、采纳建议、激活与配置同步落地，都在改动自身的事务里写入 `dirty_since`（保留最早的时间）。
+- **每日一次。** `claim` 在认领时就写入 `last_pass_day`，因此一个作用域每个本地日只跑一次，无论成功、无事可做还是失败。
+- **拒绝集合。** 撤销一次合并或替换会把该目标集合的身份记在这里，下一次提出同一集合时被拒绝，而不是重做用户已经撤销的整理。
+- **生命周期。** 删除项目或项目组会连同该作用域的学习记忆一起删掉这里的状态与拒绝集合。revision 行比笔记活得更久，并在撤销 90 天后清理。
+
+### 4.17 conversation_summaries + conversation_archive_tombstones —— 会话归档（架构 v29，ADR conversation-archive）
 
 归档不保存对话的第二份副本。离开设备的内容是按需从生效中的转录投影出来的，
 因此只存两样东西：插件发布的摘要，以及「这段对话已经消失」的记录。
@@ -1379,7 +1428,7 @@ CREATE TABLE conversation_summaries (
   session_id   TEXT PRIMARY KEY,       -- 无外键：彻底删除后由 tombstone 记录接替
   covered_seq  INTEGER NOT NULL DEFAULT 0,  -- 下一条要读取的消息序号
   revision     INTEGER NOT NULL DEFAULT 0,  -- 0 表示「从未生成摘要」
-  summary_json TEXT,                  -- 固定字段摘要，见 §4.16.1
+  summary_json TEXT,                  -- 固定字段摘要，见 §4.17.1
   model_key    TEXT,                  -- 生成它的 providerId/modelId
   lease_owner  TEXT,                  -- 同一时间只有一个摘要任务
   lease_until  INTEGER,
@@ -1417,14 +1466,14 @@ CREATE INDEX idx_conversation_archive_tombstones_deleted
   它的请求（或该 sessionId 又存在了）才会清理，所以插件在「收到通知」和「删除文件」
   之间退出后，下次仍会收到这条通知。
 
-#### 4.16.1 `summary_json`
+#### 4.17.1 `summary_json`
 
 `{"goal": string, "decisions": [string], "outcomes": [string], "files":
 [string], "openItems": [string], "tags": [string]}` —— 写入时即做边界限制
 （每个列表 40 项、每项 400 字符），并由 Host 复核，因此即使模型多给了字段或给了超长
 内容，落库的仍是所有插件都能依赖的同一形状。
 
-### 4.17 `ModelBinding.kind` —— 模型是做什么用的（ADR plugin-embeddings）
+### 4.18 `ModelBinding.kind` —— 模型是做什么用的（ADR plugin-embeddings）
 
 provider 的 `models[]` 每一行在 `config_json` 里多一个可选成员：
 

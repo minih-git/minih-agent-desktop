@@ -15,6 +15,7 @@ import { Button, SettingsToggle } from "../ui";
 import { SettingsCard, SettingsRow } from "../../features/settings/primitives";
 import {
   ArchiveToggleRow,
+  CurationToggleRow,
   ExtractionBudgetRow,
   ExtractionModelRow,
   ExtractionStatusRow,
@@ -55,6 +56,7 @@ export function LearnedMemoryCard({
       />
       <ExtractionBudgetRow settings={settings} saveSettings={saveSettings} />
       <ExtractionStatusRow settings={settings} />
+      <CurationToggleRow settings={settings} saveSettings={saveSettings} />
       <ArchiveToggleRow settings={settings} saveSettings={saveSettings} />
       <SettingsRow
         title={t("settings.learnedMemoryManager")}

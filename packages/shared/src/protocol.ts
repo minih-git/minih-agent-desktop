@@ -345,6 +345,10 @@ export const IPC = {
     // The device-local counters the memory manager shows. They never travel
     // with configuration sync, so this read is about this machine only.
     memoryStats: "minih-agent-desktop/memory/stats",
+    // Automatic curation (ADR learned-memory-consolidation): the batches a pass
+    // applied, and the user's undo of one of them.
+    memoryCurationList: "minih-agent-desktop/memory/curation/list",
+    memoryCurationUndo: "minih-agent-desktop/memory/curation/undo",
     toolResolvePermission: "minih-agent-desktop/tool/resolvePermission",
     todosGet: "minih-agent-desktop/todos/get",
     askToolResolve: "minih-agent-desktop/agent/askTool/resolve",

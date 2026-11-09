@@ -106,6 +106,49 @@ export function ArchiveToggleRow({
   );
 }
 
+/**
+ * The automatic-curation switch (ADR learned-memory-consolidation §1).
+ *
+ * It is the one row here that changes what the app does to notes without asking
+ * again, so its description states that plainly and points at "recently
+ * curated" for the undo. It needs the learning model, because a pass spends the
+ * same quota, and it is device-local like the rest of the record.
+ */
+export function CurationToggleRow({
+  settings,
+  saveSettings,
+}: {
+  settings: AppSettings;
+  saveSettings: (patch: Partial<AppSettings>) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const hasModel = Boolean(settings.learnedMemory?.model?.trim());
+  const enabled = settings.learnedMemory?.curate === true;
+  return (
+    <SettingsRow
+      title={t("settings.learnedMemoryCurate")}
+      description={t("settings.learnedMemoryCurateDesc")}
+      detail={
+        hasModel ? undefined : <span>{t("settings.learnedMemoryExtractionNeedsModel")}</span>
+      }
+    >
+      <SettingsToggle
+        checked={enabled}
+        label={t("settings.learnedMemoryCurate")}
+        disabled={!hasModel}
+        onChange={() =>
+          void saveSettings({
+            learnedMemory: {
+              ...settings.learnedMemory,
+              curate: !enabled,
+            },
+          })
+        }
+      />
+    </SettingsRow>
+  );
+}
+
 export function ExtractionModelRow({
   settings,
   providers,

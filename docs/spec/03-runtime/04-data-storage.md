@@ -1793,6 +1793,71 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
 -- plus memory_entries_fts over content and rationale, built like messages_fts (§4.8)
 ```
 
+### 4.16 memory_revisions + memory_curation_state + memory_curation_rejections — automatic curation (schema v41, ADR learned-memory-consolidation)
+
+```sql
+CREATE TABLE memory_revisions (
+  id          INTEGER PRIMARY KEY,
+  batch_id    TEXT NOT NULL,               -- one pass is one batch
+  entry_id    TEXT NOT NULL,
+  op          TEXT NOT NULL CHECK (op IN ('activate','merge_new','merge_archive','replace_archive','reword')),
+  actor       TEXT NOT NULL CHECK (actor = 'auto'),
+  before_json TEXT,                        -- NULL for an activation: nothing preceded it
+  after_json  TEXT NOT NULL,               -- content/status/supersededBy/revision
+  reason      TEXT,                        -- one line, <= 280 B
+  created_at  INTEGER NOT NULL,
+  undone_at   INTEGER
+);
+CREATE INDEX idx_memory_revisions_batch ON memory_revisions(batch_id);
+CREATE INDEX idx_memory_revisions_created ON memory_revisions(created_at DESC);
+
+CREATE TABLE memory_curation_state (
+  scope_kind   TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key    TEXT NOT NULL DEFAULT '',
+  dirty_since  INTEGER,                    -- NULL means "nothing to curate"
+  last_pass_day TEXT,                      -- the local day this scope spent
+  lease_owner  TEXT,
+  lease_until  INTEGER,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT,
+  PRIMARY KEY (scope_kind, scope_key)
+);
+CREATE INDEX idx_memory_curation_state_dirty
+  ON memory_curation_state(dirty_since) WHERE dirty_since IS NOT NULL;
+
+CREATE TABLE memory_curation_rejections (
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key          TEXT NOT NULL DEFAULT '',
+  target_fingerprint TEXT NOT NULL,        -- identity of the whole target set
+  created_at         INTEGER NOT NULL,
+  PRIMARY KEY (scope_kind, scope_key, target_fingerprint)
+);
+```
+
+- **Why it is separate from the notes.** `memory_entries` gains no column, so the
+  v40 -> v41 migration rewrites no row: a migrated file keeps every note, every
+  tombstone, and every session-state row and gains three empty tables. All three
+  are device-local; configuration sync never captures them.
+- **Scope.** The two per-scope tables accept `project` and `user` only. An
+  employee's lessons are `bot`-scope learned memory (schema v39) owned by the
+  employee layer: the host refuses that scope at every entry point, and the dirty
+  marker skips it, so an employee lesson is never queued and never changed here.
+- **Transactions.** Every automatic change writes its revision rows in the same
+  transaction as the change, so a recorded change and the change itself cannot
+  diverge. `before_json` is what an undo restores; `after_json` is what an undo
+  compares the note against first.
+- **Dirty marking.** Create, update, status change, delete, accepting a
+  suggestion, an activation, and a configuration-sync apply all set `dirty_since`
+  (keeping the first timestamp) in the transaction of the change itself.
+- **Once a day.** `claim` stamps `last_pass_day` at claim time, so a scope gets one
+  pass per local day whether it succeeded, found nothing, or failed.
+- **Rejections.** Undoing a merge or a replace stores the set identity here, so the
+  next pass that proposes the same set is refused instead of redoing what the user
+  undid.
+- **Lifecycle.** Deleting a project or group deletes this scope's state and
+  rejections with the rest of its learned memory. Revision rows outlive a note
+  deletion and are pruned 90 days after they were undone.
+
 - **Scope identity.** `scope_key` is the owning project group id (ADR 0249) or,
   for a project that is not in a stored group, its canonical path. An isolated
   worktree session keeps the main project's identity (ADR 0329), and a remote
@@ -1848,7 +1913,7 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   captured by configuration sync nor re-keyed by group lifecycle, and a missing
   or unreadable row reads as zero.
 
-### 4.16 conversation_summaries + conversation_archive_tombstones — conversation archive (schema v29, ADR conversation-archive)
+### 4.17 conversation_summaries + conversation_archive_tombstones — conversation archive (schema v29, ADR conversation-archive)
 
 The archive adds no second copy of a conversation. What leaves the device is
 projected from the transcript in force on demand, and only two things are
@@ -1860,7 +1925,7 @@ CREATE TABLE conversation_summaries (
   session_id   TEXT PRIMARY KEY,       -- no FK: a purge leaves the tombstone behind
   covered_seq  INTEGER NOT NULL DEFAULT 0,  -- next message sequence to read
   revision     INTEGER NOT NULL DEFAULT 0,  -- 0 means "never summarized"
-  summary_json TEXT,                  -- fixed-field summary, see §4.16.1
+  summary_json TEXT,                  -- fixed-field summary, see §4.17.1
   model_key    TEXT,                  -- providerId/modelId that wrote it
   lease_owner  TEXT,                  -- one summary run at a time
   lease_until  INTEGER,
@@ -1906,7 +1971,7 @@ CREATE INDEX idx_conversation_archive_tombstones_deleted
   past it (or when the session id exists again), so a plugin that exits between
   receiving the notice and deleting the file still gets the notice back.
 
-#### 4.16.1 `summary_json`
+#### 4.17.1 `summary_json`
 
 `{"goal": string, "decisions": [string], "outcomes": [string], "files":
 [string], "openItems": [string], "tags": [string]}` — bounded on write (40
@@ -1914,7 +1979,7 @@ entries per list, 400 characters per entry) and re-validated by the host, so a
 model answer with extra or oversized fields stores as the same shape every
 plugin can rely on.
 
-### 4.17 `ModelBinding.kind` — what a model is for (ADR plugin-embeddings)
+### 4.18 `ModelBinding.kind` — what a model is for (ADR plugin-embeddings)
 
 A provider's `models[]` rows gain one optional member inside the provider's
 `config_json`:
@@ -2115,7 +2180,7 @@ truncating at a guessed position.
   the archive remains for manual recovery. All pre-v7 migration code
   (v1 `settings.sqlite` import, v2→v6 chain) is deleted.
 - Fresh installs run the full DDL directly, including `CONVERSATION_ARCHIVE_DDL`
-  (§4.16); the same constant is applied by the v28 -> v29 step so the two cannot
+  (§4.17); the same constant is applied by the v28 -> v29 step so the two cannot
   drift.
 - **Schema v7 first reaches v8, then uses the guarded path.** The v7→v8
   migration is followed by the same guarded v8→v15 migration; schema-v9 and

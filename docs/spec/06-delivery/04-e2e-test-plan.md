@@ -20750,6 +20750,39 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Milestone**: M4.
 - **Status**: Automated — `pnpm test:e2e:memory`.
 
+### E2E-MEMORY-auto-curation-applies-and-undoes
+
+- **Preconditions**: A real host binary, the Electron-main curation service, and
+  a local OpenAI-compatible stub on `127.0.0.1` answering the chat completions
+  request. `learnedMemory.curate` is on with the stub's model, and the daily
+  budget is unspent.
+- **Steps**:
+  1. Seed one project scope with three `active` notes that say the same thing
+     about the same port, all older than 30 days.
+  2. Run one curation pass with the stub answering a `merge` of two of them,
+     then read `memory.curation.list` and the notes.
+  3. Undo the batch, then read the notes and `memory.curation.list` again.
+  4. Run a second pass whose answer names a note id the input never contained,
+     and one whose target revision is stale.
+  5. Turn `learnedMemory.curate` off and run extraction with a candidate.
+- **Expected**: The first pass merges the two notes into one `active` note and
+  archives both targets with `superseded_by` set; `memory.curation.list` shows
+  one batch whose rows carry a reason, and no tombstone is written. The undo
+  restores both targets to `active` with `superseded_by` cleared, archives the
+  merged note, records the set as rejected, and drops the batch from the list. A
+  later pass that proposes the same set is refused (`already-undone`); an item
+  naming an unknown id or a stale revision changes nothing. With the switch off,
+  extraction stores a `suggested` note that stays in the inbox and no pass runs.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` §7.4/§7.5,
+  `03-runtime/04-data-storage.md`, `03-runtime/06-host-rpc-protocol.md`, ADR
+  learned-memory-consolidation §3-§5, `04-ux/08-component-spec.md` §20C.
+- **Acceptance criterion**: With curation on, memory tidies itself without a
+  review step, and every automatic change is recorded and reversible.
+- **Milestone**: M5.
+- **Status**: Planned — the host and service layers are covered by
+  `cargo test -p host-core` and `apps/desktop/test/memory-curation-service.test.mjs`;
+  the end-to-end run needs the packaged binary and the stub.
+
 ### E2E-MEMORY-tool-output-cannot-create-preference
 
 - **Preconditions**: The same harness. One turn's transcript holds a tool result

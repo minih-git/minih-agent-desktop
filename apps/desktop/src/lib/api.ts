@@ -9,7 +9,9 @@ import type {
   LearnedMemoryListResult,
   LearnedMemoryRememberAgainRequest,
   LearnedMemoryExtractionStatus,
+  LearnedMemoryCurationListResult,
   LearnedMemoryLocalStats,
+  LearnedMemoryScopeKind,
   LearnedMemorySessionState,
   LearnedMemorySuggestionListRequest,
   LearnedMemorySuggestionListResult,
@@ -1175,6 +1177,17 @@ export const api = {
   // configuration sync, so this is this machine's own usage.
   getLearnedMemoryStats: () =>
     invoke<{ stats: LearnedMemoryLocalStats }>(IPC.invoke.memoryStats, {}),
+  // What the automatic pass did on this device, newest batch first.
+  listMemoryCuration: (request: {
+    scope: LearnedMemoryScopeKind;
+    path?: string;
+    sessionId?: string;
+    sinceDays?: number;
+  }) => invoke<LearnedMemoryCurationListResult>(IPC.invoke.memoryCurationList, request),
+  // Undo one batch. A note that moved since the pass is a MEMORY_UNDO_CONFLICT
+  // and nothing changes.
+  undoMemoryCuration: (batchId: string) =>
+    invoke<{ undone: number }>(IPC.invoke.memoryCurationUndo, { batchId }),
   getMemorySessionState: (sessionId: string) =>
     invoke<{ state: LearnedMemorySessionState }>(IPC.invoke.memorySessionGet, { sessionId }),
   setMemorySessionExcluded: (sessionId: string, excluded: boolean) =>

@@ -2235,6 +2235,51 @@ numbers.
 token counts). Message text and candidate content are never logged: the content a
 credential detector refused is exactly what a log must not keep.
 
+### 7.6 Automatic curation off the critical path (ADR learned-memory-consolidation)
+
+`apps/desktop/electron/main/memory/memory-curation-service.ts` plus
+`memory-curation-prompt.ts`; `electron/main/index.ts` only wires the idle trigger,
+the cancellation, and the setting. With the switch off
+(`learnedMemory.curate !== true`) the pass makes no model call and no host call,
+and the extractor writes suggestions exactly as it did before.
+
+**Gate.** `learnedMemory.curate` must be `true` **and** `learnedMemory.model` must
+be set; a pass spends the same device-local daily token ledger as extraction and
+pauses with it. Both fields are device-local and absent from
+`PORTABLE_APPLICATION_FIELDS`.
+
+**Triggers.** The service is armed when a turn has been fully persisted, rendered,
+and settled (`onAgentTurnSettledCuration`), and a pass starts only after the app
+has been idle for ten minutes with no turn running in any session. A turn starting
+(`cancelMemoryExtraction`, which now also clears the curation timer), the switch
+going off, and app quit cancel the pending pass. One pass at a time, one dirty
+scope at a time, and each scope at most once per local day — the day is stamped at
+claim time, so a failing scope cannot spend the budget retrying all day.
+
+**Post-extraction activation.** With the switch on, a run hands the ids it just
+stored, plus the suggestions still pending in that session's scope, to
+`memory.curation.activate`. The candidate is still written and validated as a
+suggestion first: activation is a recorded second step in the same run, not a
+second write path. An activation failure is counted and never fails the
+extraction run.
+
+**Input.** `memory.curation.input` returns that scope's own notes only — the ones
+that changed, up to five same-kind full-text neighbours of each, then the rest
+newest first, inside 24 KiB. Each note carries its id, kind, origin, dates,
+content, rationale, `revision`, and whether a pass may reword it. No transcript,
+tool output, or workspace content is sent, and the prompt states that note content
+is data.
+
+**Output contract.** JSON only, `{"items":[...]}` with at most eight items of
+`{ op, targetIds, targetRevisions, content?, reason? }`. The service discards any
+item that names an id this run did not send, that carries a revision different
+from the one it sent, or whose content is missing for `merge` / `reword`. The host
+then re-validates every item against the rows it holds and applies the cap.
+
+**Logging.** Result codes and counts only (`disabled`, `no-model`, `busy`,
+`no-scope`, `nothing-changed`, `budget-exhausted`, `attempts-exhausted`, `stale`,
+`applied`, `empty`, `capped`, `model-error`, `host-error`).
+
 ## 8. Concurrency
 
 | Scope | MVP policy |
