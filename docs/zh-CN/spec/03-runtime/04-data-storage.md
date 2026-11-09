@@ -1198,6 +1198,61 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   也不在上面任何表里，因此既不会被配置同步采集，也不会随项目组生命周期重键；
   缺失或无法读取的行按 0 处理。
 
+### 4.16 conversation_summaries + conversation_archive_tombstones —— 会话归档（架构 v27，ADR conversation-archive）
+
+归档不保存对话的第二份副本。离开设备的内容是按需从生效中的转录投影出来的，
+因此只存两样东西：插件发布的摘要，以及「这段对话已经消失」的记录。
+
+```sql
+CREATE TABLE conversation_summaries (
+  session_id   TEXT PRIMARY KEY,       -- 无外键：彻底删除后由 tombstone 记录接替
+  covered_seq  INTEGER NOT NULL DEFAULT 0,  -- 下一条要读取的消息序号
+  revision     INTEGER NOT NULL DEFAULT 0,  -- 0 表示「从未生成摘要」
+  summary_json TEXT,                  -- 固定字段摘要，见 §4.16.1
+  model_key    TEXT,                  -- 生成它的 providerId/modelId
+  lease_owner  TEXT,                  -- 同一时间只有一个摘要任务
+  lease_until  INTEGER,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT,                  -- 只存错误码，从不存内容
+  updated_at   INTEGER NOT NULL
+);
+CREATE INDEX idx_conversation_summaries_updated
+  ON conversation_summaries(updated_at DESC, session_id ASC);
+CREATE INDEX idx_conversation_summaries_backfill
+  ON conversation_summaries(revision, session_id);
+
+CREATE TABLE conversation_archive_tombstones (
+  session_id TEXT PRIMARY KEY,
+  deleted_at INTEGER NOT NULL
+);
+CREATE INDEX idx_conversation_archive_tombstones_deleted
+  ON conversation_archive_tombstones(deleted_at DESC, session_id ASC);
+```
+
+- **纯增量。** v26 → v27 只创建这两张表并写入版本号；不重写任何已有行，也不迁移
+  用户数据。旧构建打开新库时会在既有的版本检查处失败，而不会去读一个它无法描述的
+  架构。该步骤与其它迁移一样，先留下 `pi.sqlite.v26.bak` 备份。
+- **每个会话初始都是「未生成摘要」。** `revision = 0`（或没有行）就是补录队列：按
+  `sessions.updated_at` 从新到旧，排除已进回收站、已排除、导入的和自动化运行的会话。
+  补录受每日 token 预算约束，因此升级后的首次启动不会一次花掉一整天的额度。
+- **同一时间只跑一个任务，可恢复。** `claim` 取租约，`input` 返回 `covered_seq`
+  之后的内容，`complete` 只在仍持有租约时推进游标并自增 `revision`，`fail` 释放
+  租约并计一次失败（三次之后该会话等待新的回合）。崩溃留下的租约十分钟后自动过期。
+- **游标按消息计，不按压缩计。** 本架构的压缩只追加检查点、保留消息（§2.1），所以
+  从 `covered_seq` 读到的摘要输入一定包含压缩之前的文本。
+- **删除。** `sessions.deleted_at` 与排除标记都是实时读取的。彻底删除会在会话行消失
+  之前写入 `conversation_archive_tombstones`，因为此后没有任何表能指出插件为哪段对话
+  写过文件。变更流对这一记录做到**至少送达一次**：读请求从不删除它，只有游标已经越过
+  它的请求（或该 sessionId 又存在了）才会清理，所以插件在「收到通知」和「删除文件」
+  之间退出后，下次仍会收到这条通知。
+
+#### 4.16.1 `summary_json`
+
+`{"goal": string, "decisions": [string], "outcomes": [string], "files":
+[string], "openItems": [string], "tags": [string]}` —— 写入时即做边界限制
+（每个列表 40 项、每项 400 字符），并由 Host 复核，因此即使模型多给了字段或给了超长
+内容，落库的仍是所有插件都能依赖的同一形状。
+
 ### 从 v1 中删除
 
 | v1表 | v2首页 |

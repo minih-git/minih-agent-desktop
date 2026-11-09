@@ -701,12 +701,22 @@ fn a_session_without_a_summary_is_listed_with_a_null_revision() {
     let page = crate::conversation_archive::feed::changes_page(&db, None, 10).unwrap();
     let items = page["items"].as_array().unwrap();
     assert_eq!(items.len(), 2, "{page}");
-    assert_eq!(items[0]["sessionId"], "s1");
-    // The transcript does not depend on a model: L3 can be written now and the
-    // summary follows on the page its run produces.
-    assert!(items[0]["summaryRevision"].is_null());
-    assert_eq!(items[0]["removed"], false);
-    assert!(items[1]["summaryRevision"].is_null());
+    // Both are listed. Their order follows the stored timestamps (releasing a
+    // lease stamps the row), so the assertions are about the shape, not the
+    // position: the transcript does not depend on a model, so L3 can be written
+    // now and the summary follows on the page its run produces.
+    for item in items {
+        assert!(
+            item["summaryRevision"].is_null(),
+            "an unwritten summary is null, not zero: {item}"
+        );
+        assert_eq!(item["removed"], false);
+    }
+    let listed: Vec<&str> = items
+        .iter()
+        .map(|item| item["sessionId"].as_str().unwrap())
+        .collect();
+    assert!(listed.contains(&"s1") && listed.contains(&"s2"), "{page}");
 
     // Once the summary lands, the same session comes back with its revision.
     let summary = crate::conversation_archive::repo::ConversationSummary {
