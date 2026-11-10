@@ -2629,7 +2629,13 @@ export class PluginRuntime {
         return api.workspace.get();
       case "models.list":
         this.assertPermission(loaded, "models.list");
-        return this.dispatchHostCall(loaded, "models.list", []);
+        // The panel bridge carries the same selector the plugin process does; a
+        // picker page that asks for vector models must not receive chat ones.
+        return this.dispatchHostCall(
+          loaded,
+          "models.list",
+          payload === undefined || payload === null ? [] : [payload],
+        );
       case "browser.openInPanel":
         return this.invokeBrowser(loaded, "openInPanel", payload);
       case "browser.navigate":

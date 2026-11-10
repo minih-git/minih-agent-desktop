@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "Corrigido: um plugin não conseguia usar o arquivo de conversas nem gerar embeddings com os seus próprios modelos, mesmo depois de você conceder a permissão — o app anunciava as duas APIs aos plugins mas nunca as entregava, e essas chamadas falhavam. Além disso, um plugin que pede modelos vetoriais agora os recebe, em vez de apenas modelos de conversa.",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "Corregido: un plugin no podía usar el archivo de conversaciones ni generar embeddings con tus propios modelos aunque hubieras concedido el permiso; la app anunciaba ambas APIs a los plugins pero nunca se las entregaba, y esas llamadas fallaban. Además, un plugin que pide modelos vectoriales ahora los recibe, en lugar de solo modelos de conversación.",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [
