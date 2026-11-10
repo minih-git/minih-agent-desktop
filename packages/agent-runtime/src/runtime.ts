@@ -36,6 +36,7 @@ import { todoWriteDescription, todoWriteParameters } from "./todo-tool.js";
 import { createJevClassifierTool } from "./jev-classifier-tool.js";
 import { scheduledToolParameters, scheduledToolDescriptions } from "./scheduled-tools.js";
 import { sessionToolParameters, sessionToolDescriptions } from "./session-tools.js";
+import { CORE_PERSONA_TOOLS, personaToolDenial } from "./mode-tool-access.js";
 import {
   MEMORY_REMEMBER_TOOL_NAME,
   memoryReadToolNames,
@@ -1137,6 +1138,17 @@ export type AgentRuntimeOptions = {
    */
   subagents?: SubagentDefinition[];
   /**
+   * The definition an employee session runs as (ADR bot-sessions-and-steward §2).
+   *
+   * When Electron main resolves a `botProfile.definition`, the runtime runs the
+   * whole turn under that definition: its prompt joins the system prompt and its
+   * tool list becomes this session's ceiling, so "the steward cannot touch the
+   * workspace" is a host rule rather than a request in a prompt. `missingName`
+   * is set when the session names a definition that does not exist — the turn
+   * then fails instead of running with every tool.
+   */
+  botPersona?: { definition: SubagentDefinition } | { missingName: string };
+  /**
    * Provider resolved for each definition that pins one, keyed by its model
    * key. Main owns credential lookup, so a pinned provider that is missing
    * here is unavailable and the delegate must fail loudly rather than
@@ -1887,6 +1899,17 @@ export class DesktopAgentRuntime {
   private extensionProviderHeaders?: Record<string, string>;
   /** Subagent definitions offered through the `Task` tool (ADR 0062). */
   private subagents: SubagentDefinition[];
+  /**
+   * Tool ceiling imposed by this session's employee definition, or `undefined`
+   * for an ordinary session. A `Set` so the catalog filter is one lookup.
+   */
+  private personaToolCeiling?: Set<string>;
+  /** Why the ceiling cannot be applied, when the named definition is missing. */
+  private personaError?: string;
+  /** The employee definition this session runs as, when it runs as one. */
+  private botPersona?: SubagentDefinition;
+  /** That definition's prompt, composed into the system prompt. */
+  private personaPrompt?: string;
   private subagentProviders: Record<string, RuntimeProviderConfig>;
   private subagentModelKeys: Set<string>;
   /** On-demand Task.model grants; never mixed into launch opt-in matching. */
@@ -2167,6 +2190,19 @@ export class DesktopAgentRuntime {
     this.pluginSkills = [...(opts.pluginSkills ?? [])].sort((left, right) => left.id.localeCompare(right.id));
     this.trustedExtensionSpecs = opts.trustedExtensions ?? [];
     this.subagents = opts.subagents ?? [];
+    if (opts.botPersona && "missingName" in opts.botPersona) {
+      // A named definition that does not resolve must not fall back to the full
+      // catalog: that would silently run a steward with Write and Bash.
+      this.personaError = `The employee definition "${opts.botPersona.missingName}" is not installed, so this session cannot run. Install or rename the definition, or clear it in the employee's settings.`;
+    } else if (opts.botPersona) {
+      this.botPersona = opts.botPersona.definition;
+      this.personaToolCeiling = new Set(
+        resolveSubagentToolNames(opts.botPersona.definition, []),
+      );
+      // The definition's own prompt is the employee's standing instructions, so
+      // it belongs in the system prompt rather than in a user turn.
+      this.personaPrompt = opts.botPersona.definition.prompt.trim();
+    }
     this.subagentProviders = opts.subagentProviders ?? {};
     this.subagentModelKeys = new Set(opts.subagentModelKeys ?? []);
     this.subagentOverrideProviders = {};
@@ -2831,6 +2867,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // APPEND_SYSTEM.md so the narrower rule reads closer to the request,
         // and before project instructions so the workspace keeps the last word.
         ...(this.modelSystemPrompt ? [this.modelSystemPrompt] : []),
+        ...(this.personaPrompt ? [this.personaPrompt] : []),
         ...(optionalToolsPrompt ? [optionalToolsPrompt] : []),
         ...(projectPrompt ? [projectPrompt] : []),
         ...(memoryPrompt ? [memoryPrompt] : []),
@@ -4414,6 +4451,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const catalog = new Map<string, AgentTool>();
     for (const tool of this.buildToolDefinitions()) {
       if (!this.isToolAllowedInMode(tool.name) && !retainModeToolDeclaration(tool.name)) continue;
+      // An employee definition caps the catalog, so a steward never even carries
+      // a declaration for Write/Edit/Bash (ADR bot-sessions-and-steward §2).
+      if (!this.isToolAllowedByPersona(tool.name)) continue;
       // The execution mode is decided here, in one place, so no tool can grow
       // an accidental parallel batch: everything is sequential except `Task`.
       // pi runs a whole batch sequentially when it holds one sequential tool,
@@ -4429,7 +4469,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             executionMode:
               tool.name === SUBAGENT_TOOL_NAME ? "parallel" : "sequential",
           }),
-          () => this.isToolAllowedInMode(tool.name) ? undefined : modeToolDenial(tool.name, this.mode),
+          () =>
+            this.isToolAllowedInMode(tool.name)
+              ? this.isToolAllowedByPersona(tool.name)
+                ? undefined
+                : personaToolDenial(tool.name)
+              : modeToolDenial(tool.name, this.mode),
         ),
       );
     }
@@ -4481,6 +4526,22 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         Array.isArray(def.planSafeActions) &&
         def.planSafeActions.length > 0,
     );
+  }
+
+  /**
+   * Whether this session's employee definition permits a tool.
+   *
+   * Checked at declaration and again before execution, like the contract-mode
+   * guard: a declaration is not a grant, and a tool reachable through an earlier
+   * turn must still be refused now.
+   */
+  private isToolAllowedByPersona(name: string): boolean {
+    if (!this.personaToolCeiling) return true;
+    // `Task` and its waits are the orchestrator's own bookkeeping and are never
+    // in a persona list; they stay denied to an employee for the same reason a
+    // delegate cannot delegate.
+    if (this.personaToolCeiling.has(name)) return true;
+    return CORE_PERSONA_TOOLS.has(name);
   }
 
   private isToolAllowedInMode(name: string): boolean {
@@ -9455,6 +9516,13 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     durableTurnId?: string,
   ): Promise<{ turnId: string }> {
     if (this.disposed) throw new Error("runtime disposed");
+    // An employee session whose definition does not resolve must fail loudly:
+    // running it anyway would give the steward every tool the session has.
+    if (this.personaError) {
+      throw Object.assign(new Error(this.personaError), {
+        errorCode: "BOT_DEFINITION_MISSING",
+      });
+    }
     this.assertNotRunning();
     const turnId = durableTurnId?.trim() || randomUUID();
     return this.trackTurnOperation(turnId, () =>

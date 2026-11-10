@@ -135,6 +135,27 @@ export const IPC = {
     agentInstructionsGet: "minih-agent-desktop/agent/instructions/get",
     agentInstructionsSave: "minih-agent-desktop/agent/instructions/save",
     sessionList: "minih-agent-desktop/session/list",
+    /**
+     * Employee (bot) surfaces (ADR bot-sessions-and-steward §5).
+     *
+     * `botList` also answers the status dot, derived by the host from each
+     * bot's latest delivery stage. Everything else mutates role/profile only —
+     * a bot is a session, so there is no separate lifecycle to keep in sync.
+     */
+    botList: "minih-agent-desktop/bot/list",
+    botCreate: "minih-agent-desktop/bot/create",
+    botUpdate: "minih-agent-desktop/bot/update",
+    botDismiss: "minih-agent-desktop/bot/dismiss",
+    /** Explicit, user-triggered: never runs at startup. */
+    botSeedDefaults: "minih-agent-desktop/bot/seedDefaults",
+    /**
+     * Task-card drafts of one steward session. `taskCardConfirm` is the person's
+     * click: it freezes the card and dispatches it, and the model has no way to
+     * reach it.
+     */
+    taskCardList: "minih-agent-desktop/taskCard/list",
+    taskCardConfirm: "minih-agent-desktop/taskCard/confirm",
+    taskCardDrop: "minih-agent-desktop/taskCard/drop",
     sessionCreate: "minih-agent-desktop/session/create",
     sessionFork: "minih-agent-desktop/session/fork",
     sessionMoveProject: "minih-agent-desktop/session/moveProject",
@@ -561,6 +582,10 @@ export const IPC = {
     traySessionActivated: "minih-agent-desktop/tray/event/sessionActivated",
     notificationChanged: "minih-agent-desktop/notification/event/changed",
     sessionsChanged: "minih-agent-desktop/session/event/changed",
+    /** An employee's profile, role or status dot changed. */
+    botsChanged: "minih-agent-desktop/bot/event/changed",
+    /** A task-card draft was proposed, confirmed or dropped. */
+    taskCardsChanged: "minih-agent-desktop/taskCard/event/changed",
     remoteInteractions: "minih-agent-desktop/remote/event/interactions",
     notificationActivated: "minih-agent-desktop/notification/event/activated",
     notificationSound: "minih-agent-desktop/notification/event/sound",

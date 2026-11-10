@@ -12,7 +12,9 @@ import {
   type ModelBinding,
   type Mode,
   type Risk,
+  normalizeBotProfile,
   type SessionThinkingLevel,
+  type SubagentDefinition,
   type UserSkillRecord,
   type UserSubagentRecord,
 } from "@minih-agent/shared";
@@ -42,6 +44,7 @@ import type { LoadedSkillDocument } from "../skill-document";
 import { getActiveRemoteHostsBoot } from "../bootstrap/remote-hosts";
 import { loadRemoteWorkspaceInstructions } from "../remote/remote-workspace-instructions.js";
 import { createRuntimeModelResolver } from "./model-resolution";
+import { resolveBotPersona, runtimeBotPersona } from "./bot-persona";
 
 const ErrorCodes = {
   ...SharedErrorCodes,
@@ -79,6 +82,15 @@ export type SessionLaunchRuntimeDependencies = {
   };
   normalizeThinkingLevel: (value: unknown) => SessionThinkingLevel;
 };
+
+/** Resolve the employee definition a bot session runs as, from what the host stored. */
+function botPersonaFor(
+  session: { role?: string | null; botProfile?: unknown },
+  definitions: readonly SubagentDefinition[],
+) {
+  const profile = normalizeBotProfile(session.botProfile);
+  return resolveBotPersona(session.role ?? undefined, profile, definitions);
+}
 
 export function createSessionLaunchRuntime({
   runtimeState,
@@ -481,6 +493,9 @@ export function createSessionLaunchRuntime({
       // A switched-off builtin is dropped from what this prompt may delegate to.
       disabledBuiltins: await disabledBuiltinSubagents(),
     });
+    const botPersona = runtimeBotPersona(
+      botPersonaFor(session, subagentCatalog.definitions),
+    );
     const subagentBindings = await resolveSubagentProviders({
       definitions: subagentCatalog.definitions,
       providers: providers.providers,
@@ -738,6 +753,11 @@ export function createSessionLaunchRuntime({
             root: extension.root,
           })),
         subagents: subagentCatalog.definitions,
+        // An employee runs as its definition (ADR bot-sessions-and-steward §2):
+        // the definition's prompt and its tool ceiling replace the session's
+        // default capability set. A named definition that does not resolve is
+        // handed over as missing so the turn fails instead of widening.
+        ...(botPersona ? { botPersona } : {}),
         subagentProviders: subagentBindings.providers,
         subagentModelKeys,
       },

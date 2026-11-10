@@ -6174,6 +6174,24 @@ mod tests {
         assert_eq!(steward_row["role"], json!("user"));
         assert!(steward_row.get("botProfile").is_none());
 
+        // Work cannot reach an employee without an authorization: the bare send
+        // the previous flow allowed is exactly the bypass the gate closes.
+        let refused = handle_request(
+            state.clone(),
+            "session.collaboration.send",
+            json!({
+                "sourceSessionId": steward.id,
+                "pluginId": "pi.session-orchestrator",
+                "sessionId": worker.id,
+                "kind": "task",
+                "content": "Fix the login timeout",
+                "idempotencyKey": "bare"
+            }),
+            tx.clone(),
+        )
+        .await;
+        assert_eq!(refused.unwrap_err().code, 1000);
+
         let delivered = handle_request(
             state.clone(),
             "session.collaboration.send",
@@ -6183,44 +6201,30 @@ mod tests {
                 "sessionId": worker.id,
                 "kind": "task",
                 "content": "Fix the login timeout",
-                "idempotencyKey": "one"
+                "idempotencyKey": "one",
+                "mandate": {
+                    "version": 1,
+                    "taskId": "task-1",
+                    "goal": "Fix the login timeout",
+                    "criteria": [{"id": "c1", "text": "A failing repro exists"}],
+                    "boundaries": [],
+                    "permissionMode": "accept-edits",
+                    "mustAsk": ["push"],
+                    "risk": "medium",
+                    "requestedBy": {"kind": "user", "hostId": "mac-mini"},
+                    "sourceUtterance": "登录超时今天修掉",
+                    "createdAt": "2026-11-10T09:00:00.000Z",
+                    "policyVersion": "steward-1"
+                }
             }),
             tx.clone(),
         )
         .await
         .unwrap();
         let message_id = delivered["message"]["id"].as_str().unwrap().to_string();
-        // A delivery starts with no mandate and no stage.
-        assert!(delivered["message"].get("mandate").is_none());
+        // The delivery carries its card from the first row, still unstaged.
+        assert_eq!(delivered["message"]["mandate"]["taskId"], json!("task-1"));
         assert!(delivered["message"].get("stage").is_none());
-
-        let card = json!({
-            "version": 1,
-            "taskId": "task-1",
-            "goal": "Fix the login timeout",
-            "criteria": [{"id": "c1", "text": "A failing repro exists"}],
-            "permissionMode": "accept-edits",
-            "mustAsk": ["push"],
-            "risk": "medium",
-            "requestedBy": {"kind": "user", "hostId": "mac-mini"},
-            "sourceUtterance": "登录超时今天修掉",
-            "createdAt": "2026-11-10T09:00:00.000Z",
-            "policyVersion": "steward-1"
-        })
-        .to_string();
-        let attached = handle_request(
-            state.clone(),
-            "session.collaboration.mandate",
-            json!({"messageId": message_id, "mandate": card}),
-            tx.clone(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            attached["message"]["mandate"]["taskId"],
-            json!("task-1"),
-            "the opaque card comes back as it was frozen"
-        );
 
         let first = handle_request(
             state.clone(),

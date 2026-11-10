@@ -1,11 +1,18 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { Mode } from "@minih-agent/shared";
+import { CORE_PERSONA_TOOLS, type Mode } from "@minih-agent/shared";
+
+export { CORE_PERSONA_TOOLS };
 
 /** Known editing/delegation names stay declared across contract-mode changes. */
 const RETAINED_MODE_TOOLS = new Set(["Write", "Edit", "Task", "TaskWait", "TaskList", "TaskStop"]);
 
 export function retainModeToolDeclaration(name: string): boolean {
   return RETAINED_MODE_TOOLS.has(name);
+}
+
+/** The denial an employee definition produces for a tool it does not grant. */
+export function personaToolDenial(name: string): string {
+  return `${name} is not part of this employee's definition, so it is not available in this session. Dispatch the work to an employee whose definition includes it, or ask the person to change the definition. No action was performed.`;
 }
 
 export function modeToolDenial(name: string, mode: Mode): string {

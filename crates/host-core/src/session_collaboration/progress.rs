@@ -443,6 +443,133 @@ mod tests {
         assert!(stored.mandate_json.is_none());
     }
 
+    fn steward_session(db: &Database, title: &str) -> String {
+        sessions::create_session_with_options(
+            db,
+            sessions::SessionCreateOptions {
+                title: Some(title.into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("auto".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id
+    }
+
+    fn bot_session(db: &Database, title: &str) -> String {
+        sessions::create_session_with_options(
+            db,
+            sessions::SessionCreateOptions {
+                title: Some(title.into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({"name": title, "permissionMode": "accept-edits", "observe": false})
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id
+    }
+
+    fn send(
+        db: &Database,
+        source: &str,
+        target: &str,
+        extra: Value,
+        key: &str,
+    ) -> Result<crate::session_collaboration::Message> {
+        let mut payload = json!({
+            "sourceSessionId": source,
+            "pluginId": "builtin:session-messaging",
+            "content": "Fix the login timeout",
+            "idempotencyKey": key,
+            "notifyOnCompletion": false,
+        });
+        for (name, value) in extra.as_object().into_iter().flatten() {
+            payload[name] = value.clone();
+        }
+        super::super::send_record(db, &payload, target, "task")
+    }
+
+    /// A steward could otherwise skip the card and hand work to an employee as
+    /// if it were a casual conversation.
+    #[test]
+    fn a_bare_delivery_to_a_bot_is_refused() {
+        let db = database();
+        let steward = steward_session(&db, "Steward");
+        let worker = bot_session(&db, "小爪");
+        let error = send(&db, &steward, &worker, json!({}), "bare").unwrap_err();
+        assert!(error.to_string().contains("MANDATE_REQUIRED"), "{error}");
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM session_collaboration_messages",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn a_follow_up_may_name_the_open_task_it_continues() {
+        let db = database();
+        let steward = steward_session(&db, "Steward");
+        let worker = bot_session(&db, "小爪");
+        let first = send(
+            &db,
+            &steward,
+            &worker,
+            json!({"mandate": card("task-9")}),
+            "first",
+        )
+        .unwrap();
+        // The task is open, so a follow-up that names it is authorized.
+        let follow = send(
+            &db,
+            &steward,
+            &worker,
+            json!({"taskId": "task-9"}),
+            "follow",
+        )
+        .unwrap();
+        assert_eq!(follow.target_session_id, worker);
+        // A task that was never dispatched here is not an authorization.
+        let error = send(
+            &db,
+            &steward,
+            &worker,
+            json!({"taskId": "task-404"}),
+            "wrong",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("MANDATE_REQUIRED"), "{error}");
+        // And the same id stops working once the task is over.
+        db.conn()
+            .execute(
+                "UPDATE session_collaboration_messages SET status='completed' WHERE id=?1",
+                params![first.id],
+            )
+            .unwrap();
+        let error = send(&db, &steward, &worker, json!({"taskId": "task-9"}), "after").unwrap_err();
+        assert!(error.to_string().contains("MANDATE_REQUIRED"), "{error}");
+    }
+
+    #[test]
+    fn an_ordinary_conversation_still_needs_no_card() {
+        let db = database();
+        let sender = session(&db, "Parent");
+        let plain = session(&db, "Conversation");
+        let message = send(&db, &sender, &plain, json!({}), "plain").unwrap();
+        assert!(message.mandate_json.is_none());
+        assert_eq!(message.permission_ceiling, "ask");
+    }
+
     #[test]
     fn a_mandate_is_attached_once_and_never_rewritten() {
         let db = database();

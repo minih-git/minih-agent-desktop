@@ -311,7 +311,14 @@ state.
      mode is wider than that is refused rather than silently downgraded.
    - `mustAsk` is recorded, not enforced: no tool call is gated by it yet.
      Approval by action type is a later change.
-   - `observe` has no runtime gate yet because no bot session can receive a
-     delivery before the employee UI exists.
-   - Confirmation is a model tool call that must quote the person's own words;
-     a confirmation produced by an actual person's click is a later change.
+   - `observe` **is** enforced: the host's auto-start rule reads the employee's
+     stored flag, so an observing employee never starts a card by itself. A
+     person's confirmation still dispatches it.
+   - Confirmation **is** a person's click: `TaskCard` cannot confirm,
+     `SessionSend` cannot carry a card, and only the desktop's IPC reaches
+     `taskCard.confirm`. The confirmation carries the card hash the screen
+     showed, so a revise in between is refused.
+   - An employee session runs under its definition: the runtime resolves
+     `botProfile.definition` into a prompt section and a tool ceiling, applied
+     at declaration and re-checked before execution. A definition name that does
+     not resolve fails the turn instead of widening to every tool.

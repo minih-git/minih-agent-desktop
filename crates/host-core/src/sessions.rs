@@ -179,7 +179,9 @@ pub fn normalize_bot_profile(raw: &Value) -> Result<Value> {
         .collect();
     let mut profile = serde_json::Map::new();
     profile.insert("name".into(), Value::String(name.to_string()));
-    for field in ["avatar", "duty", "homeHostId"] {
+    // A definition name resolves against the delegate catalog, so it is a plain
+    // id rather than free text (ADR bot-sessions-and-steward §2).
+    for field in ["avatar", "duty", "homeHostId", "definition"] {
         if let Some(value) = object.get(field).and_then(Value::as_str) {
             profile.insert(field.into(), Value::String(value.to_string()));
         }
@@ -1739,6 +1741,38 @@ pub fn create_session_with_options(
             .as_deref()
             .and_then(|raw| read_bot_profile(Some(raw))),
     })
+}
+
+/// The persisted role of a session, or None for an unknown session.
+///
+/// Read for authorization decisions (a delivery into a bot needs a mandate), so
+/// an unrecognized stored value fails closed as a bot rather than defaulting to
+/// an ordinary conversation.
+pub fn session_role(db: &Database, id: &str) -> Result<Option<String>> {
+    let role: Option<String> = db
+        .conn()
+        .prepare_cached("SELECT role FROM sessions WHERE id = ?1")?
+        .query_row(params![id], |row| row.get(0))
+        .optional()?;
+    Ok(role.map(|role| {
+        if is_valid_session_role(&role) {
+            role
+        } else {
+            "bot".into()
+        }
+    }))
+}
+
+/// The persisted bot profile of a session, normalized; None when it is not a
+/// bot or the stored value is unusable.
+pub fn session_bot_profile(db: &Database, id: &str) -> Result<Option<Value>> {
+    let raw: Option<String> = db
+        .conn()
+        .prepare_cached("SELECT bot_profile_json FROM sessions WHERE id = ?1")?
+        .query_row(params![id], |row| row.get(0))
+        .optional()?
+        .flatten();
+    Ok(read_bot_profile(raw.as_deref()))
 }
 
 /// The persisted per-session permission mode, or None for unknown sessions.
