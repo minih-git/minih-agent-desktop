@@ -223,7 +223,7 @@ async function runtimeFor(
   const subagents = params.subagents ?? [];
   // The employee definition this session runs as, resolved by Electron main
   // against the same catalog (ADR bot-sessions-and-steward §2).
-  const botPersona = params.botPersona as
+  const botPersona = (params as { botPersona?: unknown }).botPersona as
     | { definition: (typeof subagents)[number] }
     | { missingName: string }
     | undefined;
