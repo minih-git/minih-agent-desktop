@@ -63,6 +63,8 @@
     "test:e2e:todos": "node scripts/e2e-todo-checklist.mjs",
     "test:e2e:background-tasks": "node scripts/e2e-background-tasks-host.mjs && node scripts/e2e-background-tasks.mjs",
     "test:e2e:tool-stop": "node scripts/e2e-tool-stop.mjs",
+    "test:e2e:upstream-runtime": "node scripts/e2e-upstream-runtime-20261030.mjs",
+    "test:e2e:capability-scope": "node --test apps/desktop/test/upstream-scope-user-path.test.mjs",
     "test:e2e:work-panel-tab-close": "node scripts/e2e-work-panel-tab-close.mjs",
     "test:e2e:provider-model-layout": "node scripts/e2e-provider-model-layout.mjs",
     "test:e2e:settings-scroll": "node scripts/e2e-settings-scroll.mjs",

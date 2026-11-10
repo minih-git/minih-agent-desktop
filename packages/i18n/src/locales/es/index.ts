@@ -810,6 +810,10 @@ export const es = {
     "dismiss": "Descartar"
   },
   "settings": {
+    capabilityOverrideOff: "Desactivado para este proyecto",
+    capabilityOverrideOn: "Activado para este proyecto",
+    capabilityOverrideResetItem: "Restablecer el valor global",
+    capabilityOverrideReset: "{{name}} restablecido al valor global",
     learnedMemory: "Memoria aprendida",
     learnedMemoryRead: "Usar la memoria aprendida",
     learnedMemoryReadDesc:

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   GLOBAL_SCOPE,
@@ -7,6 +7,7 @@ import {
   type UserSkillRecord,
 } from "@minih-agent/shared";
 import { api } from "../../lib/api";
+import { capabilityQuery, deriveProjectOverrides, type CapabilityOverride } from "../../lib/capability-scope";
 import { useAppStore } from "../../stores/app-store";
 import { useHostCollection } from "../../hooks/use-host-collection";
 import {
@@ -41,6 +42,7 @@ import {
   IconFolderOpen,
   IconPencil,
   IconPlus,
+  IconRefresh,
   IconTrash,
 } from "../icons";
 import { SkillMarketPanel } from "./SkillMarketPanel";
@@ -64,33 +66,37 @@ type SkillCollection = {
   builtins: BuiltinSkillRecord[];
   global: UserSkillRecord[];
   project: UserSkillRecord[];
+  globalOverrides: Record<string, CapabilityOverride>;
 };
 
-const EMPTY_SKILL_COLLECTION: SkillCollection = { builtins: [], global: [], project: [] };
+const EMPTY_SKILL_COLLECTION: SkillCollection = { builtins: [], global: [], project: [], globalOverrides: {} };
 
 export function AgentSkillsPage() {
   const { t } = useTranslation();
   const showToast = useAppStore((state) => state.showToast);
   const { selectedProjectPath, setSelectedProjectPath, options } = useAgentProjects();
   const fetchSkills = useCallback(async (): Promise<SkillCollection> => {
-    const [builtins, global, project] = await Promise.all([
+    const [builtins, global, project, globalEffective] = await Promise.all([
       api.listBuiltinSkills(),
-      api.listUserSkills({
-        level: "global",
-        ...(selectedProjectPath ? { projectPath: selectedProjectPath } : {}),
-      }),
+      api.listUserSkills({ level: "global" }),
       selectedProjectPath
         ? api.listUserSkills({ level: "project", projectPath: selectedProjectPath })
+        : Promise.resolve({ skills: [] as UserSkillRecord[] }),
+      selectedProjectPath
+        ? api.listUserSkills({ level: "global", projectPath: selectedProjectPath })
         : Promise.resolve({ skills: [] as UserSkillRecord[] }),
     ]);
     return {
       builtins: builtins.builtins ?? [],
       global: global.skills ?? [],
       project: project.skills ?? [],
+      globalOverrides: selectedProjectPath
+        ? Object.fromEntries(deriveProjectOverrides(global.skills ?? [], globalEffective.skills ?? []))
+        : {},
     };
   }, [selectedProjectPath]);
   const {
-    data: { builtins: builtinSkills, global: globalSkills, project: projectSkills },
+    data: { builtins: builtinSkills, global: globalSkills, project: projectSkills, globalOverrides },
     setData: setSkills,
     loading,
     refreshing,
@@ -98,6 +104,11 @@ export function AgentSkillsPage() {
   } = useHostCollection(fetchSkills, EMPTY_SKILL_COLLECTION, (error) =>
     showToast(error instanceof Error ? error.message : String(error), { variant: "error" }),
   );
+  const reloadRef = useRef<(() => Promise<void>) | null>(load);
+  useEffect(() => {
+    reloadRef.current = load;
+    return () => { reloadRef.current = null; };
+  }, [load]);
   const [filter, setFilter] = useState<CapabilityFilter>("all");
   const [importOpen, setImportOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -129,10 +140,7 @@ export function AgentSkillsPage() {
     }));
   };
 
-  const levelQuery = (level: AgentCapabilityLevel) => ({
-    level,
-    ...(selectedProjectPath ? { projectPath: selectedProjectPath } : {}),
-  });
+  const levelQuery = (level: AgentCapabilityLevel) => capabilityQuery(level, selectedProjectPath);
 
   /**
    * The switch flips locally first and only reverts if the host refuses, so one
@@ -146,6 +154,8 @@ export function AgentSkillsPage() {
     patchRow(level, skill.id, { enabled: next });
     try {
       await api.setUserSkillEnabled(skill.id, next, levelQuery(level));
+      await reloadRef.current?.();
+      if (!reloadRef.current) return;
       showToast(
         t(next ? "settings.capabilityEnabled" : "settings.capabilityDisabled", {
           name: skill.name || skill.id,
@@ -154,6 +164,24 @@ export function AgentSkillsPage() {
       );
     } catch (error) {
       patchRow(level, skill.id, { enabled: skill.enabled });
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const resetProjectOverride = async (skill: UserSkillRecord) => {
+    const key = rowKey("global", skill.id);
+    if (!selectedProjectPath || busyId === key) return;
+    setBusyId(key);
+    try {
+      await api.setUserSkillEnabled(skill.id, skill.enabled, {
+        level: "global", projectPath: selectedProjectPath,
+      });
+      await reloadRef.current?.();
+      if (!reloadRef.current) return;
+      showToast(t("settings.capabilityOverrideReset", { name: skill.name || skill.id }), { variant: "success" });
+    } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
     } finally {
       setBusyId(null);
@@ -412,6 +440,12 @@ export function AgentSkillsPage() {
           void reveal(skill, level);
         },
       },
+      ...(level === "global" && selectedProjectPath && globalOverrides[skill.id]
+        ? [{ key: "reset-override", label: t("settings.capabilityOverrideResetItem"),
+            icon: <IconRefresh size={14} />, disabled: busy,
+            onSelect: () => { setMenuFor(null); void resetProjectOverride(skill); },
+          } satisfies CapabilityMenuItem]
+        : []),
       /**
        * A move needs a destination, so a global row offers it only while the
        * picker names a project; a project row always has Global to go back to.
@@ -464,6 +498,12 @@ export function AgentSkillsPage() {
                 ? t("settings.capabilityFilterGlobal")
                 : t("settings.capabilityFilterProject")}
             </span>
+            {level === "global" && selectedProjectPath && globalOverrides[skill.id] ? (
+              <span className="agent-capability-badge is-override">
+                {t(globalOverrides[skill.id] === "off"
+                  ? "settings.capabilityOverrideOff" : "settings.capabilityOverrideOn")}
+              </span>
+            ) : null}
             {skill.source === "imported" ? (
               <span className="agent-capability-badge">{t("settings.imported")}</span>
             ) : null}

@@ -52,7 +52,10 @@ Local `Read`, `Glob`, and `Grep` calls may end the runtime's wait immediately
 with `TOOL_ABORTED`. The host observes the same cancellation and discards a
 late result. These tools are read-only, so a blocking filesystem worker that
 runs until it returns cannot mutate the workspace. The runtime does not claim
-that the worker thread was terminated.
+that the worker thread was terminated. The local read-only wait also does not
+depend on the `tools.abort` acknowledgement: it observes a late failure without
+letting that response hold settlement or affect the next turn (2026-10-30
+selected upstream adaptation).
 
 Mutating calls, MCP calls, plugin calls, remote writes, and built-in session
 delivery calls that have already started are not abandoned locally. The

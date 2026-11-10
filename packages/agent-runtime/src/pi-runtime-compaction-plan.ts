@@ -113,7 +113,8 @@ function createFileOperations(): FileOperations {
   return { read: new Set(), written: new Set(), edited: new Set() };
 }
 
-function collectMessageFileOperations(message: AgentMessage, fileOps: FileOperations): void {
+/** Add one assistant message's normalized Read/Write/Edit paths to the sets. */
+export function collectMessageFileOperations(message: AgentMessage, fileOps: FileOperations): void {
   if (message.role !== "assistant" || !Array.isArray(message.content)) return;
   for (const block of message.content) {
     if (!block || block.type !== "toolCall") continue;

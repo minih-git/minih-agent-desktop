@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addUsage, withUsageIdentity, type MessageUsage } from "./types.js";
+import { addUsage, contextOccupancyTokens, withUsageIdentity, type MessageUsage } from "./types.js";
 
 const parent: MessageUsage = {
   inputTokens: 200,
@@ -111,4 +111,20 @@ it("malformed prices and overflowing cost totals remain unknown", () => {
     expect(result?.costStatus).toBe("unknown");
     expect(result?.cost).toBeUndefined();
   }
+});
+
+describe("contextOccupancyTokens", () => {
+  it("counts one request's buckets without adding reasoning twice or changing billing", () => {
+    const usage: MessageUsage = { inputTokens: 20_000, outputTokens: 100,
+      cacheReadTokens: 60_000, cacheWriteTokens: 200, reasoningTokens: 50, totalTokens: 20_100 };
+    expect(contextOccupancyTokens(usage)).toBe(80_300);
+    expect(usage.totalTokens).toBe(20_100);
+    expect(contextOccupancyTokens({ inputTokens: 10, outputTokens: 5, totalTokens: 999 })).toBe(15);
+  });
+
+  it("uses total-only reports and normalizes individual token counts", () => {
+    expect(contextOccupancyTokens({ inputTokens: 0, outputTokens: 0, totalTokens: 123 })).toBe(123);
+    expect(contextOccupancyTokens({ inputTokens: -5, outputTokens: 10.6,
+      cacheReadTokens: 2.4, cacheWriteTokens: Number.NaN, totalTokens: 999 })).toBe(13);
+  });
 });

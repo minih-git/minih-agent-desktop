@@ -8,6 +8,33 @@
 
 ## 1. Goals
 
+### E2E-UPSTREAM-20261030-selected-runtime-settings
+
+- **Preconditions:** Dedicated request worktree with reused installed dependencies;
+  isolated profiles, files, local HTTP providers and Host/IPC fixtures. No user
+  Desktop, real SSH machine, provider credentials or paid model calls.
+- **Steps:** Stop Read/Glob/Grep with both Host replies held, start another prompt,
+  then deliver late results. Keep Write running until execution and cancellation
+  settle. Retry long rate-limit waits, real stalls and user cancellation. Return
+  inconsistent cached/total usage before new turns, restoration and tool loops;
+  compact a recent Read/Write/Edit tail and a large carried summary. In both MCP
+  and Skills, toggle the global default with a project selected, reset legacy
+  overrides, change the default again and switch projects before an old read
+  returns. Submit SSH installation and return `HOST_BOOTSTRAP_FAILED`.
+- **Expected:** Read-only Stop cannot wait for a second blocked Host RPC or alter
+  the following turn; writes retain settlement ownership. Only active requests
+  count toward idle clocks, shared retry limits and Stop remain intact. Cache
+  occupancy raises the valid usage anchor without changing billing or reviving
+  old checkpoint usage. Summary chunks fit their guard and folded file paths
+  survive; model-switch windows remain verbatim. Global controls use one scope,
+  project overrides remain visible/resettable and generation-safe, including after
+  toggling the default. SSH shows a localized summary, not raw stderr or a claim
+  that the connection fault was repaired.
+- **Automation:** `scripts/e2e-upstream-runtime-20261030.mjs`,
+  `apps/desktop/test/upstream-scope-user-path.test.mjs`, focused runtime/shared/UI
+  regressions and the existing model-switch, error-boundary and market-owner tests.
+- **Results and limits:** [Selective import record](../../project/upstream-import-2026-10-30.md).
+
 ### E2E-UPSTREAM-20261028-selected-capabilities
 
 - **Preconditions:** Dedicated request worktree, reused dependencies, isolated
