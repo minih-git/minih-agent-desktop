@@ -38,6 +38,13 @@ import { createDesktopConsentService } from "../plugin-desktop-consent";
 import { PluginRuntime } from "../plugin-runtime";
 import { confirmPluginInterruption } from "../plugin-active-work";
 import { listPluginMemoryWhenEnabled } from "../plugin-memory-read";
+import {
+  EMBEDDINGS_TIMEOUT_MS,
+  buildEmbeddingsRequest,
+  embeddingsError,
+  embeddingsStatusError,
+  parseEmbeddingsResponse,
+} from "../plugin-embeddings";
 import { createSpeechService } from "./speech-service";
 import { PluginShortcutRegistry } from "../plugin-shortcut-registry";
 import { PluginWebSocketRegistry } from "../plugin-websocket";
@@ -343,7 +350,8 @@ export function createPluginServices({
     // and the session store, and a plugin reaching it would undo every other
     // limit on this list.
     protectedPaths: () => [dataDir],
-    listModels: async () => {
+    listModels: async (input) => {
+      const kind = input?.kind ?? "chat";
       // Same D080 degrade as skills/MCP/subagent catalog reads: a dead
       // transport is expected during shutdown and supervised restarts.
       const host = getHost();
@@ -364,7 +372,7 @@ export function createPluginServices({
           }> }>("providers.list", { includeDisabled: false }),
           host.call<AppSettings>("settings.get"),
         ]);
-        return listReadyPluginModels(listed.providers ?? [], settings);
+        return listReadyPluginModels(listed.providers ?? [], settings, kind);
       } catch (error) {
         if (!isHostUnavailable(error)) throw error;
         return [];
@@ -515,6 +523,62 @@ export function createPluginServices({
         thinkingLevel: model.thinkingLevel,
         usage: result.usage,
       };
+    },
+    // ---- embeddings -------------------------------------------------------
+    // Resolving the model and making the call both happen here, in the process
+    // that holds the credential; the runtime only sees the numbers back.
+    resolveEmbeddingsModel: async (modelKey) => {
+      const parsed = parsePluginModelKey(modelKey);
+      if (!parsed || !getHost()) return undefined;
+      const settings = await getHost()!.call<any>("settings.get");
+      const model = await resolveRuntimeModel({}, settings, {
+        providerId: parsed.providerId,
+        modelId: parsed.modelId,
+        thinkingLevel: "off",
+      });
+      const provider = model.provider as RuntimeProviderConfig & {
+        headers?: Record<string, string>;
+      };
+      return {
+        kind: model.kind === "embedding" ? ("embedding" as const) : ("chat" as const),
+        providerId: model.providerId,
+        providerName: provider.name,
+        baseUrl: provider.baseUrl ?? "",
+        apiKey: provider.apiKey ?? "",
+        ...(provider.authKind ? { authKind: provider.authKind } : {}),
+        ...(provider.headers ? { headers: provider.headers } : {}),
+        ...(provider.apiStyle ? { apiStyle: provider.apiStyle } : {}),
+        ...(provider.fallbackBaseUrl ? { fallbackBaseUrl: provider.fallbackBaseUrl } : {}),
+      };
+    },
+    embedWithModel: async (target, input) => {
+      const request = buildEmbeddingsRequest(target, input);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), EMBEDDINGS_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(request.url, {
+          method: "POST",
+          headers: request.headers,
+          body: request.body,
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          throw embeddingsError("TIMEOUT", "the embeddings request timed out");
+        }
+        throw embeddingsError("NETWORK_ERROR", "the provider could not be reached");
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!response.ok) throw embeddingsStatusError(response.status);
+      let document: unknown;
+      try {
+        document = await response.json();
+      } catch {
+        throw embeddingsError("NETWORK_ERROR", "the provider answered with no JSON");
+      }
+      return parseEmbeddingsResponse(document, input.texts.length);
     },
     // A plugin host process dying is contained: contributions are already
     // deregistered by the runtime, we only have to tell the user and the UI.

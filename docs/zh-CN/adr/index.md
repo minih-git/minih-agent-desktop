@@ -347,3 +347,5 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 [ADR: Desktop automations](/adr/scheduled-desktop-automations)。
 
 [ADR tray-session-shortcuts](/adr/tray-session-shortcuts) defines bounded native session groups and the renderer/Main ownership boundary.
+
+[ADR plugin-embeddings](/adr/plugin-embeddings) 让插件用用户自己配置的向量模型生成向量：模型带一个可选的 `kind` 标记，向量模型不出现在任何对话选择器中，宿主在新权限 `embeddings.run` 下代为调用 OpenAI 兼容的 `/embeddings`，密钥始终不离开宿主进程。

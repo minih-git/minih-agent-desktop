@@ -56,6 +56,7 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `usage.read` | medium | `pi.usage.listTurns` | Confirm at install | Read-only listing of completed-turn facts (per-turn token counters and identifiers, keyset-paginated); no message body and no write path |
 | `memory.read` | high | `pi.memory.list` | Confirm at install | Lists active learned-memory notes of the user scope and of any project path the plugin names; no suggestions, archived notes, tombstones, or provenance; no write path |
 | `conversation.read` | high | `pi.conversations.changes` / `summary` / `transcript` | Confirm at install | Lists archived conversations and reads one conversation's summary or redacted transcript. Every answer is the host's redacted projection: no thinking, tool results, attachments, or system messages. Only while the device-local archive switch is on; no write path |
+| `embeddings.run` | high | `pi.embeddings.embed` | Confirm at install | Turns text into vectors with one of the user's own embedding models. The text leaves the machine and spends that provider's quota; the plugin never sees the credential. OpenAI-compatible endpoints only; 1..=64 texts, 8 KiB each, 256 KiB a call, 120 calls a minute |
 | `agent.complete` | high | `pi.agent.complete` | Confirm at install | Host-owned one-shot; spends user quota; `includeSessionContext` also needs `session.read` |
 | `speech.adapter.register` | high | `pi.speech.registerAdapter` / `unregisterAdapter` | Confirm at install | Registers a speech protocol. Handles stay in the guest; HTTP plans are executed by the host with the bound provider key and must stay on that origin. Built-in protocol ids are reserved |
 
@@ -163,6 +164,7 @@ so "Modify the files it lists" is followed by the list.
 | `usage.read` | Read usage statistics | 读取用量统计 |
 | `memory.read` | Read learned memory | 读取长期记忆 |
 | `conversation.read` | Read conversation archive | 读取会话归档 |
+| `embeddings.run` | Create embeddings with your models | 使用你的模型生成向量 |
 | `agent.complete` | Run a one-shot completion with your models | 用你的模型发起一次补全 |
 | `composer.transform` | Transform text in the Composer | 转换输入框中的文本 |
 | `speech.adapter.register` | Register a speech adapter | 注册语音适配器 |

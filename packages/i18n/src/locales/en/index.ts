@@ -2161,6 +2161,8 @@ sklm: {
     thinkingManualOverrideHint: "Not in catalog; enable if supported.",
     contextWindowCatalogHint: "Follows models.dev; editing pins your value.",
     availableForSubagents: "Available for AI delegation",
+    embeddingModel: "Embedding model",
+    embeddingModelHint: "Saves this model as a vector model: plugins can generate embeddings with it, and it is never offered as a conversation model",
     availableForSubagentsHint: "Allow AI to use this model when delegating tasks to subagents",
     modelSystemPrompt: "Model prompt",
     modelSystemPromptHint: "Appended to the system prompt only while this model is the session's main model. Use it for model-specific house rules.",
@@ -2966,6 +2968,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "usage.read": "Read usage statistics",
       "memory.read": "Read learned memory",
       "conversation.read": "Read conversation archive",
+      "embeddings.run": "Create embeddings with your models",
       "session.autoTitle": "Read first-turn title context and update automatic titles",
     },
     permissionHelp: {
@@ -3029,6 +3032,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         "Lists active learned-memory notes (preferences, feedback, facts, references) for the user scope and project paths the plugin names. No suggestions, archived notes, or provenance; read-only.",
       "conversation.read":
         "Lists your archived conversations — each with its summary, and its redacted transcript by session — so the plugin can write them into your notes. Turning the archive off hides all of it. Tool results, reasoning, and attachments are never included.",
+      "embeddings.run":
+        "Sends text to the embedding model you configure and spends that provider's quota; the plugin never sees the API key. Only text you pass in is sent, and only vectors come back.",
       "session.autoTitle":
         "Can read only the first prompt and reply for eligible sessions, then replace an automatic title if it has not been manually changed. It cannot read the full transcript.",
     },

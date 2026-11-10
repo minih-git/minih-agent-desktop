@@ -2140,6 +2140,8 @@ sklm: {
     thinkingManualOverrideHint: "Katalogda yok; destekleniyorsa açın.",
     contextWindowCatalogHint: "models.dev'i takip eder; düzenlerseniz değeriniz sabitlenir.",
     availableForSubagents: "AI devri için kullanılabilir",
+    embeddingModel: "Gömme modeli",
+    embeddingModelHint: "Bu modeli vektör modeli olarak kaydeder: eklentiler onunla gömme üretir ve konuşma modeli olarak hiç önerilmez",
     availableForSubagentsHint: "Görevler alt ajanlara devredilirken AI’nin bu modeli kullanmasına izin ver",
     modelSystemPrompt: "Model istemi",
     modelSystemPromptHint: "Yalnızca bu model oturumun ana modeliyken sistem istemine eklenir.",
@@ -2945,6 +2947,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "usage.read": "Kullanım istatistiklerini oku",
       "memory.read": "Öğrenilmiş belleği oku",
       "conversation.read": "Sohbet arşivini oku",
+      "embeddings.run": "Kendi modellerinle gömme üret",
       "session.autoTitle": "İlk tur başlık bağlamını oku ve otomatik başlıkları güncelle",
     },
     permissionHelp: {
@@ -3005,6 +3008,8 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
         "Kullanıcı kapsamındaki ve eklentinin belirttiği proje yollarındaki etkin öğrenilmiş bellek notlarını (tercihler, geri bildirim, olgular, başvurular) listeler. Öneriler, arşivlenmiş notlar veya kaynak bilgileri dahil değildir; salt okunurdur.",
       "conversation.read":
         "Arşivlenmiş sohbetlerinizi listeler — her biri özetiyle ve oturum bazında düzenlenmiş dökümüyle — böylece eklenti bunları notlarınıza yazabilir. Arşiv kapalıyken hepsi gizlenir. Araç sonuçları, akıl yürütme ve ekler hiçbir zaman yer almaz.",
+      "embeddings.run":
+        "Verdiğin metni yapılandırdığın gömme modeline gönderir ve o hizmetin kotasını kullanır; eklenti API anahtarını hiç görmez. Yalnızca verdiğin metin gönderilir, yalnızca vektörler döner.",
       "session.autoTitle":
         "Yalnızca uygun oturumların ilk istemini ve ilk yanıtını okuyabilir; başlık elle değiştirilmemişse otomatik başlığı günceller. Tam dökümü okuyamaz.",
     },

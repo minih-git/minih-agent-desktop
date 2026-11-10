@@ -2131,6 +2131,8 @@ sklm: {
     "thinkingManualOverrideHint": "Pas dans le catalogue ; activer si pris en charge.",
     "contextWindowCatalogHint": "Suit models.dev ; une modification fixe votre valeur.",
     "availableForSubagents": "Disponible pour la délégation de l'IA",
+    "embeddingModel": "Modèle d'embedding",
+    "embeddingModelHint": "Enregistre ce modèle comme modèle vectoriel : les plugins génèrent des embeddings avec lui et il n'est jamais proposé comme modèle de conversation",
     "availableForSubagentsHint": "Autoriser l'IA à utiliser ce modèle lors de la délégation de tâches à des sous-agents",
     "modelSystemPrompt": "Prompt du modèle",
     "modelSystemPromptHint": "Ajouté à l'invite système uniquement lorsque ce modèle est le modèle principal de la session.",
@@ -2937,6 +2939,7 @@ sklm: {
       "usage.read": "Lire les statistiques d'utilisation",
       "memory.read": "Lire la mémoire apprise",
       "conversation.read": "Lire l'archive des conversations",
+      "embeddings.run": "Créer des embeddings avec vos modèles",
       "session.autoTitle": "Lire le contexte du premier tour et modifier les titres automatiques"
     },
     "permissionHelp": {
@@ -2984,6 +2987,8 @@ sklm: {
         "Liste les notes actives de mémoire apprise (préférences, retours, faits et références) pour la portée utilisateur et les chemins de projet indiqués par le plugin. Aucune suggestion, note archivée ni information de provenance ; lecture seule.",
       "conversation.read":
         "Liste vos conversations archivées — chacune avec son résumé et, par session, sa transcription expurgée — pour que le plugin les écrive dans vos notes. L'archive désactivée masque tout. Les résultats d'outils, le raisonnement et les pièces jointes n'y figurent jamais.",
+      "embeddings.run":
+        "Envoie le texte que vous fournissez au modèle d'embedding que vous configurez et consomme le quota de ce service ; le plugin ne voit jamais la clé d'API. Seul le texte que vous fournissez est envoyé, seuls des vecteurs reviennent.",
       "session.autoTitle":
         "Peut lire uniquement le premier message et la première réponse des sessions admissibles, puis modifier le titre s'il n'a pas été changé manuellement. Ne peut pas lire la transcription complète.",
     }

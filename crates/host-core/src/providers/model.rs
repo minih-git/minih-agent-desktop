@@ -188,6 +188,13 @@ pub struct ModelBinding {
     /// naming this model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_style: Option<String>,
+    /// What this model is for: `chat` (absent, the historical default) or
+    /// `embedding`. Host-core stores the user's answer and never interprets it;
+    /// the renderer keeps embedding models out of conversation pickers and the
+    /// plugin host serves them through `pi.embeddings.embed`. Absent is chat, so
+    /// a record written by an older device stays a conversation model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

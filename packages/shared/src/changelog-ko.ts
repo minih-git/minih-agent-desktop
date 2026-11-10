@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-11-10",
+    highlights: [
+      "이제 플러그인이 내 모델로 색인을 만들 수 있습니다. 설정 → 모델에서 저장된 모델을 임베딩 모델로 표시하면(게이트웨이가 그렇게 분류한 Minih Router 모델은 자동으로 표시됩니다), 새로 추가된 「내 모델로 임베딩 생성」 권한을 허용한 플러그인이 그 모델로 텍스트를 벡터로 바꿉니다. 텍스트는 해당 서비스로 전송되어 그 할당량을 사용하고, 플러그인은 API 키를 볼 수 없으며, 그 모델은 어떤 대화 선택기에도 나타나지 않습니다.",
+    ],
+  },
+
+  {
     version: "1.4.0",
     date: "2026-11-09",
     highlights: [

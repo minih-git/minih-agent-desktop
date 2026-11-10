@@ -995,6 +995,12 @@ export type PluginModelInfo = {
   providerName: string;
   modelId: string;
   label: string;
+  /**
+   * What the model is for. A chat model answers turns; an embedding model only
+   * produces vectors through `pi.embeddings.embed` and cannot be passed to
+   * `pi.agent.complete`.
+   */
+  kind: "chat" | "embedding";
   /** User-configured display alias; the key remains the model identity. */
   alias?: string;
   /** Whether the user enabled this binding for AI-driven delegation. */
@@ -1003,6 +1009,33 @@ export type PluginModelInfo = {
   isDefault?: boolean;
   supportsReasoning: boolean;
   thinkingLevels: string[];
+};
+
+/**
+ * Which models `pi.models.list` reports. Absent lists conversation models, the
+ * API's historical answer, so a plugin written before vector models existed
+ * keeps seeing exactly what it saw then.
+ */
+export type PluginModelsListInput = {
+  kind?: "chat" | "embedding" | "all";
+};
+
+export type PluginEmbeddingsInput = {
+  /** `${providerId}/${modelId}` of a ready model whose `kind` is `embedding`. */
+  modelKey: string;
+  /** 1 to 64 texts, each at most 8 KiB, 256 KiB in total. */
+  texts: string[];
+  /** Optional dimensionality, passed through to endpoints that support it. */
+  dimensions?: number;
+};
+
+export type PluginEmbeddingsResult = {
+  /** One vector per input text, in the same order. */
+  vectors: number[][];
+  modelKey: string;
+  /** Length of every returned vector. */
+  dims: number;
+  usage?: { inputTokens?: number };
 };
 
 export type PluginLlmMessage = {
@@ -1411,7 +1444,24 @@ export type PluginHostApi = {
     complete: (input: PluginCompleteInput) => Promise<PluginCompleteResult>;
   };
   models: {
-    list: () => Promise<PluginModelInfo[]>;
+    /**
+     * Ready models of every configured provider.
+     *
+     * Without an argument this lists conversation models only, which is what
+     * the API always did. `{ kind: "embedding" }` lists the vector models and
+     * `{ kind: "all" }` lists both.
+     */
+    list: (input?: PluginModelsListInput) => Promise<PluginModelInfo[]>;
+  };
+  embeddings: {
+    /**
+     * Generate embeddings with one of the user's own models.
+     *
+     * Requires the `embeddings.run` permission: the text leaves the machine and
+     * spends the user's quota, so the plugin never sees the provider
+     * credential — the host makes the call.
+     */
+    embed: (input: PluginEmbeddingsInput) => Promise<PluginEmbeddingsResult>;
   };
   session: {
     getLlmContext: () => Promise<PluginLlmContext>;
@@ -1660,6 +1710,10 @@ export const PLUGIN_PERMISSIONS = [
   // Redacted conversation archive for the user's own synced knowledge base;
   // read-only, and only while the user's archive switch is on.
   "conversation.read",
+  // Paid, host-sent vectors from the user's own embedding model: the text
+  // leaves the machine and spends their quota, so install-time consent covers
+  // it and the credential never reaches the plugin.
+  "embeddings.run",
   // Install-time escape hatch from the net.domains allowlist (issue #1201):
   // user-typed endpoints, e.g. a self-hosted server, that no manifest written
   // ahead of time can name. Enforced by net-policy's grant-aware checks.

@@ -30,6 +30,12 @@ export type RuntimeModelOverrides = {
   providerId?: string;
   modelId?: string;
   thinkingLevel?: SessionThinkingLevel;
+  /**
+   * Resolve a model that cannot take part in a conversation (a vector model, for
+   * `pi.embeddings.embed`). Off by default: a conversation launch must keep
+   * refusing one, which is what keeps a bad pick from failing a session.
+   */
+  allowNonChat?: boolean;
 };
 
 type ModelResolutionDependencies = {
@@ -124,6 +130,13 @@ export function createRuntimeModelResolver({
       );
     }
     const storedModel = bindingForModel(provider, modelId);
+    const modelKind = storedModel?.kind === "embedding" ? "embedding" : "chat";
+    if (modelKind === "embedding" && !overrides.allowNonChat) {
+      throw Object.assign(
+        new Error("An embedding model cannot answer a turn; select a chat model"),
+        { errorCode: ErrorCodes.MODEL_NOT_CONFIGURED },
+      );
+    }
     const apiStyle = vendorBinding?.apiStyle ?? storedModel?.apiStyle ?? provider.apiStyle;
     let baseUrl = vendorBinding?.baseUrl ?? provider.baseUrl;
     let modelConfig = vendorBinding?.modelConfig ?? catalogModelConfigFor(modelsDevCatalog, {
@@ -168,7 +181,14 @@ export function createRuntimeModelResolver({
       supportedThinkingLevels: [...thinkingCapabilities.supportedThinkingLevels],
       ...(modelConfig ? { modelConfig } : {}),
     };
-    return { providerId: provider.id, modelId, provider: resolvedProvider, thinkingLevel, providers };
+    return {
+      providerId: provider.id,
+      modelId,
+      provider: resolvedProvider,
+      thinkingLevel,
+      kind: modelKind,
+      providers,
+    };
   };
 }
 

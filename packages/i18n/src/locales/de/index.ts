@@ -2131,6 +2131,8 @@ sklm: {
     "thinkingManualOverrideHint": "Nicht im Katalog; aktivieren, wenn unterstützt.",
     "contextWindowCatalogHint": "Folgt models.dev; eine Änderung fixiert Ihren Wert.",
     "availableForSubagents": "Verfügbar für AI-Delegation",
+    "embeddingModel": "Embedding-Modell",
+    "embeddingModelHint": "Speichert dieses Modell als Vektor-Modell: Plugins erzeugen damit Embeddings, als Gesprächsmodell wird es nie angeboten",
     "availableForSubagentsHint": "Ermöglichen Sie AI, dieses Modell zu verwenden, wenn Aufgaben an Subagenten delegiert werden.",
     "modelSystemPrompt": "Modell-Prompt",
     "modelSystemPromptHint": "Wird nur an den System-Prompt angehängt, solange dieses Modell das Hauptmodell der Sitzung ist.",
@@ -2937,6 +2939,7 @@ sklm: {
       "usage.read": "Nutzungsstatistiken lesen",
       "memory.read": "Gelerntes Gedächtnis lesen",
       "conversation.read": "Unterhaltungsarchiv lesen",
+      "embeddings.run": "Embeddings mit deinen Modellen erzeugen",
       "session.autoTitle": "Kontext des ersten Durchlaufs lesen und automatische Titel ändern"
     },
     "permissionHelp": {
@@ -2984,6 +2987,8 @@ sklm: {
         "Listet aktive Notizen aus dem erlernten Gedächtnis (Einstellungen, Feedback, Fakten und Referenzen) für den Benutzerbereich und vom Plugin benannte Projektpfade auf. Keine Vorschläge, archivierten Notizen oder Herkunftsinformationen; nur lesend.",
       "conversation.read":
         "Listet deine archivierten Unterhaltungen auf — jeweils mit Zusammenfassung und, nach Sitzung, dem bereinigten Verlauf —, damit das Plugin sie in deine Notizen schreiben kann. Ist das Archiv aus, bleibt alles verborgen. Werkzeugergebnisse, Denkprozess und Anhänge sind nie enthalten.",
+      "embeddings.run":
+        "Sendet den übergebenen Text an das von dir konfigurierte Embedding-Modell und verbraucht dessen Kontingent; das Plugin sieht den API-Schlüssel nie. Nur übergebener Text wird gesendet, zurück kommen nur Vektoren.",
       "session.autoTitle":
         "Kann nur die erste Eingabe und Antwort geeigneter Sitzungen lesen und den Titel ändern, sofern er nicht manuell geändert wurde. Das vollständige Transkript bleibt unzugänglich.",
     }

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-11-10",
+    highlights: [
+      "Eklentiler artık kendi modellerinizle dizin oluşturabilir: Ayarlar → Modeller bölümünde kayıtlı bir modeli gömme modeli olarak işaretleyin (ağ geçidinin böyle sınıflandırdığı Minih Router modelleri kendiliğinden işaretlenir) ve yeni \"Kendi modellerinle gömme üret\" iznini verdiğiniz bir eklenti metni onunla vektörlere çevirsin — metin o hizmete gider ve kotasını kullanır, eklenti API anahtarınızı hiç görmez ve model hiçbir konuşma seçicisinde görünmez.",
+    ],
+  },
+
+  {
     version: "1.4.0",
     date: "2026-11-09",
     highlights: [

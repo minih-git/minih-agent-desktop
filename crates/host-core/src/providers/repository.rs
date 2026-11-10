@@ -114,6 +114,7 @@ fn hydrate_dynamic_plugin_models(db: &Database, provider: &mut ProviderPublic) -
                 available_for_subagents: None,
                 native_web_search: None,
                 api_style: None,
+                kind: None,
             }
         })
         .collect();

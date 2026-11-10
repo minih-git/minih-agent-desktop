@@ -377,7 +377,7 @@ corresponding `session:turnEnded` event (§5).
 
 ### models (requires `models.list`)
 ```ts
-pi.models.list(): Promise<PluginModelInfo[]>
+pi.models.list(input?: { kind?: "chat" | "embedding" | "all" }): Promise<PluginModelInfo[]>
 
 type PluginModelInfo = {
   key: string                 // `${providerId}/${modelId}` — first slash splits
@@ -385,6 +385,7 @@ type PluginModelInfo = {
   providerName: string
   modelId: string
   label: string
+  kind: "chat" | "embedding"  // what the model is for
   supportsReasoning: boolean
   thinkingLevels: ThinkingLevel[]
 }
@@ -394,6 +395,12 @@ Only enabled, authenticated provider rows are returned (API key, OAuth, or
 `authKind: "none"`). No secrets. `models.list` is also a panel-bridge channel
 so a picker page can populate itself. When the host transport is unavailable,
 the call returns an empty list instead of warning (D080).
+
+With no argument the call lists **conversation models only**, which is what it
+returned before `kind` existed, so an existing plugin sees no change.
+`{ kind: "embedding" }` lists the vector models and `{ kind: "all" }` lists
+both. An unrecognized `kind` is `INVALID_ARGUMENT` rather than a silent fallback
+to chat models.
 
 ### Provider entries in Add Service
 
@@ -1608,3 +1615,48 @@ A plugin may poll it as often as its own schedule needs; the host neither
 retries nor queues, and a real turn aborts a request in flight. The spend is
 recorded in `keep_warm_usage` and counted into the usage history, never into a
 turn.
+
+## 11. Embeddings (requires `embeddings.run`)
+
+`pi.embeddings.embed` turns text into vectors with one of the user's own
+embedding models (ADR plugin-embeddings). The permission is **high risk**: the
+text leaves the machine and spends the user's provider quota, which is what the
+install review states.
+
+```ts
+pi.embeddings.embed(input: {
+  modelKey: string     // `${providerId}/${modelId}` of a ready model whose kind is "embedding"
+  texts: string[]      // 1..=64 entries; each at most 8 KiB; 256 KiB in total
+  dimensions?: number  // optional, passed through to endpoints that support it
+}): Promise<{
+  vectors: number[][]              // one vector per text, in the same order
+  modelKey: string
+  dims: number                     // length of every returned vector
+  usage?: { inputTokens?: number }
+}>
+```
+
+- The host makes the request; the plugin never receives a provider credential,
+  and no key appears in a returned value, an error message, or a log line.
+- Only an OpenAI-compatible provider serves it: `POST <baseUrl>/embeddings` with
+  `{ model, input, encoding_format: "float", dimensions? }`. A vendor-account
+  OAuth provider or a native adapter (Anthropic, Gemini, Codex) answers
+  `UNSUPPORTED_PROVIDER`.
+- Every bound is checked before the provider is called. The per-plugin pace is
+  120 calls a minute and the timeout is 60 seconds.
+- The audit row records the model key, the text count, the character count, the
+  vector width and the token usage — never the text and never a vector.
+
+Error codes:
+
+| Code | Meaning |
+| --- | --- |
+| `INVALID_ARGUMENT` | The request is malformed or exceeds a bound. |
+| `MODEL_NOT_FOUND` | No ready model answers this `modelKey`. |
+| `MODEL_NOT_EMBEDDING` | The model is not marked as an embedding model. |
+| `UNSUPPORTED_PROVIDER` | The provider cannot serve embeddings (OAuth, native adapter). |
+| `PROVIDER_UNAUTHORIZED` | The provider rejected the stored credential. |
+| `PROVIDER_RATE_LIMITED` | The provider is rate limiting this account. |
+| `NETWORK_ERROR` | The provider could not be reached, or its answer was unusable. |
+| `RATE_LIMITED` | The plugin exceeded its own per-minute pace. |
+| `TIMEOUT` | The request exceeded the 60-second budget. |

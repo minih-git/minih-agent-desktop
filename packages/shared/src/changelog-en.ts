@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-11-10",
+    highlights: [
+      "Plugins can now index with your own models: mark a saved model as an embedding model in Settings → Models (Minih Router models the gateway classifies that way are marked for you), and a plugin you grant the new \"Create embeddings with your models\" permission turns text into vectors with it — the text goes to that provider and spends its quota, the plugin never sees your API key, and the model stays out of every conversation picker.",
+    ],
+  },
+
+  {
     version: "1.4.0",
     date: "2026-11-09",
     highlights: [

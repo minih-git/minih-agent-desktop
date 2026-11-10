@@ -7,23 +7,39 @@
  * is not configured, so these helpers keep the two notions apart: what a
  * provider itself offers, and what is safe to display for it.
  */
-import { isImageGenerationModel, modelWireIdsEqual as sameComposerModelId, type ImageGenerationBindings, type ProviderPublic } from "@minih-agent/shared";
+import {
+  isConversationModel,
+  isImageGenerationModel,
+  modelWireIdsEqual as sameComposerModelId,
+  type ImageGenerationBindings,
+  type ProviderPublic,
+} from "@minih-agent/shared";
 
 export type DefaultModelOption = {
   provider: ProviderPublic;
   modelId: string;
 };
 
-/** Expand runnable providers into the model choices they actually configure. */
+/**
+ * Expand runnable providers into the model choices they actually configure.
+ *
+ * Every caller is a conversation choice — the app default, a subagent pin, a
+ * title or learning model — so a model the user marked as an embedding model
+ * is left out: it cannot answer a turn.
+ */
 export function defaultModelOptions(
   providers: readonly ProviderPublic[],
   imageGeneration?: ImageGenerationBindings | null,
 ): DefaultModelOption[] {
   return providers.flatMap((provider) => {
-    const modelIds = (provider.models ?? [])
+    const all = provider.models ?? [];
+    const modelIds = all
+      .filter(isConversationModel)
       .map((binding) => binding.id.trim())
       .filter(Boolean);
-    const ids = modelIds.length > 0 ? modelIds : [defaultModelIdOf(provider)?.trim() ?? ""];
+    // The legacy default speaks only for a row that saved no bindings at all; a
+    // row whose every binding is a vector model offers no conversation choice.
+    const ids = modelIds.length > 0 ? modelIds : all.length > 0 ? [] : [defaultModelIdOf(provider)?.trim() ?? ""];
     return [...new Set(ids)].filter((modelId) => !!modelId &&
       !isImageGenerationModel(imageGeneration, provider.id, modelId),
     ).map((modelId) => ({ provider, modelId }));

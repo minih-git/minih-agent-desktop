@@ -123,6 +123,20 @@ export function usePluginsPage() {
       }
       const res = await api.marketSearch(q);
       setMarket((res.plugins ?? []).filter(isClientVisibleMarketPlugin));
+      if (opts?.refreshRemote) {
+        // A refreshed catalog can name a newer version than the one the
+        // installed list was computed from, and the list would keep claiming
+        // "up to date" beside a market card advertising the update. Recompute
+        // the badges against the catalog we just fetched: no second remote
+        // round trip, and the two views cannot disagree.
+        try {
+          await api.marketCheckUpdates(false);
+          await refreshPlugins();
+        } catch {
+          // The market list itself already refreshed; an update check that
+          // fails must not turn that into an error toast.
+        }
+      }
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), { variant: "error" });
     } finally {

@@ -189,6 +189,8 @@ pub(crate) fn declared_providers(manifest: &PluginManifest) -> Vec<DeclaredPlugi
                                 available_for_subagents: None,
                                 native_web_search: None,
                                 api_style: None,
+                                // A plugin contributes conversation providers.
+                                kind: None,
                             })
                         })
                         .collect::<Vec<_>>()

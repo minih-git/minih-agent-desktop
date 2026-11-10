@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-11-10",
+    highlights: [
+      "Les plugins peuvent désormais indexer avec vos propres modèles : marquez un modèle enregistré comme modèle d'embedding dans Réglages → Modèles (les modèles Minih Router que la passerelle classe ainsi sont marqués automatiquement), et un plugin disposant de la nouvelle autorisation « Créer des embeddings avec vos modèles » transforme le texte en vecteurs avec lui — le texte part vers ce fournisseur et consomme son quota, le plugin ne voit jamais votre clé d'API, et le modèle n'apparaît dans aucun sélecteur de conversation.",
+    ],
+  },
+
+  {
     version: "1.4.0",
     date: "2026-11-09",
     highlights: [

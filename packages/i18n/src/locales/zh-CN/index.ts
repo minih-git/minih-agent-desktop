@@ -2134,6 +2134,8 @@ sklm: {
     thinkingManualOverrideHint: "目录未标注，可手动开启",
     contextWindowCatalogHint: "跟随 models.dev；手动修改后会固定为你的值",
     availableForSubagents: "可供 AI 自动调度",
+    embeddingModel: "向量模型",
+    embeddingModelHint: "把这个模型标记为向量模型：插件可以用它生成向量，对话里不再可选",
     availableForSubagentsHint: "允许 AI 在委派子任务时自动选用此模型",
     modelSystemPrompt: "模型提示词",
     modelSystemPromptHint: "仅当会话使用此模型时追加到系统提示，适合放该模型的专属要求。",
@@ -2935,6 +2937,7 @@ sklm: {
       "usage.read": "读取用量统计",
       "memory.read": "读取长期记忆",
       "conversation.read": "读取会话归档",
+      "embeddings.run": "使用你的模型生成向量",
       "session.autoTitle": "读取首轮标题上下文并更新自动标题",
     },
     permissionHelp: {
@@ -2985,6 +2988,8 @@ sklm: {
         "列出用户范围与插件指定项目路径下的活跃长期记忆（偏好、反馈、事实、参考）；不含建议、归档与来源信息，只读。",
       "conversation.read":
         "列出你的归档会话——每段包含摘要，并可按会话读取脱敏后的原文——供插件写入你的笔记。关闭会话归档后全部隐藏。不含工具返回结果、思考过程与附件。",
+      "embeddings.run":
+        "把你传入的文本发给你配置的向量模型，并消耗该服务的额度；插件拿不到 API 密钥。只发送你传入的文本，只收回向量。",
       "session.autoTitle":
         "只能读取符合条件会话的首条提示和首条回复，并仅在标题未被手动修改时更新；不能读取完整会话记录。",
     },

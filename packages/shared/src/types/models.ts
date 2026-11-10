@@ -209,6 +209,30 @@ export type ModelLimitSource = "catalog" | "user";
 /** @deprecated Use ModelLimitSource; kept for existing context-window callers. */
 export type ContextWindowSource = ModelLimitSource;
 
+/** What a saved model is for. A record without the marker is a chat model. */
+export const MODEL_KINDS = ["chat", "embedding"] as const;
+export type ModelKind = (typeof MODEL_KINDS)[number];
+
+/**
+ * The model's kind, with the historical default applied.
+ *
+ * Every record written before `kind` existed is a chat model, and so is one an
+ * older device wrote without the key, so readers never have to ask whether it
+ * is present.
+ */
+export function modelKind(
+  binding: Pick<ModelBinding, "kind"> | null | undefined,
+): ModelKind {
+  return binding?.kind === "embedding" ? "embedding" : "chat";
+}
+
+/** Whether a saved model can take part in a conversation at all. */
+export function isConversationModel(
+  binding: Pick<ModelBinding, "kind"> | null | undefined,
+): boolean {
+  return modelKind(binding) !== "embedding";
+}
+
 /** Provider-local model settings persisted with the provider configuration. */
 export type ModelBinding = {
   id: string;
@@ -276,6 +300,13 @@ export type ModelBinding = {
    * speak different wire APIs.
    */
   apiStyle?: string;
+  /**
+   * What this model is for. Absent means `"chat"`, which is what every record
+   * written before the marker was. An `"embedding"` model is offered to plugins
+   * through `pi.embeddings.embed` and never through a conversation picker: it
+   * cannot answer a turn, so selecting it would only fail the session.
+   */
+  kind?: ModelKind;
 };
 
 /**
