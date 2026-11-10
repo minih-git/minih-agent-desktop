@@ -75,6 +75,7 @@ export function relayGrantFrame(pending: GatewayPendingGrantRecord): RacpDeviceG
     },
     signature: pending.signature,
     signerCertificate: pending.signerCertificate,
+    ...(pending.installation ? { installation: pending.installation } : {}),
   };
 }
 

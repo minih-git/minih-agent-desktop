@@ -83,8 +83,9 @@ export class PairingService {
     });
     try {
       await connection.initialize();
-      const paired = await connection.request<{ deviceId: string; deviceToken: string; roles: string[] }>("connection/pair", {
+      const paired = await connection.request<{ deviceId: string; deviceToken: string; roles: string[]; installationId?: string }>("connection/pair", {
         deviceLabel: request.deviceLabel,
+        ...(request.installationId ? { installationId: request.installationId } : {}),
       });
       const createdAt = new Date().toISOString();
       await this.options.store.saveDevice({
@@ -93,7 +94,16 @@ export class PairingService {
         label: request.deviceLabel,
         tokenHash: hashToken(paired.deviceToken),
         createdAt,
+        ...(paired.installationId && paired.installationId === request.installationId ? { installationId: paired.installationId } : {}),
       });
+      if (paired.installationId && paired.installationId === request.installationId) {
+        for (const device of this.options.store.listDevices()) {
+          if (device.deviceId !== paired.deviceId && !device.accountId && device.hostId === input.hostId
+            && device.installationId === paired.installationId && !device.revokedAt) {
+            await this.options.store.revokeDevice(device.deviceId, createdAt);
+          }
+        }
+      }
       await this.audit(input, "ok", paired.deviceId);
       const csrfToken = csrfTokenFor(this.options.store.secret, paired.deviceId);
       // The computer's name travels with the pairing answer: this is the only

@@ -1445,8 +1445,11 @@ sklm: {
       },
       accountsDevices: {
         title: "Meine Geräte",
-        desc: "Die Computer Ihres Kontos und die Geräte, die darauf zugreifen dürfen.",
-        computersTitle: "Computer dieses Kontos",
+        desc: "Erreichbare Computer und Geräte mit Zugriff auf diesen Computer, einschließlich früherer Kopplungen.",
+        computersTitle: "Computer, mit denen Sie sich verbinden können",
+        grantsTitle: "Geräte mit Zugriff auf diesen Computer",
+        grantCreated: "Freigegeben: {{time}}",
+        grantNeverUsed: "Auf diesem Computer noch nicht verwendet",
         computersEmpty: "Noch keine Konto-Computer. Aktivieren Sie den Remote-Schalter, um diesen anzumelden.",
         online: "Online",
         offline: "Offline",

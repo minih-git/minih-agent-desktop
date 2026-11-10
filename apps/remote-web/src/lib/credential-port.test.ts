@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { WebCookieCredentialPort, credentialHeaders } from "./credential-port.js";
+import { installationIdKey } from "./device-installation.js";
 import { HOST_REGISTRY_STORAGE_KEY, createHostRegistry, createMemoryStorage } from "./host-registry.js";
 
 function port(storage = createMemoryStorage(), answer: Record<string, unknown> = {}) {
@@ -27,6 +28,9 @@ function port(storage = createMemoryStorage(), answer: Record<string, unknown> =
       fetchImpl,
       userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1 Safari/605.1",
       now: () => new Date("2026-09-18T10:00:00.000Z"),
+      // The browser keeps the installation id in this same store, so the test
+      // drives it the way `localStorage` would.
+      installationStorage: storage,
     }),
   };
 }
@@ -81,6 +85,7 @@ describe("WebCookieCredentialPort", () => {
       }) as unknown as typeof fetch,
       userAgent: "Mozilla/5.0 (Macintosh) Safari/605.1",
       now: () => new Date("2026-09-18T10:00:00.000Z"),
+      installationStorage: createMemoryStorage(),
     });
     await credentialPort.pair({
       gatewayOrigin: "https://gw.example.com",
@@ -113,6 +118,7 @@ describe("WebCookieCredentialPort", () => {
     const registry = createHostRegistry(createMemoryStorage());
     const failing = new WebCookieCredentialPort({
       registry,
+      installationStorage: createMemoryStorage(),
       fetchImpl: (() =>
         Promise.resolve(
           new Response(JSON.stringify({ error: { data: { code: "PAIRING_FAILED", message: "bad code" } } }), {
@@ -124,6 +130,106 @@ describe("WebCookieCredentialPort", () => {
     const outcome = await failing.pair({ gatewayOrigin: "https://gw.example.com", hostId: "host1", pairingToken: "ppt1.x" });
     expect(outcome.ok).toBe(false);
     expect(registry.list()).toEqual([]);
+  });
+
+  /**
+   * The installation identity: one per Gateway origin, kept in this browser, and
+   * sent with the pairing call so the Gateway can replace this install's
+   * previous device after a normal approval. It is not a credential, and no
+   * header changes because of it.
+   */
+  describe("installation identity", () => {
+    const ORIGIN = "https://gw.example.com";
+    const OTHER_ORIGIN = "https://other.example.com";
+
+    function recordingPort() {
+      const storage = createMemoryStorage();
+      const registry = createHostRegistry(storage);
+      const calls: Array<{ headers: Record<string, string>; body: unknown }> = [];
+      const credentialPort = new WebCookieCredentialPort({
+        registry,
+        installationStorage: storage,
+        userAgent: "Mozilla/5.0 (Macintosh) Safari/605.1",
+        now: () => new Date("2026-09-18T10:00:00.000Z"),
+        fetchImpl: ((_url: string, init: RequestInit) => {
+          calls.push({
+            headers: (init.headers ?? {}) as Record<string, string>,
+            body: JSON.parse(String(init.body)),
+          });
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({ deviceId: "dev_1", hostId: "host1", roles: ["viewer"], csrfToken: "csrf-1" }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          );
+        }) as unknown as typeof fetch,
+      });
+      return { credentialPort, registry, storage, calls };
+    }
+
+    it("pairs with the id it keeps for that Gateway, and keeps the headers as they were", async () => {
+      const { credentialPort, registry, storage, calls } = recordingPort();
+
+      await credentialPort.pair({ gatewayOrigin: ORIGIN, hostId: "host1", pairingToken: "ppt1.secret" });
+
+      const id = await credentialPort.installationId(ORIGIN);
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+      expect(calls[0]!.body).toEqual({ deviceLabel: "Safari on macOS", client: "web", installationId: id });
+      // The credential is exactly what it always was: the pairing token in the
+      // header and the CSRF value on the entry, never the installation id.
+      expect(calls[0]!.headers).toEqual({ "content-type": "application/json", authorization: "Bearer ppt1.secret" });
+      expect(storage.getItem(installationIdKey(ORIGIN))).toBe(id);
+      expect(registry.get("host1")).toEqual({
+        hostId: "host1",
+        label: "host1",
+        deviceId: "dev_1",
+        csrfToken: "csrf-1",
+        pairedAt: "2026-09-18T10:00:00.000Z",
+        roles: ["viewer"],
+      });
+    });
+
+    it("keeps one id per Gateway origin across a reloaded client", async () => {
+      const storage = createMemoryStorage();
+      const first = new WebCookieCredentialPort({ registry: createHostRegistry(storage), installationStorage: storage });
+      const id = await first.installationId(ORIGIN);
+
+      // A reload builds another port over the same `localStorage`.
+      const second = new WebCookieCredentialPort({ registry: createHostRegistry(storage), installationStorage: storage });
+      expect(await second.installationId(ORIGIN)).toBe(id);
+
+      // Another Gateway is another install: its device rows are its own.
+      expect(await second.installationId(OTHER_ORIGIN)).not.toBe(id);
+      expect(storage.getItem(installationIdKey(OTHER_ORIGIN))).toBe(await second.installationId(OTHER_ORIGIN));
+    });
+
+    it("refuses to pair when the id cannot be stored, and sends nothing", async () => {
+      const storage = createMemoryStorage();
+      const calls: string[] = [];
+      const credentialPort = new WebCookieCredentialPort({
+        registry: createHostRegistry(storage),
+        installationStorage: {
+          ...storage,
+          setItem: () => {
+            throw new Error("the browser refused the write");
+          },
+        },
+        fetchImpl: ((url: string | URL | Request) => {
+          calls.push(String(url));
+          return Promise.resolve(new Response("{}", { status: 200, headers: { "content-type": "application/json" } }));
+        }) as typeof fetch,
+      });
+
+      const outcome = await credentialPort.pair({ gatewayOrigin: ORIGIN, hostId: "host1", pairingToken: "ppt1.secret" });
+
+      // No silent fallback: a device created under an id this browser could not
+      // remember would never be replaceable, so the request is abandoned.
+      expect(outcome).toEqual({
+        ok: false,
+        failure: { code: "STORAGE_FAILED", message: "the browser refused the write", retriable: false },
+      });
+      expect(calls).toEqual([]);
+    });
   });
 
   /**

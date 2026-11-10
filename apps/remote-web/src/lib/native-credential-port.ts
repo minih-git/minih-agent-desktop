@@ -21,6 +21,12 @@ import {
   type PairOutcome,
   type PairRequest,
 } from "./credential-port.js";
+import {
+  createInstallationId,
+  installationIdFailure,
+  secureStoreInstallationStorage,
+  type InstallationIdResolver,
+} from "./device-installation.js";
 import { defaultDeviceLabel, nativeDeviceLabel } from "./device-label.js";
 import { forgetNotifyCredential, syncNotifyCredential } from "./native-notify.js";
 import { gatewayOrigin } from "./runtime.js";
@@ -51,12 +57,29 @@ export type NativeCredentialPortOptions = {
 export class NativeCredentialPort implements CredentialPort {
   private store: SecureStore | null = null;
   private readonly tokens = new Map<string, string>();
+  private readonly installation: InstallationIdResolver;
 
-  constructor(private readonly options: NativeCredentialPortOptions) {}
+  constructor(private readonly options: NativeCredentialPortOptions) {
+    this.installation = createInstallationId({
+      // Resolved per call: the Keychain / Keystore adapter is attached by
+      // `boot()` after this port exists, and `requireStore()` is what reports
+      // a port used too early.
+      storage: () => secureStoreInstallationStorage(this.requireStore()),
+    });
+  }
 
   /** Hand the port its platform store; called by the bootstrap before `ready()`. */
   attach(store: SecureStore): void {
     this.store = store;
+  }
+
+  /**
+   * This install's id at that Gateway, kept in the platform secure store under
+   * its own prefix: `ready()` only reconciles `device-token.*` items, so the id
+   * survives forgetting a Host, signing out, and every launch in between.
+   */
+  async installationId(gatewayOrigin: string): Promise<string> {
+    return this.installation.installationId(gatewayOrigin);
   }
 
   /**
@@ -97,12 +120,21 @@ export class NativeCredentialPort implements CredentialPort {
       request.deviceLabel?.trim() ||
       nativeDeviceLabel(this.options.client) ||
       defaultDeviceLabel(this.options.userAgent ?? "");
+    let installationId: string;
+    try {
+      installationId = await this.installationId(request.gatewayOrigin);
+    } catch (error) {
+      // Without a remembered identity the next approval could not replace this
+      // device, so no device is asked for at all.
+      return { ok: false, failure: installationIdFailure(error) };
+    }
     const result = await pairDevice({
       gatewayOrigin: request.gatewayOrigin,
       hostId: request.hostId,
       pairingToken: request.pairingToken,
       deviceLabel: label,
       client: this.options.client,
+      installationId,
       ...(this.options.fetchImpl ? { fetchImpl: this.options.fetchImpl } : {}),
     });
     if (!result.ok) return result;

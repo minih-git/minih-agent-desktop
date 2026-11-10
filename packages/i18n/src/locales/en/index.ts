@@ -1312,8 +1312,11 @@ sklm: {
       },
       accountsDevices: {
         title: "My devices",
-        desc: "The computers of your account and the devices allowed to reach them.",
-        computersTitle: "Computers of this account",
+        desc: "Computers you can connect to and devices allowed to access this computer, including earlier pairings.",
+        computersTitle: "Computers you can connect to",
+        grantsTitle: "Devices allowed to access this computer",
+        grantCreated: "Granted: {{time}}",
+        grantNeverUsed: "Not used on this computer",
         computersEmpty: "No account computers yet. Turn on the remote switch to enroll this one.",
         online: "Online",
         offline: "Offline",

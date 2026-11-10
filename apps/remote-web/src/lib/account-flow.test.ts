@@ -455,3 +455,57 @@ describe("push on sign-out (§11.6)", () => {
     expect(signOuts).toHaveLength(1);
   });
 });
+
+describe("installation-aware account requests", () => {
+  const installationId = "11111111-1111-4111-8111-111111111111";
+  const route = (url: string) => url.endsWith("/login") ? loginOk() : url.endsWith("/devices") ? requestOk() : hostsOk();
+
+  it("sends the remembered installation once even when the request button is pressed twice", async () => {
+    const { fetchImpl, calls } = fakeFetch(route);
+    const identity = deferred<string>();
+    const { flow } = flowFor({ fetchImpl, installationId: () => identity.promise });
+    await flow.signIn("fixture-key");
+    const first = flow.requestDevice();
+    const duplicate = flow.requestDevice();
+    identity.resolve(installationId);
+    await Promise.all([first, duplicate]);
+    expect(calls.filter((call) => call.url.endsWith("/devices")).map((call) => call.body)).toEqual([{ deviceLabel: "iPad", client: "web", installationId }]);
+    expect(flow.getState().kind).toBe("requesting");
+    flow.dispose();
+  });
+
+  it("reports storage failure without creating a device request", async () => {
+    const { fetchImpl, calls } = fakeFetch(route);
+    const { flow } = flowFor({ fetchImpl, installationId: async () => { throw new Error("locked storage"); } });
+    await flow.signIn("fixture-key");
+    await flow.requestDevice();
+    expect(flow.getState()).toMatchObject({ kind: "failed", failure: { code: "STORAGE_FAILED", message: "locked storage" } });
+    expect(calls.some((call) => call.url.endsWith("/devices"))).toBe(false);
+  });
+
+  it("does not create a request after the screen is disposed during identity loading", async () => {
+    const { fetchImpl, calls } = fakeFetch(route);
+    const identity = deferred<string>();
+    const { flow } = flowFor({ fetchImpl, installationId: () => identity.promise });
+    await flow.signIn("fixture-key");
+    const pending = flow.requestDevice();
+    flow.dispose();
+    identity.resolve(installationId);
+    await pending;
+    expect(calls.some((call) => call.url.endsWith("/devices"))).toBe(false);
+  });
+
+  it("does not restore a failure after sign-out during identity loading", async () => {
+    const { fetchImpl, calls } = fakeFetch(route);
+    let fail!: (error: Error) => void;
+    const identity = new Promise<string>((_resolve, reject) => { fail = reject; });
+    const { flow } = flowFor({ fetchImpl, installationId: () => identity });
+    await flow.signIn("fixture-key");
+    const pending = flow.requestDevice();
+    await flow.abandon();
+    fail(new Error("late storage failure"));
+    await pending;
+    expect(flow.getState().kind).toBe("idle");
+    expect(calls.some((call) => call.url.endsWith("/devices"))).toBe(false);
+  });
+});

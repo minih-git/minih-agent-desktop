@@ -45,25 +45,31 @@ export function defaultAccountDeviceLabel(): string {
 export function useAccountFlow(deviceLabel: () => string): { state: AccountFlowState; flow: AccountFlow } {
   const labelRef = useRef(deviceLabel);
   labelRef.current = deviceLabel;
-  const [flow] = useState(
-    () =>
-      new AccountFlow({
-        gatewayOrigin,
-        client: nativePlatform ?? "web",
-        deviceLabel: () => labelRef.current(),
-        adopt: (input) => credentialPort.adoptAccountDevice(input),
-        // Sign-out is the last moment this client can ask the Gateway to stop
-        // pushing to the device, so the unregistration happens here, before the
-        // account session is revoked.
-        onSignOut: async (credential) => {
-          try {
-            await unregisterPushToken({ gatewayOrigin, credential });
-          } catch (error) {
-            console.warn("[remote-web] push unregistration failed", error);
-          }
-        },
-      }),
-  );
+  const [flow] = useState(() => {
+    const port = credentialPort;
+    // A port that predates the installation identity (or a build without a
+    // secure store) simply has no method, and the request is sent without one.
+    const readInstallationId = port.installationId?.bind(port);
+    return new AccountFlow({
+      gatewayOrigin,
+      client: nativePlatform ?? "web",
+      deviceLabel: () => labelRef.current(),
+      adopt: (input) => port.adoptAccountDevice(input),
+      // The device request names this install so an approval replaces its
+      // previous device row instead of adding a second one.
+      ...(readInstallationId ? { installationId: () => readInstallationId(gatewayOrigin) } : {}),
+      // Sign-out is the last moment this client can ask the Gateway to stop
+      // pushing to the device, so the unregistration happens here, before the
+      // account session is revoked.
+      onSignOut: async (credential) => {
+        try {
+          await unregisterPushToken({ gatewayOrigin, credential });
+        } catch (error) {
+          console.warn("[remote-web] push unregistration failed", error);
+        }
+      },
+    });
+  });
   const [state, setState] = useState<AccountFlowState>(() => flow.getState());
   useEffect(() => flow.subscribe(() => setState(flow.getState())), [flow]);
   useEffect(() => () => flow.dispose(), [flow]);

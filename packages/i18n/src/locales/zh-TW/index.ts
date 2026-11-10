@@ -1436,8 +1436,11 @@ sklm: {
       },
       accountsDevices: {
         title: "我的裝置",
-        desc: "帳號下的電腦，以及被允許存取它們的裝置。",
-        computersTitle: "本帳號的電腦",
+        desc: "可連線的電腦，以及允許存取本機的裝置授權（可能包含舊配對）。",
+        computersTitle: "可連線的電腦",
+        grantsTitle: "允許存取本機的裝置",
+        grantCreated: "授權時間：{{time}}",
+        grantNeverUsed: "尚未在本機使用",
         computersEmpty: "還沒有帳號電腦。開啟遠端開關即可把本機加入。",
         online: "線上",
         offline: "離線",

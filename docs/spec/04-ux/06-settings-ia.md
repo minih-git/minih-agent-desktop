@@ -540,6 +540,17 @@ a usage tab.
   and the Advanced SSH entry is a button that navigates to the kept
   destination rather than an embed of `RemoteHostsPage`.
 
+- The Devices page separates **Computers you can connect to** from **Devices
+  allowed to access this computer**. These are opposite directions of access,
+  not two physical-device inventories. The grant list may include earlier
+  pairings; each row shows its unique credential ID and localized creation and
+  last-use times (or "Not used on this computer"). Same-name grants remain
+  distinguishable and independently revocable with two-step confirmation; the
+  badge stays beside the name rather than in the middle of a stretched row.
+  The page title is not repeated as a nested heading. Newly approved matching
+  installations replace their older grants through the real credential path,
+  never by hiding rows. Legacy records lacking identity require explicit revoke.
+
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **account's models** as
   cards, the image-generation model selector (rendered once at least one model

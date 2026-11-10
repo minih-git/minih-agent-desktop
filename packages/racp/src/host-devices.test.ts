@@ -1018,3 +1018,89 @@ function grantFor() {
     deliverUntil: new Date(NOW + 60_000).toISOString(),
   };
 }
+
+describe("installation-scoped device replacement", () => {
+  it("replaces a reapproved installation but keeps a different phone with the same label", async () => {
+    const f = await fixture();
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const beta = directoryFor(f, "beta");
+    const first = await alpha.approve(request({ installationId: "11111111-1111-4111-8111-111111111111" }));
+    await beta.handleGrant(asRelayed(first));
+    const other = await alpha.approve(request({ requestId: "req_other", installationId: "22222222-2222-4222-8222-222222222222" }));
+    await beta.handleGrant(asRelayed(other));
+    const later = directoryFor(f, "alpha", { now: NOW + 1000 });
+    const replacement = await later.approve(request({ requestId: "req_again", installationId: "11111111-1111-4111-8111-111111111111" }));
+    expect(await beta.handleGrant(asRelayed(replacement))).toBe("adopted");
+    for (const store of [f.alphaStore, f.betaStore]) {
+      expect(await authenticate(store, first.deviceToken!)).toBeNull();
+      expect(await authenticate(store, replacement.deviceToken!)).not.toBeNull();
+      expect(await authenticate(store, other.deviceToken!)).not.toBeNull();
+      expect((await store.listDevices()).filter((device) => !device.revokedAt)).toHaveLength(2);
+    }
+  });
+});
+
+describe("installation binding safety", () => {
+  const installationId = "11111111-1111-4111-8111-111111111111";
+
+  it("refuses a changed or transplanted installation binding without changing existing grants", async () => {
+    const f = await fixture();
+    const alpha = directoryFor(f, "alpha");
+    const beta = directoryFor(f, "beta");
+    const first = await alpha.approve(request({ installationId }));
+    await beta.handleGrant(asRelayed(first));
+    const second = await directoryFor(f, "alpha", { now: NOW + 1000 }).approve(request({ requestId: "req_2", installationId }));
+    expect(await beta.handleGrant({ ...asRelayed(second), installation: first.installation })).toBe("refused");
+    expect(await beta.handleGrant({ ...asRelayed(second), installation: { ...second.installation!, id: "22222222-2222-4222-8222-222222222222" } })).toBe("refused");
+    expect(await authenticate(f.betaStore, first.deviceToken!)).not.toBeNull();
+    expect(await authenticate(f.betaStore, second.deviceToken!)).toBeNull();
+  });
+
+  it("does not revive an older grant delivered after the replacement or after a restart", async () => {
+    const f = await fixture();
+    const first = await directoryFor(f, "alpha").approve(request({ installationId }));
+    const later = await directoryFor(f, "alpha", { now: NOW + 1000 }).approve(request({ requestId: "req_2", installationId }));
+    await directoryFor(f, "beta").handleGrant(asRelayed(later));
+    await directoryFor(f, "beta").handleGrant(asRelayed(first));
+    expect(await authenticate(f.betaStore, first.deviceToken!)).toBeNull();
+    expect(await authenticate(f.betaStore, later.deviceToken!)).not.toBeNull();
+    expect(await directoryFor(f, "beta").handleGrant(asRelayed(first))).toBe("refused");
+  });
+
+  it("keeps legacy same-name phones separate and requires normal approval for replacement", async () => {
+    const f = await fixture();
+    const alpha = directoryFor(f, "alpha");
+    const legacy = await alpha.approve(request());
+    const identified = await alpha.approve(request({ requestId: "req_2", installationId }));
+    const denied = directoryFor(f, "alpha", { confirmer: { confirm: async () => "denied" } });
+    expect(await denied.handleRequest(request({ requestId: "req_3", installationId }), () => { throw new Error("must not grant"); })).toBe("denied");
+    expect(await authenticate(f.alphaStore, legacy.deviceToken!)).not.toBeNull();
+    expect(await authenticate(f.alphaStore, identified.deviceToken!)).not.toBeNull();
+  });
+
+  it("emits ordinary signed revocations for superseded grants", async () => {
+    const f = await fixture();
+    const first = await directoryFor(f, "alpha").approve(request({ installationId }));
+    const beta = directoryFor(f, "beta");
+    await beta.handleGrant(asRelayed(first));
+    const revocations: RacpDeviceRevokeFrame[] = [];
+    const later = directoryFor(f, "alpha", { now: NOW + 1000, confirmer: { confirm: async () => "approved" } });
+    await later.handleRequest(request({ requestId: "req_2", installationId }), () => undefined, (frame) => revocations.push(frame));
+    expect(revocations.map((frame) => frame.revoke.deviceId)).toEqual([first.grant.deviceId]);
+    expect(await beta.handleRevoke(revocations[0]!)).toBe("revoked");
+    expect(await authenticate(f.betaStore, first.deviceToken!)).toBeNull();
+  });
+});
+
+it("finishes interrupted installation replacement on a redelivered grant", async () => {
+  const f = await fixture();
+  const installationId = "11111111-1111-4111-8111-111111111111";
+  const first = await directoryFor(f, "alpha").approve(request({ installationId }));
+  await directoryFor(f, "beta").handleGrant(asRelayed(first));
+  const later = await directoryFor(f, "alpha", { now: NOW + 1000 }).approve(request({ requestId: "req_2", installationId }));
+  const persisted = (await f.alphaStore.listDevices()).find((device) => device.deviceId === later.grant.deviceId)!;
+  await f.betaStore.saveDevice(persisted);
+  expect(await directoryFor(f, "beta").handleGrant(asRelayed(later))).toBe("already-adopted");
+  expect(await authenticate(f.betaStore, first.deviceToken!)).toBeNull();
+  expect(await authenticate(f.betaStore, later.deviceToken!)).not.toBeNull();
+});

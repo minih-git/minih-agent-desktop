@@ -119,6 +119,7 @@ export function flowFor(options: {
   adopt?: (input: AccountAdoption) => Promise<AccountAdoptionOutcome>;
   onSignOut?: (credential: HostCredential) => Promise<void>;
   now?: () => number;
+  installationId?: () => Promise<string>;
 }) {
   const adoptions: AccountAdoption[] = [];
   const signOuts: HostCredential[] = [];
@@ -138,6 +139,7 @@ export function flowFor(options: {
     },
     fetchImpl: options.fetchImpl,
     ...(options.timer ? { timer: options.timer } : {}),
+    ...(options.installationId ? { installationId: options.installationId } : {}),
     // Pinned so the deadline of a request is measured against the same instant
     // in every run; only the test that ends a wait by the clock overrides it.
     now: options.now ?? (() => START),

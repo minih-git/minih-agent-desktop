@@ -1452,8 +1452,11 @@ sklm: {
       },
       accountsDevices: {
         title: "내 기기",
-        desc: "계정의 컴퓨터와 접근이 허용된 기기입니다.",
-        computersTitle: "이 계정의 컴퓨터",
+        desc: "연결할 수 있는 컴퓨터와 이 컴퓨터에 접근이 허용된 기기입니다. 이전 페어링이 포함될 수 있습니다.",
+        computersTitle: "연결할 수 있는 컴퓨터",
+        grantsTitle: "이 컴퓨터에 접근이 허용된 기기",
+        grantCreated: "허용 시각: {{time}}",
+        grantNeverUsed: "이 컴퓨터에서 아직 사용하지 않음",
         computersEmpty: "아직 계정 컴퓨터가 없습니다. 원격 스위치를 켜면 이 컴퓨터가 등록됩니다.",
         online: "온라인",
         offline: "오프라인",

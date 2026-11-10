@@ -26,7 +26,7 @@
  * rather than globally, and no read or relay ever names another account's Host.
  */
 import { randomUUID } from "node:crypto";
-import { hashToken, verifyHostArtifact } from "@minih-agent/racp";
+import { hashToken, verifyHostArtifact, deviceInstallationMatches, compareDeviceInstallations } from "@minih-agent/racp";
 import {
   RACP_DEVICE_TOKEN_PREFIX,
   RACP_HOST_CAPABILITIES,
@@ -35,6 +35,7 @@ import {
   RacpDesktopProofHttpRequestSchema,
   deviceGrantSigningPayload,
   deviceRevokeSigningPayload,
+  deviceInstallationSigningPayload,
   hostAdvertisesCapability,
   hostProofSigningPayload,
   type RacpAccountDeviceHost,
@@ -113,6 +114,7 @@ type LiveRequest = {
   client: "web" | "ios" | "android" | "desktop";
   requestedAt: string;
   expiresAt: string;
+  installationId?: string;
   /** The Hosts this request was fanned out to; only they may answer it. */
   hosts: string[];
   /**
@@ -272,6 +274,7 @@ export class DeviceRequestService {
       client: body.client,
       requestedAt,
       expiresAt,
+      ...(body.installationId ? { installationId: body.installationId } : {}),
     };
     const live: LiveRequest = {
       requestId,
@@ -281,6 +284,7 @@ export class DeviceRequestService {
       client: body.client,
       requestedAt,
       expiresAt,
+      ...(body.installationId ? { installationId: body.installationId } : {}),
       hosts: [],
     };
     this.live.set(requestId, live);
@@ -307,6 +311,7 @@ export class DeviceRequestService {
       requestedAt: live.requestedAt,
       expiresAt: live.expiresAt,
       ...(live.desktop ? { hostProof: live.desktop.proof } : {}),
+      ...(live.installationId ? { installationId: live.installationId } : {}),
     };
     const asked: string[] = [];
     for (const host of this.roster(live.accountId)) {
@@ -629,6 +634,19 @@ export class DeviceRequestService {
       });
       return;
     }
+    if (frame.installation) {
+      const installationVerdict = verifyHostArtifact({
+        payload: deviceInstallationSigningPayload(grant, frame.installation.id),
+        signature: frame.installation.signature,
+        signerCertificate: frame.signerCertificate,
+        gatewayCaPem: authority.ca.certificatePem,
+        now: this.nowMs(),
+      });
+      if (!installationVerdict.ok || frame.installation.id !== request.installationId) {
+        this.options.log("warn", "gateway refused an invalid installation binding", { grantId: grant.grantId });
+        return;
+      }
+    }
     if (Date.parse(grant.deliverUntil) <= this.nowMs()) {
       this.options.log("warn", "gateway refused an expired device grant", { grantId: grant.grantId });
       return;
@@ -646,18 +664,39 @@ export class DeviceRequestService {
       this.options.log("warn", "gateway refused a device grant that collides with another device", { deviceId: grant.deviceId });
       return;
     }
+    // Another Host may have won while certificate lookup was awaiting I/O.
+    if (request.granted) return;
 
     request.granted = { deviceId: grant.deviceId, roles: [...grant.roles], signerHostId, token, takenAt: null };
     // The Gateway learns the device exactly as §11.4 does: the hash only, and
     // scoped to the account, because the token works on every Host of it.
-    await this.options.store.saveDevice({
+    const current: import("./store.js").GatewayDeviceRecord = {
       deviceId: grant.deviceId,
       hostId: signerHostId,
       label: grant.deviceLabel,
       tokenHash: grant.tokenHash,
       createdAt: this.nowIso(),
       accountId: grant.accountId,
-    });
+      ...(frame.installation && grant.deviceClass !== "desktop" ? { installationId: frame.installation.id } : {}),
+      ...(grant.deviceClass === "desktop" ? { deviceClass: "desktop" as const, applicantHostId: grant.applicantHostId } : {}),
+      grantRequestId: grant.requestId,
+      grantIssuedAt: grant.issuedAt,
+    };
+    await this.options.store.saveDevice(current);
+    for (const device of this.options.store.listDevices()) {
+      if (device.deviceId === current.deviceId || device.accountId !== current.accountId) continue;
+      if (device.grantRequestId && device.grantRequestId === current.grantRequestId) continue;
+      if (!deviceInstallationMatches({ ...device, origin: "gateway" }, { ...current, origin: "gateway" })) continue;
+      const replaced = compareDeviceInstallations(device, current) > 0 ? current : device;
+      await this.options.store.revokeDevice(replaced.deviceId, this.nowIso());
+      for (const pending of this.options.store.listPendingGrants()) {
+        if (pending.deviceId === replaced.deviceId) await this.options.store.deletePendingGrant(pending.grantId);
+      }
+    }
+    if (this.options.store.findDevice(current.deviceId)?.revokedAt) {
+      request.granted.token = null;
+      return;
+    }
     const pending: GatewayPendingGrantRecord = {
       grantId: grant.grantId,
       requestId: grant.requestId,
@@ -683,6 +722,7 @@ export class DeviceRequestService {
       ...(grant.requestExpiresAt ? { requestExpiresAt: grant.requestExpiresAt } : {}),
       ...(grant.applicantCertificate ? { applicantCertificate: grant.applicantCertificate } : {}),
       ...(grant.hostProofSignature ? { hostProofSignature: grant.hostProofSignature } : {}),
+      ...(frame.installation ? { installation: frame.installation } : {}),
     };
     await this.options.store.savePendingGrant(pending);
     const relayed = relayToSiblings({

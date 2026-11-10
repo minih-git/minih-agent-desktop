@@ -1446,8 +1446,11 @@ sklm: {
       },
       accountsDevices: {
         title: "Cihazlarım",
-        desc: "Hesabınızın bilgisayarları ve onlara erişmesine izin verilen cihazlar.",
-        computersTitle: "Bu hesabın bilgisayarları",
+        desc: "Bağlanabileceğiniz bilgisayarlar ve önceki eşleştirmeler dahil bu bilgisayara erişmesine izin verilen cihazlar.",
+        computersTitle: "Bağlanabileceğiniz bilgisayarlar",
+        grantsTitle: "Bu bilgisayara erişmesine izin verilen cihazlar",
+        grantCreated: "İzin tarihi: {{time}}",
+        grantNeverUsed: "Bu bilgisayarda henüz kullanılmadı",
         computersEmpty: "Henüz hesap bilgisayarı yok. Bunu kaydetmek için uzak anahtarı açın.",
         online: "Çevrimiçi",
         offline: "Çevrimdışı",
