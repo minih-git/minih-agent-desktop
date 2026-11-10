@@ -261,6 +261,34 @@ problem or the worker's, and both are shown without a notification.
   `permissionMode` is advisory input. A future reviewer must not "trust the
   card" to close a permission gap.
 
+## Enforcement status
+
+What this decision *requires* and what the shipped code *enforces* are not yet
+the same list. Naming the difference is part of the decision: a reader must not
+assume a rule is live because it is stated above.
+
+| Rule | Enforced today | Where it lands |
+| --- | --- | --- |
+| A card's `permissionMode` narrows the delivery ceiling | **Yes** — the ledger ceiling is `min(sender, card)` at send time, and turn admission re-checks it | this change |
+| A card can never widen authority | **Yes** — the ceiling is a minimum, and a target wider than the card is refused | this change |
+| `deploy` / `delete` / `spend` always in `mustAsk` | **Recorded only.** They are merged into every card and every frozen Mandate, but nothing inspects them at tool-execution time | the approval-by-action PR (stage 1) |
+| Other `mustAsk` actions (`push`, `merge`, `criteria-change`) | **Recorded only**, same as above | the approval-by-action PR (stage 1) |
+| `observe` keeps a bot from starting | **Not reachable yet.** No bot session can receive a delivery before the employee UI exists, so there is nothing to gate | the bot runtime gates with 0-f |
+| The steward holds the gateway tools and nothing that writes | **Yes** — enforced by definition resolution, not by the prompt | this change |
+| A confirmation comes from the person | **Partially.** `confirm` is a model tool call; it must quote the person's own words, and a second confirmation of the same card is refused, but nothing proves the person clicked | the confirmation-token change, with 0-f |
+| The steward cannot read a worker's transcript | **Yes** — it has no such tool | this change |
+| Task stage derives from structured records only | **Yes** — reports and turn state, never reply text | this change |
+
+Two consequences worth stating plainly:
+
+- A card that a person confirms as `ask` is dispatched under at most `ask`, but
+  "ask" inside a worker is still the *worker session's* own permission mode.
+  What the card adds is a ceiling, not a step-by-step approval protocol; that
+  protocol is the `mustAsk` work above.
+- Until the confirmation-token change, "the person confirmed this" rests on the
+  model quoting them truthfully. `sourceUtterance` makes that reviewable after
+  the fact; it does not prove it at the time.
+
 ## Compatibility and validation
 
 Schema v30 -> v31 is one ordered, transactional step in the existing migration

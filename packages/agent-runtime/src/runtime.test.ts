@@ -2712,13 +2712,22 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
     await runtime.dispose();
   });
 
-  it("offers cross-session delivery on demand in Agent mode only", async () => {
+  it("offers cross-session delivery and the task card on demand in Agent mode only", async () => {
     const agent = createRuntime();
     const agentNames = (agent as any).agent.state.tools.map((tool: any) => tool.name);
     // On demand like the scheduled tools: the schemas cost nothing per request
     // until the model searches for them.
     expect(agentNames).not.toContain("SessionSend");
-    for (const name of ["SessionList", "SessionSend", "SessionResult", "SessionCreate"]) {
+    // The steward's card rides the same lifecycle as the session tools, so a
+    // Plan or Goal turn cannot freeze an authorization either.
+    const dispatchAndCard = [
+      "SessionList",
+      "SessionSend",
+      "SessionResult",
+      "SessionCreate",
+      "TaskCard",
+    ];
+    for (const name of dispatchAndCard) {
       expect((agent as any).deferredToolNames.has(name)).toBe(true);
     }
     const prompt = (agent as any).agent.state.systemPrompt as string;
@@ -2731,9 +2740,12 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
       const runtime = createRuntime({ mode });
       const names = (runtime as any).agent.state.tools.map((tool: any) => tool.name);
       expect(names).not.toContain("SessionSend");
-      expect((runtime as any).deferredToolNames.has("SessionSend")).toBe(false);
-      expect((runtime as any).deferredToolNames.has("SessionList")).toBe(false);
+      for (const name of dispatchAndCard) {
+        expect(names).not.toContain(name);
+        expect((runtime as any).deferredToolNames.has(name)).toBe(false);
+      }
       expect((runtime as any).agent.state.systemPrompt).not.toContain("SessionSend");
+      expect((runtime as any).agent.state.systemPrompt).not.toContain("TaskCard");
       await runtime.dispose();
     }
   });

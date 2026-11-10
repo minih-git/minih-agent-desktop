@@ -45,6 +45,20 @@ pub fn is_valid_report(report: &str) -> bool {
     REPORTS.contains(&report)
 }
 
+/// The permission a confirmed card asks for.
+///
+/// `validate_mandate` has already refused anything else, so this only extracts
+/// the value the ledger needs to narrow the delivery's ceiling with.
+pub fn mandate_permission_mode(encoded: &str) -> Result<String> {
+    let value: Value = serde_json::from_str(encoded)
+        .map_err(|_| anyhow!("INVALID_ARGUMENT: mandate is not valid JSON"))?;
+    value
+        .get("permissionMode")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("INVALID_ARGUMENT: mandate.permissionMode required"))
+}
+
 /// Refuse a prohibited permission mode; `inherit` is not meaningful on a card.
 pub fn validate_mandate(encoded: &str) -> Result<()> {
     if encoded.chars().count() > MAX_MANDATE_CHARS {
@@ -222,6 +236,211 @@ mod tests {
             "policyVersion": "steward-1"
         })
         .to_string()
+    }
+
+    /// The card travels *with* the delivery: one insert, one transaction, so an
+    /// authorized delivery is never briefly an unauthorized one.
+    #[test]
+    fn a_delivery_can_carry_its_mandate_from_the_start() {
+        let db = database();
+        let sender = session(&db, "Steward");
+        let worker = session(&db, "小爪");
+        let message = super::super::send_record(
+            &db,
+            &json!({
+                "sourceSessionId": sender,
+                "pluginId": "builtin:session-messaging",
+                "content": "Fix the login timeout",
+                "idempotencyKey": "carried",
+                "notifyOnCompletion": false,
+                "mandate": card("task-7"),
+            }),
+            &worker,
+            "task",
+        )
+        .unwrap();
+        assert!(message
+            .mandate_json
+            .as_deref()
+            .is_some_and(|raw| raw.contains("task-7")));
+        // It arrives confirmed, so a second attach is a conflict, not an edit.
+        let error = set_mandate(&db, &message.id, &card("task-8")).unwrap_err();
+        assert!(error.to_string().contains("CONFLICT"));
+    }
+
+    #[test]
+    fn a_delivery_refuses_an_invalid_carried_mandate() {
+        let db = database();
+        let sender = session(&db, "Steward");
+        let worker = session(&db, "小爪");
+        let error = super::super::send_record(
+            &db,
+            &json!({
+                "sourceSessionId": sender,
+                "pluginId": "builtin:session-messaging",
+                "content": "Do it",
+                "idempotencyKey": "bad",
+                "mandate": {"version": 1, "permissionMode": "inherit"},
+            }),
+            &worker,
+            "task",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("INVALID_ARGUMENT"));
+        // Nothing was written: a refused card cannot leave a half-authorized row.
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM session_collaboration_messages",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    fn with_mode(card_json: &str, mode: &str) -> String {
+        let mut value: Value = serde_json::from_str(card_json).unwrap();
+        value["permissionMode"] = json!(mode);
+        value.to_string()
+    }
+
+    /// The card's own permission has to reach execution. A steward running
+    /// under `auto` that proposes an `ask` card must not dispatch it into an
+    /// `auto` employee, because that would silently ignore what the person
+    /// chose when they confirmed "ask me each step".
+    #[test]
+    fn a_narrow_card_is_refused_for_a_wider_employee() {
+        let db = database();
+        let sender = sessions::create_session_with_options(
+            &db,
+            sessions::SessionCreateOptions {
+                title: Some("Steward".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("auto".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let worker = sessions::create_session_with_options(
+            &db,
+            sessions::SessionCreateOptions {
+                title: Some("小爪".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("auto".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let error = super::super::send_record(
+            &db,
+            &json!({
+                "sourceSessionId": sender,
+                "pluginId": "builtin:session-messaging",
+                "content": "Fix the login timeout",
+                "idempotencyKey": "narrow-card",
+                "mandate": with_mode(&card("task-1"), "ask"),
+            }),
+            &worker,
+            "task",
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("PERMISSION_DENIED"),
+            "expected a refusal, got: {error}"
+        );
+        // The refusal leaves no row: a rejected task is not a queued one.
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM session_collaboration_messages",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    /// The other direction: a card wider than its sender cannot widen the
+    /// delivery, because the ceiling is the minimum of the two.
+    #[test]
+    fn a_wider_card_does_not_widen_the_delivery() {
+        let db = database();
+        let sender = sessions::create_session_with_options(
+            &db,
+            sessions::SessionCreateOptions {
+                title: Some("Steward".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let worker = sessions::create_session_with_options(
+            &db,
+            sessions::SessionCreateOptions {
+                title: Some("小爪".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let message = super::super::send_record(
+            &db,
+            &json!({
+                "sourceSessionId": sender,
+                "pluginId": "builtin:session-messaging",
+                "content": "Fix the login timeout",
+                "idempotencyKey": "wide-card",
+                "mandate": with_mode(&card("task-2"), "auto"),
+            }),
+            &worker,
+            "task",
+        )
+        .unwrap();
+        assert_eq!(message.permission_ceiling, "accept-edits");
+        // And the confirmed card is still recorded as the person wrote it.
+        assert!(message
+            .mandate_json
+            .as_deref()
+            .is_some_and(|raw| raw.contains("\"auto\"")));
+    }
+
+    /// No card, no narrowing: every existing sender behaves exactly as before.
+    #[test]
+    fn a_delivery_without_a_card_keeps_the_sender_ceiling() {
+        let db = database();
+        let sender = sessions::create_session_with_options(
+            &db,
+            sessions::SessionCreateOptions {
+                title: Some("Parent".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("auto".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let worker = sessions::create_session_with_options(
+            &db,
+            sessions::SessionCreateOptions {
+                title: Some("Worker".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("auto".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let message = deliver(&db, &sender, &worker);
+        let stored = repository::get(&db, &message).unwrap().unwrap();
+        assert_eq!(stored.permission_ceiling, "auto");
+        assert!(stored.mandate_json.is_none());
     }
 
     #[test]

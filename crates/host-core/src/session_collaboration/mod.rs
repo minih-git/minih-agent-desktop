@@ -66,7 +66,33 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
             "PERMISSION_DENIED: session communication requires Agent mode"
         ));
     }
-    let permission_ceiling = permissions::effective_mode(db, source)?;
+    // The mandate travels with the delivery, never as a second call: a card a
+    // person confirmed is the authorization of this exact task, so a delivery
+    // that arrives authorized and one that is authorized afterwards must not be
+    // two different states of the ledger (ADR bot-sessions-and-steward §3).
+    let mandate_json = match input.get("mandate") {
+        None | Some(Value::Null) => None,
+        Some(value) => {
+            let encoded = match value {
+                Value::String(raw) => raw.clone(),
+                other => other.to_string(),
+            };
+            progress::validate_mandate(&encoded)?;
+            Some(encoded)
+        }
+    };
+    // A confirmed card is a ceiling of its own: the delivery may only be as
+    // permissive as the *narrower* of what the sender may grant and what the
+    // person confirmed. Without this, a `ask` card would dispatch under the
+    // steward's `auto` and the person's choice would be silently ignored.
+    let sender_ceiling = permissions::effective_mode(db, source)?;
+    let permission_ceiling = match mandate_json.as_deref() {
+        Some(encoded) => permissions::narrower(
+            &sender_ceiling,
+            &progress::mandate_permission_mode(encoded)?,
+        ),
+        None => sender_ceiling,
+    };
     permissions::check_target(db, target, &permission_ceiling)?;
     let pending: i64 = db.conn().query_row(
         "SELECT COUNT(*) FROM session_collaboration_messages
@@ -101,7 +127,7 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
             input.get("sourceTurnId").and_then(Value::as_str),
         )?,
         permission_ceiling,
-        mandate_json: None,
+        mandate_json,
         stage: None,
         report_seq: 0,
     };

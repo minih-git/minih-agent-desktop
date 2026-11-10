@@ -731,6 +731,9 @@ or general MCP operations:
   existing Agent session. The host binds `sourceSessionId` and `sourceTurnId`
   to the current plugin tool invocation, enforces idempotency, a target inbox
   bound, the source permission ceiling, and a bounded autonomous hop count.
+  An optional `mandate` (the confirmed task card) is written **in the same
+  insert**: a delivery is authorized when it exists, never a moment later. An
+  invalid card refuses the whole call and leaves no row behind.
 - `session.collaboration.message` — read one durable delivery by message id for
   Electron's dispatch and provenance paths.
 - `session.collaboration.status` / `session.collaboration.result` — return a

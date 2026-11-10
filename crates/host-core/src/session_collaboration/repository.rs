@@ -138,8 +138,8 @@ pub(super) fn insert(db: &Database, message: &Message, key: &str) -> Result<()> 
         "INSERT INTO session_collaboration_messages
         (id,plugin_id,source_session_id,source_title,target_session_id,target_title,kind,content,
          status,notify_on_completion,turn_id,reply_to_message_id,idempotency_key,remaining_hops,
-         result,error,created_at,updated_at,permission_ceiling)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?17,?18)",
+         result,error,created_at,updated_at,permission_ceiling,mandate_json)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?17,?18,?19)",
         params![
             message.id,
             message.plugin_id,
@@ -158,7 +158,8 @@ pub(super) fn insert(db: &Database, message: &Message, key: &str) -> Result<()> 
             message.result,
             message.error,
             now_ms(),
-            message.permission_ceiling
+            message.permission_ceiling,
+            message.mandate_json
         ],
     )?;
     Ok(())

@@ -179,6 +179,9 @@ export function createSessionSendTool(service: SessionCollaborationService): Loc
           ...(kind ? { kind } : {}),
           ...(delivery ? { delivery } : {}),
           ...(typeof notify === "boolean" ? { notifyOnCompletion: notify } : {}),
+          // A confirmed card is the authorization of this delivery. The
+          // service validates and encodes it; the host writes it with the row.
+          ...(record.mandate !== undefined ? { mandate: record.mandate } : {}),
           // A retried model call must not deliver twice. The turn scopes the key
           // because the ledger remembers it for the session's whole lifetime,
           // and a provider may reuse or omit a tool-call id across turns.
