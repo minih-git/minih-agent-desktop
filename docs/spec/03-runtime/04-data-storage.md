@@ -468,15 +468,17 @@ tables only when they need relations or indexes.
 
 #### Renderer sidebar preferences (D093)
 
-Sidebar organization is non-authoritative presentation state stored
-best-effort under renderer localStorage key
-`pi.desktop.sidebarPreferences`:
+Sidebar organization is non-authoritative presentation state. Main keeps an
+atomic `sidebar-preferences.json` backup in the selected application data root;
+renderer localStorage key `pi.desktop.sidebarPreferences` supplies first paint.
+See [sidebar layout recovery](../../adr/sidebar-layout-recovery.md).
 
 ```ts
 type SidebarPreferences = {
   sessionMeta: Record<string, {
     pinned?: boolean;
     archived?: boolean;
+    manualTitle?: boolean;
     order?: number; // renderer-local manual order
   }>;
   projectMeta: Record<string, {
@@ -502,9 +504,17 @@ type SidebarPreferences = {
   Missing or invalid values fall back to stable path order; pinned and archived
   priority remains applied before manual order. Session `manual`/`order` remain
   compatibility fields and are not exposed by the sidebar.
-- Missing, malformed, or unwritable preferences fall back to empty metadata,
-  `recent`, archived hidden, and the host-selected project. Preference failure
-  never blocks a host operation.
+- Restore the application backup before bootstrap persists the selected project.
+  Without a backup, migrate a valid legacy cache, including an explicitly empty
+  tab list. Only if neither copy is valid, recover registered projects from
+  `projects.list`. Existing layouts never reopen intentionally closed tabs.
+- Unreadable backups disable replacement instead of being overwritten by empty
+  startup state. Failed catalog reads do not persist empty recovery results.
+  Writes are limited to 2 MiB, flushed and atomically renamed through trusted
+  Main-top-frame IPC. Storage relocation remaps internal paths and metadata keys,
+  not external projects or labels. `manualTitle` survives recovery; generations
+  reject old startup results and user changes outrank in-flight recovery.
+  Rust remains authoritative for projects, groups, sessions and the workspace.
 - The record never contains transcript content, tool arguments, provider
   configuration, or secrets. Clearing it changes presentation only.
 - `openProjectPaths` retains sidebar tabs. The selected workspace remains
@@ -1796,9 +1806,11 @@ cached read is proportional to the requested page. Consequences:
   (`last_seq`), which is a deduplicated logical count: a file line whose index
   commit never landed leaves the counter permanently behind the file, and
   clamping to it cut the newest messages out of the tail.
-- The compaction chain is always returned whole with any window, because the
-  newest checkpoint drives model context regardless of which messages are
-  visible.
+- Bounded windows return the active checkpoint plus checkpoints inside their
+  message offsets. A nonempty tail page also includes checkpoints after its last
+  message, preserving the newest compaction on reopen and Host restart. Middle
+  pages do not load the whole chain. Unbounded model-context reads retain the
+  complete chain; historical message usage stays unchanged.
 
 A regenerate or edit-resend names its cut by **message identity**, not by a
 count. The renderer holds a bounded, deduplicated, display-filtered view, so an

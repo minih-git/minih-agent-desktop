@@ -30,6 +30,17 @@ import {
   type ToolsOutputParams,
 } from "./index.js";
 
+describe("Sidebar preference backup IPC", () => {
+  it("admits only the additive Minih preference channels without changing versions", () => {
+    expect(IPC.invoke.sidebarPreferencesGet).toBe("minih-agent-desktop/sidebar/preferences/get");
+    expect(IPC.invoke.sidebarPreferencesSet).toBe("minih-agent-desktop/sidebar/preferences/set");
+    expect(IPC_WHITELIST.has(IPC.invoke.sidebarPreferencesGet)).toBe(true);
+    expect(IPC_WHITELIST.has(IPC.invoke.sidebarPreferencesSet)).toBe(true);
+    expect(PROTOCOL_VERSION).toBe(12);
+    expect(SCHEMA_VERSION).toBe(16);
+  });
+});
+
 describe("Browser recovery IPC", () => {
   it("admits the additive session-owned page metadata channel", () => {
     expect(IPC.invoke.browserGetPages).toBe("minih-agent-desktop/browser/getPages");

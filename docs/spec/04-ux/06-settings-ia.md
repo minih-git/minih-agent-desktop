@@ -911,7 +911,12 @@ system while preserving their different data ownership:
   filter points at — Global under All or Global, Project under Project — and
   the primary action's tooltip names that destination so the choice is never
   implicit. Choosing Project without a selected project reports that instead
-  of failing silently.
+  of failing silently. MCP creation, inline import and market installation are
+  the exception: All uses the selected project when present and Global only
+  without one. Explicit Global/Project retain their destination. An opened MCP
+  editor pins its project; changing the page selection cannot move the definition.
+  Save rereads that pinned destination for duplicate IDs/names, so another
+  project's same-name entry cannot block it. Host validation remains authoritative.
 - Inside the panel, each level is a group header row — level name, resolved
   `.agents` path in mono, localized count — followed by its rows. Lists flow
   at natural page height like every other Settings surface; the page scrolls
@@ -999,8 +1004,9 @@ system while preserving their different data ownership:
   opens inline on the MCP page. Imported servers follow the current Global /
   Project filter and selected project; secrets and header values are never
   shown in candidate rows.
-- MCP Market installs into the same destination as Add: Global under All or
-  Global, and the selected project under Project. Installed badges reflect only
+- MCP Market installs into the same destination as Add: the selected project
+  under All when present, Global otherwise or under explicit Global, and the
+  selected project under Project. Installed badges reflect only
   that destination, so an entry in another level can still be installed here.
   Project installation requires a selected project and never falls back to Global.
 - MCP Market offers Retry after a failed query or partial source failure. It

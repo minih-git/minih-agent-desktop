@@ -242,15 +242,17 @@ CREATE TABLE kv (
 
 #### Renderer 侧边栏首选项 (D093)
 
-侧边栏组织是非权威的呈现状态存储
-渲染器 localStorage 键下的尽力而为
-`pi.desktop.sidebarPreferences`：
+侧栏组织仍是非权威显示状态。Main 在所选应用数据根保存原子备份
+`sidebar-preferences.json`，渲染器 localStorage 键
+`pi.desktop.sidebarPreferences` 只用于首屏缓存。
+参见 [侧栏恢复决策](../../../adr/sidebar-layout-recovery.md)。
 
 ```ts
 type SidebarPreferences = {
   sessionMeta: Record<string, {
     pinned?: boolean;
     archived?: boolean;
+    manualTitle?: boolean;
     order?: number; // renderer-local manual order
   }>;
   projectMeta: Record<string, {
@@ -274,9 +276,13 @@ type SidebarPreferences = {
   拖动项目标题或在该标题上使用键盘箭头会为可见的规范化路径写入连续顺序值。
   缺失或无效值回落到稳定路径顺序；置顶和归档优先级仍在手动顺序之前应用。
   会话 `manual`/`order` 仍是兼容性字段，侧边栏不会公开会话手动重排。
-- 缺失、格式错误或不可写的首选项回退到空元数据，
-  `recent`，存档隐藏，以及主机选择的项目。偏好失败
-  永远不会阻止主机操作。
+- bootstrap 写入当前项目之前先恢复应用备份；没有备份才迁移有效旧缓存，
+  明确为空的保留列表也有效。两份都无效时才用 `projects.list` 恢复已登记项目。
+  有效布局不会重新打开用户明确关闭的项目。
+- 备份读取失败会禁用覆盖，项目列表失败不写空结果。写入限制 2 MiB，刷新后原子
+  重命名，仅可信 Main 顶层 IPC 可用。搬迁只映射内部路径及项目元数据键，保留
+  外部路径、显示标签与 `manualTitle`。旧启动结果失效，恢复期间用户修改优先；
+  项目、分组、会话及活动工作区权威仍在 Rust。
 - 记录从不包含转录内容、工具参数、提供商
   配置或秘密。清除它仅更改显示。
 - `openProjectPaths` 保留侧边栏选项卡。选定的工作空间仍然存在
@@ -1364,8 +1370,9 @@ assistant 行进入 outbox 之前，事件持久化会丢弃没有可见文本�
   钳制到会话索引计数器（`last_seq`）上，后者是去重后的逻辑计数：某条文件行的
   索引提交若从未落盘，会让该计数器永久落后于文件，而钳制到它会把最新的消息从
   尾部切掉。
-- 无论取哪个窗口，压缩链始终整体返回，因为无论哪些消息可见，最新的检查点都
-  决定着模型上下文。
+- 有界窗口返回生效检查点及消息偏移范围内的检查点；非空尾页还包含最后消息后
+  追加的检查点，重开及 Host 重启后保留最新压缩。中间页不加载整条链；无界
+  模型上下文读取仍返回完整链，历史消息用量不变。
 
 重新生成或编辑重发通过**消息身份**而非计数来指明它的切点。渲染器持有的是一份
 有界、去重、经过显示过滤的视图，因此其中的下标并不是转录中的位置；主机会用
