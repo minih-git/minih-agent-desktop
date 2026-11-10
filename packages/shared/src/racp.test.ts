@@ -144,11 +144,11 @@ describe("RACP schemas", () => {
     expect(Value.Check(RacpSessionSnapshotSchema, snapshot)).toBe(true);
   });
 
-  it("keeps every named schema in the generated fixture bundle", () => {
+  it("keeps every named schema in the generated fixture bundle", async () => {
     // The hostlink/http schemas join the same bundle so the Gateway and the
     // H5 client generate from one source (ADR 0331 / PR-1).
     const bundle = JSON.stringify({ ...RACP_SCHEMAS, ...RACP_HOSTLINK_HTTP_SCHEMAS, ...RACP_ACCOUNT_DEVICE_SCHEMAS }, null, 2) + "\n";
-    expect(bundle).toMatchFileSnapshot("../fixtures/racp.schema.json");
+    await expect(bundle).toMatchFileSnapshot("../fixtures/racp.schema.json");
   });
 });
 

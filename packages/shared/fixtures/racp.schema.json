@@ -3062,6 +3062,10 @@
                     "minLength": 1
                   }
                 }
+              },
+              "installationId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
               }
             }
           }
@@ -3194,6 +3198,23 @@
           "deviceToken": {
             "type": "string",
             "minLength": 1
+          },
+          "installation": {
+            "type": "object",
+            "required": [
+              "id",
+              "signature"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              },
+              "signature": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
         }
       },
@@ -3502,6 +3523,10 @@
             "const": "android"
           }
         ]
+      },
+      "installationId": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
       }
     }
   },
@@ -3878,6 +3903,10 @@
             "minLength": 1
           }
         }
+      },
+      "installationId": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
       }
     }
   },
