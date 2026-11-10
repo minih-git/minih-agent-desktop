@@ -1199,6 +1199,13 @@ export type RuntimeMatchConfig = {
   subagentProviders?: Record<string, RuntimeProviderConfig>;
   /** Resolved keys explicitly opted into Task.model selection; pins alone grant no override. */
   subagentModelKeys?: string[];
+  /**
+   * The employee definition the caller wants this session to run as. It is a
+   * compare item of its own: the tool ceiling is fixed at construction, so a
+   * session that became a steward must get a new runtime instead of keeping the
+   * previous turn's catalog.
+   */
+  botPersona?: { definition: SubagentDefinition } | { missingName: string };
 };
 
 /** Tool calls ride in the assistant content array as `type: "toolCall"`. A
@@ -1206,6 +1213,30 @@ export type RuntimeMatchConfig = {
  * the user sees the tool activity. */
 function trustedExtensionIds(specs: TrustedExtensionSpec[]): string {
   return specs.map((spec) => spec.id).sort().join("\n");
+}
+
+/**
+ * Stable identity of the employee definition a session runs as.
+ *
+ * The tool ceiling is fixed at construction, so a runtime whose definition
+ * changed must not be reused: a session that was ordinary last turn and is a
+ * steward this turn would otherwise keep Write, Edit, and Bash. Compared by
+ * value rather than by object, because Electron main re-reads the definition
+ * from disk on every prompt. A missing definition is its own value, so
+ * installing one (or naming a different one) also retires the runtime.
+ */
+function personaFingerprint(
+  persona?: { definition: SubagentDefinition } | { missingName: string },
+): string {
+  if (!persona) return "none";
+  if ("missingName" in persona) return `missing:${persona.missingName}`;
+  const definition = persona.definition;
+  return safeJson({
+    name: definition.name,
+    tools: definition.tools,
+    inheritTools: definition.inheritTools === true,
+    prompt: definition.prompt,
+  });
 }
 
 function messageRequestsTools(message: unknown): boolean {
@@ -1910,6 +1941,11 @@ export class DesktopAgentRuntime {
   private botPersona?: SubagentDefinition;
   /** That definition's prompt, composed into the system prompt. */
   private personaPrompt?: string;
+  /**
+   * Value identity of the definition captured at construction, so the reuse
+   * check can see a persona that appeared, changed, or disappeared.
+   */
+  private readonly personaIdentity: string;
   private subagentProviders: Record<string, RuntimeProviderConfig>;
   private subagentModelKeys: Set<string>;
   /** On-demand Task.model grants; never mixed into launch opt-in matching. */
@@ -2190,6 +2226,7 @@ export class DesktopAgentRuntime {
     this.pluginSkills = [...(opts.pluginSkills ?? [])].sort((left, right) => left.id.localeCompare(right.id));
     this.trustedExtensionSpecs = opts.trustedExtensions ?? [];
     this.subagents = opts.subagents ?? [];
+    this.personaIdentity = personaFingerprint(opts.botPersona);
     if (opts.botPersona && "missingName" in opts.botPersona) {
       // A named definition that does not resolve must not fall back to the full
       // catalog: that would silently run a steward with Write and Bash.
@@ -3046,6 +3083,14 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       };
     }
     if (!transition) {
+      // The catalog carries the persona guard through `withModeExecutionGuard`,
+      // but a trusted extension's own tool is executed by the extension runner
+      // from `extensionToolCall` below, never through our wrapper. An employee
+      // session therefore rechecks here, at the same level as the mode gate, so
+      // "the steward cannot change the workspace" covers extension tools too.
+      if (!this.isToolAllowedByPersona(context.toolCall.name)) {
+        return { block: true, reason: personaToolDenial(context.toolCall.name) };
+      }
       if (!this.isToolAllowedInMode(context.toolCall.name)) {
         return { block: true, reason: modeToolDenial(context.toolCall.name, this.mode) };
       }
@@ -3134,6 +3179,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       ["projectPath", (this.projectPath ?? "") === (config.remoteWorkspace?.path ?? config.projectPath?.trim() ?? "")],
       ["remoteWorkspace", safeJson(this.remoteWorkspace ?? null) === safeJson(config.remoteWorkspace ?? null)],
       ["workspaceRoot", (this.workspaceRoot ?? "") === (config.workspaceRoot?.trim() ?? "")],
+      // `subagents` above is the delegation catalog, which is the same whether
+      // or not this session is an employee; the persona therefore needs its own
+      // item, or becoming a steward would keep the previous turn's toolset.
+      ["botPersona", this.personaIdentity === personaFingerprint(config.botPersona)],
       ["subagents", safeJson(this.subagents) === safeJson(config.subagents ?? [])],
       ["subagentProviders", safeJson(this.subagentProviders) === safeJson(config.subagentProviders ?? {})],
       ["subagentModelKeys", safeJson([...this.subagentModelKeys].sort()) === safeJson([...new Set(config.subagentModelKeys ?? [])].sort())],

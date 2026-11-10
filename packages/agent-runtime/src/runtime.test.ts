@@ -16,6 +16,7 @@ import {
   KEEP_WARM_MIN_CONTEXT_TOKENS,
   KEEP_WARM_PROMPT,
   type SessionMessageOrigin,
+  type TrustedExtensionSpec,
 } from "@minih-agent/shared";
 import { KeepWarmLedger } from "./keep-warm.js";
 import { keepWarmWireMessage } from "./keep-warm-fingerprint.js";
@@ -197,6 +198,8 @@ function createRuntime(
     turnId: string;
     host: { call: ReturnType<typeof vi.fn>; onNotification?: ReturnType<typeof vi.fn> };
     onEvent: (envelope: unknown) => void;
+    botPersona: { definition: SubagentDefinition } | { missingName: string };
+    trustedExtensions: TrustedExtensionSpec[];
     keepWarmLedger: KeepWarmLedger;
   }> = {},
 ) {
@@ -226,6 +229,8 @@ function createRuntime(
     projectInstructions: overrides.projectInstructions,
     projectMemory: overrides.projectMemory,
     pluginSkills: overrides.pluginSkills,
+    ...(overrides.botPersona ? { botPersona: overrides.botPersona } : {}),
+    trustedExtensions: overrides.trustedExtensions,
     onEvent: overrides.onEvent ?? vi.fn(),
     keepWarmLedger: overrides.keepWarmLedger,
   });
@@ -300,6 +305,9 @@ function runtimeMatches(
     subagents: (runtime as any).subagents,
     subagentProviders: (runtime as any).subagentProviders,
     subagentModelKeys: [...(runtime as any).subagentModelKeys],
+    ...((runtime as any).botPersona
+      ? { botPersona: { definition: (runtime as any).botPersona } }
+      : {}),
     ...overrides,
   });
 }
@@ -2208,6 +2216,175 @@ describe("DesktopAgentRuntime configuration matching", () => {
     expect(host.call).not.toHaveBeenCalledWith("tools.abort", expect.anything());
     expect((runtime as any).toolAborts.size).toBe(0);
     await runtime.dispose();
+  });
+});
+
+describe("DesktopAgentRuntime employee persona", () => {
+  const steward: SubagentDefinition = {
+    name: "steward",
+    description: "Dispatches work and never changes the workspace.",
+    tools: ["Read", "Glob", "Grep", "SessionList", "SessionSend", "TaskCard"],
+    source: "builtin",
+    prompt: "You dispatch work. You never edit files.",
+  };
+
+  function catalogNames(runtime: DesktopAgentRuntime): string[] {
+    return [...(runtime as any).toolCatalog.keys()];
+  }
+
+  it("declares only the definition's tools and never a workspace mutation tool", async () => {
+    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const names = catalogNames(runtime);
+
+    expect(names).toEqual(expect.arrayContaining(["Read", "Grep", "SessionSend", "TaskCard"]));
+    expect(names).not.toContain("Write");
+    expect(names).not.toContain("Edit");
+    expect(names).not.toContain("Bash");
+    // A dispatch-only employee still delegates work; it never changes files.
+    expect(names).not.toContain("Task");
+    // The definition's prompt is standing instruction, not a user turn.
+    expect((runtime as any).agent.state.systemPrompt as string).toContain(
+      "You dispatch work. You never edit files.",
+    );
+    await runtime.dispose();
+  });
+
+  it("regression: an ordinary session keeps its whole catalog", async () => {
+    const runtime = createRuntime();
+    const names = catalogNames(runtime);
+
+    expect(names).toEqual(expect.arrayContaining(["Read", "Write", "Edit", "Bash"]));
+    expect((runtime as any).agent.state.systemPrompt as string).not.toContain(
+      "You dispatch work.",
+    );
+    await runtime.dispose();
+  });
+
+  it("refuses a Write call that reaches the execution guard", async () => {
+    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const beforeToolCall = (runtime as any).agent.beforeToolCall as Function;
+    const call = {
+      assistantMessage: {
+        content: [{ type: "toolCall", id: "w1", name: "Write", arguments: {} }],
+      },
+      toolCall: { id: "w1", name: "Write", arguments: { path: "a.txt", content: "x" } },
+      args: { path: "a.txt", content: "x" },
+      context: {},
+    };
+
+    // Execution is gated the same way declaration is: a call retained from an
+    // earlier turn, or replayed by the model, is still refused here.
+    await expect(beforeToolCall(call)).resolves.toMatchObject({
+      block: true,
+      reason: expect.stringContaining("is not part of this employee's definition"),
+    });
+
+    // The catalog-level guard is a second, independent line of defence.
+    const write = (runtime as any).toolCatalog.get("Write");
+    expect(write).toBeUndefined();
+    await runtime.dispose();
+  });
+
+  it("refuses a workspace-mutating tool registered by a trusted extension", async () => {
+    const extension: TrustedExtensionSpec = {
+      id: "/extensions/workspace-writer.ts",
+      entry: "/extensions/workspace-writer.ts",
+      label: "workspace-writer",
+      source: "user",
+      root: "/extensions",
+    };
+    const tools = [
+      {
+        name: "write_notes",
+        label: "write_notes",
+        description: "Writes a note file.",
+        parameters: { type: "object", properties: {} } as never,
+        execute: vi.fn(async () => ({ content: [], details: {} })),
+      },
+    ];
+    const runtime = createRuntime({
+      botPersona: { definition: steward },
+      trustedExtensions: [extension],
+    });
+    try {
+      // Load straight from a recorded runner: the extension host itself is
+      // covered by extensions/runner.test.ts, so what is under test here is
+      // whether the session applies its persona to an extension's own tool.
+      (runtime as any).extensionRunner = {
+        getAgentTools: () => tools,
+        hasHandlers: (event: string) => event === "tool_call",
+        emit: async () => undefined,
+        dispose: async () => undefined,
+      };
+      (runtime as any).rebuildToolCatalog();
+      (runtime as any).setAgentTools((runtime as any).activeTools());
+
+      expect(catalogNames(runtime)).not.toContain("write_notes");
+      const beforeToolCall = (runtime as any).agent.beforeToolCall as Function;
+      await expect(
+        beforeToolCall({
+          assistantMessage: {
+            content: [{ type: "toolCall", id: "e1", name: "write_notes", arguments: {} }],
+          },
+          toolCall: { id: "e1", name: "write_notes", arguments: {} },
+          args: {},
+          context: {},
+        }),
+      ).resolves.toMatchObject({
+        block: true,
+        reason: expect.stringContaining("is not part of this employee's definition"),
+      });
+      expect(tools[0].execute).not.toHaveBeenCalled();
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("fails the turn when the named definition is not installed", async () => {
+    const runtime = createRuntime({ botPersona: { missingName: "steward" } });
+
+    await expect(runtime.prompt("Say hello.", "user-1", "turn-1")).rejects.toMatchObject({
+      errorCode: "BOT_DEFINITION_MISSING",
+    });
+    await runtime.dispose();
+  });
+
+  it("reuses a runtime only while the persona is unchanged, and retires it when it changes", async () => {
+    // A session that ran as ordinary last turn must not keep Write, Edit, and
+    // Bash after it is marked as an employee: the ceiling is fixed at
+    // construction, so reuse would silently bypass it.
+    const runtime = createRuntime();
+    expect(runtimeMatches(runtime, { botPersona: { definition: steward } })).toBe(false);
+    // The same runtime still matches itself, so the check above is about the
+    // persona and not about an unrelated field.
+
+    const rebuilt = createRuntime({ botPersona: { definition: steward } });
+    expect(runtimeMatches(rebuilt, { botPersona: { definition: steward } })).toBe(true);
+    // Editing the definition retires it too, so a widened steward is not
+    // carried by a warm runtime.
+    expect(
+      runtimeMatches(rebuilt, {
+        botPersona: { definition: { ...steward, tools: [...steward.tools, "Bash"] } },
+      }),
+    ).toBe(false);
+    expect(runtimeMatches(rebuilt, { botPersona: { missingName: "steward" } })).toBe(false);
+    expect(runtimeMatches(runtime)).toBe(true);
+
+    const rebuiltNames = catalogNames(rebuilt);
+    expect(rebuiltNames).toEqual(expect.arrayContaining(["Read", "SessionSend"]));
+    expect(rebuiltNames).not.toContain("Write");
+    expect(rebuiltNames).not.toContain("Bash");
+
+    await runtime.dispose();
+    await rebuilt.dispose();
+  });
+
+  it("retires a runtime when an employee stops being one", async () => {
+    const runtime = createRuntime({ botPersona: { definition: steward } });
+    // The reverse direction matters too: once the definition is cleared the
+    // session must not keep running under the old ceiling.
+    expect(runtimeMatches(runtime, {})).toBe(true);
+    expect(runtimeMatches(runtime, { botPersona: undefined })).toBe(false);
   });
 });
 
