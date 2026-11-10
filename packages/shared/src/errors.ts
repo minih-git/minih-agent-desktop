@@ -113,6 +113,12 @@ export const ErrorCodes = {
   STREAM_FAILED: "STREAM_FAILED",
   EMPTY_MODEL_RESPONSE: "EMPTY_MODEL_RESPONSE",
   /**
+   * The reply carried a complete tool call as ordinary assistant text, so it
+   * was shown as text and never executed. The diagnostic is attached to that
+   * message; it is not a terminal run error.
+   */
+  TOOL_CALL_NOT_EXECUTED: "TOOL_CALL_NOT_EXECUTED",
+  /**
    * The Node agent sidecar process died mid-turn (native crash, kill, or an
    * unclassified abort). Main and the headless runtime settle the owning turn
    * with this code so a crash is visible in the durable transcript instead of

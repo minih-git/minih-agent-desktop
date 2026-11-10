@@ -1511,3 +1511,21 @@ fallback selection, usage and the visible transcript remain unchanged.
 - 拒绝原因包括 `session_busy`、`already_running`、`no_prior_request`、`model_changed`、`prefix_changed`、`prefix_expired`（超过 57 分钟）、`context_too_small`（估算不足 2 万 token）、`protocol_unsupported`、`runtime_unavailable`。运行时只拒绝，不排队、不重试。
 - `agent.prompt` 在取运行时之前会调用 `abortKeepWarm()`，所以真实消息永远优先；销毁运行时也会中止它。
 - 只有 `anthropic-messages` 会在消息结束前报用量，因此只有它做到了真正不产生生成 token。`openai-completions` 与 `openai-responses` 会读到结束；其它协议直接拒绝。输出上限沿用上一次真实请求的那个值，绝不调低——在把 Responses `reasoning` 翻译成 Anthropic thinking 的网关上，更小的 `max_tokens` 会改掉思考预算，从而破坏这条请求本来要刷新的缓存前缀。
+
+## 2026-11-09 选择性可靠性修复
+
+流前的 400/422 或无状态错误若明确说明模型 completion ceiling，与 `(no body)`
+路径共用一次修复机会。只降低已存在且超限的数值输出字段，保留 `onPayload`
+及 Anthropic 必填的 `max_tokens`；不改变模型绑定、额度耗尽、上下文溢出或 5xx 策略。
+
+历史图片按最新优先分配字节预算，但只在精确大小读取及像素探测通过后扣减；超出
+剩余预算的候选不读取。路径降级不占用其他可内联图片的预算。
+
+压缩保留尾部先为答案正文分配预算，再裁剪可读 thinking（包括兼容适配器的 text
+字段）。被截短的 thinking 去掉签名，放得下及 redacted 内容保持原样；不截断可见历史。
+
+围栏外完整的已知工具 XML 调用正文标记 `TOOL_CALL_NOT_EXECUTED`，说明调用未执行。
+正文不会变成执行指令，不触发自动重试，不中止同批合法结构化调用或额外终止整个回合。
+大图 Base64 使用平坦字符及四字节量子校验，原大小上限及畸形输入拒绝保持不变。
+
+来源与实际验证见 [选择性适配记录](../../../project/upstream-import-2026-11-09-reliability-path-scroll.md)。

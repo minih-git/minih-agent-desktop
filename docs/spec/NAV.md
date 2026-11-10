@@ -23,6 +23,7 @@
 
 ## 3. Runtime
 - [README.md](03-runtime/README.md)
+- [Selected upstream reliability, paths, and scrolling: 2026-11-09](../project/upstream-import-2026-11-09-reliability-path-scroll.md)
 - [01-ipc-protocol.md](03-runtime/01-ipc-protocol.md)
 - [02-agent-runtime.md](03-runtime/02-agent-runtime.md)
 - [03-tools-and-permissions.md](03-runtime/03-tools-and-permissions.md)

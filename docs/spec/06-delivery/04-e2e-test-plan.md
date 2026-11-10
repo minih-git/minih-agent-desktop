@@ -1,5 +1,31 @@
 # 04. E2E Test Plan
 
+## E2E-UPSTREAM-reliability-path-alias-and-scroll
+
+- **Preconditions:** Request worktree, reused tools, task-local output and scratch
+  profiles. Synthetic sessions only; no live provider, user profile or installed app.
+- **Runtime:** A 6 MiB image saves intact. Explicit output ceilings repair once;
+  quota/context errors stay terminal. DashScope and exact JSON code 1308 classify
+  correctly. Pixel-rejected images do not consume history budget; thinking keeps
+  answer priority and loses signatures only when shortened. Literal tool calls
+  report not executed without executing prose or cancelling structured siblings.
+  Stop restores the typed command only when no draft snapshot remains.
+- **Paths:** `python3 scripts/e2e-project-path-case.py <task-host>` requires a
+  case-insensitive filesystem, v29 backup and v30, unified session/task ownership,
+  unchanged transcripts and intact keep-warm/archive data. Explicit removal
+  deletes only owned sessions, pauses bound tasks and retains the physical
+  directory and unrelated conversation. Rust tests cover rollback, restart,
+  Unicode, missing roots, case-sensitive roots, symlinks and memory scope.
+- **Scrolling:** `node scripts/e2e-transcript-reading-position.mjs` covers
+  nonblocking hard-edge/ahead loading, single-flight IO, persistent pre-paint
+  anchors under opposing row resizes, interruptible native latest travel, late
+  layout convergence, saved follow intent, empty-page retry and Review focus.
+  Continuous pages stay reading data; unread/disjoint gaps never join model input.
+  `node scripts/e2e-transcript-prose.mjs` covers native pointer/wheel input,
+  measured recycling, selection, code/HTML and hidden-pane renderer retention.
+- **Results and provenance:**
+  [selected adaptation](../../project/upstream-import-2026-11-09-reliability-path-scroll.md).
+
 ## E2E-SCHEDULED-independent-loading-and-route-return
 
 - **Preconditions:** Synthetic tasks and controllable task, latest-run, history

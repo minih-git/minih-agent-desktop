@@ -9,6 +9,25 @@
 
 ---
 
+## E2E-UPSTREAM-reliability-path-alias-and-scroll
+
+- **前提：** 任务工作树、复用工具链、隔离构建与临时 profile，使用合成会话；
+  不访问真实提供商、用户数据或已安装应用。
+- **运行时：** 大图保存完整、明确上限仅修一次、额度及上下文错误保持终止；
+  DashScope 与完整 JSON code 1308 分类准确。超像素图片不占历史预算，thinking
+  裁剪保留正文且去掉变化签名。正文工具调用报未执行，不执行文本或中止同批调用；
+  Stop 没有草稿快照时恢复原始命令。
+- **项目路径：** `python3 scripts/e2e-project-path-case.py <task-host>` 验证
+  v29 备份、v30、会话与任务统一归属、转录和保温／归档数据完整；显式删除只处理
+  统一项目、暂停其任务，保留磁盘目录和无关会话。Rust 回归覆盖回滚、重启、
+  Unicode、不存在目录、大小写敏感目录、软链接和记忆作用域。
+- **滚动：** `node scripts/e2e-transcript-reading-position.mjs` 验证非阻塞分页、
+  单飞、相反行高变化锚点、原生结算及打断、空页重试、已读页保留、缺口隔离、
+  书签和 Review 焦点。`node scripts/e2e-transcript-prose.mjs` 验证原生指针／滚轮、
+  离屏回收、选区、代码／HTML 与隐藏后的渲染状态。
+- **实际结果与来源：**
+  [选择性适配记录](../../../project/upstream-import-2026-11-09-reliability-path-scroll.md)。
+
 ## E2E-SCHEDULED-independent-loading-and-route-return
 
 - **Preconditions:** Synthetic tasks and controllable API reads; isolated profile.

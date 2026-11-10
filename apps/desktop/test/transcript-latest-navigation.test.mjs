@@ -6,83 +6,73 @@ const { createTranscriptLatestNavigation } = await import("../src/lib/transcript
 
 function fixture(reduced = false) {
   const box = { scrollTop: 80, scrollHeight: 8000, clientHeight: 600 };
-  const frames = new Map();
-  const positions = [];
-  let now = 0;
-  let id = 0;
+  const moves = [];
+  const listeners = new Set();
   let arrivals = 0;
+  let stops = 0;
   const navigation = createTranscriptLatestNavigation({
     geometry: () => box,
-    move: top => { box.scrollTop = top; positions.push(top); },
-    request: callback => { frames.set(++id, callback); return id; },
-    cancel: id => frames.delete(id),
-    now: () => now,
+    move: (top, behavior) => { moves.push({ top, behavior }); if (behavior !== "smooth") box.scrollTop = top; },
+    onScrollEnd: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+    stop: () => stops++,
     reducedMotion: () => reduced,
   });
-  const advance = () => {
-    now += 16;
-    const batch = [...frames.values()];
-    frames.clear();
-    for (const frame of batch) frame(now);
+  const finish = (top = moves.at(-1)?.top) => {
+    box.scrollTop = top;
+    for (const listener of [...listeners]) listener();
   };
-  const finish = () => { for (let n = 0; navigation.isActive() && n < 60; n++) advance(); };
-  return { box, navigation, positions, frames, advance, finish,
+  return { box, navigation, moves, listeners, finish, stops: () => stops,
     start: () => navigation.start(() => arrivals++), arrivals: () => arrivals };
 }
 
-test("latest moves continuously to bottom before committing the new view", () => {
+test("latest requests one native smooth trip and commits only at scrollend", () => {
   const f = fixture();
   f.start();
+  assert.deepEqual(f.moves, [{ top: 7400, behavior: "smooth" }]);
   assert.equal(f.box.scrollTop, 80);
-  f.advance();
-  assert(f.box.scrollTop > 80 && f.box.scrollTop < 7400);
   assert.equal(f.arrivals(), 0);
   f.finish();
-  assert(f.positions.length >= 8);
-  assert(f.positions.every((top, i) => i === 0 || top >= f.positions[i - 1]));
-  assert.equal(f.box.scrollTop, 7400);
   assert.equal(f.arrivals(), 1);
-  assert.equal(f.frames.size, 0);
-});
-
-test("late stream growth retargets without reversing or losing bottom", () => {
-  const f = fixture();
-  f.start(); f.advance();
-  f.box.scrollHeight += 800;
-  f.finish();
-  assert(f.positions.every((top, i) => i === 0 || top >= f.positions[i - 1]));
-  assert.equal(f.box.scrollTop, 8200);
-  assert.equal(f.arrivals(), 1);
-});
-
-test("reader interruption retires queued frames without committing latest", () => {
-  const f = fixture();
-  f.start(); f.advance();
-  const top = f.box.scrollTop;
-  f.navigation.cancel(); f.advance();
-  assert.equal(f.box.scrollTop, top);
-  assert.equal(f.arrivals(), 0);
+  assert.equal(f.listeners.size, 0);
   assert.equal(f.navigation.isActive(), false);
-  assert.equal(f.frames.size, 0);
 });
 
-test("pane hide commits accepted latest intent once", () => {
-  const f = fixture();
-  f.start(); f.advance(); f.navigation.cancel(true); f.navigation.cancel(true); f.advance();
+test("late layout growth retargets at native settlement before committing", () => {
+  const f = fixture(); f.start();
+  f.box.scrollHeight += 800;
+  f.finish(7400);
+  assert.equal(f.arrivals(), 0);
+  assert.deepEqual(f.moves.at(-1), { top: 8200, behavior: "smooth" });
+  f.finish();
   assert.equal(f.arrivals(), 1);
-  assert.equal(f.frames.size, 0);
+});
+
+test("reader interruption stops travel and retires old scrollend listeners", () => {
+  const f = fixture(); f.start();
+  const stale = [...f.listeners][0];
+  f.box.scrollTop = 400;
+  f.navigation.cancel(); stale();
+  assert.equal(f.box.scrollTop, 400);
+  assert.equal(f.arrivals(), 0);
+  assert.equal(f.stops(), 1);
+  assert.equal(f.listeners.size, 0);
+});
+
+test("pane hide commits accepted latest intent exactly once", () => {
+  const f = fixture(); f.start(); f.navigation.cancel(true); f.navigation.cancel(true);
+  assert.equal(f.arrivals(), 1);
+  assert.equal(f.listeners.size, 0);
 });
 
 test("repeated navigation cannot commit an obsolete trip", () => {
-  const f = fixture();
-  f.start(); f.advance(); f.start(); f.finish();
-  assert.equal(f.arrivals(), 1);
+  const f = fixture(); f.start(); const stale = [...f.listeners][0];
+  f.start(); stale(); assert.equal(f.arrivals(), 0);
+  f.finish(); assert.equal(f.arrivals(), 1);
 });
 
-test("reduced motion reaches bottom synchronously", () => {
-  const f = fixture(true);
-  f.start();
+test("reduced motion reaches the measured bottom synchronously", () => {
+  const f = fixture(true); f.start();
   assert.equal(f.box.scrollTop, 7400);
   assert.equal(f.arrivals(), 1);
-  assert.equal(f.frames.size, 0);
+  assert.equal(f.listeners.size, 0);
 });

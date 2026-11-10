@@ -250,6 +250,12 @@ type ToolBudgetHealth = {
   attached session has a running turn, before changing group membership, so a
   live turn never loses the transcript it is writing and a rejected delete
   leaves the project group unchanged.
+  Native case/separator aliases are reconciled before this ownership check.
+  A stored historical symlink spelling remains the selected project rather than
+  following a new target. All owned conversations participate in the busy check
+  and removal; unrelated projects and their automation/memory remain untouched.
+  Schema v29-to-v30 backs up and repairs stored aliases (storage spec §Native
+  project path aliases); no method or protocol version changes.
 - `project.memory.get({ path })` — returns the durable memory for the canonical
   project path, or an empty record when no memory has been saved
 - `project.memory.set({ path, entries })` — normalizes and stores visual memory

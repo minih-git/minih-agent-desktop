@@ -60,3 +60,23 @@ test("legacy sends without a snapshot keep the text-only fallback", () => {
     draft: { text: "plain prompt", fileReferences: [] },
   });
 });
+
+for (const command of ["/skill:review inspect this", "/summary brief"]) {
+  test(`a legacy stop restores the typed command ${command}`, () => {
+    const previous = message("assistant", "previous answer");
+    const sent = { ...message("user", "Expanded model-facing instructions"), command };
+    assert.deepEqual(resolveComposerSmartStop([previous, sent]), {
+      kind: "restore",
+      kept: [previous],
+      draft: { text: command, fileReferences: [] },
+    });
+  });
+}
+
+test("a submitted snapshot still wins over the stored command", () => {
+  const sent = { ...message("user", "Expanded prompt"), command: "/summary brief" };
+  assert.deepEqual(resolveComposerSmartStop([sent], {
+    messageCountBeforeSend: 0,
+    draft,
+  }), { kind: "restore", kept: [], draft });
+});

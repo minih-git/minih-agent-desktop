@@ -55,6 +55,7 @@ describe("result helpers", () => {
       "EDIT_NO_CHANGE",
       "EDIT_AMPLIFICATION_LIMIT",
       "MODEL_ALIAS_TOO_LONG",
+      "TOOL_CALL_NOT_EXECUTED",
     ] as const;
 
     for (const code of newlyLiveCodes) {

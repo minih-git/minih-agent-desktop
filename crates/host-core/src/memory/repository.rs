@@ -782,7 +782,8 @@ impl Database {
     /// path. A stored group's memory is keyed by the group id and stays with the
     /// group.
     pub fn delete_project_learned_memory(&self, path: &str) -> Result<()> {
-        let canonical = canonical_project_path(path)
+        let canonical = self
+            .stored_project_path(path)?
             .ok_or_else(|| anyhow!("project path must not be blank"))?;
         self.delete_learned_memory_scope(&MemoryScope::project(canonical))
     }

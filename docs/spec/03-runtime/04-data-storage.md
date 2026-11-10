@@ -1,4 +1,26 @@
-# 04. Data Storage (Schema v28)
+# 04. Data Storage (Schema v30)
+
+### Native project path aliases (v29 to v30)
+
+Before upgrading, Host creates and verifies `pi.sqlite.v29.bak`, then atomically
+unifies native filesystem-confirmed case/separator aliases. Prefer a row with
+sessions, then the latest opening time and lowest id. Rebind every session and
+scheduled task before removing duplicate project rows; retain names, pinned
+state, earliest creation, latest opening and the worktree setup command. Existing
+keep-warm and conversation-archive data remain intact; transcript files are not
+rewritten. Conflicting original pinned-memory records remain stored, and a
+missing canonical record inherits the preferred row's value. Learned-memory
+scope, forgetting evidence and extraction cursors use the existing scope merge.
+
+Listing, upsert and removal repeat the repair when a directory becomes available.
+Missing paths retain their spelling until native resolution confirms an alias.
+Case-sensitive directories/volumes remain distinct; remote project identities
+are opaque. A retargeted symlink cannot transfer historical ownership. Removal
+prefers the selected stored path, including its sessions, scheduled tasks and
+memory, before resolving a fallback path. Existing busy checks apply to the
+unified project; the physical directory is never deleted. Older builds reject
+v30 instead of opening the newer database. See the
+[selected adaptation record](../../project/upstream-import-2026-11-09-reliability-path-scroll.md).
 
 ## 0. Ownership decision
 

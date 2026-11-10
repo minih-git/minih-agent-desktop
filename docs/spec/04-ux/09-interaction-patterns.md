@@ -749,17 +749,26 @@ may be retained while exactly one workspace supplies the visible shell context.
   releases follow mode
 - Click "Scroll to bottom": retire pending history, restoration, search alignment,
   follow frames and the earlier gesture; keep the current reading range during a
-  short interruptible animation, then commit the live tail on arrival. Reduced
+  native smooth animation; use `scrollend` to follow late layout to its actual
+  bottom, then commit latest intent. Continuous loaded pages extending the live
+  tail remain available without copying them into model input; unread search
+  gaps and disjoint ranges are released. Reduced
   motion completes synchronously. Reader input cancels without committing;
   hiding/evicting the pane preserves the accepted latest intent. A newer search
   or navigation supersedes the old arrival callback.
-- Upward gestures prefetch older history within three viewports (capped at
-  2400px). Ahead-loading leaves input usable and tracks the current reading
-  point. At the hard edge, one owner briefly holds scroll input until its page
-  or mounted-window growth settles. Both use a visible-message id and offset,
-  correcting lazy layout before paint; a regroupable answer wrapper is fallback
-  only. Requests stay single-flight even after viewport cancellation, and
-  unchanged/failed reads require new input to retry. Hidden panes do not fetch.
+- Upward gestures prefetch older history using measured speed and read latency.
+  The baseline is three viewports (capped at 2400px); adaptive lead stays bounded
+  by twelve viewports and 12000px. Both ahead and hard-edge reads keep input
+  usable. A single-flight page owner preserves the visible paragraph/message
+  and offset, retaining reading ownership after IO settles. Row ResizeObserver
+  deliveries correct lazy layout before paint even when opposing row changes
+  leave total height unchanged. Unchanged/failed reads require new input to
+  retry; hidden panes do not fetch. Explicit navigation, follow, search and
+  disclosure release competing reading ownership.
+- Offscreen ordinary Markdown may release its renderer only after measurement
+  at its current width, keeping the message shell and measured height. Selection,
+  focus, search and streaming retain content. Fences, tables, HTML previews and
+  images retain their renderer and state; pane hiding does not discard them.
   Minih's actual-bottom sampling, canonical-tail bookmark invalidation and remote
   opaque older-item cursors remain unchanged.
 - Stream completion: if user was auto-scrolling, keep at bottom; if manual, stay at position
@@ -1896,3 +1905,10 @@ intent, while existing reading bookmarks and disclosure holds keep their own
 semantics. Empty-draft steering can promote the first sendable queued follow-up
 through Send now; it does not bypass paste, permission, session or queue guards.
 Completion does not introduce a new automatic scroll-to-question behavior.
+
+### Smart Stop command restoration
+
+An unanswered Stop without a submitted draft snapshot restores the user's stored
+`command` when present, falling back to ordinary `content`. It never puts expanded
+model instructions into the editor. A valid submitted snapshot still wins;
+reply/tool/thinking activity and steering retain their existing settle behavior.

@@ -623,3 +623,17 @@ nested under `error`, or at the root beside a Google RPC UPPER_SNAKE `status`.
 Structured SDK status and explicit status prefixes retain priority; numeric
 strings, plain root codes and malformed JSON are not status evidence. Existing
 400/422 context-overflow, 404 model, 429 and 5xx policies then apply unchanged.
+
+### Structured terminal envelopes and text-form calls
+
+A leading DashScope `Code: <NNN>` envelope supplies HTTP status evidence after
+explicit SDK status fields, not from arbitrary angle-bracket numbers in prose.
+400/422 parameter rejections and 401 authorization failures remain terminal;
+429 throughput and 5xx service errors retain their retry policy. Zhipu/Z.ai JSON
+`code: 1308` reports a plan usage ceiling and is terminal even over HTTP 429;
+a bare 1308 in a request id or byte count is not that error.
+
+`TOOL_CALL_NOT_EXECUTED` is a non-retriable message diagnostic for a complete
+known text-form XML tool call outside fences. It reports that the call was not
+executed without executing prose, rejecting valid structured sibling calls or
+turning the annotation into a second terminal run error.
