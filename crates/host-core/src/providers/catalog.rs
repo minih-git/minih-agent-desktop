@@ -29,6 +29,15 @@ const MODEL_LIMIT_SOURCES: &[&str] = &["catalog", "user"];
 pub(crate) const DEFAULT_CONTEXT_WINDOW: u32 = 128_000;
 pub(crate) const DEFAULT_MAX_TOKENS: u32 = 8_192;
 
+/// The stored model kind, kept only when the user picked `embedding`.
+///
+/// `chat` is what an absent value means, so it is written as `None` and one
+/// state cannot be spelled two ways; an unrecognized or absent value is chat.
+fn normalize_model_kind(value: Option<&str>) -> Option<String> {
+    let trimmed = value?.trim().to_ascii_lowercase();
+    (trimmed == "embedding").then_some(trimmed)
+}
+
 fn normalize_model_limit_source(value: Option<&str>) -> Option<String> {
     let trimmed = value?.trim().to_ascii_lowercase();
     MODEL_LIMIT_SOURCES
@@ -112,6 +121,7 @@ pub(crate) fn normalize_model_bindings(bindings: &[ModelBinding]) -> Vec<ModelBi
                 available_for_subagents: binding.available_for_subagents,
                 native_web_search: binding.native_web_search,
                 api_style,
+                kind: normalize_model_kind(binding.kind.as_deref()),
             })
         })
         .collect()
@@ -138,6 +148,7 @@ fn legacy_model_binding(model_id: Option<String>) -> Vec<ModelBinding> {
                 available_for_subagents: None,
                 native_web_search: None,
                 api_style: None,
+                kind: None,
             }]
         })
         .unwrap_or_default()
@@ -527,7 +538,28 @@ mod tests {
             available_for_subagents: None,
             native_web_search: None,
             api_style: None,
+            kind: None,
         }
+    }
+
+    /// A provider record written before `kind` existed stays a conversation
+    /// model, and one that carries the marker keeps it through the round trip —
+    /// an older device dropping the key must not silently re-open a vector model
+    /// in every conversation picker.
+    #[test]
+    fn a_model_kind_survives_the_config_round_trip() {
+        let raw = r#"{"models":[{"id":"bge-m3","kind":"embedding"},
+            {"id":"terra"},{"id":"odd","kind":"vision"}]}"#;
+        let read_back = read(raw);
+        assert_eq!(read_back[0].kind.as_deref(), Some("embedding"));
+        assert_eq!(read_back[1].kind, None, "an absent kind stays absent");
+        assert_eq!(read_back[2].kind, None, "an unknown kind reads as chat");
+
+        let saved = config_with_model_bindings("{}", &read_back).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        assert_eq!(value["models"][0]["kind"], "embedding");
+        assert!(value["models"][1].get("kind").is_none(), "{saved}");
+        assert!(value["models"][2].get("kind").is_none(), "{saved}");
     }
 
     /// Every read names the provider it came from: a warning that does not is

@@ -14,7 +14,13 @@ import type {
   PluginLlmContext,
   PluginModelInfo,
 } from "@minih-agent/plugin-sdk";
-import type { AppSettings, ContextCompactionRecord, ThinkingLevel, UiMessage } from "@minih-agent/shared";
+import type {
+  AppSettings,
+  ContextCompactionRecord,
+  ModelKind,
+  ThinkingLevel,
+  UiMessage,
+} from "@minih-agent/shared";
 import { THINKING_LEVELS } from "@minih-agent/shared";
 
 export function parsePluginModelKey(modelKey: string): { providerId: string; modelId: string } | null {
@@ -45,12 +51,21 @@ type ListedProvider = {
     alias?: string;
     availableForSubagents?: boolean;
     thinkingLevels?: ThinkingLevel[];
+    kind?: ModelKind;
   }>;
 };
 
+/**
+ * Ready models in the plugin's shape.
+ *
+ * `kind` selects which models to report: conversation models (the historical
+ * answer) unless the caller asked for vectors. The default launch model is only
+ * meaningful among conversation models, so a vector listing never marks one.
+ */
 export function listReadyPluginModels(
   providers: ListedProvider[],
   settings: Pick<AppSettings, "defaultProviderId" | "defaultModelId"> = {},
+  kind: "chat" | "embedding" | "all" = "chat",
 ): PluginModelInfo[] {
   const models: PluginModelInfo[] = [];
   const enabled = providers.filter((provider) => provider.enabled !== false);
@@ -75,11 +90,17 @@ export function listReadyPluginModels(
     for (const binding of bindings) {
       const modelId = String(binding.id ?? "").trim();
       if (!modelId) continue;
+      const modelBoundKind: ModelKind = binding.kind === "embedding" ? "embedding" : "chat";
+      if (kind !== "all" && modelBoundKind !== kind) continue;
       const thinkingLevels =
         binding.thinkingLevels
           ? [...binding.thinkingLevels]
           : [...(provider.supportedThinkingLevels ?? ["off"])];
-      const isDefault = !defaultAssigned && provider.id === defaultProvider?.id && modelId === defaultModelId;
+      const isDefault =
+        modelBoundKind === "chat" &&
+        !defaultAssigned &&
+        provider.id === defaultProvider?.id &&
+        modelId === defaultModelId;
       if (isDefault) defaultAssigned = true;
       models.push({
         key: `${provider.id}/${modelId}`,
@@ -87,6 +108,7 @@ export function listReadyPluginModels(
         providerName: provider.name,
         modelId,
         label: `${modelId} (${provider.name})`,
+        kind: modelBoundKind,
         ...(binding.alias?.trim() ? { alias: binding.alias.trim() } : {}),
         availableForSubagents: binding.availableForSubagents === true,
         isDefault,

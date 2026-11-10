@@ -2146,6 +2146,8 @@ sklm: {
     thinkingManualOverrideHint: "카탈로그에 없음. 지원되는 경우 활성화하세요.",
     contextWindowCatalogHint: "models.dev를 따릅니다. 수정하면 내 값으로 고정됩니다.",
     availableForSubagents: "AI 위임에 사용 가능",
+    embeddingModel: "임베딩 모델",
+    embeddingModelHint: "이 모델을 벡터 모델로 저장합니다. 플러그인이 이 모델로 임베딩을 생성하며, 대화 모델로는 제공되지 않습니다",
     availableForSubagentsHint: "서브에이전트에 작업을 위임할 때 AI가 이 모델을 사용하도록 허용",
     modelSystemPrompt: "모델 프롬프트",
     modelSystemPromptHint: "이 모델이 세션의 기본 모델일 때만 시스템 프롬프트에 추가됩니다.",
@@ -2949,6 +2951,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "usage.read": "사용량 통계 읽기",
       "memory.read": "학습된 기억 읽기",
       "conversation.read": "대화 보관 읽기",
+      "embeddings.run": "내 모델로 임베딩 생성",
       "session.autoTitle": "첫 턴 제목 맥락 읽기 및 자동 제목 업데이트",
     },
     permissionHelp: {
@@ -3009,6 +3012,8 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
         "사용자 범위와 플러그인이 지정한 프로젝트 경로의 활성 학습 메모(선호 사항, 피드백, 사실, 참고 자료)를 나열합니다. 제안, 보관된 메모, 출처 정보는 포함하지 않으며 읽기 전용입니다.",
       "conversation.read":
         "보관된 대화를 나열합니다. 각 대화에는 요약과 세션별로 정리된 대화록이 포함되어 플러그인이 사용자의 노트에 기록할 수 있습니다. 보관을 끄면 모두 숨겨집니다. 도구 결과, 사고 과정, 첨부 파일은 포함되지 않습니다.",
+      "embeddings.run":
+        "전달한 텍스트를 설정한 임베딩 모델로 보내고 해당 서비스의 할당량을 사용합니다. 플러그인은 API 키를 볼 수 없으며, 전달한 텍스트만 전송되고 벡터만 돌아옵니다.",
       "session.autoTitle":
         "대상 세션의 첫 요청과 첫 답변만 읽고, 사용자가 직접 바꾸지 않은 경우에만 자동 제목을 업데이트할 수 있습니다. 전체 대화 기록은 읽을 수 없습니다.",
     },

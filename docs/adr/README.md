@@ -413,3 +413,4 @@ Each ADR includes:
 | model-reasoning-effort-override | [Explicit per-model reasoning-effort compatibility](model-reasoning-effort-override.md) | Accepted (2026-10-24; per-model `supportsReasoningEffort` overrides automatic inference) |
 | plugin-settings-configuration-sync | [Host-owned declared plugin settings synchronization](plugin-settings-configuration-sync.md) | Accepted for implementation (2026-11-03) |
 | conversation-archive | [Layered conversation archive for plugins](conversation-archive.md) | Accepted for implementation (2026-11-09, D685; amends the `plugin-learned-memory-read` wiring only) |
+| plugin-embeddings | [Plugin embeddings: generate vectors with the user's own models](plugin-embeddings.md) | Accepted for implementation (2026-11-10, D686) |

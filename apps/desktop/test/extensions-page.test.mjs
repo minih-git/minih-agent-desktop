@@ -122,6 +122,22 @@ test("marketplace keeps refresh and install actions without source switching", (
   assert.match(marketPanelSrc, /queueInstall/);
 });
 
+test("a marketplace refresh recomputes the installed update badges", () => {
+  // A refreshed catalog can name a newer version than the installed list was
+  // computed from; without recomputing it, a market card advertises an update
+  // beside an installed row still claiming to be current.
+  const refresh = pageSrc.slice(
+    pageSrc.indexOf("const refreshMarket = async"),
+    pageSrc.indexOf("const openDetail = async"),
+  );
+  assert.match(refresh, /if \(opts\?\.refreshRemote\) \{[\s\S]*?api\.marketCheckUpdates\(false\)/);
+  assert.match(refresh, /await refreshPlugins\(\)/);
+  // The update check reuses the catalog just fetched rather than going remote
+  // again, and its own failure cannot fail the refresh the user asked for.
+  assert.doesNotMatch(refresh, /marketCheckUpdates\(true\)/);
+  assert.match(refresh, /catch \{[\s\S]*?\}\s*\}\s*\}\s*catch \(e\)/);
+});
+
 test("installed plugin rows keep secondary detail behind a disclosure", () => {
   assert.match(pageSrc, /function PluginRowDetails/);
   assert.match(pageSrc, /<details className="plugins-row-details">/);

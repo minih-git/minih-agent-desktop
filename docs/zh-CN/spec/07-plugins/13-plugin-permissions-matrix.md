@@ -59,6 +59,7 @@
 | `usage.read` | 中等 | `pi.usage.listTurns` | 安装时确认 | 已完成 turn 事实行的只读列举（每回合 token 计数与标识符，keyset 分页）；不含消息正文，无写路径 |
 | `memory.read` | 高 | `pi.memory.list` | 安装时确认 | 列出用户范围与插件指定项目路径下的活跃长期记忆；不含建议、归档笔记、删除标记或详细来源信息；无写入路径 |
 | `conversation.read` | high | `pi.conversations.changes` / `summary` / `transcript` | 安装时确认 | 列出归档的会话，并读取某段对话的摘要或脱敏后的原文。所有返回都是 Host 的脱敏投影：不含思考过程、工具返回结果、附件或 system 消息。仅在本设备的归档开关打开时可用；没有写入路径 |
+| `embeddings.run` | high | `pi.embeddings.embed` | 安装时确认 | 用用户自己的向量模型把文本变成向量。文本会离开本机并消耗该服务额度；插件永远看不到凭据。仅 OpenAI 兼容接口；每次 1..=64 条、单条 8 KiB、总量 256 KiB，每分钟 120 次 |
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
 
@@ -160,6 +161,7 @@ Agent，在 Plan 中不可见。主机返回 `PLUGIN_DISABLED_IN_PLAN`
 | `usage.read` | Read usage statistics | 读取用量统计 |
 | `memory.read` | Read learned memory | 读取长期记忆 |
 | `conversation.read` | Read conversation archive | 读取会话归档 |
+| `embeddings.run` | Create embeddings with your models | 使用你的模型生成向量 |
 | `agent.complete` | Run a one-shot completion with your models | 用你的模型发起一次补全 |
 | `composer.transform` | Transform text in the Composer | 转换输入框中的文本 |
 | `speech.adapter.register` | Register a speech adapter | 注册语音适配器 |

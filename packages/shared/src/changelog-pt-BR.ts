@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-11-10",
+    highlights: [
+      "Agora os plugins podem indexar com os seus próprios modelos: marque um modelo salvo como modelo de embeddings em Configurações → Modelos (os modelos do Minih Router que o gateway classifica assim são marcados automaticamente), e um plugin com a nova permissão \"Criar embeddings com seus modelos\" transforma texto em vetores com ele — o texto vai para esse provedor e consome a cota dele, o plugin nunca vê a sua chave de API e o modelo não aparece em nenhum seletor de conversa.",
+    ],
+  },
+
+  {
     version: "1.4.0",
     date: "2026-11-09",
     highlights: [

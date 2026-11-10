@@ -1,6 +1,7 @@
 import {
   bindingSupportsImages,
   effectiveContextWindow,
+  isConversationModel,
   isImageGenerationModel,
   type ImageGenerationBindings,
   modelMatchesFilter,
@@ -18,11 +19,17 @@ export function sameComposerModelId(left: string, right: string): boolean {
 }
 
 function configuredModelIds(provider: ConfiguredProvider): string[] {
+  // A model the user marked as an embedding model cannot answer a turn, so the
+  // conversation pickers never offer it.
   const ids = (provider.models ?? [])
+    .filter(isConversationModel)
     .map((binding) => binding.id.trim())
     .filter(Boolean);
   if (ids.length > 0) return [...new Set(ids)];
 
+  // The legacy default only speaks for a row that saved no bindings at all; a
+  // row whose every binding is an embedding model offers nothing.
+  if ((provider.models ?? []).length > 0) return [];
   const legacyId = provider.defaultModelId?.trim();
   return legacyId ? [legacyId] : [];
 }

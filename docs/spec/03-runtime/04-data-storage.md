@@ -1646,6 +1646,27 @@ entries per list, 400 characters per entry) and re-validated by the host, so a
 model answer with extra or oversized fields stores as the same shape every
 plugin can rely on.
 
+### 4.17 `ModelBinding.kind` — what a model is for (ADR plugin-embeddings)
+
+A provider's `models[]` rows gain one optional member inside the provider's
+`config_json`:
+
+```json
+{ "id": "bge-m3", "kind": "embedding", "contextWindow": 8192, ... }
+```
+
+- **Absent means `chat`.** Every binding written before the marker existed is a
+  conversation model, so no migration runs and no stored row changes meaning.
+- **`chat` is stored as absent.** `normalize_model_kind` keeps only
+  `"embedding"`, so one state cannot be spelled two ways and a record written by
+  an older device (which drops a field it does not know) still reads as chat.
+- **Values are stored, not interpreted, by host-core.** The renderer keeps a
+  vector model out of every conversation picker and the plugin host serves it
+  through `pi.embeddings.embed`; host-core only round-trips the answer.
+- **Config sync carries it.** A provider merges as one JSON aggregate, so the
+  marker travels with the row and an older device preserves it rather than
+  failing on an unknown key.
+
 ### Dropped from v1
 
 | v1 table | v2 home |

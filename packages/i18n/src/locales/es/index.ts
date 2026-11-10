@@ -2131,6 +2131,8 @@ sklm: {
     "thinkingManualOverrideHint": "No en el catálogo; habilitar si es compatible.",
     "contextWindowCatalogHint": "Sigue a models.dev; al editarlo se fija tu valor.",
     "availableForSubagents": "Disponible para delegación de AI",
+    "embeddingModel": "Modelo de embeddings",
+    "embeddingModelHint": "Guarda este modelo como modelo vectorial: los plugins generan embeddings con él y nunca se ofrece como modelo de conversación",
     "availableForSubagentsHint": "Permitir que AI use este modelo al delegar tareas a subagentes",
     "modelSystemPrompt": "Prompt del modelo",
     "modelSystemPromptHint": "Se añade al prompt del sistema solo mientras este modelo sea el principal de la sesión.",
@@ -2936,6 +2938,7 @@ sklm: {
       "usage.read": "Leer estadísticas de uso",
       "memory.read": "Leer la memoria aprendida",
       "conversation.read": "Leer el archivo de conversaciones",
+      "embeddings.run": "Crear embeddings con tus modelos",
       "session.autoTitle": "Leer el contexto del primer turno y actualizar títulos automáticos"
     },
     "permissionHelp": {
@@ -2983,6 +2986,8 @@ sklm: {
         "Enumera las notas activas de la memoria aprendida (preferencias, comentarios, hechos y referencias) del ámbito del usuario y de las rutas de proyecto indicadas por el complemento. Sin sugerencias, notas archivadas ni datos de procedencia; solo lectura.",
       "conversation.read":
         "Enumera tus conversaciones archivadas —cada una con su resumen y, por sesión, su transcripción redactada— para que el plugin pueda escribirlas en tus notas. Al desactivar el archivo se oculta todo. Nunca incluye resultados de herramientas, razonamiento ni adjuntos.",
+      "embeddings.run":
+        "Envía el texto que le pasas al modelo de embeddings que configures y consume la cuota de ese servicio; el plugin nunca ve la clave de API. Solo se envía el texto que pasas y solo vuelven vectores.",
       "session.autoTitle":
         "Solo puede leer el primer mensaje y la primera respuesta de las sesiones aptas y actualizar el título si nadie lo cambió manualmente. No puede leer la transcripción completa.",
     }

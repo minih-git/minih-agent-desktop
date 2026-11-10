@@ -307,6 +307,7 @@ Namespace: `pi.plugin.*`
 - `pi.usage.listTurns()` // `usage.read`; read-only completed-turn facts, no message bodies
 - `pi.memory.list()` // `memory.read`; active learned-memory notes only, bounded and read-only
 - `pi.conversations.changes()` / `.summary()` / `.transcript()` // `conversation.read`; the redacted conversation archive, read-only, only while the user's archive switch is on
+- `pi.embeddings.embed()` // `embeddings.run`; vectors from one of the user's own embedding models, made by the host so no credential reaches the plugin
 - `pi.agent.complete(input)` // `agent.complete`; host-owned one-shot
 
 Skills are contributed declaratively (`contributes.skills` + `agent.prompt.inject`),

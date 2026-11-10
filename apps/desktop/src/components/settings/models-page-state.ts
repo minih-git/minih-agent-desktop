@@ -38,6 +38,17 @@ export function bindingFromRouterModel(
   model: MinihRouterModel,
   info?: ModelInfo | null,
 ): ModelBinding {
+  const seeded = seedBindingFromRouterModel(model, info);
+  // The gateway already classifies its own catalog, so a model it publishes as
+  // an embedding route is saved that way and stays out of every conversation
+  // picker. The user can still change it on the model's own row.
+  return model.category === "embedding" ? { ...seeded, kind: "embedding" } : seeded;
+}
+
+function seedBindingFromRouterModel(
+  model: MinihRouterModel,
+  info?: ModelInfo | null,
+): ModelBinding {
   if (info) {
     const binding = bindingForCustomModelInfo(model.id, info);
     const published = info.limit?.context ?? info.contextWindow;

@@ -6,7 +6,7 @@
  * to the documented default, only a provider this machine can actually call is
  * offered, and the usage counter is keyed by the user's own local day.
  */
-import type { AppSettings, ProviderPublic } from "@minih-agent/shared";
+import { type AppSettings, isConversationModel, type ProviderPublic } from "@minih-agent/shared";
 
 /** Default ceiling; matches the extraction service's own default. */
 export const DEFAULT_DAILY_TOKEN_BUDGET = 200_000;
@@ -41,7 +41,9 @@ export function extractionModelOptions(
     const ready = provider.hasSecret || provider.hasOauth === true || provider.authKind === "none";
     if (!ready) continue;
     for (const model of provider.models ?? []) {
-      if (!model.id) continue;
+      // Extraction is a conversation of its own, so an embedding model cannot
+      // do it.
+      if (!model.id || !isConversationModel(model)) continue;
       options.push({
         id: `${provider.id}/${model.id}`,
         label: `${model.alias?.trim() || model.id} (${provider.name})`,

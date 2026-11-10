@@ -83,6 +83,9 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   // Archived conversations carry what the user and the agent said, so they sit
   // at the same tier as learned memory rather than beside the usage counters.
   "conversation.read": "high",
+  // Paid, host-sent, and invisible in the conversation: the same tier as the
+  // other quota-spending channels, with the text leaving the machine.
+  "embeddings.run": "high",
   // Two capabilities that reach outside Minih-Agent-Desktop's own window or read its
   // live audio stream sit at the top tier with the other outbound paths.
   "net.websocket": "high",

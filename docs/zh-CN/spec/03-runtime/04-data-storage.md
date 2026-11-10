@@ -1253,6 +1253,23 @@ CREATE INDEX idx_conversation_archive_tombstones_deleted
 （每个列表 40 项、每项 400 字符），并由 Host 复核，因此即使模型多给了字段或给了超长
 内容，落库的仍是所有插件都能依赖的同一形状。
 
+### 4.17 `ModelBinding.kind` —— 模型是做什么用的（ADR plugin-embeddings）
+
+provider 的 `models[]` 每一行在 `config_json` 里多一个可选成员：
+
+```json
+{ "id": "bge-m3", "kind": "embedding", "contextWindow": 8192, ... }
+```
+
+- **缺省即为 `chat`。** 标记出现之前写入的每一条都属于对话模型，因此不跑迁移，
+  已存的行也不会改变含义。
+- **`chat` 按缺省存。** `normalize_model_kind` 只保留 `"embedding"`，同一个状态
+  不会有两种写法；旧版本设备会丢掉它不认识的字段，读回来仍然是对话模型。
+- **host-core 只存不解释。** 渲染层把向量模型挡在所有对话选择器之外，插件宿主
+  通过 `pi.embeddings.embed` 提供它；host-core 只做原样往返。
+- **配置同步会带上它。** provider 以整个 JSON 聚合合并，标记随行一起走，旧版本
+  设备保留它，而不是因为未知字段报错。
+
 ### 从 v1 中删除
 
 | v1表 | v2首页 |

@@ -2125,6 +2125,8 @@ sklm: {
     thinkingManualOverrideHint: "目錄未標註，可手動開啟",
     contextWindowCatalogHint: "跟隨 models.dev；手動修改後會固定為你的值",
     availableForSubagents: "可供 AI 自動排程",
+    embeddingModel: "向量模型",
+    embeddingModelHint: "把這個模型標記為向量模型：外掛可以用它產生向量，對話中不再可選",
     availableForSubagentsHint: "允許 AI 在委派子任務時自動選用此模型",
     modelSystemPrompt: "模型提示詞",
     modelSystemPromptHint: "僅當工作階段使用此模型時附加到系統提示，適合放該模型的專屬要求。",
@@ -2926,6 +2928,7 @@ sklm: {
       "usage.read": "讀取用量統計",
       "memory.read": "讀取長期記憶",
       "conversation.read": "讀取工作階段歸檔",
+      "embeddings.run": "使用你的模型產生向量",
       "session.autoTitle": "讀取首輪標題內容並更新自動標題",
     },
     permissionHelp: {
@@ -2975,6 +2978,8 @@ sklm: {
         "列出使用者範圍與外掛指定專案路徑下的活躍長期記憶（偏好、回饋、事實、參考）；不含建議、封存內容或來源資訊，僅供讀取。",
       "conversation.read":
         "列出你的歸檔工作階段——每段包含摘要，並可依工作階段讀取去識別化後的原文——供插件寫入你的筆記。關閉工作階段歸檔後全部隱藏。不含工具回傳結果、思考過程與附件。",
+      "embeddings.run":
+        "把你傳入的文字發給你設定的向量模型，並消耗該服務的額度；外掛拿不到 API 金鑰。只傳送你傳入的文字，只收回向量。",
       "session.autoTitle":
         "僅能讀取符合條件工作階段的首則提示和首則回覆，並只在標題未被手動修改時更新；無法讀取完整對話記錄。",
     },

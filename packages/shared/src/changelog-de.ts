@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-11-10",
+    highlights: [
+      "Erweiterungen können jetzt mit deinen eigenen Modellen indexieren: Markiere ein gespeichertes Modell unter Einstellungen → Modelle als Embedding-Modell (Minih-Router-Modelle, die das Gateway so einstuft, werden automatisch markiert), und eine Erweiterung mit der neuen Berechtigung „Embeddings mit deinen Modellen erzeugen“ wandelt Text damit in Vektoren um — der Text geht an diesen Anbieter und verbraucht dessen Kontingent, die Erweiterung sieht deinen API-Schlüssel nie, und das Modell erscheint in keiner Gesprächsauswahl.",
+    ],
+  },
+
+  {
     version: "1.4.0",
     date: "2026-11-09",
     highlights: [

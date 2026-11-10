@@ -53,6 +53,7 @@ export const HIGH_RISK_PERMISSIONS = [
   "audio.capture.background",
   "memory.read",
   "conversation.read",
+  "embeddings.run",
   "speech.adapter.register",
 ] as const;
 
@@ -60,6 +61,7 @@ export const HIGH_RISK_PERMISSIONS = [
 const PERMISSION_API_HINTS: Record<string, string[]> = {
   "ui.panel": ["ui.openPanel", "ui.closePanel"],
   "conversation.read": ["conversations.changes", "conversations.summary", "conversations.transcript"],
+  "embeddings.run": ["embeddings.embed"],
   notify: [
     "ui.notify",
     "ui.getNotificationPermission",

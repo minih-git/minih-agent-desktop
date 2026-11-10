@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2026-11-10",
+    highlights: [
+      "插件现在可以用你自己的模型建索引：在 设置 → 模型 里把某个模型标为向量模型（Minih Router 归为 embedding 的模型会自动标好），再给你授权新增的「使用你的模型生成向量」权限，插件就能用它把文本变成向量——文本会发往该服务并消耗它的额度，插件拿不到你的 API 密钥，该模型也不会出现在任何对话选择器里。",
+    ],
+  },
+
+  {
     version: "1.4.0",
     date: "2026-11-09",
     highlights: [

@@ -309,7 +309,7 @@ type ToolExecContext = {
 
 ### models（需要 `models.list`）
 ```ts
-pi.models.list(): Promise<PluginModelInfo[]>
+pi.models.list(input?: { kind?: "chat" | "embedding" | "all" }): Promise<PluginModelInfo[]>
 
 type PluginModelInfo = {
   key: string                 // `${providerId}/${modelId}` — 第一个斜杠切开
@@ -317,6 +317,7 @@ type PluginModelInfo = {
   providerName: string
   modelId: string
   label: string
+  kind: "chat" | "embedding"  // 这个模型是做什么用的
   supportsReasoning: boolean
   thinkingLevels: ThinkingLevel[]
 }
@@ -324,6 +325,10 @@ type PluginModelInfo = {
 
 只返回已启用且已认证的 provider 行（API key、OAuth 或 `authKind: "none"`）。不含密钥。
 `models.list` 也是面板桥通道，选择器页面可以自行填充。宿主传输不可用时返回空列表，不记警告（D080）。
+
+不带参数时**只返回对话模型**，也就是 `kind` 出现之前的行为，因此已有插件不受影响。
+`{ kind: "embedding" }` 只返回向量模型，`{ kind: "all" }` 两者都返回。无法识别的
+`kind` 返回 `INVALID_ARGUMENT`，不会静默退回对话模型。
 
 ### provider OAuth（需要 `provider.oauth`）
 
@@ -1258,3 +1263,42 @@ MCP 服务器由主机从清单中读取，因此插件无法添加
 - `{ status: "failed", reason: "provider_error" | "aborted" }`。
 
 插件可以按自己的排期轮询；宿主不重试、不排队，真实轮次会中止在飞的请求。花费记在 `keep_warm_usage`，计入用量历史，永远不会算到某个轮次上。
+
+## 11. 向量（需要 `embeddings.run`）
+
+`pi.embeddings.embed` 用用户自己的向量模型把文本变成向量（ADR plugin-embeddings）。
+该权限是**高风险**：文本会离开本机并消耗用户的额度，安装审核会说明这一点。
+
+```ts
+pi.embeddings.embed(input: {
+  modelKey: string     // `${providerId}/${modelId}`，必须是 kind 为 "embedding" 的就绪模型
+  texts: string[]      // 1..=64 条；单条最多 8 KiB；总量最多 256 KiB
+  dimensions?: number  // 可选，透传给支持的接口
+}): Promise<{
+  vectors: number[][]              // 每条文本一个向量，顺序一致
+  modelKey: string
+  dims: number                     // 每个返回向量的长度
+  usage?: { inputTokens?: number }
+}>
+```
+
+- 请求由宿主发出；插件永远拿不到 provider 凭据，密钥不会出现在返回值、错误信息或日志里。
+- 只支持 OpenAI 兼容的 provider：`POST <baseUrl>/embeddings`，请求体
+  `{ model, input, encoding_format: "float", dimensions? }`。厂商账号 OAuth 或原生适配器
+  （Anthropic、Gemini、Codex）返回 `UNSUPPORTED_PROVIDER`。
+- 所有上限都在调用 provider 之前检查。每个插件每分钟 120 次，超时 60 秒。
+- 审计只记模型 key、条数、字符数、向量维度与 token 用量，从不记文本或向量。
+
+错误码：
+
+| 错误码 | 含义 |
+| --- | --- |
+| `INVALID_ARGUMENT` | 请求格式不对或超过上限。 |
+| `MODEL_NOT_FOUND` | 没有就绪模型能响应这个 `modelKey`。 |
+| `MODEL_NOT_EMBEDDING` | 该模型没有被标记为向量模型。 |
+| `UNSUPPORTED_PROVIDER` | 该 provider 无法提供向量（OAuth、原生适配器）。 |
+| `PROVIDER_UNAUTHORIZED` | provider 拒绝了已保存的凭据。 |
+| `PROVIDER_RATE_LIMITED` | provider 正在限制该账号的速率。 |
+| `NETWORK_ERROR` | 连不上 provider，或它的应答无法使用。 |
+| `RATE_LIMITED` | 插件超出了自己的每分钟节奏。 |
+| `TIMEOUT` | 请求超过 60 秒预算。 |

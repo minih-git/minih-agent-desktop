@@ -2101,6 +2101,8 @@ export const ptBR = {
     thinkingManualOverrideHint: "Substitui a configuração padrão de raciocínio deste modelo.",
     contextWindowCatalogHint: "Segue models.dev; editar fixa o seu valor.",
     availableForSubagents: "Disponível para subagentes",
+    embeddingModel: "Modelo de embeddings",
+    embeddingModelHint: "Salva este modelo como modelo vetorial: os plugins geram embeddings com ele e nunca é oferecido como modelo de conversa",
     availableForSubagentsHint: "Permite que a IA use este modelo ao delegar tarefas a subagentes",
     modelSystemPrompt: "Prompt do modelo",
     modelSystemPromptHint: "Anexado ao prompt do sistema apenas enquanto este modelo for o principal da sessão.",
@@ -2902,6 +2904,7 @@ export const ptBR = {
       "usage.read": "Ler estatísticas de uso",
       "memory.read": "Ler a memória aprendida",
       "conversation.read": "Ler o arquivo de conversas",
+      "embeddings.run": "Criar embeddings com seus modelos",
       "session.autoTitle": "Ler o contexto do primeiro turno e atualizar títulos automáticos"
     },
     permissionHelp: {
@@ -2948,6 +2951,8 @@ export const ptBR = {
       "memory.read": "Lista notas ativas da memória aprendida (preferências, feedback, fatos e referências) para o escopo do usuário e os caminhos de projeto informados pelo plugin. Não inclui sugestões, notas arquivadas nem informações de origem; somente leitura.",
       "conversation.read":
         "Lista suas conversas arquivadas — cada uma com seu resumo e, por sessão, a transcrição editada — para o plugin gravá-las nas suas notas. Desligar o arquivo oculta tudo. Resultados de ferramentas, raciocínio e anexos nunca são incluídos.",
+      "embeddings.run":
+        "Envia o texto que você passa para o modelo de embeddings que você configurar e consome a cota desse serviço; o plugin nunca vê a chave de API. Só o texto que você passa é enviado e só vetores retornam.",
       "session.autoTitle": "Pode ler apenas a primeira solicitação e resposta de sessões elegíveis e atualizar o título se ele não tiver sido alterado manualmente. Não pode ler a transcrição completa.",
     }
   },

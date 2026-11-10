@@ -13,6 +13,7 @@ import {
   MODEL_SYSTEM_PROMPT_MAX_CHARS,
   THINKING_LEVELS,
   bindingDefaultThinkingMenuLevels,
+  modelKind,
   modelMatchesFilter,
   resolveBindingDefaultThinkingLevel,
   sortThinkingLevels,
@@ -389,6 +390,25 @@ export function ModelBindingFields({
               </span>
             </label>
           ) : null}
+          <span className="provider-chosen-delegation">
+            <label className="provider-chosen-capability">
+              <input
+                type="checkbox"
+                checked={modelKind(binding) === "embedding"}
+                onChange={(event) =>
+                  onChange({ kind: event.target.checked ? "embedding" : undefined })
+                }
+              />
+              <span>{t("settings.embeddingModel")}</span>
+            </label>
+            <Tooltip
+              className="provider-chosen-delegation-help"
+              label={t("settings.embeddingModelHint")}
+              ariaLabel={t("settings.embeddingModelHint")}
+            >
+              <IconHelp size={13} />
+            </Tooltip>
+          </span>
           <span className="provider-chosen-delegation">
             <label className="provider-chosen-capability">
               <input

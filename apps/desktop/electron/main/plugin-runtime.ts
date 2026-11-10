@@ -19,6 +19,17 @@ import {
   readConversationArchiveSwitch,
   CONVERSATION_PERMISSION,
 } from "./plugin-conversation-read";
+import {
+  EMBEDDINGS_PERMISSION,
+  EmbeddingsRateLimiter,
+  embeddingsError,
+  normalizeEmbeddingsInput,
+  normalizeModelsListInput,
+  supportsEmbeddings,
+  type EmbeddingsPayload,
+  type EmbeddingsProviderTarget,
+  type NormalizedEmbeddingsInput,
+} from "./plugin-embeddings";
 import { pluginNetFetch, parseFetchRedirect, type PluginFetchTransport } from "./plugin-net-fetch";
 import { normalizePluginMemoryListInput, type PluginMemoryReadHostService } from "./plugin-memory-read";
 import type { LoadedSkillDocument } from "./skill-document";
@@ -66,6 +77,7 @@ import {
   type PluginLlmContext,
   type PluginManifest,
   type PluginModelInfo,
+  type PluginModelsListInput,
   type PluginNativeNotificationInput,
   type PluginNativeNotificationResult,
   type PluginNotificationPermission,
@@ -91,6 +103,7 @@ import {
   type PluginComposerTransformMeta,
   type PluginWorkspaceInfo,
   type KeepWarmResult,
+  type ModelKind,
   BUILTIN_SPEECH_PROTOCOL_IDS,
 } from "@minih-agent/shared";
 import {
@@ -497,7 +510,19 @@ export type PluginHostServices = {
     cdp: (method: string, params?: unknown, sessionId?: string, tabId?: string) => Promise<unknown>;
   };
   onPluginUnload?: (pluginId: string) => void;
-  listModels?: () => Promise<PluginModelInfo[]>;
+  listModels?: (input?: PluginModelsListInput) => Promise<PluginModelInfo[]>;
+  /**
+   * Resolve one ready model for an embeddings call. Returns `undefined` when no
+   * such model exists, and the caller decides why it cannot answer.
+   */
+  resolveEmbeddingsModel?: (
+    modelKey: string,
+  ) => Promise<(EmbeddingsProviderTarget & { kind: ModelKind }) | undefined>;
+  /** The provider call itself, injected so the runtime holds no transport. */
+  embedWithModel?: (
+    target: EmbeddingsProviderTarget,
+    input: NormalizedEmbeddingsInput,
+  ) => Promise<EmbeddingsPayload>;
   getSessionContext?: (sessionId: string, stripToolName?: string) => Promise<PluginLlmContext>;
   /** One host-side cache refresh for an idle session (`session.keepWarm`). */
   keepWarm?: (sessionId: string) => Promise<KeepWarmResult>;
@@ -640,6 +665,7 @@ const HOST_API_ALLOWLIST = new Set([
   "conversations.changes",
   "conversations.summary",
   "conversations.transcript",
+  "embeddings.embed",
   "providers.oauth.notify",
   "keyboard.registerGlobalShortcut",
   "keyboard.unregisterGlobalShortcut",
@@ -1421,6 +1447,8 @@ export class PluginRuntime {
   private readonly toolInvocations = new PluginToolInvocations();
   private readonly rendererCalls = new RendererCallRelay();
   private completeRate = new Map<string, { windowStart: number; count: number }>();
+  /** Per-plugin pace for `pi.embeddings.embed`; the numbers live with the port. */
+  private embeddingsRateLimiter = new EmbeddingsRateLimiter();
   /**
    * File accesses the user allowed for the rest of the run, keyed
    * `<mode>:<directory>`. In memory only: a session grant that outlived the
@@ -3092,7 +3120,8 @@ export class PluginRuntime {
       }
       case "models.list": {
         this.assertPermission(loaded, "models.list");
-        const models = (await this.services.listModels?.()) ?? [];
+        const models =
+          (await this.services.listModels?.({ kind: normalizeModelsListInput(args[0]) })) ?? [];
         this.services.audit?.({
           pluginId,
           api: "models.list",
@@ -3324,6 +3353,11 @@ export class PluginRuntime {
       }
       case "agent.complete": {
         return this.runAgentComplete(loaded, (args[0] ?? {}) as PluginCompleteInput);
+      }
+      case "embeddings.embed": {
+        // The port, the bounds and the audit all live in one flat module, so
+        // this runtime gains the delegate and nothing else (AGENTS.md §7).
+        return this.runEmbeddingsEmbed(loaded, args[0]);
       }
       case "conversations.changes":
       case "conversations.summary":
@@ -4742,6 +4776,80 @@ export class PluginRuntime {
       ts: Date.now(),
     });
     return result;
+  }
+
+  /**
+   * One `pi.embeddings.embed` call: permission, input bounds, the per-plugin
+   * pace, the provider request, and one audit row carrying counts only.
+   *
+   * The credential is resolved and used inside the injected service, so no key
+   * can reach the plugin process, a log line, or an error message from here.
+   */
+  private async runEmbeddingsEmbed(
+    loaded: LoadedPlugin,
+    rawInput: unknown,
+  ): Promise<EmbeddingsPayload> {
+    this.assertPermission(loaded, EMBEDDINGS_PERMISSION);
+    const input = normalizeEmbeddingsInput(rawInput);
+    const pluginId = loaded.manifest.id;
+    if (!this.embeddingsRateLimiter.take(pluginId)) {
+      this.services.audit?.({
+        pluginId,
+        api: "embeddings.embed",
+        ok: false,
+        errorCode: "RATE_LIMITED",
+        ts: Date.now(),
+      });
+      throw embeddingsError("RATE_LIMITED", "plugin embeddings rate exceeded");
+    }
+    const resolve = this.services.resolveEmbeddingsModel;
+    const callModel = this.services.embedWithModel;
+    if (!resolve || !callModel) {
+      throw apiError("UNSUPPORTED", "host api not available: embeddings.embed");
+    }
+    const target = await resolve(input.modelKey);
+    if (!target) {
+      throw embeddingsError("MODEL_NOT_FOUND", "no ready model answers this modelKey");
+    }
+    if (target.kind !== "embedding") {
+      throw embeddingsError(
+        "MODEL_NOT_EMBEDDING",
+        "this model is not marked as an embedding model",
+      );
+    }
+    if (!supportsEmbeddings(target)) {
+      throw embeddingsError(
+        "UNSUPPORTED_PROVIDER",
+        "only OpenAI-compatible providers serve embeddings",
+      );
+    }
+    const textChars = input.texts.reduce((sum, text) => sum + text.length, 0);
+    let payload: EmbeddingsPayload;
+    try {
+      payload = await callModel(target, input);
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      this.services.audit?.({
+        pluginId,
+        api: "embeddings.embed",
+        ok: false,
+        errorCode: typeof code === "string" ? code : "NETWORK_ERROR",
+        ts: Date.now(),
+      });
+      throw error;
+    }
+    this.services.audit?.({
+      pluginId,
+      api: "embeddings.embed",
+      ok: true,
+      modelKey: input.modelKey,
+      count: input.texts.length,
+      textChars,
+      dims: payload.dims,
+      usage: payload.usage,
+      ts: Date.now(),
+    });
+    return payload;
   }
 
   /**
