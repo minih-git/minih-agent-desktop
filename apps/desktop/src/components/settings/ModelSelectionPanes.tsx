@@ -25,7 +25,7 @@ import {
   type ThinkingLevel,
 } from "@minih-agent/shared";
 import { api } from "../../lib/api";
-import { Button, Field, HelpIcon, Input, TooltipButton, cx } from "../ui";
+import { Badge, Button, Field, HelpIcon, Input, TooltipButton, cx } from "../ui";
 import { IconClose, IconGripVertical, IconPlus, IconRefresh, IconSearch } from "../icons";
 import { ModelBindingFields, publishedModelLimit } from "./ModelBindingFields";
 import { filterChosenModels, hidesAddedBinding } from "./model-chosen-filter";
@@ -631,6 +631,7 @@ export function ModelSelectionPanes({
                     {binding.alias?.trim() ? (
                       <span className="provider-chosen-row-alias">{binding.alias.trim()}</span>
                     ) : null}
+                    {imageModelSelected ? <Badge>{t("settings.imageModelSelected")}</Badge> : null}
                     <span className="provider-chosen-row-limits">
                       {formatTokenCount(displayedContextWindow)} ·{" "}
                       {formatTokenCount(displayedMaxTokens)}

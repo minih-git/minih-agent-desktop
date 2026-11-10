@@ -25,6 +25,44 @@ function harness(runningSessionIds = ["running"]) {
   const snapshot = seedRunningSessionApi(h.api, h.PROTOCOL_VERSION, runningSessionIds);
   return { ...h, snapshot };
 }
+test("bootstrap restores sidebar organization before persisting the active workspace", async (t) => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const values = new Map();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
+    getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value),
+  } });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete globalThis.localStorage;
+  });
+  const h = harness();
+  const backup = { sessionMeta: { running: { manualTitle: true, pinned: true } },
+    projectMeta: { "/alpha": { name: "Retained Alpha", collapsed: true } },
+    projectSort: "manual", sessionView: { sort: "name", archived: false }, openProjectPaths: ["/alpha", "/beta"] };
+  const writes = [];
+  h.api.getSidebarPreferences = async () => backup;
+  h.api.setSidebarPreferences = async (value) => { writes.push(value); };
+  h.api.getProject = async () => ({ workspace: { path: "/active", name: "Active" } });
+  await h.useAppStore.getState().bootstrap();
+  const state = h.useAppStore.getState();
+  assert.equal(state.healthOk, true, state.error);
+  assert.deepEqual(writes[0], backup);
+  assert.deepEqual(state.openProjectPaths, ["/alpha", "/beta", "/active"]);
+  assert.equal(state.openProjects.find((p) => p.path === "/alpha").name, "Retained Alpha");
+  assert.equal(state.sessionMeta.running.manualTitle, true);
+  assert.equal(state.projectCollapsed["/alpha"], true);
+  assert.equal(state.workspace.path, "/active");
+  assert.equal(state.runningSessions.running, true);
+});
+
+test("missing renderer preferences recover registered projects through bootstrap", async () => {
+  const h = harness();
+  h.api.listProjects = async () => ({ projects: [{ path: "/alpha" }, { path: "/beta" }] });
+  await h.useAppStore.getState().bootstrap();
+  assert.equal(h.useAppStore.getState().healthOk, true, h.useAppStore.getState().error);
+  assert.deepEqual(h.useAppStore.getState().openProjectPaths, ["/alpha", "/beta"]);
+});
+
 test("reopening restores running badges and selecting the live session restores running controls", async () => {
   const h = harness(); await h.useAppStore.getState().bootstrap();
   const state = h.useAppStore.getState();
@@ -37,8 +75,11 @@ test("reopening restores running badges and selecting the live session restores 
 for (const liveType of ["agent_end", "agent_start"]) {
   test(`${liveType} received during bootstrap outranks the snapshot`, async () => {
     const h = harness(liveType === "agent_end" ? ["running"] : []);
-    const response = Promise.withResolvers(); h.api.listSessions = () => response.promise;
+    const response = Promise.withResolvers();
+    const started = Promise.withResolvers();
+    h.api.listSessions = () => { started.resolve(); return response.promise; };
     const pending = h.useAppStore.getState().bootstrap();
+    await started.promise;
     h.useAppStore.getState().handleAgentEvent({ sessionId: "running", ts: 1, event: { type: liveType } });
     response.resolve(h.snapshot); await pending;
     assert.equal(h.useAppStore.getState().healthOk, true, h.useAppStore.getState().error);

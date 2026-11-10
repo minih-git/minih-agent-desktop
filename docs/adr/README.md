@@ -20,6 +20,7 @@ Each ADR includes:
 
 | ID | Title | Status |
 |---|---|---|
+| sidebar-layout-recovery | [Recover sidebar layout independently of Chromium storage](sidebar-layout-recovery.md) | Accepted for implementation |
 | lossless-tool-image-storage | [Lossless tool-image storage and bounded history mutations](lossless-tool-image-storage.md) | Accepted implementation candidate |
 | settings-category-sheet-navigation | [Seven-category settings as a full-window page](settings-category-sheet-navigation.md) | Accepted; bottom-sheet presentation superseded |
 | mobile-experience-completeness | [Mobile daily-use completeness and image workflows](mobile-experience-completeness.md) | Ready for bounded implementation; no device acceptance claimed |

@@ -8,6 +8,34 @@
 
 ## 1. Goals
 
+### E2E-UPSTREAM-20261108-selected-recovery-and-settings
+
+- **Preconditions:** Request worktree based on current Minih main, reused local
+  dependencies, isolated Host data and Electron profiles; no installed Desktop,
+  real provider, user database or upstream history integration.
+- **Steps:** Append a message and trailing compactions, reopen a bounded tail and
+  restart Host; compare middle/empty pages. Recover sidebar layout with a fresh
+  Chromium cache, close a retained project, restart twice, and reject secondary
+  renderer writes. Exercise backup corruption, migration, superseded recovery
+  and user edits in flight. In MCP All/Project/Global create, import and install;
+  switch projects while editing and test duplicates at the pinned destination.
+  Mark/unmark an image-generation model and collapse its settings row.
+- **Expected:** Tail checkpoints survive without loading full chains in middle
+  pages or changing historical usage. Sidebar metadata/manual titles survive;
+  explicit closes and Host workspace/group authority remain intact. MCP All uses
+  the selected project, editors retain their owner, and only target conflicts
+  block writes. Image help distinguishes generation/input and chat exclusion;
+  the collapsed badge remains visible without altering model protocol settings.
+- **Automation:** `node scripts/e2e-compaction-tail.mjs`,
+  `node scripts/e2e-sidebar-recovery.mjs`, focused sidebar/bootstrap/IPC and Rust
+  transcript/relocation tests, `mcp-market-owner-user-path.test.mjs` and
+  `image-model-disclosure-user-path.test.mjs`.
+- **Specs / acceptance:** IPC, data storage, settings IA and image generation;
+  acceptance B/C/E/F. Module tests are not full native Desktop acceptance.
+- **Milestone / status:** Selected maintenance candidate. Actual checks, source
+  revisions and remaining limits are in
+  [the import record](../../project/upstream-import-2026-11-08.md).
+
 ### E2E-UPSTREAM-priority-input-navigation-and-directory-paste
 
 - **Preconditions:** Dedicated worktree, reused local dependencies and Electron,

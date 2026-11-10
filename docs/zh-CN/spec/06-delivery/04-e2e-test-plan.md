@@ -9,6 +9,25 @@
 
 ---
 
+### E2E-UPSTREAM-20261108-selected-recovery-and-settings
+
+- **前提：** 最新 Minih 主线的独立工作树，复用依赖，隔离 Host 数据与 Electron
+  profile；不使用已安装桌面、真实模型、用户数据库或上游提交历史。
+- **步骤：** 追加消息及尾随压缩后读取尾页并重启 Host，对照中间页与空页。
+  清空 Chromium 缓存恢复侧栏，关闭项目后再重启，拒绝其他 renderer 写入；验证
+  损坏备份、迁移、失效恢复和并发用户修改。分别在 MCP All/Project/Global 下新建、
+  导入、市场安装，编辑时切换项目并查目标归属的重复项。标记/取消生图模型并折叠。
+- **预期：** 尾页保留检查点，中间页仍有界，历史 usage 不变；侧栏保留手动标题和
+  关闭意图，Host 仍权威管理工作区/分组。MCP All 优先选中项目，编辑器归属固定，
+  只拒绝目标冲突。生图帮助区分生成/输入并说明聊天排除，折叠仍显示标记，逐模型
+  API 协议等自定义设置不变。
+- **自动化：** `scripts/e2e-compaction-tail.mjs`、`scripts/e2e-sidebar-recovery.mjs`、
+  sidebar/bootstrap/IPC 定向测试、Rust transcript/relocation 测试、
+  `mcp-market-owner-user-path.test.mjs`、`image-model-disclosure-user-path.test.mjs`。
+- **规格/验收：** IPC、数据存储、设置 IA、生图；B/C/E/F。模块测试不等于完整桌面验收。
+- **状态：** 选择性维护候选；实际结果和来源见
+  [迁移记录](../../../project/upstream-import-2026-11-08.md)。
+
 ### E2E-RUNTIME-terminal-provider-errors
 
 - **前提：** 任务工作树内构建 shared／runtime，复用依赖，使用真实 sidecar／Agent

@@ -3,6 +3,7 @@ export function seedRunningSessionApi(api, protocolVersion, runningSessionIds = 
   const sessions = ["running", "idle"].map((id) => ({ id, title: id, source: "desktop", mode: "agent", permissionMode: "inherit", providerId: "provider", modelId: "model", thinkingLevel: "off", messageCount: 1, createdAt: "2026-10-27T00:00:00Z", updatedAt: "2026-10-27T00:00:00Z" }));
   const snapshot = { sessions, ...(runningSessionIds ? { runningSessionIds } : {}) };
   Object.assign(api, {
+    getSidebarPreferences: async () => null, setSidebarPreferences: async () => {}, listProjects: async () => ({ projects: [] }),
     getSettings: async () => ({ defaultMode: "agent" }), getVersion: async () => ({ protocolVersion }),
     health: async () => ({ ok: true }), listSessions: async () => snapshot, listProviders: async () => ({ providers: [] }),
     getProject: async () => ({ workspace: null }), getOnboarding: async () => ({}), listPlugins: async () => ({ plugins: [] }),

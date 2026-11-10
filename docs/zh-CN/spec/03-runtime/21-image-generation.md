@@ -74,3 +74,10 @@ The existing settings UI still excludes OAuth candidates. The internal adapter
 may accept OAuth only with an actual supported native image model and account
 auth resolver; it cannot fabricate entitlement or fall back to another account.
 Unknown pricing remains unknown. Images never route through the chat selector.
+
+### 生图模型标记说明
+
+共享模型字段在生图复选框旁提供本地化帮助，说明保存后从聊天/默认菜单排除，
+区分图片生成与图片输入，并提示只标记端点确实支持生图的模型。已标记模型折叠后
+仍显示生图标记，取消后移除；独立模型编辑弹窗复用同一帮助。不改变协议覆盖、
+模型完整 ID、容量、默认选择或已有绑定。

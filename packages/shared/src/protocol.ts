@@ -184,6 +184,8 @@ export const IPC = {
     sessionOpenScratchPath: "minih-agent-desktop/session/openScratchPath",
     projectOpenFolder: "minih-agent-desktop/project/openFolder",
     settingsGet: "minih-agent-desktop/settings/get",
+    sidebarPreferencesGet: "minih-agent-desktop/sidebar/preferences/get",
+    sidebarPreferencesSet: "minih-agent-desktop/sidebar/preferences/set",
     settingsSet: "minih-agent-desktop/settings/set",
     configSyncGetState: "minih-agent-desktop/configSync/getState",
     backgroundTasksList: "minih-agent-desktop/backgroundTasks/list",
