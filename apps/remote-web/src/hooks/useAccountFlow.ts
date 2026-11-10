@@ -45,42 +45,37 @@ export function defaultAccountDeviceLabel(): string {
 export function useAccountFlow(deviceLabel: () => string): { state: AccountFlowState; flow: AccountFlow } {
   const labelRef = useRef(deviceLabel);
   labelRef.current = deviceLabel;
-  const [flow] = useState(
-    () =>
-      new AccountFlow({
-        gatewayOrigin,
-        client: nativePlatform ?? "web",
-        deviceLabel: () => labelRef.current(),
-        /**
-         * A granted device replaces the previous one on every Host it covers, so
-         * whatever the old device cached can never be read again: drop it here
-         * rather than waiting for eviction to reach it (a switched account must
-         * not leave its lists on this phone).
-         */
-        adopt: async (input) => {
-          const replaced = new Set(
-            input.hosts
-              .map((host) => hostRegistry.get(host.hostId)?.deviceId)
-              .filter((deviceId): deviceId is string => !!deviceId && deviceId !== input.deviceId),
-          );
-          const outcome = await credentialPort.adoptAccountDevice(input);
-          if (outcome.ok) {
-            for (const deviceId of replaced) hostCache.forgetDevice(deviceId);
-          }
-          return outcome;
-        },
-        // Sign-out is the last moment this client can ask the Gateway to stop
-        // pushing to the device, so the unregistration happens here, before the
-        // account session is revoked.
-        onSignOut: async (credential) => {
-          try {
-            await unregisterPushToken({ gatewayOrigin, credential });
-          } catch (error) {
-            console.warn("[remote-web] push unregistration failed", error);
-          }
-        },
-      }),
-  );
+  const [flow] = useState(() => {
+    const port = credentialPort;
+    const readInstallationId = port.installationId?.bind(port);
+    return new AccountFlow({
+      gatewayOrigin,
+      client: nativePlatform ?? "web",
+      deviceLabel: () => labelRef.current(),
+      // Drop cached data belonging to the replaced credential on every Host.
+      adopt: async (input) => {
+        const replaced = new Set(
+          input.hosts
+            .map((host) => hostRegistry.get(host.hostId)?.deviceId)
+            .filter((deviceId): deviceId is string => !!deviceId && deviceId !== input.deviceId),
+        );
+        const outcome = await port.adoptAccountDevice(input);
+        if (outcome.ok) {
+          for (const deviceId of replaced) hostCache.forgetDevice(deviceId);
+        }
+        return outcome;
+      },
+      ...(readInstallationId ? { installationId: () => readInstallationId(gatewayOrigin) } : {}),
+      // Unregister push before revoking the account session.
+      onSignOut: async (credential) => {
+        try {
+          await unregisterPushToken({ gatewayOrigin, credential });
+        } catch (error) {
+          console.warn("[remote-web] push unregistration failed", error);
+        }
+      },
+    });
+  });
   const [state, setState] = useState<AccountFlowState>(() => flow.getState());
   useEffect(() => flow.subscribe(() => setState(flow.getState())), [flow]);
   useEffect(() => () => flow.dispose(), [flow]);

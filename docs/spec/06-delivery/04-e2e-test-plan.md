@@ -82,6 +82,34 @@
 - **Milestone / status:** 2026-11-03 selected upstream maintenance; development
   verification only. Source revisions and actual results are in
   [the import record](../../project/upstream-import-2026-11-03.md).
+### E2E-REMOTE-installation-repair-replaces-old-grants
+
+- **Preconditions:** Dedicated request worktree, reused dependencies, isolated
+  loopback Gateway/Hosts with fixture accounts and certificates. No installed
+  user application, real credentials, production service or paid provider.
+- **Steps:** Approve the same phone installation twice through account sign-in
+  and through a per-Host ticket. Pair another phone with the same label. Deliver
+  old grants out of order and reopen the Host directory; tamper with the signed
+  installation binding. Forget/reopen native and web credentials, fail identity
+  storage, and cancel account sign-in while the identity read is pending. In
+  Settings, inspect same-name legacy grants and revoke one using both steps.
+- **Expected:** One active credential per identified installation/scope; old
+  tokens are refused, other phones/accounts/Host-ticket scopes remain valid.
+  Normal confirmation and permission ceilings are unchanged. Signed extensions
+  survive deferred relay; old access cannot revive. Storage failures are visible
+  without a device request; local sign-out does not change installation identity.
+  Computer inventory and inbound access grants are clearly separated; IDs and
+  localized times distinguish legacy rows and revoking one preserves the other.
+- **Automation:** Shared account-device/Host-link contract tests; RACP
+  `device-installations`, `host-devices`, `hostlink-devices` regressions; Gateway
+  `device-requests` and `pairing-installation` HTTP/mTLS integration; mobile
+  credential/account-flow/installation tests; Desktop
+  `remote-gateway-settings-user-path.test.mjs` isolated Electron interaction.
+- **Specs:** Runtime §11.4/§11.5; Settings IA Accounts;
+  [installation identity ADR](../../adr/device-grant-installation-identity.md).
+- **Acceptance:** Remote control / security / settings / compatibility.
+- **Status:** Development candidate. Native physical-device and packaged
+  Host/Rust acceptance are separate and are not implied by these fixtures.
 
 ### E2E-UPSTREAM-20261101-selected-reliability
 

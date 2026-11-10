@@ -8,7 +8,7 @@
  */
 import { Type, type Static } from "typebox";
 
-import { RacpDeviceHostProofSchema, type RacpDeviceGrant, type RacpDeviceRevoke } from "./racp-hostlink.js";
+import { RacpDeviceHostProofSchema, RacpDeviceInstallationIdSchema, type RacpDeviceGrant, type RacpDeviceRevoke } from "./racp-hostlink.js";
 
 /**
  * A stable JSON encoding: object keys sorted, `undefined` dropped, no
@@ -57,6 +57,15 @@ export function deviceGrantSigningPayload(grant: RacpDeviceGrant): string {
     requestExpiresAt: grant.requestExpiresAt,
     hostProofSignature: grant.hostProofSignature,
     applicantCertificate: grant.applicantCertificate,
+  });
+}
+
+/** Bind installation correlation to one already approved, signed grant. */
+export function deviceInstallationSigningPayload(grant: RacpDeviceGrant, installationId: string): string {
+  return canonicalJson({
+    domain: "racp.device-installation.v1",
+    grant: deviceGrantSigningPayload(grant),
+    installationId,
   });
 }
 
@@ -146,6 +155,7 @@ export const RacpDeviceRequestHttpRequestSchema = Type.Object({
   /** Desktop only: the request `desktop-proof` minted, which the proof is bound to. */
   requestId: Type.Optional(Type.String({ minLength: 1 })),
   hostProof: Type.Optional(RacpDeviceHostProofSchema),
+  installationId: Type.Optional(RacpDeviceInstallationIdSchema),
 });
 export type RacpDeviceRequestHttpRequest = Static<typeof RacpDeviceRequestHttpRequestSchema>;
 

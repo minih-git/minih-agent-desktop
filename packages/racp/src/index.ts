@@ -16,3 +16,4 @@ export * from "./host-devices.js";
 export * from "./device-revocations.js";
 export * from "./host-notifier.js";
 export type { OperationContext, OperationHandler } from "./operations.js";
+export { deviceInstallationMatches, compareDeviceInstallations } from "./device-installations.js";

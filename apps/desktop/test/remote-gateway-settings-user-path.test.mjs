@@ -76,6 +76,12 @@ let devices = [{
   label: "Phone",
   roles: ["viewer", "controller", "approver"],
   createdAt: "2026-10-18T00:00:00.000Z",
+  lastSeenAt: "2026-10-28T04:31:11.978Z",
+}, {
+  deviceId: "dev_phone_previous",
+  label: "Phone",
+  roles: ["viewer", "controller", "approver"],
+  createdAt: "2026-10-19T00:00:00.000Z",
 }];
 let enrollFailure = null;
 let revokeFailure = null;
@@ -111,8 +117,7 @@ window.minihAgent = { platform: "darwin", channels: IPC,
     if (channel === IPC.invoke.remoteGatewayRevokeDevice) {
       if (revokeFailure) return { ok: false, error: revokeFailure };
       revokeCalls.push(input.deviceId);
-      devices = devices.map((device) => device.deviceId === input.deviceId
-        ? { ...device, revokedAt: new Date().toISOString() } : device);
+      devices = devices.filter((device) => device.deviceId !== input.deviceId);
       return { ok: true, data: { revoked: true } };
     }
     throw new Error("Unexpected IPC: " + channel);
@@ -242,6 +247,15 @@ window.remoteGatewayProbe = async () => {
   check(pairingTicket() === undefined, "expired pairing ticket is still on screen");
   check(document.body.textContent.includes(label("pairingExpired")), "expired copy missing");
 
+  const grantRows = () => [...document.querySelectorAll('[data-testid="accounts-devices-grants"] article')];
+  check(grantRows().length === 2, "same-name authorizations must remain individually identifiable");
+  check(grantRows().every((row) => row.textContent.includes("Phone")), "same-name fixture missing");
+  check(grantRows().some((row) => row.textContent.includes("dev_phone_previous")), "legacy grant ID missing");
+  check(grantRows().some((row) => row.textContent.includes("dev_phone")), "current grant ID missing");
+  check(!grantRows().some((row) => row.textContent.includes("2026-10-28T")), "last-use time is still raw ISO");
+  check(document.body.textContent.includes(i18n.t("settings.accountsDevices.grantsTitle")), "inbound access heading missing");
+  check(grantRows().some((row) => row.textContent.includes(i18n.t("settings.accountsDevices.grantNeverUsed"))), "unused local grant copy missing");
+
   // (d) Revoke: confirm first, cancel leaves main untouched, confirm calls it
   // exactly once, and a failure is reported.
   const revokeButton = () => buttons().find((node) =>
@@ -266,6 +280,8 @@ window.remoteGatewayProbe = async () => {
   await click(button(label("revokeConfirm")), "confirm revoke");
   await until(() => revokeCalls.length === 1, "revoke did not reach main exactly once");
   check(revokeCalls[0] === "dev_phone", "revoke named the wrong device");
+  await until(() => grantRows().length === 1, "revoked authorization stayed visible");
+  check(grantRows()[0].textContent.includes("dev_phone_previous"), "revoking one same-name grant removed another");
 
   // (e) A live code owns a timer; unmounting releases it and the subscription.
   await click(button(label("pairingCreate")), "create pairing code");
@@ -281,7 +297,7 @@ window.remoteGatewayProbe = async () => {
   mount();
   await until(() => switchControl(), "remount did not render");
   check((listeners.get(IPC.event.remoteGatewayStatusChanged) ?? new Set()).size === 1, "remount did not re-subscribe");
-  flushSync(() => view.unmount());
+  window.remoteGatewayCleanup = () => flushSync(() => view.unmount());
   return { passed: true };
 };
 `;
@@ -331,6 +347,10 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(path.join(__dirname, "index.html"));
     console.log("REMOTE_GATEWAY_PROBE " + JSON.stringify(await win.webContents.executeJavaScript("window.remoteGatewayProbe()")));
+    await win.webContents.executeJavaScript("document.querySelector('[data-testid=accounts-devices-grants]').scrollIntoView()");
+    const screenshot = await win.webContents.capturePage();
+    require("node:fs").writeFileSync(${JSON.stringify(join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "device-grants-settings.png"))}, screenshot.toPNG());
+    await win.webContents.executeJavaScript("window.remoteGatewayCleanup()");
     app.exit(0);
   } catch (error) { console.error(error?.stack ?? error); app.exit(1); }
 });`,

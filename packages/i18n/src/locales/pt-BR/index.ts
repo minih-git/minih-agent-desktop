@@ -1277,8 +1277,11 @@ export const ptBR = {
       },
       accountsDevices: {
         title: "Meus dispositivos",
-        desc: "Os computadores da sua conta e os dispositivos autorizados a acessá-los.",
-        computersTitle: "Computadores desta conta",
+        desc: "Computadores aos quais você pode se conectar e dispositivos com acesso a este computador, incluindo pareamentos anteriores.",
+        computersTitle: "Computadores aos quais você pode se conectar",
+        grantsTitle: "Dispositivos com acesso a este computador",
+        grantCreated: "Autorizado em: {{time}}",
+        grantNeverUsed: "Ainda não usado neste computador",
         computersEmpty: "Ainda não há computadores na conta. Ative a chave remota para registrar este.",
         online: "Online",
         offline: "Offline",

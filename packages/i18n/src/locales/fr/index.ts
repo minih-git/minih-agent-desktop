@@ -1451,8 +1451,11 @@ sklm: {
       },
       accountsDevices: {
         title: "Mes appareils",
-        desc: "Les ordinateurs de votre compte et les appareils autorisés à y accéder.",
-        computersTitle: "Ordinateurs de ce compte",
+        desc: "Ordinateurs accessibles et appareils autorisés à accéder à cet ordinateur, y compris les anciens jumelages.",
+        computersTitle: "Ordinateurs auxquels vous pouvez vous connecter",
+        grantsTitle: "Appareils autorisés à accéder à cet ordinateur",
+        grantCreated: "Autorisé le : {{time}}",
+        grantNeverUsed: "Pas encore utilisé sur cet ordinateur",
         computersEmpty: "Aucun ordinateur du compte pour l'instant. Activez l'interrupteur distant pour inscrire celui-ci.",
         online: "En ligne",
         offline: "Hors ligne",

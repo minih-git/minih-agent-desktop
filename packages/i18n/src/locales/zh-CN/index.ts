@@ -1451,8 +1451,11 @@ sklm: {
       },
       accountsDevices: {
         title: "我的设备",
-        desc: "账号下的电脑，以及被允许访问它们的设备。",
-        computersTitle: "本账号的电脑",
+        desc: "可连接的电脑，以及允许访问本机的设备授权（可能包含旧配对）。",
+        computersTitle: "可连接的电脑",
+        grantsTitle: "允许访问本机的设备",
+        grantCreated: "授权时间：{{time}}",
+        grantNeverUsed: "尚未在本机使用",
         computersEmpty: "还没有账号电脑。打开远程开关即可把本机加入。",
         online: "在线",
         offline: "离线",

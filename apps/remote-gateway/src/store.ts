@@ -49,6 +49,11 @@ export type GatewayDeviceRecord = {
   /** SHA-256 of the device token; only the hash is ever stored (S8). */
   tokenHash: string;
   createdAt: string;
+  installationId?: string;
+  deviceClass?: "desktop";
+  applicantHostId?: string;
+  grantRequestId?: string;
+  grantIssuedAt?: string;
   revokedAt?: string;
   /**
    * Account of an account-mode device (protocol §11.5, D666). A device minted
@@ -132,6 +137,7 @@ export type GatewayPendingGrantRecord = {
   /** Desktop-class only: the computer whose proof the approving Host verified. */
   applicantHostId?: string;
   hostProofNonce?: string;
+  installation?: { id: string; signature: string };
   requestExpiresAt?: string;
   /** Desktop-class only: the applicant's certificate and proof signature, as signed. */
   applicantCertificate?: string;

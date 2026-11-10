@@ -1451,8 +1451,11 @@ sklm: {
       },
       accountsDevices: {
         title: "Mis dispositivos",
-        desc: "Los ordenadores de tu cuenta y los dispositivos que pueden acceder a ellos.",
-        computersTitle: "Ordenadores de esta cuenta",
+        desc: "Ordenadores a los que puedes conectarte y dispositivos con acceso a este ordenador, incluidos emparejamientos anteriores.",
+        computersTitle: "Ordenadores a los que puedes conectarte",
+        grantsTitle: "Dispositivos con acceso a este ordenador",
+        grantCreated: "Autorizado: {{time}}",
+        grantNeverUsed: "Aún no se ha usado en este ordenador",
         computersEmpty: "Todavía no hay ordenadores en la cuenta. Activa el interruptor remoto para añadir este.",
         online: "En línea",
         offline: "Desconectado",
