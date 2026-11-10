@@ -1,6 +1,6 @@
-# Plugin embeddings: generate vectors with the user's own models
+# ADR plugin-embeddings: Generate vectors with the user's own models
 
-- Status: Accepted for implementation (D686)
+- Status: Accepted for implementation (2026-11-10, decision D686)
 - Amends: 07-plugins/02-plugin-manifest-schema.md (permission list), 07-plugins/03-plugin-api.md (models.list, embeddings.embed), 03-runtime/04-data-storage.md (the model binding record)
 - Related: `plugin-learned-memory-read`, `conversation-archive`, ADR 0339 (paid host-sent requests stay behind install consent)
 
