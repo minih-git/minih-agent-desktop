@@ -57,6 +57,8 @@
 - [Selected upstream provider fixes: 2026-11-03 (provenance and validation)](../project/upstream-import-2026-11-03.md)
 - [Selected upstream priority changes: 2026-11-05 (candidate and provenance)](../project/upstream-import-2026-11-05.md)
 - [Selected upstream Scheduled and minimap fixes: 2026-11-09](../project/upstream-import-2026-11-09.md)
+- [Selected upstream fixes: 2026-10-30 (provenance and validation)](../project/upstream-import-2026-10-30.md)
+
 - [Selected upstream fixes: 2026-10-26 (provenance and validation)](../project/upstream-import-2026-10-26.md)
 
 ## 4. UX

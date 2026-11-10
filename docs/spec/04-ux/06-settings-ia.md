@@ -937,6 +937,22 @@ system while preserving their different data ownership:
   Move to Global. With no project selected the Move into <project> item is not
   offered and the project group asks for a project selection instead, so a
   capability is never sent to an unnamed project.
+- A global MCP or Skill row reads and writes the global default even when a
+  project is selected; only project-level rows carry the selected path in normal
+  row operations. The project-scoped effective global list is read separately
+  to expose a stored project override that disagrees with that default. Its
+  direction badge and **Reset to the global default** menu action remain visible
+  until reset writes the current default in that project's scope. The Host
+  removes the matching key; no capability document or database migration changes.
+  Rows and derived override badges share the accepted collection generation, so
+  a late previous-project response cannot repaint the current project. A settled
+  toggle reloads the current collection so a newly differing stored override
+  becomes visible immediately. Existing optimistic switching and busy controls
+  remain intact.
+- SSH Host installation failures with `HOST_BOOTSTRAP_FAILED` use a dedicated
+  localized install/start summary rather than the generic remote-operation
+  fallback. This does not diagnose or repair the underlying SSH failure and
+  never displays raw stderr. Existing remote/local error boundaries are retained.
 - The MCP editor's optional connection timeout accepts 1–600 seconds. A blank
   value clears the server override and restores the default; saving a changed
   timeout refreshes that server's live connection.

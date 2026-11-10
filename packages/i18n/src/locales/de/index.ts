@@ -812,6 +812,10 @@ export const de = {
     "dismiss": "Verwerfen"
   },
   "settings": {
+    capabilityOverrideOff: "Für dieses Projekt deaktiviert",
+    capabilityOverrideOn: "Für dieses Projekt aktiviert",
+    capabilityOverrideResetItem: "Auf globalen Standard zurücksetzen",
+    capabilityOverrideReset: "{{name}} auf den globalen Standard zurückgesetzt",
     learnedMemory: "Gelerntes Gedächtnis",
     learnedMemoryRead: "Gelerntes Gedächtnis verwenden",
     learnedMemoryReadDesc:

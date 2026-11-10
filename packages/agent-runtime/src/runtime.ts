@@ -180,7 +180,7 @@ import {
 } from "./tool-execution-cancellation.js";
 import { withExplicitRequired } from "./tool-schema.js";
 import { buildSessionContext } from "./session-context.js";
-import { prepareCompaction } from "./pi-runtime-compaction-plan.js";
+import { collectMessageFileOperations, prepareCompaction } from "./pi-runtime-compaction-plan.js";
 import { compact } from "./pi-runtime-compaction-summary.js";
 import {
   ESTIMATED_TEXT_CHARS_PER_TOKEN,
@@ -305,6 +305,7 @@ import {
   addSummaryUsage,
   compactionSummaryInputLimit,
   compactionSummaryOutputBudget,
+  compactionSummaryReserveTokens,
   COMPACTION_SUMMARY_RETRY_POLICY,
   estimateSummaryPromptTokens,
   planSummaryChunks,
@@ -2281,14 +2282,6 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // justified a rebuild does not carry into the next request (issue #234).
         this.providerFetchFailure = undefined;
         this.providerTransportHealth.reset();
-        // The watchdog must be able to *stop* what it abandons. It wraps the
-        // retry adapter, so draining alone would let the adapter wake from its
-        // backoff and open a second request for this turn while the runtime is
-        // already re-running the turn — two provider requests and two bills for
-        // one answer. So the stall trips a signal this request owns, combined
-        // with pi's own run signal (Stop must keep working): the adapter refuses
-        // to start an attempt on an aborted signal, and its backoff sleep rejects.
-        const stallAbort = new AbortController();
         // One assembly serves this request and every keep-warm request that has
         // to replay it byte for byte (`provider-request.ts`, ADR 0339).
         const assembled = assembleProviderRequest({
@@ -2322,7 +2315,6 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           endpointFallbackState: this.providerEndpointFallbackState,
           onTunnelFailure: (reason) => this.reportTunnelFailure(reason),
           omitThinking: this.thinkingLevel === "omit",
-          signal: stallAbort.signal,
         });
         const requestContext = assembled.context;
         const hookedOptions = assembled.options;
@@ -2347,14 +2339,26 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           m,
           requestContext,
           attemptOptions,
-          (retryOptions) => accountModelStream(m, () =>
-            this.thinkingLevel === "omit"
-              ? this.models.stream(assembled.model, requestContext, retryOptions)
-              : this.models.streamSimple(m, requestContext, retryOptions), {
+          (retryOptions) => {
+            // Each active request owns its idle clock; backoff retains user cancellation.
+            const stallAbort = new AbortController();
+            const timedOptions = {
+              ...retryOptions,
+              signal: AbortSignal.any([
+                ...(retryOptions.signal ? [retryOptions.signal] : []),
+                stallAbort.signal,
+              ]),
+            };
+            const stream = accountModelStream(m, () =>
+              this.thinkingLevel === "omit"
+                ? this.models.stream(assembled.model, requestContext, timedOptions)
+                : this.models.streamSimple(m, requestContext, timedOptions), {
                 providerId: this.provider.id,
                 nativeCost: this.provider.modelConfig?.nativeCost,
                 onUsage: (usage) => this.emit({ type: "usage", usage }, usageTurnId),
-              }),
+              });
+            return withStreamIdleTimeout(stream, m, streamIdleTimeoutMs(), () => stallAbort.abort());
+          },
           {
             claim: (error, phase) => this.claimProviderRetry(error, phase),
             headers: () => this.providerRetryHeaders,
@@ -2372,18 +2376,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             },
           },
         );
-        // Zero-event idle watchdog: a stream that emits nothing for the
-        // configured budget ends as a STREAM_FAILED error and re-enters the
-        // shared transient retry path instead of hanging the turn on a
-        // connection the provider never closes.
         // New executions get unique ids before pi executes or journals them,
         // so a provider that reuses a call id keeps both real rounds (#1815).
-        return this.uniqueToolCalls(
-          withStreamIdleTimeout(retryStream, m, streamIdleTimeoutMs(), () =>
-            stallAbort.abort(),
-          ),
-          context.messages,
-        );
+        return this.uniqueToolCalls(retryStream, context.messages);
       },
       // A vendor account has no long-lived key. Leaving it unset keeps pi-ai
       // from overriding the auth the provider just resolved for this request.
@@ -3996,8 +3991,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           // the timer it armed is released here instead.
           cancellation.dispose();
         }
-        if (abortPromise) await abortPromise;
-        if (abortError) throw abortError;
+        // Local read-only Stop cannot depend on a second RPC to a blocked Host.
+        // Late abort failures are already observed; side effects still settle.
+        if (!cancellation.canAbandonWait) {
+          if (abortPromise) await abortPromise;
+          if (abortError) throw abortError;
+        }
         if (cancellation.isStopped) {
           throw Object.assign(
             new Error(`tool execution aborted while ${toolName} was running`),
@@ -7256,8 +7255,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    *
    * pi's cut point is still what marks the boundary, but the split it produces
    * is folded back together (see `codexShapedPreparation`), so
-   * `budget.keepRecentTokens` no longer decides what survives — it only decides
-   * which messages pi attributes file operations to.
+   * `budget.keepRecentTokens` no longer decides what survives. File operations
+   * are collected from the whole folded range, including the retained tail.
    */
   private prepareCompactionInput(
     entries: Entry[],
@@ -7946,13 +7945,13 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     budget: { hardLimit: number; requestHeadroom: number },
   ): AgentMessage[][] | undefined {
     const reduced = reduceSummaryInput(preparation) ?? preparation;
-    const reserveTokens = Math.max(
-      Math.ceil((preparation.previousSummary?.length ?? 0) / 4),
-      compactionSummaryOutputBudget({
+    const reserveTokens = compactionSummaryReserveTokens({
+      previousSummary: preparation.previousSummary,
+      outputBudget: compactionSummaryOutputBudget({
         requestHeadroom: budget.requestHeadroom,
         modelMaxTokens: this.model.maxTokens,
       }),
-    );
+    });
     return planSummaryChunks(reduced, {
       summaryInputLimit: this.summaryInputLimit(budget),
       reserveTokens,
