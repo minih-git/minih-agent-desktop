@@ -220,3 +220,42 @@ accept_prompt
 12. Goal 执行在结束前报告每个接受标准的结果
     转牌圈，并且 scheduled/unattended Goal 跑路被拒绝
     `PLAN_REQUIRES_INTERACTIVE_SESSION` 与 Plan 完全相同
+
+## 6. bot 会话、任务授权与任务阶段
+
+ADR `bot-sessions-and-steward` 与 `04-data-storage.md` 第 4.19 节把员工定义为
+`role: bot` 的会话，把一项任务的授权定义为冻结在其协作账本条目上的 Mandate。
+本节说明这两处新增对上面状态机的约束；它不新增任何回合状态。
+
+1. **角色不是模式。** `role` 与 `mode` 正交：bot 会话仍是普通的
+   `agent | plan | goal` 会话，只是 `role` 为 `bot`。bot 属性从不改变回合、
+   队列、审批或压缩行为，而存储的 role 既不是 `user` 也不是 `bot` 的会话按
+   失败关闭处理，不会回退成 `user`。
+2. **bot 不会被静默删除。** bot 会话的软删除或硬删除只能来自解雇 bot 的路径，
+   并需要二次确认；普通列表、托盘与搜索的删除不适用于它。
+3. **Mandate 从不授予权限。** 带 Mandate 的投递，其生效权限是 Mandate 的模式、
+   宿主授予来源的上限与 bot profile 上限三者的最小值；`mustAsk` 取三者并集，
+   并且总是补上 `deploy`、`delete`、`spend`。它不会抬高会话的准入上限，不会
+   绕过权限卡，也不会在上限变化后继续充当授权。
+4. **Mandate 不可改写。** 修正或扩大范围就是带新 `taskId` 的新 Mandate 与
+   新投递，已确认的授权永不被重写。在同一任务里改验收标准正是 `mustAsk` 中的
+   `criteria-change`，会回到人那里。
+5. **`observe` 不启动任何事。** bot profile 处于 `observe` 时，它的任务卡只被
+   记录，没有任何投递给它开回合。缺失该标志按 `observe` 读取，绝不视为自动开工。
+6. **阶段是派生的，不是断言出来的。** 报告结算后，阶段取第一个命中项；序号
+   不大于已存值的报告不改变任何东西：
+
+   | # | 阶段 | 是否打扰人 |
+   |---|---|---|
+   | 1 | `person/answer` —— 等人回答或审批 | 是 |
+   | 2 | `person/accept` —— 等人验收已完成的活 | 是 |
+   | 3 | `blocked` 或 `failed` | 否 |
+   | 4 | `queued` —— 未开始，或等运行它的机器 | 否 |
+   | 5 | `waiting` —— 等人配置的触发条件 | 否 |
+   | 6 | `working` | 否 |
+
+7. **阶段从不替代投递状态。** `queued`、`running`、`completed`、`failed`、
+   `cancelled`、`interrupted` 仍是账本记录的、与回合绑定的事实；展示"现在是谁
+   在挡着"的界面读阶段，展示"有没有结束"的界面读状态，两者互不推断。
+8. **重启保留授权与阶段。** 两者都是账本行上的持久列，所以启动恢复照旧中断
+   工作，也永不丢失已授权内容的记录。

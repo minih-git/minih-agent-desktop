@@ -743,6 +743,50 @@ CREATE UNIQUE INDEX idx_session_collaboration_receipt
   `UiMessage.sessionMessage` 投影到 UI。宿主校验阻止伪造、剥离、编辑或重新生成协作输入
   变成人类输入。该元数据是增量字段，不需要给 `messages` 增加列。
 
+### 4.19 bot 会话与任务授权（架构 v31，ADR bot-sessions-and-steward）
+
+员工就是一条持久会话，所以身份落在这条已经拥有对话的行上的两个可空列，
+授权落在已经拥有该项工作的投递行上的三个列。不新建表：bot 不能与它的会话
+漂移，Mandate 也不能与承载它的投递漂移。
+
+```sql
+-- sessions
+role             TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'bot')),
+bot_profile_json TEXT,
+
+-- session_collaboration_messages
+mandate_json TEXT,
+stage        TEXT CHECK (stage IS NULL OR stage IN (
+               'person/answer', 'person/accept', 'blocked', 'failed',
+               'queued', 'waiting', 'working')),
+report_seq   INTEGER NOT NULL DEFAULT 0 CHECK (report_seq >= 0)
+```
+
+- `role` 是唯一的 bot 判别字段，未知值按失败关闭处理，不会被归一化成 `user`。
+- `bot_profile_json` 是编码后的 bot profile，恰好在该行 `role = 'bot'` 时存在；
+  `observe` 必须写入，缺少这个标志不会被读成"自动开工"。
+- `mandate_json` 是人确认任务卡时冻结的 Mandate。宿主把它当作不透明的有界值，
+  只负责存储、限定到其投递并返回；形状、边界与不变量由同一份共享编解码器
+  定义。旧行没有 Mandate，含义是"没有冻结授权的投递"，而不是"无限制授权"。
+- `stage` 在第一次报告之前为空，之后保存状态机第 6 节派生的阶段。它只由接受
+  报告的那个事务写入，从不替代投递的 `status`：status 回答"回合有没有结束"，
+  stage 回答"现在是谁在挡着"。
+- `report_seq` 是每个投递单调递增的报告序号。序号不大于已存值的报告会被忽略，
+  所以重复或乱序到达的报告不能让任务倒退。
+- 会话删除仍然级联删除账本行；完成回执依旧可以比已删除的*发送方*活得更久，
+  因为 `source_session_id` 仍然没有外键。
+
+**架构 v30 -> v31。** `migrate_v30_to_v31` 走与其他结构性变更相同的有序事务链
+（第 7 节），只有在最后一条 `ALTER TABLE` 成功后才写入 `user_version = 31`；
+失败会整体回滚并让 v30 保持权威，下一次打开从同一版本重试。它**不是破坏性
+步骤**——每条语句只加带默认值的列，不改写任何行——因此本版本不保留
+`pi.sqlite.v30.bak` 副本，这正是第 7 节允许的。每列仍然先用
+`pragma_table_info` 探测，所以已经带有其中某些列的文件会被补全，而不是因
+重复列失败。
+
+已有行保持确切含义：每条既有会话都是普通对话，每条既有投递都是没有 Mandate、
+没有 stage、`report_seq = 0` 的普通投递。
+
 ### 4.7 messages — 转录索引
 
 脚本本身是每个会话的 JSONL 文件（第 2.1 节）；这张表是它的
