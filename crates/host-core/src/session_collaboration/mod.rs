@@ -10,6 +10,7 @@ use crate::{
     sessions,
 };
 mod permissions;
+pub mod progress;
 mod projections;
 mod provenance;
 mod repository;
@@ -100,6 +101,9 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
             input.get("sourceTurnId").and_then(Value::as_str),
         )?,
         permission_ceiling,
+        mandate_json: None,
+        stage: None,
+        report_seq: 0,
     };
     repository::insert(db, &message, key)?;
     Ok(message)
@@ -167,6 +171,10 @@ fn spawn(db: &Database, input: &Value) -> Result<Value> {
             project_path: parent.summary.project_path,
             thinking_level: Some(parent.summary.thinking_level),
             permission_mode: Some(parent.summary.permission_mode),
+            // A worker is not an employee: it inherits configuration, never a
+            // bot identity, so it cannot be addressed as one later.
+            role: None,
+            bot_profile_json: None,
         },
     )?;
     db.conn().execute("INSERT INTO session_collaboration_links(session_id,created_by_session_id,plugin_id,created_at) VALUES(?1,?2,?3,?4)",params![created.id,source,plugin,now_ms()])?;
@@ -217,6 +225,27 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
             Ok(json!({"callback":settle_turn(db,string(input,"turnId",256)?)?}))
         }
         "session.collaboration.cancel" => settlement::cancel(db, input),
+        // Task progress (ADR bot-sessions-and-steward): attach the frozen card,
+        // record a structured report, and read one delivery's progress.
+        "session.collaboration.mandate" => crate::session_collaboration::progress::set_mandate(
+            db,
+            string(input, "messageId", 256)?,
+            string(
+                input,
+                "mandate",
+                crate::session_collaboration::progress::MAX_MANDATE_CHARS,
+            )?,
+        ),
+        "session.collaboration.report" => crate::session_collaboration::progress::report(
+            db,
+            string(input, "messageId", 256)?,
+            input
+                .get("seq")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| anyhow!("INVALID_ARGUMENT: seq required"))?,
+            string(input, "report", 32)?,
+            string(input, "stage", 32)?,
+        ),
         _ => Err(anyhow!(
             "NOT_FOUND: unknown session collaboration operation"
         )),

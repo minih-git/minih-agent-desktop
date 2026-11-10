@@ -417,3 +417,4 @@ Each ADR includes:
 | plugin-settings-configuration-sync | [Host-owned declared plugin settings synchronization](plugin-settings-configuration-sync.md) | Accepted for implementation (2026-11-03) |
 | conversation-archive | [Layered conversation archive for plugins](conversation-archive.md) | Accepted for implementation (2026-11-09, D685; amends the `plugin-learned-memory-read` wiring only) |
 | plugin-embeddings | [Plugin embeddings: generate vectors with the user's own models](plugin-embeddings.md) | Accepted for implementation (2026-11-10, D686) |
+| bot-sessions-and-steward | [Bot sessions, the steward, and the mandate](bot-sessions-and-steward.md) | Accepted for implementation (2026-11-10, D687; adds a session role, a bot profile and a frozen mandate; cross-host dispatch is a later decision) |

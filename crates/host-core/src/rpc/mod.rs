@@ -2833,6 +2833,10 @@ async fn handle_request(
                         .map(str::to_string),
                     thinking_level,
                     permission_mode,
+                    // A bot is created through its own trusted path; the
+                    // ordinary create operation always makes a conversation.
+                    role: None,
+                    bot_profile_json: None,
                 },
             )
             .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
@@ -6114,6 +6118,153 @@ mod tests {
             deleted,
             json!({"ok": true, "deleted": false, "deletedCount": 0})
         );
+    }
+
+    /// The bot-session contract over the real RPC boundary: a delivery accepts
+    /// one frozen card, a report moves the stage forward only, and an ordinary
+    /// session stays an ordinary conversation.
+    #[tokio::test]
+    async fn bot_session_contract_holds_over_rpc() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = AppState::open(dir.path()).unwrap();
+        app.handshook = true;
+        let steward =
+            sessions::create_session(&app.db, Some("Steward".into()), None, None, None, None)
+                .unwrap();
+        let worker = sessions::create_session_with_options(
+            &app.db,
+            sessions::SessionCreateOptions {
+                title: Some("小爪".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("ask".into()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({
+                        "name": "小爪",
+                        "permissionMode": "accept-edits",
+                        "mustAsk": ["push"],
+                        "observe": false
+                    })
+                    .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let state = Arc::new(Mutex::new(app));
+        let tx = mpsc::unbounded_channel().0;
+        let listed = handle_request(state.clone(), "session.list", json!({}), tx.clone())
+            .await
+            .unwrap();
+        let worker_row = listed["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == json!(worker.id))
+            .unwrap();
+        assert_eq!(worker_row["role"], json!("bot"));
+        // `observe` is never dropped: a profile always states its consent gate.
+        assert_eq!(worker_row["botProfile"]["observe"], json!(false));
+        let steward_row = listed["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == json!(steward.id))
+            .unwrap();
+        assert_eq!(steward_row["role"], json!("user"));
+        assert!(steward_row.get("botProfile").is_none());
+
+        let delivered = handle_request(
+            state.clone(),
+            "session.collaboration.send",
+            json!({
+                "sourceSessionId": steward.id,
+                "pluginId": "pi.session-orchestrator",
+                "sessionId": worker.id,
+                "kind": "task",
+                "content": "Fix the login timeout",
+                "idempotencyKey": "one"
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let message_id = delivered["message"]["id"].as_str().unwrap().to_string();
+        // A delivery starts with no mandate and no stage.
+        assert!(delivered["message"].get("mandate").is_none());
+        assert!(delivered["message"].get("stage").is_none());
+
+        let card = json!({
+            "version": 1,
+            "taskId": "task-1",
+            "goal": "Fix the login timeout",
+            "criteria": [{"id": "c1", "text": "A failing repro exists"}],
+            "permissionMode": "accept-edits",
+            "mustAsk": ["push"],
+            "risk": "medium",
+            "requestedBy": {"kind": "user", "hostId": "mac-mini"},
+            "sourceUtterance": "登录超时今天修掉",
+            "createdAt": "2026-11-10T09:00:00.000Z",
+            "policyVersion": "steward-1"
+        })
+        .to_string();
+        let attached = handle_request(
+            state.clone(),
+            "session.collaboration.mandate",
+            json!({"messageId": message_id, "mandate": card}),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            attached["message"]["mandate"]["taskId"],
+            json!("task-1"),
+            "the opaque card comes back as it was frozen"
+        );
+
+        let first = handle_request(
+            state.clone(),
+            "session.collaboration.report",
+            json!({"messageId": message_id, "seq": 2, "report": "progress", "stage": "working"}),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first["applied"], json!(true));
+        let stale = handle_request(
+            state.clone(),
+            "session.collaboration.report",
+            json!({"messageId": message_id, "seq": 1, "report": "blocked", "stage": "blocked"}),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(stale["applied"], json!(false));
+        assert_eq!(stale["reportSeq"], json!(2));
+
+        // The delivery status still answers "did the turn finish"; the stage is
+        // reported beside it rather than replacing it.
+        let status = handle_request(
+            state.clone(),
+            "session.collaboration.status",
+            json!({"sessionId": worker.id}),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status["currentTask"]["status"], json!("queued"));
+        assert_eq!(status["currentTask"]["stage"], json!("working"));
+
+        // An invalid report is a caller error, not an internal one.
+        let rejected = handle_request(
+            state,
+            "session.collaboration.report",
+            json!({"messageId": message_id, "seq": 3, "report": "done", "stage": "working"}),
+            tx,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(rejected.code, 1002);
     }
 
     #[tokio::test]

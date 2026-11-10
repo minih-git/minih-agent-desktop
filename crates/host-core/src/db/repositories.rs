@@ -299,6 +299,10 @@ impl Database {
         }
         if migrated_version == 29 {
             super::project_path_migration::migrate(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version == 30 {
+            super::bot_session_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

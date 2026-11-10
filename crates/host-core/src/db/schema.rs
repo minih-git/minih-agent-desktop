@@ -104,6 +104,11 @@ CREATE TABLE sessions (
   last_seq    INTEGER NOT NULL DEFAULT 0,
   todo_revision INTEGER NOT NULL DEFAULT 0,
   todo_updated_at INTEGER,
+  -- Bot session identity (ADR bot-sessions-and-steward): a bot is a session,
+  -- so its role and profile live on the row that owns the conversation.
+  role        TEXT NOT NULL DEFAULT 'user'
+              CHECK (role IN ('user', 'bot')),
+  bot_profile_json TEXT,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
