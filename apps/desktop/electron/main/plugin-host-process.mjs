@@ -312,7 +312,22 @@ function buildApi() {
       complete: (input) => call("agent.complete", [input ?? {}]),
     },
     models: {
-      list: () => call("models.list"),
+      // The selector is the caller's own: a bare call keeps the historical
+      // conversation-only answer, so it must reach the broker as no argument
+      // rather than as an empty one.
+      list: (input) => call("models.list", input === undefined ? [] : [input]),
+    },
+    embeddings: {
+      // Vectors from one of the user's own models (ADR plugin-embeddings). The
+      // host makes the provider call; no credential ever reaches this process.
+      embed: (input) => call("embeddings.embed", [input ?? {}]),
+    },
+    conversations: {
+      // The read-only conversation archive (ADR conversation-archive). The host
+      // projects and redacts; these methods only carry the caller's bounds.
+      changes: (input) => call("conversations.changes", [input ?? {}]),
+      summary: (input) => call("conversations.summary", [input ?? {}]),
+      transcript: (input) => call("conversations.transcript", [input ?? {}]),
     },
     session: {
       getLlmContext: () => call("session.getLlmContext"),

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "Behoben: Eine Erweiterung konnte weder das Gesprächsarchiv lesen noch mit deinen eigenen Modellen Embeddings erzeugen, selbst nach erteilter Berechtigung — die App kündigte beides an, reichte es aber nie weiter, sodass diese Aufrufe scheiterten. Eine Erweiterung, die Vektor-Modelle anfragt, erhält diese außerdem jetzt statt nur Gesprächsmodellen.",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [

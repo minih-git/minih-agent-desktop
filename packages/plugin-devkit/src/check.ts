@@ -57,8 +57,12 @@ export const HIGH_RISK_PERMISSIONS = [
   "speech.adapter.register",
 ] as const;
 
-/** Host API surface each permission unlocks, used for the unused-permission hint. */
-const PERMISSION_API_HINTS: Record<string, string[]> = {
+/**
+ * Host API surface each permission unlocks, used for the unused-permission hint
+ * and as the contract the plugin host process is tested against: every name
+ * here must exist on the `pi` object a plugin actually receives.
+ */
+export const PERMISSION_API_HINTS: Record<string, string[]> = {
   "ui.panel": ["ui.openPanel", "ui.closePanel"],
   "conversation.read": ["conversations.changes", "conversations.summary", "conversations.transcript"],
   "embeddings.run": ["embeddings.embed"],

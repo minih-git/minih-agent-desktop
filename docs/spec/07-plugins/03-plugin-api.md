@@ -1327,6 +1327,24 @@ does nothing for an unknown id; `listGlobalShortcuts` lists what the host
 currently holds for the calling plugin. Everything is released on disable,
 unload, and crash, and register / unregister are audited.
 
+## 3.x Every declared method is reachable from the plugin process
+
+A method is part of this API only when a plugin can actually call it. Three
+places have to agree, and a change to any one of them is a change to the
+contract:
+
+1. the `PluginHostApi` type in `packages/plugin-sdk` — what a plugin may write;
+2. `HOST_API_ALLOWLIST` in `plugin-runtime.ts` — what the broker will dispatch;
+3. `buildApi()` in `plugin-host-process.mjs` — the `pi` object the forked plugin
+   process actually receives.
+
+The third is the only one a plugin touches, and it is built inside the child
+process, so no broker test can see it: an API declared and served but missing
+from `buildApi()` is an API no plugin can ever call. `apps/desktop/test/plugin-host-process-api.test.mjs`
+forks the real host process and fails when any name in the devkit's
+permission → API map — or any selector payload such as `models.list({ kind })` —
+does not reach the broker.
+
 ## 4. Error model
 
 ```ts

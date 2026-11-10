@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "Düzeltildi: bir eklenti, izni verdiğiniz halde sohbet arşivini kullanamıyor ve kendi modellerinizle gömme üretemiyordu — uygulama bu iki API'yi eklentiye bildiriyor ama hiç teslim etmiyordu, bu çağrılar başarısız oluyordu. Ayrıca vektör modeli isteyen bir eklenti artık yalnızca sohbet modelleri yerine onları da alıyor.",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [

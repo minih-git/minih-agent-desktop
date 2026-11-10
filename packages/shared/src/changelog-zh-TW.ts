@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "修復：即使你已經授權，外掛仍無法讀取會話歸檔、也無法用你自己的模型產生向量——應用向外部宣告了這兩個介面，卻沒有真正交給它，這些呼叫直接失敗。另外，向應用索取向量模型的外掛現在能拿到它們，而不再只收到對話模型。",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [

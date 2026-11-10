@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "수정: 권한을 허용한 뒤에도 플러그인이 대화 보관함을 읽거나 내 모델로 임베딩을 생성할 수 없었습니다. 앱이 플러그인에 두 API를 선언만 하고 실제로 전달하지 않아 호출이 실패했습니다. 또한 벡터 모델을 요청하는 플러그인은 이제 대화 모델만이 아니라 실제 벡터 모델을 받습니다.",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [

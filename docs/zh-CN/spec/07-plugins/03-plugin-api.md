@@ -1052,6 +1052,22 @@ type PluginGlobalShortcut = {
 未知 id 时什么都不做；`listGlobalShortcuts` 列出宿主当前为调用插件持有的
 条目。禁用、卸载和崩溃时全部释放，注册 / 注销都会记入审计。
 
+## 3.x 声明的每个方法都必须能被插件真正调用
+
+一个方法只有插件真能调到，才算这个 API 的一部分。三处必须一致，改任何一处都是
+改契约：
+
+1. `packages/plugin-sdk` 的 `PluginHostApi` 类型——插件可以写什么；
+2. `plugin-runtime.ts` 的 `HOST_API_ALLOWLIST`——broker 会分发什么；
+3. `plugin-host-process.mjs` 的 `buildApi()`——fork 出来的插件进程真正拿到的
+   `pi` 对象。
+
+第三处是插件唯一摸得到的，而它在子进程里构建，任何 broker 测试都看不到它：一个
+已声明、已放行却在 `buildApi()` 里缺失的接口，插件永远调不到。
+`apps/desktop/test/plugin-host-process-api.test.mjs` 会 fork 真实宿主进程，只要
+devkit 的「权限 → API」映射里有任何一个名字，或 `models.list({ kind })` 这样的
+选择参数没有到达 broker，它就失败。
+
 ## 4. 错误模型
 
 ```ts

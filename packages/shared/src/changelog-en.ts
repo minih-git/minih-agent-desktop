@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "Fixed: a plugin could not use the conversation archive or generate embeddings with your own models, even after you granted the permission — the app declared both APIs to plugins but never actually handed them over, so those calls simply failed. A plugin that asks for vector models also now receives them instead of only chat models.",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [

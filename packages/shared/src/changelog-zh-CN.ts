@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "修复：即使你已经授权，插件仍然无法读取会话归档、也无法用你自己的模型生成向量——应用向插件声明了这两个接口，却没有真正交给它，这些调用直接失败。另外，向应用索取向量模型的插件现在能拿到它们，而不再只收到对话模型。",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [

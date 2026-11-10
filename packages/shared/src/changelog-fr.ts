@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-11-10",
+    highlights: [
+      "Corrigé : un plugin ne pouvait ni lire l'archive des conversations ni générer des embeddings avec vos propres modèles, même après autorisation — l'application annonçait ces deux API aux plugins sans les leur transmettre, et ces appels échouaient. Un plugin qui demande des modèles vectoriels les reçoit désormais, au lieu des seuls modèles de conversation.",
+    ],
+  },
+
+  {
     version: "1.5.0",
     date: "2026-11-10",
     highlights: [
