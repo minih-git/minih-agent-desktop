@@ -49,8 +49,10 @@ recently.
 - Archive is non-destructive. Archived rows are omitted by default and
   recoverable through the explicit archived view. Delete remains a separate
   host operation.
-- The presentation record is best-effort renderer local storage. It contains
-  no transcript, tool argument, provider secret, or other privileged data.
+- The presentation record uses a renderer localStorage cache and, as amended by
+  [sidebar layout recovery](sidebar-layout-recovery.md), an atomic Main-owned
+  backup in the application data root. It contains no transcript, tool argument,
+  provider secret, or other privileged data.
 
 ### Session workspace isolation
 
@@ -67,7 +69,9 @@ recently.
 This supersedes D088's one-current-project and no-multi-project-tree
 limitations, and restores scoped project/conversation row actions superseded
 with D068. D088's exact-path grouping, scoped draft reuse, and Temporary
-session boundary remain in force. No new renderer IPC channel is required.
+session boundary remain in force. The original decision needed no new renderer
+IPC; the sidebar-layout-recovery amendment adds only trusted-Main-frame backup
+read/write channels.
 
 ## Consequences
 

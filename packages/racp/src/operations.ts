@@ -11,6 +11,7 @@ import {
   WorkspaceToolExecuteSchema, WorkspaceToolAbortSchema, WorkspaceFilesRequestSchema,
   RacpCursorSchema,
   RacpInputResponseSchema,
+  RacpDeviceInstallationIdSchema,
   RacpRequestContextSchema,
   RACP_SESSION_MEDIA_DEFAULT_CHUNK_BYTES,
   RACP_SESSION_MEDIA_MAX_CHUNK_BYTES,
@@ -119,7 +120,7 @@ const TerminalResizeParams = Type.Object({
   rows: Type.Integer({ minimum: 1, maximum: 1000 }),
 });
 const TerminalIdParams = Type.Object({ terminalId: Type.String({ minLength: 1 }) });
-const PairParams = Type.Object({ deviceLabel: Type.Optional(Type.String()) });
+const PairParams = Type.Object({ deviceLabel: Type.Optional(Type.String()), installationId: Type.Optional(RacpDeviceInstallationIdSchema) });
 
 function check<T extends Type.TSchema>(schema: T, params: unknown): Type.Static<T> {
   if (!Value.Check(schema, params)) {
@@ -229,6 +230,7 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
       input.deviceLabel?.trim() || "desktop",
       [...roles],
       origin,
+      input.installationId,
     ).catch((error: unknown) => {
       const code = (error as { errorCode?: string })?.errorCode;
       if (code === "PAIRING_FAILED" || code === "PAIRING_TOKEN_EXPIRED") {
@@ -238,7 +240,7 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
     });
     context.log("info", "device paired", { deviceId: paired.deviceId, connectionId: context.connection.id });
     // The pairing connection stays unprivileged: the client reconnects with the device token.
-    return { deviceId: paired.deviceId, deviceToken: paired.token, roles: [...roles] };
+    return { deviceId: paired.deviceId, deviceToken: paired.token, roles: [...roles], ...(paired.installationId ? { installationId: paired.installationId } : {}) };
   });
   handlers.set("host/list", async () => {
     throw new RacpError("METHOD_NOT_FOUND", "host/list exists only behind a Gateway");

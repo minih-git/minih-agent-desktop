@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { installationIdKey } from "./device-installation.js";
 import { createHostRegistry, createMemoryStorage, type HostRegistryEntry } from "./host-registry.js";
 import { NativeCredentialPort } from "./native-credential-port.js";
 import { createMemorySecureStore } from "./secure-store.js";
@@ -59,18 +60,30 @@ describe("native credential port", () => {
     const outcome = await port.pair(request);
 
     expect(outcome).toEqual({ ok: true, entry });
-    expect(store.entries()).toEqual({ "device-token.host1": "pdt1.secret" });
+    // The identity the request carried is kept beside the token, under its own
+    // prefix; the registry entry itself is unchanged.
+    const installationId = await port.installationId(request.gatewayOrigin);
+    expect(store.entries()).toEqual({
+      "device-token.host1": "pdt1.secret",
+      [installationIdKey(request.gatewayOrigin)]: installationId,
+    });
     expect(registry.get("host1")).toEqual(entry);
     expect(JSON.stringify(registry.list())).not.toContain("pdt1.secret");
+    expect(JSON.stringify(registry.list())).not.toContain(installationId);
     expect(port.credentialFor("host1")).toEqual({ kind: "header", token: "pdt1.secret" });
     expect(port.credentialFor("host2")).toBeNull();
   });
 
-  it("sends the native profile with no ambient cookie", async () => {
+  it("sends the native profile with no ambient cookie, naming this install", async () => {
     const { port, calls } = setup();
     await port.pair(request);
+    const installationId = await port.installationId(request.gatewayOrigin);
     expect(calls[0]!.init?.credentials).toBe("omit");
-    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ deviceLabel: "iPhone", client: "ios" });
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
+      deviceLabel: "iPhone",
+      client: "ios",
+      installationId,
+    });
   });
 
   it("does not record a Host whose token could not be stored", async () => {
@@ -93,7 +106,7 @@ describe("native credential port", () => {
     const outcome = await port.pair(request);
     expect(outcome.ok ? "" : outcome.failure.code).toBe("PAIRING_TOKEN_EXPIRED");
     expect(registry.list()).toEqual([]);
-    expect(store.entries()).toEqual({});
+    expect(store.entries()).toEqual({ [installationIdKey(request.gatewayOrigin)]: await port.installationId(request.gatewayOrigin) });
   });
 
   it("loads the cached token of every paired host on ready", async () => {
@@ -120,12 +133,18 @@ describe("native credential port", () => {
     expect(port.credentialFor("host1")).toBeNull();
   });
 
-  it("forget removes both the token and the entry", async () => {
+  it("forget removes the token and the entry but keeps this install's identity", async () => {
     const { registry, store, port } = setup();
     await port.pair(request);
+    // The identity has to outlive the pairing: forgetting one Host does not
+    // make this a different install, and the next approval replaces the device
+    // rows of THIS one.
+    const installationId = await port.installationId(request.gatewayOrigin);
+
     await port.forget("host1");
+
     expect(registry.list()).toEqual([]);
-    expect(store.entries()).toEqual({});
+    expect(store.entries()).toEqual({ [installationIdKey(request.gatewayOrigin)]: installationId });
     expect(port.credentialFor("host1")).toBeNull();
   });
 
@@ -147,6 +166,68 @@ describe("native credential port", () => {
     const port = new NativeCredentialPort({ registry, client: "android" });
     await expect(port.ready()).rejects.toThrow(/before its secure store/);
     await expect(port.pair(request)).rejects.toThrow(/before its secure store/);
+    await expect(port.installationId(request.gatewayOrigin)).rejects.toThrow(/before its secure store/);
+  });
+});
+
+/**
+ * The installation identity in the Keychain / Keystore: it must be the same
+ * after a relaunch, after forgetting a Host, and after the orphan cleanup, and
+ * it must never be sent when this install could not keep it.
+ */
+describe("native installation identity", () => {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const OTHER_ORIGIN = "https://other.example.test";
+
+  it("keeps one id per Gateway origin, for as long as the store lives", async () => {
+    const { port, store } = setup();
+
+    const id = await port.installationId(request.gatewayOrigin);
+
+    expect(id).toMatch(UUID);
+    expect(store.entries()).toEqual({ [installationIdKey(request.gatewayOrigin)]: id });
+    // Another Gateway is another install, with its own device rows.
+    expect(await port.installationId(OTHER_ORIGIN)).not.toBe(id);
+
+    // A relaunch builds a new port over the same Keychain and must reuse the id.
+    const restarted = new NativeCredentialPort({ registry: createHostRegistry(createMemoryStorage()), client: "ios" });
+    restarted.attach(store);
+    await expect(restarted.installationId(request.gatewayOrigin)).resolves.toBe(id);
+  });
+
+  it("gives two installs different ids", async () => {
+    const one = await setup().port.installationId(request.gatewayOrigin);
+    const other = await setup().port.installationId(request.gatewayOrigin);
+
+    expect(other).not.toBe(one);
+  });
+
+  it("keeps the id when ready deletes orphan device tokens", async () => {
+    const key = installationIdKey(request.gatewayOrigin);
+    const { store, port } = setup({
+      registry: [],
+      items: { "device-token.ghost": "pdt1.orphan", [key]: "identity-from-keychain" },
+    });
+
+    await port.ready();
+
+    // The reconciler only touches `device-token.*`; the identity stays, which is
+    // what makes the next approval replace this install's device.
+    expect(store.entries()).toEqual({ [key]: "identity-from-keychain" });
+    await expect(port.installationId(request.gatewayOrigin)).resolves.toBe("identity-from-keychain");
+  });
+
+  it("asks for no device when the identity could not be stored", async () => {
+    const { port, store, calls, registry } = setup();
+    store.failWrites(new Error("the Keychain is locked"));
+
+    const outcome = await port.pair(request);
+
+    // No silent fallback and no request: a device created under an id this
+    // install could not remember would never be replaceable.
+    expect(outcome).toEqual({ ok: false, failure: { code: "STORAGE_FAILED", message: "the Keychain is locked", retriable: false } });
+    expect(calls).toEqual([]);
+    expect(registry.list()).toEqual([]);
   });
 });
 

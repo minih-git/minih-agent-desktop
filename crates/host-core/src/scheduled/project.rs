@@ -1,18 +1,35 @@
-use crate::db::{canonical_project_path, now_ms, Database};
+use crate::db::{now_ms, Database};
 use anyhow::Result;
 
 fn bound_tasks(db: &Database, path: &str) -> Result<Vec<super::ScheduledTask>> {
-    let path = canonical_project_path(path);
+    let path = db.stored_project_path(path)?;
+    // Display/runtime task records canonicalize workspacePath for execution.
+    // Project removal must instead compare the original stored identities, so
+    // a historical link retarget cannot select another project's automation.
+    let mut statement = db
+        .conn()
+        .prepare("SELECT id,config_json FROM scheduled_tasks")?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut ids = std::collections::HashSet::new();
+    for (id, raw) in rows {
+        let config = super::config_json_value(&raw);
+        let Some(binding) = config
+            .get("workspacePath")
+            .and_then(serde_json::Value::as_str)
+        else {
+            continue;
+        };
+        if path.is_some() && db.stored_project_path(binding)? == path {
+            ids.insert(id);
+        }
+    }
     Ok(super::list_tasks(db)?
         .into_iter()
-        .filter(|task| {
-            path.is_some()
-                && task
-                    .workspace_path
-                    .as_deref()
-                    .and_then(canonical_project_path)
-                    == path
-        })
+        .filter(|task| ids.contains(&task.id))
         .collect())
 }
 

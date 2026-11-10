@@ -812,6 +812,10 @@ export const es = {
     "dismiss": "Descartar"
   },
   "settings": {
+    capabilityOverrideOff: "Desactivado para este proyecto",
+    capabilityOverrideOn: "Activado para este proyecto",
+    capabilityOverrideResetItem: "Restablecer el valor global",
+    capabilityOverrideReset: "{{name}} restablecido al valor global",
     learnedMemory: "Memoria aprendida",
     learnedMemoryRead: "Usar la memoria aprendida",
     learnedMemoryReadDesc:
@@ -901,6 +905,7 @@ export const es = {
     "imageModelSaveFailed": "No se pudo guardar el modelo.",
     "clearImageModel": "Borrar",
     "setImageModel": "Usar para generar imágenes",
+    imageModelChatExclusionHint: "Los modelos marcados se eliminan de los menús de chat y modelo predeterminado al guardar. Esto es generación de imágenes, no entrada de imágenes. Marca solo modelos con los que tu endpoint pueda generar imágenes.",
     "imageModelSelected": "Modelo de imágenes seleccionado",
     "sessionCreateModel": "Modelo para crear sesiones",
     "sessionCreateModelUnset": "Sin configurar",
@@ -1451,8 +1456,11 @@ sklm: {
       },
       accountsDevices: {
         title: "Mis dispositivos",
-        desc: "Los ordenadores de tu cuenta y los dispositivos que pueden acceder a ellos.",
-        computersTitle: "Ordenadores de esta cuenta",
+        desc: "Ordenadores a los que puedes conectarte y dispositivos con acceso a este ordenador, incluidos emparejamientos anteriores.",
+        computersTitle: "Ordenadores a los que puedes conectarte",
+        grantsTitle: "Dispositivos con acceso a este ordenador",
+        grantCreated: "Autorizado: {{time}}",
+        grantNeverUsed: "Aún no se ha usado en este ordenador",
         computersEmpty: "Todavía no hay ordenadores en la cuenta. Activa el interruptor remoto para añadir este.",
         online: "En línea",
         offline: "Desconectado",
@@ -3343,6 +3351,7 @@ sklm: {
     NETWORK_POLICY_BLOCKED: "La comprobación de direcciones de la aplicación bloqueó esta solicitud. Si usas proxy o VPN, revisa Configuración → General → Red.",
     "TIMEOUT": "Se agotó el tiempo de espera de la solicitud al proveedor de IA.",
     "STREAM_FAILED": "La respuesta fue interrumpida.",
+    "TOOL_CALL_NOT_EXECUTED": "El modelo escribió una llamada de herramienta como texto. Esa llamada no se ejecutó.",
     "EMPTY_MODEL_RESPONSE": "El modelo terminó su turno sin decir nada, dos veces seguidas. Inténtelo de nuevo o reformule su solicitud.",
     "MUTATION_RETRY_BUDGET_EXHAUSTED": "La misma edición falló tres veces, por lo que este turno se detuvo en lugar de volver a intentarlo a ciegas. Pregunta nuevamente para continuar.",
     "CONTEXT_TOO_LARGE": "Este chat aún dura demasiado después de la recuperación del contexto. Acorta tu mensaje o inicia un nuevo chat.",

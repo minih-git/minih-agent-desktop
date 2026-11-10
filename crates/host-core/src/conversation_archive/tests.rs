@@ -449,12 +449,11 @@ fn a_released_v28_database_gains_the_tables_and_keeps_every_row() {
         assert_eq!(missing, 0, "the v28 file has no archive tables");
     }
     let db = open_db(&dir);
-    assert_eq!(crate::db::SCHEMA_VERSION, 29);
     let version: i64 = db
         .conn()
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 29);
+    assert_eq!(version, crate::db::SCHEMA_VERSION);
     let tables: i64 = db
         .conn()
         .query_row(

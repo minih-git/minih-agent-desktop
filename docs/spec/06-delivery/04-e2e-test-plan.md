@@ -1,5 +1,31 @@
 # 04. E2E Test Plan
 
+## E2E-UPSTREAM-reliability-path-alias-and-scroll
+
+- **Preconditions:** Request worktree, reused tools, task-local output and scratch
+  profiles. Synthetic sessions only; no live provider, user profile or installed app.
+- **Runtime:** A 6 MiB image saves intact. Explicit output ceilings repair once;
+  quota/context errors stay terminal. DashScope and exact JSON code 1308 classify
+  correctly. Pixel-rejected images do not consume history budget; thinking keeps
+  answer priority and loses signatures only when shortened. Literal tool calls
+  report not executed without executing prose or cancelling structured siblings.
+  Stop restores the typed command only when no draft snapshot remains.
+- **Paths:** `python3 scripts/e2e-project-path-case.py <task-host>` requires a
+  case-insensitive filesystem, v29 backup and v30, unified session/task ownership,
+  unchanged transcripts and intact keep-warm/archive data. Explicit removal
+  deletes only owned sessions, pauses bound tasks and retains the physical
+  directory and unrelated conversation. Rust tests cover rollback, restart,
+  Unicode, missing roots, case-sensitive roots, symlinks and memory scope.
+- **Scrolling:** `node scripts/e2e-transcript-reading-position.mjs` covers
+  nonblocking hard-edge/ahead loading, single-flight IO, persistent pre-paint
+  anchors under opposing row resizes, interruptible native latest travel, late
+  layout convergence, saved follow intent, empty-page retry and Review focus.
+  Continuous pages stay reading data; unread/disjoint gaps never join model input.
+  `node scripts/e2e-transcript-prose.mjs` covers native pointer/wheel input,
+  measured recycling, selection, code/HTML and hidden-pane renderer retention.
+- **Results and provenance:**
+  [selected adaptation](../../project/upstream-import-2026-11-09-reliability-path-scroll.md).
+
 ## E2E-SCHEDULED-independent-loading-and-route-return
 
 - **Preconditions:** Synthetic tasks and controllable task, latest-run, history
@@ -27,6 +53,34 @@
 ---
 
 ## 1. Goals
+
+### E2E-UPSTREAM-20261108-selected-recovery-and-settings
+
+- **Preconditions:** Request worktree based on current Minih main, reused local
+  dependencies, isolated Host data and Electron profiles; no installed Desktop,
+  real provider, user database or upstream history integration.
+- **Steps:** Append a message and trailing compactions, reopen a bounded tail and
+  restart Host; compare middle/empty pages. Recover sidebar layout with a fresh
+  Chromium cache, close a retained project, restart twice, and reject secondary
+  renderer writes. Exercise backup corruption, migration, superseded recovery
+  and user edits in flight. In MCP All/Project/Global create, import and install;
+  switch projects while editing and test duplicates at the pinned destination.
+  Mark/unmark an image-generation model and collapse its settings row.
+- **Expected:** Tail checkpoints survive without loading full chains in middle
+  pages or changing historical usage. Sidebar metadata/manual titles survive;
+  explicit closes and Host workspace/group authority remain intact. MCP All uses
+  the selected project, editors retain their owner, and only target conflicts
+  block writes. Image help distinguishes generation/input and chat exclusion;
+  the collapsed badge remains visible without altering model protocol settings.
+- **Automation:** `node scripts/e2e-compaction-tail.mjs`,
+  `node scripts/e2e-sidebar-recovery.mjs`, focused sidebar/bootstrap/IPC and Rust
+  transcript/relocation tests, `mcp-market-owner-user-path.test.mjs` and
+  `image-model-disclosure-user-path.test.mjs`.
+- **Specs / acceptance:** IPC, data storage, settings IA and image generation;
+  acceptance B/C/E/F. Module tests are not full native Desktop acceptance.
+- **Milestone / status:** Selected maintenance candidate. Actual checks, source
+  revisions and remaining limits are in
+  [the import record](../../project/upstream-import-2026-11-08.md).
 
 ### E2E-UPSTREAM-priority-input-navigation-and-directory-paste
 
@@ -82,6 +136,34 @@
 - **Milestone / status:** 2026-11-03 selected upstream maintenance; development
   verification only. Source revisions and actual results are in
   [the import record](../../project/upstream-import-2026-11-03.md).
+### E2E-REMOTE-installation-repair-replaces-old-grants
+
+- **Preconditions:** Dedicated request worktree, reused dependencies, isolated
+  loopback Gateway/Hosts with fixture accounts and certificates. No installed
+  user application, real credentials, production service or paid provider.
+- **Steps:** Approve the same phone installation twice through account sign-in
+  and through a per-Host ticket. Pair another phone with the same label. Deliver
+  old grants out of order and reopen the Host directory; tamper with the signed
+  installation binding. Forget/reopen native and web credentials, fail identity
+  storage, and cancel account sign-in while the identity read is pending. In
+  Settings, inspect same-name legacy grants and revoke one using both steps.
+- **Expected:** One active credential per identified installation/scope; old
+  tokens are refused, other phones/accounts/Host-ticket scopes remain valid.
+  Normal confirmation and permission ceilings are unchanged. Signed extensions
+  survive deferred relay; old access cannot revive. Storage failures are visible
+  without a device request; local sign-out does not change installation identity.
+  Computer inventory and inbound access grants are clearly separated; IDs and
+  localized times distinguish legacy rows and revoking one preserves the other.
+- **Automation:** Shared account-device/Host-link contract tests; RACP
+  `device-installations`, `host-devices`, `hostlink-devices` regressions; Gateway
+  `device-requests` and `pairing-installation` HTTP/mTLS integration; mobile
+  credential/account-flow/installation tests; Desktop
+  `remote-gateway-settings-user-path.test.mjs` isolated Electron interaction.
+- **Specs:** Runtime §11.4/§11.5; Settings IA Accounts;
+  [installation identity ADR](../../adr/device-grant-installation-identity.md).
+- **Acceptance:** Remote control / security / settings / compatibility.
+- **Status:** Development candidate. Native physical-device and packaged
+  Host/Rust acceptance are separate and are not implied by these fixtures.
 
 ### E2E-UPSTREAM-20261101-selected-reliability
 
@@ -110,6 +192,33 @@
   mocked; Rust storage and installed-app acceptance are not claimed.
 - **Status:** Development candidate; actual checks, provenance and limits are in
   [the selected-import record](../../project/upstream-import-2026-11-01.md).
+
+### E2E-UPSTREAM-20261030-selected-runtime-settings
+
+- **Preconditions:** Dedicated request worktree with reused installed dependencies;
+  isolated profiles, files, local HTTP providers and Host/IPC fixtures. No user
+  Desktop, real SSH machine, provider credentials or paid model calls.
+- **Steps:** Stop Read/Glob/Grep with both Host replies held, start another prompt,
+  then deliver late results. Keep Write running until execution and cancellation
+  settle. Retry long rate-limit waits, real stalls and user cancellation. Return
+  inconsistent cached/total usage before new turns, restoration and tool loops;
+  compact a recent Read/Write/Edit tail and a large carried summary. In both MCP
+  and Skills, toggle the global default with a project selected, reset legacy
+  overrides, change the default again and switch projects before an old read
+  returns. Submit SSH installation and return `HOST_BOOTSTRAP_FAILED`.
+- **Expected:** Read-only Stop cannot wait for a second blocked Host RPC or alter
+  the following turn; writes retain settlement ownership. Only active requests
+  count toward idle clocks, shared retry limits and Stop remain intact. Cache
+  occupancy raises the valid usage anchor without changing billing or reviving
+  old checkpoint usage. Summary chunks fit their guard and folded file paths
+  survive; model-switch windows remain verbatim. Global controls use one scope,
+  project overrides remain visible/resettable and generation-safe, including after
+  toggling the default. SSH shows a localized summary, not raw stderr or a claim
+  that the connection fault was repaired.
+- **Automation:** `scripts/e2e-upstream-runtime-20261030.mjs`,
+  `apps/desktop/test/upstream-scope-user-path.test.mjs`, focused runtime/shared/UI
+  regressions and the existing model-switch, error-boundary and market-owner tests.
+- **Results and limits:** [Selective import record](../../project/upstream-import-2026-10-30.md).
 
 ### E2E-UPSTREAM-20261028-selected-capabilities
 

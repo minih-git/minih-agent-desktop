@@ -5,15 +5,13 @@ import {
   restoreTranscriptReadingPosition,
   type TranscriptReadingPosition,
 } from "../../../../lib/transcript-reading-position";
-import { readScrollInputContext, stopSmoothScroll } from "../../../../lib/scroll-input";
-import { isScrollGestureInput, type ScrollInputType } from "../../../../lib/transcript-scroll";
 
 type Hold = {
   position: TranscriptReadingPosition;
+  point?: { element: HTMLElement; offset: number };
   settled: boolean;
   stableFrames: number;
   page: boolean;
-  background: boolean;
   windowSize: number;
   sourceHead?: string;
   alignedHead?: string;
@@ -21,107 +19,142 @@ type Hold = {
   top: number;
   viewport: number;
   scroller: HTMLDivElement;
-  overflowY: string;
 };
 
 const layoutChanged = (held: Hold, sourceHead: string | undefined) =>
   held.height !== held.scroller.scrollHeight || held.viewport !== held.scroller.clientHeight ||
   held.alignedHead !== sourceHead;
 
-/** Own page IO and its pre-paint anchor. Ahead-loading permits input; the
- * hard-edge fallback discards input until the prepend settles. Cancelled IO
- * remains single-flight but cannot acquire a later navigation target. */
-export function useTranscriptHistoryPaging({ scrollRef, contentRef, visible, sourceHead, tailMessageId, onStart, onPosition, onSettled }: {
+function messageRow(content: HTMLElement, position: TranscriptReadingPosition) {
+  const id = CSS.escape(position.messageId ?? "");
+  return content.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+    ?? content.querySelector<HTMLElement>(`[data-minimap-id="${id}"]`);
+}
+
+function contentPoint(scroller: HTMLElement, content: HTMLElement, position: TranscriptReadingPosition) {
+  const viewport = scroller.getBoundingClientRect();
+  const row = messageRow(content, position);
+  for (const element of row?.querySelectorAll<HTMLElement>(".prose-chat p, .prose-chat li, .prose-chat pre, .prose-chat h1, .prose-chat h2, .prose-chat h3, .message-user-text") ?? []) {
+    const rect = element.getBoundingClientRect();
+    if (rect.height > 0 && rect.bottom > viewport.top && rect.top < viewport.bottom) {
+      return { element, offset: rect.top - viewport.top };
+    }
+  }
+}
+
+/** Page IO is single-flight; readable content retains the viewport after it settles. */
+export function useTranscriptHistoryPaging({ scrollRef, contentRef, visible, sourceHead, tailMessageId, canRetain, onStart, onPosition, onSettled }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   visible: boolean;
   sourceHead: string | undefined;
   tailMessageId?: string;
-  onStart: (background: boolean) => void;
+  canRetain: (paging: boolean) => boolean;
+  onStart: () => void;
   onPosition: (top: number) => void;
   onSettled: () => void;
 }) {
   const holdRef = useRef<Hold | null>(null);
+  const readingRef = useRef<Hold | null>(null);
+  const resizeRef = useRef<ResizeObserver | null>(null);
+  const observedRowsRef = useRef(new Set<HTMLElement>());
   const inFlightRef = useRef(false);
   const frameRef = useRef(0);
   const autoBlockedRef = useRef(false);
+  const latencyRef = useRef(250);
+  const readLatency = useCallback(() => latencyRef.current, []);
   const sourceHeadRef = useRef(sourceHead);
   sourceHeadRef.current = sourceHead;
   const retry = useCallback(() => { autoBlockedRef.current = false; }, []);
   const [phase, setPhase] = useState<"idle" | "mount" | "page">("idle");
   const [, refresh] = useState(0);
-  const callbacks = useRef({ onStart, onPosition, onSettled });
-  callbacks.current = { onStart, onPosition, onSettled };
+  const callbacks = useRef({ canRetain, onStart, onPosition, onSettled });
+  callbacks.current = { canRetain, onStart, onPosition, onSettled };
+  const readingHold = useCallback(() => {
+    if (!callbacks.current.canRetain(holdRef.current !== null)) {
+      readingRef.current = null;
+      return null;
+    }
+    return holdRef.current ?? readingRef.current;
+  }, []);
 
   const dropHold = useCallback(() => {
-    const held = holdRef.current;
-    if (held && !held.background) held.scroller.style.overflowY = held.overflowY;
     holdRef.current = null;
+    readingRef.current = null;
     cancelAnimationFrame(frameRef.current);
     frameRef.current = 0;
   }, []);
-  const cancel = useCallback(() => {
-    dropHold();
-    setPhase("idle");
-  }, [dropHold]);
-  const isHeld = useCallback(() => holdRef.current !== null, []);
-  const isLocked = useCallback(() => Boolean(holdRef.current && !holdRef.current.background), []);
-  const track = useCallback(() => {
-    const held = holdRef.current;
+  const cancel = useCallback(() => { dropHold(); setPhase("idle"); }, [dropHold]);
+  const captureHold = useCallback((windowSize: number, page = false): Hold | null => {
     const scroller = scrollRef.current;
     const content = contentRef.current;
-    if (!held?.background || !scroller || !content) return;
-    // Keep the same readable message while estimated predecessors lay out.
-    held.position = { ...held.position, offset: held.position.offset - (scroller.scrollTop - held.top),
-      scrollTop: scroller.scrollTop };
-    if (!layoutChanged(held, sourceHeadRef.current) &&
-      !isTranscriptReadingAnchorVisible(scroller, content, held.position)) {
+    if (!scroller || !content) return null;
+    const position = captureTranscriptReadingPosition(scroller, content, false, windowSize, tailMessageId)
+      ?? { pinned: false, offset: 0, scrollTop: scroller.scrollTop, windowSize, tailMessageId };
+    return { position, point: contentPoint(scroller, content, position), settled: false, stableFrames: 0, page, windowSize,
+      sourceHead: sourceHeadRef.current, alignedHead: sourceHeadRef.current,
+      height: scroller.scrollHeight, top: scroller.scrollTop, viewport: scroller.clientHeight, scroller };
+  }, [contentRef, scrollRef, tailMessageId]);
+  const isHeld = useCallback(() => holdRef.current !== null, []);
+  const track = useCallback((windowSize = 0) => {
+    let held = readingHold();
+    if (!held && callbacks.current.canRetain(false)) {
+      held = captureHold(windowSize);
+      readingRef.current = held;
+    }
+    const scroller = scrollRef.current;
+    const content = contentRef.current;
+    if (!held || !scroller || !content) return;
+    const movement = scroller.scrollTop - held.top;
+    held.position = { ...held.position, offset: held.position.offset - movement, scrollTop: scroller.scrollTop };
+    if (held.point) held.point.offset -= movement;
+    if (!layoutChanged(held, sourceHeadRef.current) && !isTranscriptReadingAnchorVisible(scroller, content, held.position)) {
       const position = captureTranscriptReadingPosition(scroller, content, false, held.windowSize, tailMessageId);
-      if (position) held.position = position;
+      if (position) { held.position = position; held.point = contentPoint(scroller, content, position); }
+    }
+    if (!layoutChanged(held, sourceHeadRef.current) && (!held.point?.element.isConnected ||
+      held.point.offset >= scroller.clientHeight || held.point.offset + held.point.element.getBoundingClientRect().height <= 0)) {
+      held.point = contentPoint(scroller, content, held.position);
     }
     held.top = scroller.scrollTop;
-  }, [contentRef, scrollRef, tailMessageId]);
+  }, [captureHold, contentRef, readingHold, scrollRef, tailMessageId]);
   const restore = useCallback(() => {
-    const held = holdRef.current;
+    const held = readingHold();
     const scroller = scrollRef.current;
     const content = contentRef.current;
     if (!held || !scroller || !content) return false;
-    if (held.background) {
-      track();
-      if (!layoutChanged(held, sourceHeadRef.current)) return false;
-    }
+    track();
     const before = scroller.scrollTop;
-    restoreTranscriptReadingPosition(scroller, content, held.position);
+    const changed = layoutChanged(held, sourceHeadRef.current);
+    if (held.point?.element.isConnected) {
+      const delta = held.point.element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - held.point.offset;
+      if (Math.abs(delta) > 0.5) scroller.scrollTop += delta;
+      const row = messageRow(content, held.position);
+      if (row) held.position = { ...held.position, offset: row.getBoundingClientRect().top - scroller.getBoundingClientRect().top };
+    } else restoreTranscriptReadingPosition(scroller, content, held.position);
     held.height = scroller.scrollHeight;
     held.viewport = scroller.clientHeight;
     held.alignedHead = sourceHeadRef.current;
     held.top = scroller.scrollTop;
     if (Math.abs(scroller.scrollTop - before) > 1) held.stableFrames = 0;
     callbacks.current.onPosition(scroller.scrollTop);
-    return true;
-  }, [contentRef, scrollRef, track]);
+    return changed || Math.abs(scroller.scrollTop - before) > 0.5;
+  }, [contentRef, readingHold, scrollRef, track]);
 
-  const run = useCallback((action: () => void | Promise<void>, windowSize: number, page = false, background = false) => {
-    const scroller = scrollRef.current;
-    const content = contentRef.current;
-    if (holdRef.current || inFlightRef.current || autoBlockedRef.current || !scroller || !content) return;
-    if (!background) stopSmoothScroll(scroller);
-    const position = captureTranscriptReadingPosition(scroller, content, false, windowSize, tailMessageId)
-      ?? { pinned: false, offset: 0, scrollTop: scroller.scrollTop, windowSize, tailMessageId };
-    const hold: Hold = { position, settled: false, stableFrames: 0, page, background, windowSize,
-      sourceHead: sourceHeadRef.current, alignedHead: sourceHeadRef.current,
-      height: scroller.scrollHeight, top: scroller.scrollTop, viewport: scroller.clientHeight,
-      scroller, overflowY: scroller.style.overflowY };
+  const run = useCallback((action: () => void | Promise<void>, windowSize: number, page = false) => {
+    if (holdRef.current || inFlightRef.current || autoBlockedRef.current) return;
+    const hold = captureHold(windowSize, page);
+    if (!hold) return;
     holdRef.current = hold;
-    if (!background) scroller.style.overflowY = "hidden";
     inFlightRef.current = true;
-    callbacks.current.onStart(background);
+    callbacks.current.onStart();
     setPhase(page ? "page" : "mount");
+    const startedAt = performance.now();
     const finish = () => {
       inFlightRef.current = false;
       if (holdRef.current !== hold) return;
+      if (page) latencyRef.current = Math.min(2000, Math.max(latencyRef.current * 0.75, performance.now() - startedAt));
       hold.settled = true;
-      // IO resolution is not a DOM commit. Refresh current, non-deferred rows.
       refresh(value => value + 1);
     };
     try {
@@ -136,14 +169,13 @@ export function useTranscriptHistoryPaging({ scrollRef, contentRef, visible, sou
       finish();
       console.error("Transcript history page failed", error);
     }
-  }, [contentRef, scrollRef, tailMessageId]);
+  }, [captureHold]);
 
   useLayoutEffect(() => {
     if (!visible) { cancel(); return; }
-    const hold = holdRef.current;
-    if (!hold) return;
     restore();
-    if (frameRef.current) return;
+    const hold = holdRef.current;
+    if (!hold || frameRef.current) return;
     const align = () => {
       frameRef.current = 0;
       if (holdRef.current !== hold) return;
@@ -154,9 +186,9 @@ export function useTranscriptHistoryPaging({ scrollRef, contentRef, visible, sou
       const changed = Math.abs(scroller.scrollTop - before) > 1;
       hold.stableFrames = hold.settled && !changed ? hold.stableFrames + 1 : 0;
       if (hold.stableFrames >= 3) {
-        // Empty/failed pages cannot spin at an unchanged visible boundary.
         if (hold.page && hold.sourceHead === sourceHeadRef.current) autoBlockedRef.current = true;
         dropHold();
+        readingRef.current = hold;
         setPhase("idle");
         callbacks.current.onSettled();
         return;
@@ -166,13 +198,12 @@ export function useTranscriptHistoryPaging({ scrollRef, contentRef, visible, sou
     frameRef.current = requestAnimationFrame(align);
   });
 
-  // Lazy row measurements can change after React's layout phase.
   useLayoutEffect(() => {
     const content = contentRef.current;
     const scroller = scrollRef.current;
     if (!content || !scroller) return;
     const observer = new ResizeObserver(() => {
-      const held = holdRef.current;
+      const held = readingHold();
       if (!held) return;
       const before = scroller.scrollTop;
       restore();
@@ -180,26 +211,21 @@ export function useTranscriptHistoryPaging({ scrollRef, contentRef, visible, sou
     });
     observer.observe(content, { box: "border-box" });
     observer.observe(scroller, { box: "border-box" });
-    return () => observer.disconnect();
-  }, [contentRef, restore, scrollRef]);
+    resizeRef.current = observer;
+    return () => { observer.disconnect(); resizeRef.current = null; observedRowsRef.current.clear(); };
+  }, [contentRef, readingHold, restore, scrollRef]);
 
+  // Row boxes catch opposing changes even when total content height is stable.
   useLayoutEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const block = (event: Event) => {
-      if (!isLocked() || (event instanceof WheelEvent && (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)))) return;
-      const input = readScrollInputContext(event, scroller, contentRef.current);
-      if (!isScrollGestureInput(event.type as ScrollInputType, input)) return;
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    const options = { capture: true, passive: false };
-    for (const type of ["wheel", "touchmove", "keydown"]) scroller.addEventListener(type, block, options);
-    return () => {
-      for (const type of ["wheel", "touchmove", "keydown"]) scroller.removeEventListener(type, block, true);
-      dropHold();
-    };
-  }, [contentRef, dropHold, isLocked, scrollRef]);
+    const observer = resizeRef.current;
+    const content = contentRef.current;
+    if (!observer || !content) return;
+    const rows = new Set(content.querySelectorAll<HTMLElement>("[data-message-id], [data-minimap-id]"));
+    for (const row of observedRowsRef.current) if (!rows.has(row)) observer.unobserve(row);
+    for (const row of rows) if (!observedRowsRef.current.has(row)) observer.observe(row, { box: "border-box" });
+    observedRowsRef.current = rows;
+  });
+  useLayoutEffect(() => () => dropHold(), [dropHold]);
 
-  return { loadingOlder: phase === "page", pending: phase !== "idle", run, restore, isHeld, isLocked, track, cancel, retry };
+  return { loadingOlder: phase === "page", pending: phase !== "idle", run, restore, isHeld, track, cancel, retry, readLatency };
 }

@@ -26,6 +26,7 @@ import {
   type AccountHostSummary,
 } from "./account-client.js";
 import type { AccountAdoption, AccountAdoptionOutcome, HostCredential } from "./credential-port.js";
+import { installationIdFailure } from "./device-installation.js";
 import { failureFrom, type OperationFailure } from "./errors.js";
 
 /** How often the status route is read while a request is pending. */
@@ -118,6 +119,14 @@ export type AccountFlowOptions = {
    * here; a failure is the caller's to log and must not block sign-out.
    */
   onSignOut?: (credential: HostCredential) => Promise<void>;
+  /**
+   * This install's identity at the Gateway (`./device-installation.ts`), read
+   * when a device is asked for. It authorises nothing: the Gateway only uses it
+   * to replace this install's previous device after a normal approval. A
+   * request whose identity cannot be read is never sent, so the failure is
+   * reported instead of asking under a different identity.
+   */
+  installationId?: () => Promise<string>;
   fetchImpl?: typeof fetch;
   timer?: AccountTimer;
   now?: () => number;
@@ -148,6 +157,13 @@ export class AccountFlow {
   /** What sign-in learned, so a retry can return to the step it can repeat. */
   private accountId = "";
   private accountHosts: AccountHostSummary[] = [];
+  /**
+   * Set while a device request — including the read of this install's identity
+   * — is in flight. A second tap must not open a second request: the Gateway
+   * would have two of them, and the flow would adopt whichever answered last.
+   */
+  private requestInFlight = false;
+  private requestGeneration = 0;
 
   constructor(private readonly options: AccountFlowOptions) {}
 
@@ -224,34 +240,65 @@ export class AccountFlow {
    * retried from where it stopped, under the same account session.
    */
   async requestDevice(): Promise<void> {
+    // A second tap while the first request is still in flight is ignored: two
+    // requests would leave the Gateway with one nobody is waiting for.
+    if (this.requestInFlight) return;
     if (!this.canRequestDevice()) return;
     const credential = this.credential();
     if (!credential) {
       this.setState({ kind: "idle" });
       return;
     }
-    const requested = await requestAccountDevice({
-      ...this.clientOptions(),
-      credential,
-      deviceLabel: this.options.deviceLabel(),
-      client: this.options.client,
-    });
-    if (!requested.ok) {
-      if (requested.failure.code === "UNAUTHORIZED") {
-        this.sessionRefused(requested.failure);
+    this.requestInFlight = true;
+    const generation = this.requestGeneration;
+    try {
+      // The identity goes first, because the request has to name the install
+      // whose previous device the approval replaces.
+      let installationId: string | undefined;
+      if (this.options.installationId) {
+        try {
+          installationId = await this.options.installationId();
+        } catch (error) {
+          if (generation !== this.requestGeneration || this.credential() !== credential) return;
+          // Nothing is sent without a remembered identity: the Gateway could
+          // not tell this install from a new one, and the failure has to be
+          // visible rather than turning into a silently different device.
+          this.setState({ kind: "failed", failure: installationIdFailure(error) });
+          return;
+        }
+      }
+      // The session may have been revoked, abandoned, or signed in again while
+      // the id was read; that flow is over, so its request is never sent.
+      if (generation !== this.requestGeneration || this.credential() !== credential || !this.canRequestDevice()) return;
+      const requested = await requestAccountDevice({
+        ...this.clientOptions(),
+        credential,
+        deviceLabel: this.options.deviceLabel(),
+        client: this.options.client,
+        ...(installationId ? { installationId } : {}),
+      });
+      // Signing out (or a refused session) while the request was on the wire
+      // leaves nothing to wait for: the answer belongs to a flow that ended.
+      if (generation !== this.requestGeneration || this.credential() !== credential) return;
+      if (!requested.ok) {
+        if (requested.failure.code === "UNAUTHORIZED") {
+          this.sessionRefused(requested.failure);
+          return;
+        }
+        this.setState({ kind: "failed", failure: requested.failure });
         return;
       }
-      this.setState({ kind: "failed", failure: requested.failure });
-      return;
+      this.consecutiveFailures = 0;
+      this.setState({
+        kind: "requesting",
+        requestId: requested.value.requestId,
+        expiresAt: requested.value.expiresAt,
+        hosts: requested.value.hosts,
+      });
+      this.schedulePoll(POLL_INTERVAL_MS);
+    } finally {
+      this.requestInFlight = false;
     }
-    this.consecutiveFailures = 0;
-    this.setState({
-      kind: "requesting",
-      requestId: requested.value.requestId,
-      expiresAt: requested.value.expiresAt,
-      hosts: requested.value.hosts,
-    });
-    this.schedulePoll(POLL_INTERVAL_MS);
   }
 
   /**
@@ -288,6 +335,7 @@ export class AccountFlow {
    * phone stops being pushed for the account when the user has said so.
    */
   async abandon(): Promise<void> {
+    this.requestGeneration += 1;
     this.stopPolling();
     if (this.state.kind === "adopted" && this.deviceCredential && !this.signedOut) {
       // Post-adoption sign-out: the session is already gone, so only the push
@@ -488,6 +536,7 @@ export class AccountFlow {
 
   /** Release the timer; the screen calls this when it unmounts. */
   dispose(): void {
+    this.requestGeneration += 1;
     this.stopPolling();
     this.listeners.clear();
   }

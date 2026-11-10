@@ -1,4 +1,5 @@
 import {
+  contextOccupancyTokens,
   effectiveContextWindow,
   modelWireIdsEqual,
   type ContextUsageDisplay,
@@ -24,23 +25,7 @@ export function usageTokenTotal(usage: MessageUsage): number {
   return positiveTokenCount(usage.inputTokens) + positiveTokenCount(usage.outputTokens);
 }
 
-/**
- * Occupancy of one model request: `input + output + cache.read + cache.write`
- * on that request. `output` already carries the reasoning tokens — Chat
- * Completions reports `completion_tokens` including `reasoning_tokens`,
- * Responses reports `output_tokens` including `reasoning_tokens`, and Google
- * reports `candidatesTokenCount + thoughtsTokenCount` — so `reasoningTokens`
- * is a subset and must not be added again. Cache reads from earlier tool-loop
- * calls are not occupancy.
- */
-export function contextOccupancyTokens(usage: MessageUsage): number {
-  const occupancy =
-    positiveTokenCount(usage.inputTokens) +
-    positiveTokenCount(usage.outputTokens) +
-    positiveTokenCount(usage.cacheReadTokens) +
-    positiveTokenCount(usage.cacheWriteTokens);
-  return occupancy > 0 ? occupancy : usageTokenTotal(usage);
-}
+export { contextOccupancyTokens };
 
 export type TurnUsageBreakdown = {
   inputTokens: number;

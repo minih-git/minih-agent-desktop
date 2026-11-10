@@ -149,6 +149,32 @@ describe("host link device frames", () => {
     });
   }
 
+  it("recovers an unqueued replacement revoke once and reuses it on reconnect", async () => {
+    const devices = directory({ confirmer: approving });
+    await h.store.saveDevice({
+      deviceId: "dev_replaced", label: "phone", roles: [...GATEWAY_PAIR_ROLES], tokenHash: "a".repeat(64),
+      origin: "gateway", createdAt: new Date(NOW - 1000).toISOString(),
+      revokedAt: new Date(NOW).toISOString(), replacedByDeviceId: "dev_replacement",
+    });
+    const frames: RacpDeviceRevokeFrame[] = [];
+    const queue: DeviceRevocationQueue = {
+      pending: async () => frames,
+      enqueue: async (frame) => { frames.push(frame); return 0; },
+    };
+    openHost(devices, queue);
+    await waitForFrames(socket, "device.revoke");
+    await flush();
+    expect(frames).toHaveLength(1);
+    const revokeId = frames[0]!.revoke.revokeId;
+    socket.close();
+    socket = new FakeGatewaySocket();
+    openHost(devices, queue);
+    await waitForFrames(socket, "device.revoke");
+    await flush();
+    expect(frames).toHaveLength(1);
+    expect((socket.framesOfType("device.revoke")[0] as RacpDeviceRevokeFrame).revoke.revokeId).toBe(revokeId);
+  });
+
   async function authenticate(token: string) {
     return new DeviceTokenAuthenticator(h.store, () => NOW).authenticate({
       authorization: `Bearer ${token}`,

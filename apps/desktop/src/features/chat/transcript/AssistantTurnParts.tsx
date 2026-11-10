@@ -3,7 +3,7 @@ import type { AgentActivity, UiMessage } from "@minih-agent/shared";
 import type { AssistantTurnPart } from "../../../lib/assistant-turns";
 import type { SubagentOutcome, SubagentTiming } from "../../../lib/subagent-topology";
 import { useAppStore } from "../../../stores/app-store";
-import { Markdown } from "../../../components/Markdown";
+import { TranscriptProse } from "./TranscriptProse";
 import { useSmoothText } from "../../../hooks/useSmoothText";
 import { ActivityGroup } from "./ActivityGroup";
 import { AssistantErrorMessage } from "./shared";
@@ -26,9 +26,7 @@ const SmoothMessageBubble = memo(function SmoothMessageBubble({ message, streami
       data-message-id={message.id}
     >
       {displayContent ? (
-        <div className="prose-chat" data-streaming={streaming || undefined}>
-          <Markdown source={displayContent} streaming={streaming} renderHtml />
-        </div>
+        <TranscriptProse source={displayContent} streaming={streaming} />
       ) : null}
       {message.error ? <AssistantErrorMessage message={message} /> : null}
     </div>

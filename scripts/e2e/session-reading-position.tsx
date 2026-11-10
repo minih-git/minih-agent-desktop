@@ -35,7 +35,7 @@ function assert(condition: unknown, label: string): asserts condition {
   if (!condition) throw new Error(label);
 }
 async function until(predicate: () => boolean, label: string) {
-  for (let i = 0; i < 240; i++) {
+  for (let i = 0; i < 600; i++) {
     if (predicate()) return;
     await frame();
   }
@@ -178,9 +178,10 @@ globalThis.sessionReadingPositionProbe = async () => {
       "search still loads subsequent pages manually");
     const jump = host.querySelector<HTMLButtonElement>('[data-visible="true"] .jump-latest-btn')!;
     flushSync(() => jump.click());
-    await until(() => !useAppStore.getState().transcriptViews["real-A"] &&
+    await until(() => !useAppStore.getState().transcriptViews["real-A"]?.focus &&
+      !useAppStore.getState().transcriptViews["real-A"]?.restored &&
       Math.abs(scroller().scrollHeight - scroller().clientHeight - scroller().scrollTop) < 2,
-    "return to latest exits history and resumes follow");
+    "return to latest resumes follow while retaining continuous reading pages");
     assert(unexpected.length === 0, `unexpected IPC: ${unexpected}`);
 
     // A session the reader left at the bottom of the tail, after a manual

@@ -22,6 +22,7 @@ import {
   RACP_HOST_CAPABILITIES,
   deviceGrantSigningPayload,
   deviceRevokeSigningPayload,
+  deviceInstallationSigningPayload,
   hostProofSigningPayload,
   type RacpDeviceGrant,
   type RacpDeviceGrantFrame,
@@ -35,6 +36,7 @@ import { GATEWAY_PAIR_ROLES, hashToken, newDeviceToken, type DeviceCredentialSto
 import { certificateMatchesPrivateKey, signHostArtifact, verifyHostArtifact, type HostArtifactFailure } from "./host-artifact.js";
 import type { HostLinkLog } from "./hostlink.js";
 import { readCertificateAccountBinding } from "./x509.js";
+import { replaceDeviceInstallation } from "./device-installations.js";
 
 /**
  * The role set a desktop-class device holds (ADR amendment 3, decision 4): the
@@ -304,6 +306,7 @@ export class HostDeviceDirectory {
   async handleRequest(
     request: RacpDeviceRequest,
     send: (frame: RacpDeviceGrantFrame) => void,
+    sendRevocation?: (frame: RacpDeviceRevokeFrame) => void | Promise<void>,
   ): Promise<DeviceRequestOutcome> {
     if (request.accountId !== this.accountId) {
       this.options.log("warn", "device request for another account ignored", { requestId: request.requestId });
@@ -322,7 +325,7 @@ export class HostDeviceDirectory {
       const verdict = this.verifyProof(request, proof);
       if (verdict.ok) {
         this.rememberNonce(proof.nonce, request.expiresAt);
-        send(await this.approve(request, "desktop"));
+        await this.approveAndSend(request, "desktop", send, sendRevocation);
         this.options.log("info", "admitted a desktop-class device automatically", {
           requestId: request.requestId,
           applicantHostId: proof.applicantHostId,
@@ -361,8 +364,24 @@ export class HostDeviceDirectory {
       this.options.log("info", "device request denied locally", { requestId: request.requestId });
       return "denied";
     }
-    send(await this.approve(request));
+    await this.approveAndSend(request, "phone", send, sendRevocation);
     return "granted";
+  }
+
+  private async approveAndSend(
+    request: RacpDeviceRequest,
+    deviceClass: "phone" | "desktop",
+    send: (frame: RacpDeviceGrantFrame) => void,
+    sendRevocation?: (frame: RacpDeviceRevokeFrame) => void | Promise<void>,
+  ): Promise<void> {
+    const frame = await this.approve(request, deviceClass);
+    send(frame);
+    if (!sendRevocation) return;
+    for (const device of await this.options.store.listDevices()) {
+      if (device.replacedByDeviceId !== frame.grant.deviceId) continue;
+      const revoke = await this.revoke(device.deviceId);
+      if (revoke) await sendRevocation(revoke);
+    }
   }
 
   /**
@@ -456,6 +475,10 @@ export class HostDeviceDirectory {
       tokenHash: hashToken(token),
       origin: "gateway",
       createdAt: at,
+      accountId: this.accountId,
+      grantRequestId: request.requestId,
+      grantIssuedAt: at,
+      ...(!desktop && request.installationId ? { installationId: request.installationId } : {}),
       // The class and the applicant are what later make this device
       // ceiling-exempt and what a Host revocation cascades through (decision 4).
       ...(desktop && proof ? { deviceClass: "desktop" as const, applicantHostId: proof.applicantHostId } : {}),
@@ -507,6 +530,10 @@ export class HostDeviceDirectory {
         : {}),
     };
     if (!dropped) {
+      const record = await this.findDevice(deviceId);
+      if (record) await this.replaceInstallation(record, at);
+    }
+    if (!dropped) {
       this.notice({
         kind: "device.minted",
         deviceId,
@@ -523,6 +550,10 @@ export class HostDeviceDirectory {
       signature: signHostArtifact(deviceGrantSigningPayload(grant), this.options.signer.privateKeyPem),
       signerCertificate: this.options.signer.certificatePem,
       deviceToken: token,
+      ...(!desktop && request.installationId ? { installation: {
+        id: request.installationId,
+        signature: signHostArtifact(deviceInstallationSigningPayload(grant, request.installationId), this.options.signer.privateKeyPem),
+      } } : {}),
     };
   }
 
@@ -659,6 +690,16 @@ export class HostDeviceDirectory {
     if (verdict.signerHostId !== grant.signerHostId) return this.refuseGrant("signer_mismatch", grant.deviceId);
     if (verdict.accountId !== this.accountId) return this.refuseGrant("account_mismatch", grant.deviceId);
     if (Date.parse(grant.deliverUntil) <= this.now()) return this.refuseGrant("expired", grant.deviceId);
+    if (frame.installation) {
+      const installationVerdict = verifyHostArtifact({
+        payload: deviceInstallationSigningPayload(grant, frame.installation.id),
+        signature: frame.installation.signature,
+        signerCertificate: frame.signerCertificate,
+        gatewayCaPem: this.options.gatewayCaPem,
+        now: this.now(),
+      });
+      if (!installationVerdict.ok) return this.refuseGrant(installationVerdict.reason, grant.deviceId);
+    }
     if (desktop ? !rolesAreDesktopSet(grant.roles) : !rolesAreGatewaySet(grant.roles)) {
       return this.refuseGrant("roles_invalid", grant.deviceId);
     }
@@ -697,6 +738,16 @@ export class HostDeviceDirectory {
       // id, or a device this Host already revoked, is not.
       if (existing.revokedAt) return this.refuseGrant("device_revoked", grant.deviceId);
       if (existing.tokenHash !== grant.tokenHash) return this.refuseGrant("device_conflict", grant.deviceId);
+      // A restart may have interrupted replacement after this record was saved.
+      const correlated = {
+        ...existing,
+        accountId: this.accountId,
+        grantRequestId: grant.requestId,
+        grantIssuedAt: grant.issuedAt,
+        ...(frame.installation && !desktop ? { installationId: frame.installation.id } : {}),
+      };
+      await this.options.store.saveDevice(correlated);
+      await this.replaceInstallation(correlated, new Date(this.now()).toISOString());
       // The account has settled this request with this device. Remembered so a
       // local approval that finishes later cannot mint a second one.
       admission.adopted = grant.deviceId;
@@ -709,10 +760,16 @@ export class HostDeviceDirectory {
       tokenHash: grant.tokenHash,
       origin: "gateway",
       createdAt: new Date(this.now()).toISOString(),
+      accountId: this.accountId,
+      grantRequestId: grant.requestId,
+      grantIssuedAt: grant.issuedAt,
+      ...(frame.installation && !desktop ? { installationId: frame.installation.id } : {}),
       ...(desktop && grant.applicantHostId
         ? { deviceClass: "desktop" as const, applicantHostId: grant.applicantHostId }
         : {}),
     });
+    const stored = await this.findDevice(grant.deviceId);
+    if (stored) await this.replaceInstallation(stored, new Date(this.now()).toISOString());
     // The account has settled this request with this device, so a local approval
     // that finishes later must not mint a second one.
     admission.adopted = grant.deviceId;
@@ -813,6 +870,12 @@ export class HostDeviceDirectory {
       signature: signHostArtifact(deviceRevokeSigningPayload(revoke), this.options.signer.privateKeyPem),
       signerCertificate: this.options.signer.certificatePem,
     };
+  }
+
+  private async replaceInstallation(record: import("./auth.js").DeviceRecord, at: string): Promise<void> {
+    for (const replaced of await replaceDeviceInstallation(this.options.store, record, at)) {
+      this.notice({ kind: "device.revoked", deviceId: replaced.deviceId, label: replaced.label, roles: replaced.roles, at });
+    }
   }
 
   /** Every device this Host knows, adopted or self-issued. */

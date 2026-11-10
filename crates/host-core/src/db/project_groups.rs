@@ -234,12 +234,15 @@ impl Database {
         let mut used_paths = std::collections::HashSet::new();
         let mut groups = Vec::with_capacity(stored.len() + projects.len());
 
-        for group in stored {
-            for root in &group.roots {
-                let path = canonical_project_path(&root.path)
+        for mut group in stored {
+            for root in &mut group.roots {
+                let path = self
+                    .stored_project_path(&root.path)?
                     .ok_or_else(|| anyhow!("project group root path must not be blank"))?;
+                root.path = path.clone();
                 used_paths.insert(path);
             }
+            group.primary_path = group.roots[0].path.clone();
             for path in &group.detached_paths {
                 if let Some(path) = canonical_project_path(path) {
                     used_paths.insert(path);
@@ -263,7 +266,7 @@ impl Database {
     }
 
     pub fn project_group_for_path(&self, path: &str) -> Result<Option<ProjectGroupRecord>> {
-        let Some(canonical) = canonical_project_path(path) else {
+        let Some(canonical) = self.stored_project_path(path)? else {
             return Ok(None);
         };
         Ok(self

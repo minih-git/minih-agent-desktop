@@ -49,12 +49,25 @@ export function createTranscriptReadingRuntime({ get, set }: StoreAccess, read: 
     set((state) => ({ transcriptViews: { ...state.transcriptViews, [sessionId]: view } }));
   }
 
-  function returnToLatestTranscript(sessionId: string) {
+  function clearTranscriptView(sessionId: string) {
     set((state) => {
       if (!state.transcriptViews[sessionId]) return {};
       const { [sessionId]: _released, ...transcriptViews } = state.transcriptViews;
       return { transcriptViews };
     });
+  }
+
+  function returnToLatestTranscript(sessionId: string) {
+    const state = get();
+    const view = state.transcriptViews[sessionId];
+    if (!view) return;
+    const live = state.activeSessionId === sessionId
+      ? state.messages : (state.retainedTranscripts[sessionId] ?? EMPTY_TRANSCRIPT);
+    // Only continuous history extending the live tail remains a reading view.
+    // Search gaps and disjoint bookmarks never become live/model input.
+    if (!view.hasMoreAfter && view.messages.findIndex(row => row.id === live[0]?.id) > 0) {
+      publish(sessionId, { ...view, focus: null, restored: false, loading: null });
+    } else clearTranscriptView(sessionId);
   }
 
   function prepareReturnToLatestTranscript(sessionId: string): () => void {
@@ -63,11 +76,7 @@ export function createTranscriptReadingRuntime({ get, set }: StoreAccess, read: 
     const prepared: TranscriptView = { ...current, loading: null };
     publish(sessionId, prepared);
     return () => {
-      set((state) => {
-        if (state.transcriptViews[sessionId] !== prepared) return {};
-        const { [sessionId]: _released, ...transcriptViews } = state.transcriptViews;
-        return { transcriptViews };
-      });
+      if (get().transcriptViews[sessionId] === prepared) returnToLatestTranscript(sessionId);
     };
   }
 
@@ -98,7 +107,7 @@ export function createTranscriptReadingRuntime({ get, set }: StoreAccess, read: 
       const rollback = () => {
         if (get().transcriptViews[sessionId] !== pending) return;
         if (previous) publish(sessionId, previous);
-        else returnToLatestTranscript(sessionId);
+        else clearTranscriptView(sessionId);
       };
       publish(sessionId, pending);
       signal.addEventListener("abort", rollback, { once: true });
@@ -146,7 +155,7 @@ export function createTranscriptReadingRuntime({ get, set }: StoreAccess, read: 
         });
         if (get().transcriptViews[sessionId] !== pending) return;
         if (get().activeSessionId !== sessionId) {
-          returnToLatestTranscript(sessionId);
+          clearTranscriptView(sessionId);
           return;
         }
         const message = session?.messages.find((candidate) => candidate.id === focus.messageId);
@@ -220,7 +229,8 @@ export function createTranscriptReadingRuntime({ get, set }: StoreAccess, read: 
         !(view.restored && previous.selectingSessionId === id) &&
         state.messages !== previous.messages &&
         transcriptWasRewritten(previous.messages, state.messages);
-      if (evicted || started || rewritten) returnToLatestTranscript(id);
+      if (evicted || rewritten) clearTranscriptView(id);
+      else if (started) returnToLatestTranscript(id);
     }
   }
 

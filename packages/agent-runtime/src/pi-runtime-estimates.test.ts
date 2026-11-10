@@ -54,3 +54,20 @@ describe("estimateContextTokens anchor validity", () => {
     expect(estimate.tokens).toBeGreaterThan(0);
   });
 });
+
+describe("estimateContextTokens request occupancy", () => {
+  it("uses cached input even when the reported total excludes it", () => {
+    const message = replayedAssistant(2);
+    if (message.role !== "assistant") throw new Error("Expected assistant fixture");
+    message.usage = { ...message.usage, input: 20_000, output: 100,
+      cacheRead: 60_000, cacheWrite: 200, totalTokens: 20_100 };
+    expect(estimateContextTokens([message]).usageTokens).toBe(80_300);
+  });
+
+  it("retains a larger reported total when bucket details are incomplete", () => {
+    const message = replayedAssistant(2);
+    if (message.role !== "assistant") throw new Error("Expected assistant fixture");
+    message.usage = { ...message.usage, input: 0, output: 10, totalTokens: 80_000 };
+    expect(estimateContextTokens([message]).usageTokens).toBe(80_000);
+  });
+});

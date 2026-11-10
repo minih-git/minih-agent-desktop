@@ -1667,6 +1667,11 @@ Enrollment and pairing run against the same listener:
   profile (§11.2) and a device has no per-Host credential yet. A client that
   receives none shows the host id; it must not substitute the device label,
   which names the phone that paired, not the computer.
+  Both creation routes also accept an optional UUIDv4 `installationId`, described
+  below. Ticket pairing replaces only earlier ticket credentials of that same
+  installation on this Host, never account grants or another Host's pairing.
+  The Host acknowledges the ID in its `connection/pair` result; a Gateway must
+  not perform replacement on behalf of a legacy Host that did not acknowledge it.
 
 ### 11.5 Account mode (D666; the account directory is implemented)
 
@@ -1681,6 +1686,28 @@ is implemented (rollout R7 packages C and D). A Host that can ask its own user
 advertises `device.confirm` on the link, one approval on any Host of the account
 mints one device token for all of them, and every clause below is implemented as
 written.
+
+- **Installation continuity.** Updated clients retain one random UUIDv4 per
+  Gateway origin (device-local non-synchronizing secure storage on native,
+  origin-local storage on web). Both creation requests carry `installationId?`;
+  sign-out, forgetting Hosts, and orphan-token cleanup preserve it. Failed
+  storage aborts creation with `STORAGE_FAILED`, not a newly generated identity.
+  The ID grants no authority: normal approval, ticket and account checks remain.
+  After approval the Host signs an optional frame extension
+  `installation: { id, signature }` over canonical JSON
+  `{ domain: "racp.device-installation.v1", grant: deviceGrantSigningPayload(grant), installationId: id }`.
+  The original grant payload/signature remains unchanged for older peers.
+  New Hosts/Gateway verify this binding before replacing credentials and preserve
+  it in pending grants. A changed or transplanted binding is refused.
+  A newer approved grant replaces older credentials with the same ID and account
+  scope, or the same proven desktop `applicantHostId`; different IDs, ticket vs
+  account grants, and uncorrelated legacy records stay separate. Replacement
+  keeps revoked tombstones and uses signed revocation/retry for other Hosts.
+  Deferred grants are ordered by signed issue time then device ID, so an older
+  grant cannot resurrect old access after restart. Same-request first-grant
+  convergence remains unchanged. No name-based merge or hardware fingerprint is
+  allowed. Optional JSON fields preserve existing stores; complete continuity
+  requires updated peers. See [the installation identity ADR](../../adr/device-grant-installation-identity.md).
 
 - **Key verification.** The Gateway validates a presented AccessKey by calling
   the Router's `GET /api/auth/session` over loopback with

@@ -540,6 +540,17 @@ a usage tab.
   and the Advanced SSH entry is a button that navigates to the kept
   destination rather than an embed of `RemoteHostsPage`.
 
+- The Devices page separates **Computers you can connect to** from **Devices
+  allowed to access this computer**. These are opposite directions of access,
+  not two physical-device inventories. The grant list may include earlier
+  pairings; each row shows its unique credential ID and localized creation and
+  last-use times (or "Not used on this computer"). Same-name grants remain
+  distinguishable and independently revocable with two-step confirmation; the
+  badge stays beside the name rather than in the middle of a stretched row.
+  The page title is not repeated as a nested heading. Newly approved matching
+  installations replace their older grants through the real credential path,
+  never by hiding rows. Legacy records lacking identity require explicit revoke.
+
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **account's models** as
   cards, the image-generation model selector (rendered once at least one model
@@ -900,7 +911,12 @@ system while preserving their different data ownership:
   filter points at — Global under All or Global, Project under Project — and
   the primary action's tooltip names that destination so the choice is never
   implicit. Choosing Project without a selected project reports that instead
-  of failing silently.
+  of failing silently. MCP creation, inline import and market installation are
+  the exception: All uses the selected project when present and Global only
+  without one. Explicit Global/Project retain their destination. An opened MCP
+  editor pins its project; changing the page selection cannot move the definition.
+  Save rereads that pinned destination for duplicate IDs/names, so another
+  project's same-name entry cannot block it. Host validation remains authoritative.
 - Inside the panel, each level is a group header row — level name, resolved
   `.agents` path in mono, localized count — followed by its rows. Lists flow
   at natural page height like every other Settings surface; the page scrolls
@@ -926,6 +942,22 @@ system while preserving their different data ownership:
   Move to Global. With no project selected the Move into <project> item is not
   offered and the project group asks for a project selection instead, so a
   capability is never sent to an unnamed project.
+- A global MCP or Skill row reads and writes the global default even when a
+  project is selected; only project-level rows carry the selected path in normal
+  row operations. The project-scoped effective global list is read separately
+  to expose a stored project override that disagrees with that default. Its
+  direction badge and **Reset to the global default** menu action remain visible
+  until reset writes the current default in that project's scope. The Host
+  removes the matching key; no capability document or database migration changes.
+  Rows and derived override badges share the accepted collection generation, so
+  a late previous-project response cannot repaint the current project. A settled
+  toggle reloads the current collection so a newly differing stored override
+  becomes visible immediately. Existing optimistic switching and busy controls
+  remain intact.
+- SSH Host installation failures with `HOST_BOOTSTRAP_FAILED` use a dedicated
+  localized install/start summary rather than the generic remote-operation
+  fallback. This does not diagnose or repair the underlying SSH failure and
+  never displays raw stderr. Existing remote/local error boundaries are retained.
 - The MCP editor's optional connection timeout accepts 1–600 seconds. A blank
   value clears the server override and restores the default; saving a changed
   timeout refreshes that server's live connection.
@@ -972,8 +1004,9 @@ system while preserving their different data ownership:
   opens inline on the MCP page. Imported servers follow the current Global /
   Project filter and selected project; secrets and header values are never
   shown in candidate rows.
-- MCP Market installs into the same destination as Add: Global under All or
-  Global, and the selected project under Project. Installed badges reflect only
+- MCP Market installs into the same destination as Add: the selected project
+  under All when present, Global otherwise or under explicit Global, and the
+  selected project under Project. Installed badges reflect only
   that destination, so an entry in another level can still be installed here.
   Project installation requires a selected project and never falls back to Global.
 - MCP Market offers Retry after a failed query or partial source failure. It

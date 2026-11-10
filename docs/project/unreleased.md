@@ -14,6 +14,17 @@
 - Overflowing New launcher lists scroll inside the work panel with a pinned
   title, full-size 40px rows and a theme-visible scroll thumb. Runtime rebuild
   diagnostics name the changed configuration field without exposing its value.
+- Cached input participates in context protection without changing billing totals;
+  summary chunks reserve carried summaries consistently and keep file paths from
+  the recent history they summarize. Model-switch reading windows stay intact.
+- Stopping a local Read, Glob or Grep no longer waits for a blocked cancellation
+  acknowledgement. Deliberate provider retry waits no longer count as stream
+  silence; writes retain their existing settlement boundary.
+- Global MCP and Skill switches consistently control the global default. Stored
+  project overrides are visible and resettable, including after changing the
+  default, and switching projects cannot display an old project's override.
+- SSH Host installation failures show a specific localized install/start summary
+  without disclosing raw stderr or claiming that the connection fault is fixed.
 - Chinese IME composition keeps its native text until commit; the empty-draft
   slash alias no longer rewrites a candidate while it is still being composed.
 - MCP Market respects the selected project installation target and reports

@@ -10,6 +10,7 @@ const REMOTE_ERROR_KEYS: Readonly<Record<string, string>> = {
   REMOTE_PATH_NOT_FOUND: "remote:pathUnavailable",
   REMOTE_PATH_FORBIDDEN: "remote:pathForbidden",
   HOST_VERSION_MISMATCH: "remote:upgradeRequired",
+  HOST_BOOTSTRAP_FAILED: "remote:hostBootstrapFailed",
   // The Host is reachable and answered: the two ends disagree about the shape
   // of that answer, which only an upgrade resolves. Reported on its own so the
   // advice is never "check the connection" for a working connection.

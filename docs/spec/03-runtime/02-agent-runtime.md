@@ -334,6 +334,13 @@ the transient retry budget or add backoff, and the caller's `onPayload` rewrite
 remains active. A second opaque failure is terminal, and an abort before the
 repair starts prevents the repair request.
 
+A pre-stream 400/422 or status-less rejection that explicitly states the model's
+completion ceiling shares this single repair allowance. Lower only existing
+numeric output-limit fields above the stated ceiling; do not add absent fields,
+drop Anthropic's required `max_tokens`, or change model selection. The caller's
+payload hook runs first. Credit exhaustion, context overflow and 5xx stay on
+their existing paths; a second limit rejection is surfaced without another repair.
+
 The non-429 delay honors the server first: `retry-after-ms`, `retry-after`
 seconds, then `retry-after` HTTP-date, capped at 8 seconds. Captured headers are
 retained for every status that can carry a usable delay (429, 408, 409, and
@@ -703,6 +710,13 @@ every message, because that summary is a desktop-only role the provider
 estimator never sees, and a usage reported before it — a replayed tail's, for
 instance — would otherwise anchor a context the checkpoint already replaced.
 
+For a valid usage anchor, use the larger of its reported total and the one
+request's input, output, cache-read and cache-write buckets. Reasoning is
+already included in output. The inspector reuses the shared bucket formula,
+while the runtime retains a larger total when bucket details are incomplete.
+This applies to restored sessions and delegates without changing billing totals
+or the checkpoint timestamp rule above.
+
 The calibration still measures the two errors separately — per-character bias
 as a scale-free ratio over the guessed tail, and an unanchored residual as a
 ratio only for observations taken at a comparable scale (0.5×–2× of the
@@ -747,8 +761,10 @@ thinking dropped, no message removed). If even that input does not fit, the rang
 is split into contiguous chunks that each do: at most 16 requests, each carrying
 the previous chunk's summary through pi's update-the-summary prompt, with the
 range's file list appended on the last one, and the checkpoint reports the summed
-usage of the requests that produced it. A budget therefore decides how many
-requests a summary takes, not whether the model is asked at all (ADR 0302); only
+usage of the requests that produced it. The chunk planner reserves the carried
+summary at the same 3.5-character estimate as the preflight guard, or the summary
+output budget if larger. A budget therefore decides how many requests a summary
+takes, not whether the model is asked at all (ADR 0302); only
 an empty range, or one past that request bound, still gives up on the summary
 (ADR 0282). If normal compaction still fails during an automatic threshold or
 overflow recovery, the runtime persists a short recovery checkpoint with the
@@ -814,6 +830,12 @@ Stored calls keep the argument spelling sent by the model. File collection uses
 the execution-side alias map: canonical `path` wins, then `file_path`, `filepath`,
 `filePath`, `filename`, `fileName`, and `file`, in that order. An empty or invalid
 present canonical value never falls through to another alias.
+
+When Codex-shaped compaction folds the retained tail into the summary, its
+Read/Write/Edit paths are collected into copied sets as well. A path touched
+only in that tail remains in the checkpoint and summary file tags, without
+duplicating paths already collected. Model-switch `recent_window` compaction
+keeps its split and replays that window verbatim instead of folding it.
 
 A delegate (§5f) runs the same derivation against its own resolved model and
 compacts at its own turn boundaries, without a durable checkpoint chain of
@@ -2424,3 +2446,33 @@ minutes earlier. The host can refresh that cache by itself, without a turn:
   because on a gateway that translates Responses `reasoning` into Anthropic
   thinking a lower `max_tokens` would change the thinking budget and break the
   cached prefix the request exists to refresh.
+
+### Provider attempt idle clocks
+
+The parent stream idle watchdog measures each active provider attempt separately,
+not the deliberate retry backoff between attempts. The default remains 180
+seconds without provider events; `MINIH_AGENT_STREAM_IDLE_TIMEOUT_MS` keeps a
+30-second positive minimum and zero disables it. A real stall aborts that
+attempt before the shared retry path starts another. It does not abort the
+user-owned retry signal or charge another retry simply because backoff elapsed.
+User Stop still cancels a pending retry wait; Minih stream tracing and usage
+accounting keep their existing owners.
+
+## Selected reliability additions (2026-11-09)
+
+- Historical image replay charges its newest-first aggregate byte budget only
+  after an exact-size read and accepted pixel probe. A rejected tall screenshot
+  or unreadable image keeps its path fallback without starving an older image;
+  candidates larger than the remaining budget are not read.
+- Retained-tail text truncation reserves answer text before readable assistant
+  `thinking`. Shortened thinking drops its signature; fitted and redacted blocks
+  stay unchanged, as do structured tool calls and images. Visible history is not
+  truncated by this model-context operation.
+- Complete text-form XML calls for known tools outside code fences produce the
+  message diagnostic `TOOL_CALL_NOT_EXECUTED`. Prose never executes as a tool,
+  does not trigger an automatic retry, and does not abort valid structured
+  sibling calls or turn settlement.
+- Large OpenAI Images Base64 payloads use flat alphabet and quantum validation,
+  retaining the existing encoded-size limit and malformed-input refusal.
+
+Provenance and verification: [selected adaptation](../../project/upstream-import-2026-11-09-reliability-path-scroll.md).

@@ -812,6 +812,10 @@ export const de = {
     "dismiss": "Verwerfen"
   },
   "settings": {
+    capabilityOverrideOff: "Für dieses Projekt deaktiviert",
+    capabilityOverrideOn: "Für dieses Projekt aktiviert",
+    capabilityOverrideResetItem: "Auf globalen Standard zurücksetzen",
+    capabilityOverrideReset: "{{name}} auf den globalen Standard zurückgesetzt",
     learnedMemory: "Gelerntes Gedächtnis",
     learnedMemoryRead: "Gelerntes Gedächtnis verwenden",
     learnedMemoryReadDesc:
@@ -901,6 +905,7 @@ export const de = {
     "imageModelSaveFailed": "Bildmodell konnte nicht gespeichert werden.",
     "clearImageModel": "Löschen",
     "setImageModel": "Als Bildmodell festlegen",
+    imageModelChatExclusionHint: "Markierte Modelle werden nach dem Speichern aus Chat- und Standardmodellmenüs entfernt. Dies ist Bilderzeugung, keine Bildeingabe. Markieren Sie nur Modelle, mit denen Ihr Endpunkt Bilder erzeugen kann.",
     "imageModelSelected": "Ausgewähltes Bildmodell",
     "sessionCreateModel": "Modell für neue Sitzungen",
     "sessionCreateModelUnset": "Nicht konfiguriert",
@@ -1451,8 +1456,11 @@ sklm: {
       },
       accountsDevices: {
         title: "Meine Geräte",
-        desc: "Die Computer Ihres Kontos und die Geräte, die darauf zugreifen dürfen.",
-        computersTitle: "Computer dieses Kontos",
+        desc: "Erreichbare Computer und Geräte mit Zugriff auf diesen Computer, einschließlich früherer Kopplungen.",
+        computersTitle: "Computer, mit denen Sie sich verbinden können",
+        grantsTitle: "Geräte mit Zugriff auf diesen Computer",
+        grantCreated: "Freigegeben: {{time}}",
+        grantNeverUsed: "Auf diesem Computer noch nicht verwendet",
         computersEmpty: "Noch keine Konto-Computer. Aktivieren Sie den Remote-Schalter, um diesen anzumelden.",
         online: "Online",
         offline: "Offline",
@@ -3346,6 +3354,7 @@ sklm: {
     NETWORK_POLICY_BLOCKED: "Die Adressprüfung der App hat diese Anfrage blockiert. Bei Proxy oder VPN: Einstellungen → Allgemein → Netzwerk prüfen.",
     "TIMEOUT": "Bei der Anfrage an den KI-Anbieter ist eine Zeitüberschreitung aufgetreten.",
     "STREAM_FAILED": "Die Antwort wurde unterbrochen.",
+    "TOOL_CALL_NOT_EXECUTED": "Das Modell hat einen Werkzeugaufruf als Text ausgegeben. Dieser Aufruf wurde nicht ausgeführt.",
     "EMPTY_MODEL_RESPONSE": "Das Modell beendete seinen Zug zweimal hintereinander, ohne etwas zu sagen. Versuchen Sie es erneut oder formulieren Sie Ihre Anfrage um.",
     "MUTATION_RETRY_BUDGET_EXHAUSTED": "Die gleiche Bearbeitung schlug dreimal fehl, daher wurde dieser Zug abgebrochen, anstatt es erneut zu versuchen. Bitten Sie erneut, fortzufahren.",
     "CONTEXT_TOO_LARGE": "Dieser Chat ist nach der Kontextwiederherstellung immer noch zu lang. Kürzen Sie Ihre Nachricht oder starten Sie einen neuen Chat.",

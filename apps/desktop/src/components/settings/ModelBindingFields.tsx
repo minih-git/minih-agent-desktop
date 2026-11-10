@@ -28,7 +28,7 @@ import {
   MAX_OUTPUT_PRESETS,
   matchPresetIndex,
 } from "../../lib/model-limit-presets";
-import { HelpIcon, Input, Textarea, Tooltip, TooltipButton, cx } from "../ui";
+import { Checkbox, HelpIcon, Input, Textarea, Tooltip, TooltipButton, cx } from "../ui";
 import { IconHelp } from "../icons";
 import { ReasoningEffortSelect } from "./ReasoningEffortSelect";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
@@ -369,9 +369,9 @@ export function ModelBindingFields({
             onChange={(next) => onChange({ supportsDocuments: next })}
           />
           {onImageModelChange ? (
-            <label className="provider-chosen-capability">
-              <input
-                type="checkbox"
+            <span className="provider-chosen-delegation">
+              <Checkbox
+                className="provider-chosen-capability"
                 checked={imageModelSelected}
                 disabled={busy}
                 aria-label={t(
@@ -379,16 +379,17 @@ export function ModelBindingFields({
                     ? "settings.imageModelSelected"
                     : "settings.setImageModel",
                 )}
-                onChange={(event) => onImageModelChange(binding.id, event.target.checked)}
-              />
-              <span>
-                {t(
+                onChange={(event) =>
+                  onImageModelChange(binding.id, event.target.checked)
+                }
+                label={t(
                   imageModelSelected
                     ? "settings.imageModelSelected"
                     : "settings.setImageModel",
                 )}
-              </span>
-            </label>
+              />
+              <HelpIcon label={t("settings.imageModelChatExclusionHint")} />
+            </span>
           ) : null}
           <span className="provider-chosen-delegation">
             <label className="provider-chosen-capability">

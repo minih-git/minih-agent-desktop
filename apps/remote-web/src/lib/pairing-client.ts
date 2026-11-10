@@ -18,6 +18,13 @@ export type PairDeviceInput = {
   pairingToken: string;
   deviceLabel: string;
   client: PairClient;
+  /**
+   * This install's identity (`./device-installation.ts`). The Gateway uses it
+   * only to replace the device row of the same install after a normal
+   * approval; it authorises nothing. Absent in a build that keeps no id, which
+   * then sends exactly the body it always did.
+   */
+  installationId?: string;
   fetchImpl?: typeof fetch;
 };
 
@@ -113,7 +120,13 @@ export async function pairDevice(input: PairDeviceInput): Promise<PairDeviceResu
       // The Gateway sets the device cookie on this response for the browser
       // profile; a native client must never receive or keep an ambient cookie.
       credentials: native ? "omit" : "include",
-      body: JSON.stringify({ deviceLabel: input.deviceLabel, client: input.client }),
+      body: JSON.stringify({
+        deviceLabel: input.deviceLabel,
+        client: input.client,
+        // Omitted when this build has no id, so an older client's request is
+        // byte-for-byte what the Gateway already accepts.
+        ...(input.installationId ? { installationId: input.installationId } : {}),
+      }),
     });
   } catch (error) {
     return {

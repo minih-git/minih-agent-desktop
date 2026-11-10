@@ -44,6 +44,8 @@ export type ComposerPrefill = ComposerDraftSnapshot & {
 type AbortMessage = {
   role: string;
   content: string;
+  /** The user's typed form when the model received an expanded command. */
+  command?: string;
   thinking?: string;
   steering?: boolean;
 };
@@ -87,7 +89,9 @@ export function resolveComposerSmartStop<T extends AbortMessage>(
     kind: "restore",
     kept: lastUserIndex >= 0 ? messages.slice(0, lastUserIndex) : [...messages],
     draft: submitted?.draft ?? {
-      text: lastUserIndex >= 0 ? messages[lastUserIndex].content : "",
+      text: lastUserIndex >= 0
+        ? (messages[lastUserIndex].command ?? messages[lastUserIndex].content)
+        : "",
       fileReferences: [],
     },
   };

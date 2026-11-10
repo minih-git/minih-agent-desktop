@@ -131,6 +131,11 @@ export const RacpDeviceHostProofSchema = Type.Object({
 });
 export type RacpDeviceHostProof = Static<typeof RacpDeviceHostProofSchema>;
 
+/** Random per-Gateway installation id; correlation only, never authentication. */
+export const RacpDeviceInstallationIdSchema = Type.String({
+  pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+});
+
 /**
  * A device request the Gateway fans out to the account's confirmable Hosts
  * (§11.5). `accountId` travels so a Host can refuse a request that is not for
@@ -150,6 +155,7 @@ export const RacpDeviceRequestSchema = Type.Object({
   requestedAt: Type.String(),
   expiresAt: Type.String(),
   hostProof: Type.Optional(RacpDeviceHostProofSchema),
+  installationId: Type.Optional(RacpDeviceInstallationIdSchema),
 });
 export type RacpDeviceRequest = Static<typeof RacpDeviceRequestSchema>;
 
@@ -232,6 +238,11 @@ export const RacpDeviceGrantFrameSchema = Type.Object({
    * never log, audit, or store it.
    */
   deviceToken: Type.Optional(Type.String({ minLength: 1 })),
+  /** Separately signed so older peers keep verifying the original grant bytes. */
+  installation: Type.Optional(Type.Object({
+    id: RacpDeviceInstallationIdSchema,
+    signature: Type.String({ minLength: 1 }),
+  })),
 });
 export type RacpDeviceGrantFrame = Static<typeof RacpDeviceGrantFrameSchema>;
 
@@ -781,6 +792,7 @@ export function httpStatusForRacpError(code: string): number {
 export const RacpPairHttpRequestSchema = Type.Object({
   deviceLabel: Type.String({ minLength: 1, maxLength: 128 }),
   client: Type.Union([Type.Literal("web"), Type.Literal("ios"), Type.Literal("android")]),
+  installationId: Type.Optional(RacpDeviceInstallationIdSchema),
 });
 export type RacpPairHttpRequest = Static<typeof RacpPairHttpRequestSchema>;
 

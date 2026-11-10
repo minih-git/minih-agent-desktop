@@ -698,3 +698,29 @@ test("preparing latest on the live tail does not allocate a historical view", ()
   r.prepareReturnToLatestTranscript("s")();
   assert.equal(r.view(), undefined);
 });
+
+test("latest keeps continuous loaded history without hydrating model input", async () => {
+  const r = reader(async () => page([message("older"), message("tail")], {
+    messageStart: 60, messageEnd: 121, hasMoreAfter: false,
+  }));
+  const live = r.get().messages;
+  await r.loadTranscriptPage("s", "before");
+  const loaded = r.view().messages;
+  const arrive = r.prepareReturnToLatestTranscript("s");
+  arrive();
+  assert.equal(r.view().messages, loaded);
+  assert.equal(r.view().focus, null);
+  assert.equal(r.get().messages, live);
+  assert.deepEqual(r.visible().map(item => item.id), ["older", "tail"]);
+});
+
+for (const hasMoreAfter of [true, false]) {
+  test(`latest excludes unread or disjoint history (moreAfter=${hasMoreAfter})`, async () => {
+    const r = reader(async () => page([message("old")], { hasMoreAfter }));
+    const live = r.get().messages;
+    await r.navigateTranscript(target("old"));
+    r.returnToLatestTranscript("s");
+    assert.equal(r.view(), undefined);
+    assert.equal(r.visible(), live);
+  });
+}

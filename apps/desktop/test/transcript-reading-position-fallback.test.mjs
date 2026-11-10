@@ -155,3 +155,14 @@ test("lazy-layout anchor visibility uses the intended offset until the entire ro
     assert.equal(isTranscriptReadingAnchorVisible(scroller, content, bookmark({ offset })), false);
   }
 });
+
+test("subpixel reading corrections never interrupt native smooth travel", () => {
+  let writes = 0;
+  const scroller = fakeScroller({ scrollTop: 480 });
+  Object.defineProperty(scroller, "scrollTop", { get: () => 480, set: () => { writes++; } });
+  const row = { getBoundingClientRect: () => ({ top: 24.2, height: 100 }) };
+  assert.equal(restoreTranscriptReadingPosition(scroller, fakeContent({ row }), bookmark()), true);
+  assert.equal(writes, 0);
+  assert.equal(restoreTranscriptReadingPosition(scroller, fakeContent(), bookmark({ scrollTop: 480.2 })), true);
+  assert.equal(writes, 0);
+});

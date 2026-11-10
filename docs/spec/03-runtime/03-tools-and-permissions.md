@@ -126,8 +126,10 @@ instead of starting after Stop; this also covers a background Bash call while
 its approval is pending. `Bash` and `GenerateImages` use the existing process
 cancellation path, and the runtime waits up to 10s for output the host collected
 before termination. Local `Read`, `Glob` and `Grep` may end the runtime's wait
-immediately and return `TOOL_ABORTED`; the host discards a late result, while the
-read-only blocking worker may continue until it returns. A mutating, MCP, plugin,
+immediately and return `TOOL_ABORTED`; this local stop does not wait for the
+`tools.abort` acknowledgement. Late execution or cancellation responses cannot
+affect a subsequent turn. The host discards a late result, while the read-only
+blocking worker may continue until it returns. A mutating, MCP, plugin,
 session-delivery or remote-write call that has already started is awaited before
 the turn settles, so Stop cannot hide a side effect. Typed cancellation is scoped by
 session, call id and tool name and cannot be inherited by a different tool. An

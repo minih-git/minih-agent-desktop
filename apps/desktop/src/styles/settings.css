@@ -2448,7 +2448,13 @@
   color: var(--ds-text-muted);
 }
 
-/* Connection state is the only place capability rows carry color. */
+/* Project overrides remain visible separately from the global enablement switch. */
+.agent-capability-badge.is-override {
+  background: color-mix(in oklab, var(--ds-warning) 13%, transparent);
+  color: var(--ds-warning);
+}
+
+/* Connection state and project overrides carry semantic color. */
 .agent-capability-status-dot {
   width: 5px;
   height: 5px;

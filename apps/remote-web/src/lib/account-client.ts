@@ -253,15 +253,31 @@ export async function listAccountHosts(
   };
 }
 
-/** `POST /v1/account/devices`: ask the account's Hosts to approve a new device. */
+/**
+ * `POST /v1/account/devices`: ask the account's Hosts to approve a new device.
+ *
+ * `installationId` identifies this install so that a normal approval replaces
+ * this install's previous device row instead of adding another one. It is not
+ * a credential and is left out entirely when the client keeps no id, which
+ * keeps the body of an older build unchanged.
+ */
 export async function requestAccountDevice(
-  options: AccountClientOptions & { credential: HostCredential; deviceLabel: string; client: AccountClientKind },
+  options: AccountClientOptions & {
+    credential: HostCredential;
+    deviceLabel: string;
+    client: AccountClientKind;
+    installationId?: string;
+  },
 ): Promise<AccountCall<{ requestId: string; expiresAt: string; hosts: AccountDeviceHost[] }>> {
   const call = await accountRequest({
     ...options,
     path: ACCOUNT_ROUTES.devices,
     method: "POST",
-    body: { deviceLabel: options.deviceLabel, client: options.client },
+    body: {
+      deviceLabel: options.deviceLabel,
+      client: options.client,
+      ...(options.installationId ? { installationId: options.installationId } : {}),
+    },
   });
   if ("failure" in call) return { ok: false, failure: call.failure };
   const result = isRecord(call.payload) && isRecord(call.payload.result) ? call.payload.result : null;

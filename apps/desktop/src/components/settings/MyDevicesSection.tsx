@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import type { RemoteGatewayAccountComputers, RemoteHostSummary } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { accountComputersNotice } from "../../lib/remote-gateway-state";
+import { formatDeviceGrantTime } from "../../lib/remote-device-display";
 import { Badge, Button, cx } from "../ui";
 import type { RemoteControl } from "./useRemoteControl";
 
@@ -43,12 +44,7 @@ export function MyDevicesSection({ control }: { control: RemoteControl }) {
   const accountComputers = (hosts ?? []).filter((host) => host.transport === "account");
 
   return (
-    <section className="settings-card-block" aria-labelledby="my-devices-heading">
-      <div className="settings-card-heading-row">
-        <h3 id="my-devices-heading" className="settings-card-heading">
-          {t("settings.accountsDevices.title")}
-        </h3>
-      </div>
+    <section className="settings-card-block" aria-label={t("settings.accountsDevices.title")}>
       <p className="text-sm text-text-secondary">{t("settings.accountsDevices.desc")}</p>
 
       <div className="space-y-2 py-2" data-testid="accounts-devices-computers">
@@ -97,10 +93,10 @@ export function MyDevicesSection({ control }: { control: RemoteControl }) {
  * "device" alone says nothing about what can reach the machine.
  */
 function DeviceGrantList({ control }: { control: RemoteControl }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <div className="space-y-2 py-2" role="list" aria-busy={control.devices === null} data-testid="accounts-devices-grants">
-      <div className="settings-row-title">{t("settings.remoteGateway.devicesTitle")}</div>
+      <div className="settings-row-title">{t("settings.accountsDevices.grantsTitle")}</div>
       {control.devicesError ? (
         <p className="text-sm text-danger" role="alert">
           {control.devicesError}
@@ -121,20 +117,24 @@ function DeviceGrantList({ control }: { control: RemoteControl }) {
             role="listitem"
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-default px-3 py-2"
           >
-            <div className="space-y-1">
-              <div className="text-sm text-text-primary">{device.label}</div>
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-text-primary">{device.label}</span>
+                <Badge>{t(device.deviceClass === "desktop" ? "settings.accountsDevices.kindComputer" : "settings.accountsDevices.kindPhone")}</Badge>
+              </div>
+              <div className="break-all font-mono text-xs text-text-secondary">{device.deviceId}</div>
               <div className="text-xs text-text-secondary">
                 {t(kindKey(device), { roles: device.roles.join(", ") })}
               </div>
-              {device.lastSeenAt ? (
-                <div className="text-xs text-text-secondary">
-                  {t("settings.remoteGateway.devicesLastSeen", { time: device.lastSeenAt })}
-                </div>
-              ) : null}
+              <div className="text-xs text-text-secondary">
+                {t("settings.accountsDevices.grantCreated", { time: formatDeviceGrantTime(device.createdAt, i18n.language) })}
+              </div>
+              <div className="text-xs text-text-secondary">
+                {device.lastSeenAt
+                  ? t("settings.remoteGateway.devicesLastSeen", { time: formatDeviceGrantTime(device.lastSeenAt, i18n.language) })
+                  : t("settings.accountsDevices.grantNeverUsed")}
+              </div>
             </div>
-            <Badge>
-              {t(device.deviceClass === "desktop" ? "settings.accountsDevices.kindComputer" : "settings.accountsDevices.kindPhone")}
-            </Badge>
             {control.revoke.pending === device.deviceId ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-text-secondary">

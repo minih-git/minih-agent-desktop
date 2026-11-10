@@ -2792,3 +2792,16 @@ renderer for compatibility, not a guessed surface. This is applied state, not
 the current saved preference; other window actions and `maximized` are
 unchanged. The settings boundary accepts the optional stored translucency
 field only when it is a boolean.
+
+## Sidebar layout recovery
+
+`minih-agent-desktop/sidebar/preferences/get()` returns the selected app-data
+root's presentation backup or `null` when absent; `/set(SidebarPreferences)`
+atomically replaces it, bounded to 2 MiB. Both channels require the trusted Main
+window's top frame and are unavailable to other renderers or plugin frames.
+Malformed/unreadable backups remain errors, never an empty recovery grant.
+The renderer restores before bootstrap persists the current project, preserves
+explicitly closed tabs and manual titles, and rejects superseded recovery.
+Project, group, session and active-workspace authority remains with Rust.
+See [storage](04-data-storage.md) and
+[the decision](../../adr/sidebar-layout-recovery.md).

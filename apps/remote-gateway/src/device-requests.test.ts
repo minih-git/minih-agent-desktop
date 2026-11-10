@@ -175,6 +175,34 @@ describe("account device relay", () => {
     return walk(gateway.dataDir);
   }
 
+  it("re-pairing an installation replaces old access across real Host links without merging another same-name phone", async () => {
+    stack = await startStack();
+    const { gateway, hostA1, hostA2, hostB1, token } = stack;
+    const grant = async (installationId: string) => {
+      const started = await accountDeviceRequest(gateway, { token, body: { deviceLabel: "iOS app", client: "ios", installationId } });
+      expect(started.status).toBe(200);
+      const result = await waitForOutcome(gateway, token, (started.payload["result"] as { requestId: string }).requestId);
+      expect(result.status).toBe("granted");
+      await waitForAsync(async () => (await hostA2.harness.store.listDevices()).some((device) => device.deviceId === result.deviceId), "sibling adopted installation grant");
+      return result;
+    };
+    const first = await grant("11111111-1111-4111-8111-111111111111");
+    const other = await grant("22222222-2222-4222-8222-222222222222");
+    const replacement = await grant("11111111-1111-4111-8111-111111111111");
+    await waitForAsync(async () => (await hostA2.harness.store.listDevices()).find((device) => device.deviceId === first.deviceId)?.revokedAt !== undefined, "old installation revoked");
+    expect((await hostList(gateway, first.token!)).status).toBe(401);
+    expect((await hostList(gateway, replacement.token!)).status).toBe(200);
+    expect((await hostList(gateway, other.token!)).status).toBe(200);
+    for (const host of [hostA1, hostA2]) {
+      const live = (await host.harness.store.listDevices()).filter((device) => device.origin === "gateway" && !device.revokedAt);
+      expect(live.map((device) => device.deviceId).sort()).toEqual([other.deviceId, replacement.deviceId].sort());
+    }
+    expect((await hostB1.harness.store.listDevices()).some((device) => device.installationId)).toBe(false);
+    const pending = gateway.gateway.store.listPendingGrants();
+    expect(pending.some((record) => record.deviceId === first.deviceId)).toBe(false);
+    expect(pending.find((record) => record.deviceId === replacement.deviceId)?.installation?.id).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
   it("confirms once and the same token works on every Host of the account", async () => {
     stack = await startStack();
     const { gateway, hostA1, hostA2, hostB1, token } = stack;

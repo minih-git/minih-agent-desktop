@@ -196,6 +196,15 @@ export class HostLinkHost {
         })
         .catch((error: unknown) => this.options.log("warn", "could not read queued revocations", { error: String(error) }));
     }
+    // Replacement tombstones survive a crash before their signed revoke was queued.
+    if (this.options.devices) {
+      void this.options.devices.devices().then(async (devices) => {
+        const queued = new Set((await this.options.revocations?.pending() ?? []).map((frame) => frame.revoke.deviceId));
+        for (const device of devices) {
+          if (device.replacedByDeviceId && !queued.has(device.deviceId)) await this.revokeDevice(device.deviceId);
+        }
+      }).catch((error: unknown) => this.options.log("warn", "could not re-offer replaced device revocations", { error: String(error) }));
+    }
   }
 
   /** Every open logical connection; the Gateway never sees this state. */
@@ -289,7 +298,9 @@ export class HostLinkHost {
         }
         // The local user decides asynchronously; the frame loop must not block.
         void devices
-          .handleRequest((parsed as RacpDeviceRequestFrame).request, (frame) => this.send(frame))
+          .handleRequest((parsed as RacpDeviceRequestFrame).request, (frame) => this.send(frame), async (frame) => {
+            await this.revokeDevice(frame.revoke.deviceId);
+          })
           .catch((error: unknown) => this.options.log("error", "device request failed", { error: String(error) }));
         return;
       }

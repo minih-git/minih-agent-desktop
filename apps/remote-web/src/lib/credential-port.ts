@@ -12,9 +12,16 @@
  */
 import { RACP_HTTP_HEADERS } from "@minih-agent/shared";
 
+import {
+  browserInstallationStorage,
+  createInstallationId,
+  installationIdFailure,
+  registryInstallationStorage,
+  type InstallationIdResolver,
+} from "./device-installation.js";
 import { defaultDeviceLabel } from "./device-label.js";
 import type { OperationFailure } from "./errors.js";
-import type { HostRegistry, HostRegistryEntry } from "./host-registry.js";
+import type { HostRegistry, HostRegistryEntry, RegistryStorage } from "./host-registry.js";
 import { pairDevice, type PairFailure } from "./pairing-client.js";
 
 export type HostCredential =
@@ -95,6 +102,17 @@ export interface CredentialPort {
    * storage failure, never a lost device.
    */
   adoptAccountDevice(request: AccountAdoption): Promise<AccountAdoptionOutcome>;
+  /**
+   * This install's identity at that Gateway (`./device-installation.ts`), for
+   * the requests that create a device. Optional so a port written before the
+   * field, and the fakes in tests that do not care, stay valid: a caller that
+   * finds no method sends the request without one, exactly as before.
+   *
+   * Rejects when the id cannot be read or written; the caller reports that as
+   * `STORAGE_FAILED` and sends nothing, because asking under a different
+   * identity would orphan the previous device row.
+   */
+  installationId?(gatewayOrigin: string): Promise<string>;
 }
 
 /**
@@ -117,10 +135,32 @@ export type WebCookieCredentialPortOptions = {
   fetchImpl?: typeof fetch;
   userAgent?: string;
   now?: () => Date;
+  /**
+   * Where this browser keeps the installation id; `localStorage` by default.
+   * Injectable so a test can drive the storage-failure path, and so a caller
+   * that already holds a storage slice does not open a second one.
+   */
+  installationStorage?: RegistryStorage;
 };
 
 export class WebCookieCredentialPort implements CredentialPort {
-  constructor(private readonly options: WebCookieCredentialPortOptions) {}
+  private readonly installation: InstallationIdResolver;
+
+  constructor(private readonly options: WebCookieCredentialPortOptions) {
+    this.installation = createInstallationId({
+      // Resolved per call: a browser that blocks `localStorage` must fail the
+      // request rather than be handed an id that dies with the tab.
+      storage: () =>
+        this.options.installationStorage
+          ? registryInstallationStorage(this.options.installationStorage)
+          : browserInstallationStorage(),
+    });
+  }
+
+  /** One id per Gateway origin, kept in this browser's `localStorage`. */
+  async installationId(gatewayOrigin: string): Promise<string> {
+    return this.installation.installationId(gatewayOrigin);
+  }
 
   /**
    * The cookie profile needs the CSRF token to send a mutation, so an entry
@@ -134,12 +174,21 @@ export class WebCookieCredentialPort implements CredentialPort {
 
   async pair(request: PairRequest): Promise<PairOutcome> {
     const label = request.deviceLabel?.trim() || defaultDeviceLabel(this.options.userAgent ?? "");
+    let installationId: string;
+    try {
+      installationId = await this.installationId(request.gatewayOrigin);
+    } catch (error) {
+      // No id, no request: a device created under an identity this browser
+      // cannot remember could never be replaced by the next approval.
+      return { ok: false, failure: installationIdFailure(error) };
+    }
     const result = await pairDevice({
       gatewayOrigin: request.gatewayOrigin,
       hostId: request.hostId,
       pairingToken: request.pairingToken,
       deviceLabel: label,
       client: "web",
+      installationId,
       ...(this.options.fetchImpl ? { fetchImpl: this.options.fetchImpl } : {}),
     });
     if (!result.ok) return result;

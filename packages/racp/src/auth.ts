@@ -8,6 +8,7 @@ import {
   isDesktopClassDevice,
   type RacpRole,
 } from "@minih-agent/shared";
+import { replaceDeviceInstallation } from "./device-installations.js";
 
 /**
  * Where a credential came from (security §3.7, D665 / ADR 0331). The loopback
@@ -55,6 +56,14 @@ export type DeviceRecord = {
   applicantHostId?: string;
   revokedAt?: string;
   lastSeenAt?: string;
+  /** Account grant scope; absent on per-Host ticket pairing and legacy records. */
+  accountId?: string;
+  /** Installation correlation, recorded only after normal pairing/approval. */
+  installationId?: string;
+  grantRequestId?: string;
+  grantIssuedAt?: string;
+  /** Durable replacement tombstone; the former token must never revive. */
+  replacedByDeviceId?: string;
 };
 
 export type PairingRecord = {
@@ -266,7 +275,7 @@ export class DeviceTokenAuthenticator {
    * device credential. Roles come from the pairing token's origin, never
    * from the client: ssh mints `owner`, gateway mints the weaker set.
    */
-  async pair(tokenHash: string, label: string, roles: RacpRole[], origin: CredentialOrigin = "ssh"): Promise<{ deviceId: string; token: string }> {
+  async pair(tokenHash: string, label: string, roles: RacpRole[], origin: CredentialOrigin = "ssh", installationId?: string): Promise<{ deviceId: string; token: string; installationId?: string }> {
     const consumedAt = new Date(this.now()).toISOString();
     const pairing = await this.store.findPairing(tokenHash);
     if (!pairing) throw pairingError("PAIRING_FAILED", "the pairing token is unknown");
@@ -281,15 +290,18 @@ export class DeviceTokenAuthenticator {
     }
     const token = newDeviceToken();
     const deviceId = `dev_${randomBytes(9).toString("base64url")}`;
-    await this.store.saveDevice({
+    const record: DeviceRecord = {
       deviceId,
       label,
       roles,
       tokenHash: hashToken(token),
       createdAt: consumedAt,
       origin,
-    });
-    return { deviceId, token };
+      ...(origin === "gateway" && installationId ? { installationId } : {}),
+    };
+    await this.store.saveDevice(record);
+    await replaceDeviceInstallation(this.store, record, consumedAt);
+    return { deviceId, token, ...(record.installationId ? { installationId: record.installationId } : {}) };
   }
 }
 

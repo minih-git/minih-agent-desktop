@@ -1,19 +1,10 @@
 import { loadRecentModels } from "../../lib/recent-models";
-import type { AppState, AppStateData } from "../app-state";
-import { projectWorkspaceFromPath } from "../../lib/sidebar-preferences";
-import { loadSidebarPreferences } from "../../lib/sidebar-preferences";
+import type { AppStateData } from "../app-state";
+import { loadSidebarPreferences, sidebarPreferencesState } from "../../lib/sidebar-preferences";
 import { loadWorkPanelWidth } from "./work-panel-slice";
 
 export const initialSidebarPreferences = loadSidebarPreferences();
 export const initialWorkPanelWidth = loadWorkPanelWidth();
-
-function withProjectDisplayName(
-  workspace: NonNullable<AppState["workspace"]>,
-  projectMeta: AppState["projectMeta"],
-): NonNullable<AppState["workspace"]> {
-  const name = projectMeta[workspace.path]?.name;
-  return name ? { ...workspace, name } : workspace;
-}
 
 /** Values that are stable before the first host bootstrap response arrives. */
 export function createInitialState(): AppStateData {
@@ -24,28 +15,10 @@ export function createInitialState(): AppStateData {
     recentModels: loadRecentModels(),
     healthOk: false,
     sessions: [],
-    sessionMeta: initialSidebarPreferences.sessionMeta,
-    sessionView: {
-      ...initialSidebarPreferences.sessionView,
-      sortBy: initialSidebarPreferences.sessionView.sort,
-      showArchived: initialSidebarPreferences.sessionView.archived,
-    },
-    openProjects: initialSidebarPreferences.openProjectPaths.map((path) =>
-      withProjectDisplayName(
-        projectWorkspaceFromPath(path),
-        initialSidebarPreferences.projectMeta,
-      ),
-    ),
-    openProjectPaths: initialSidebarPreferences.openProjectPaths,
+    ...sidebarPreferencesState(initialSidebarPreferences),
     createProjectDialogOpen: false,
     createProjectDialogRemoteHostKey: undefined,
     activeProjectPath: undefined,
-    projectMeta: initialSidebarPreferences.projectMeta,
-    projectCollapsed: Object.fromEntries(
-      Object.entries(initialSidebarPreferences.projectMeta)
-        .filter(([, meta]) => meta.collapsed === true)
-        .map(([path]) => [path, true]),
-    ),
     workPanelOpen: false,
     workPanelTabs: [],
     activeWorkPanelTabId: null,
@@ -53,7 +26,6 @@ export function createInitialState(): AppStateData {
     workPanelWidth: initialWorkPanelWidth,
     workPanelYieldedWidth: null,
     workPanelFileRequest: null,
-    projectSort: initialSidebarPreferences.projectSort,
     messages: [],
     retainedSessionIds: [],
     dismissedAssistantErrorMessages: {},

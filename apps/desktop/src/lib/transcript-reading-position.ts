@@ -139,7 +139,8 @@ export function restoreTranscriptReadingPosition(
     if (row) {
       const rect = row.getBoundingClientRect();
       if (rect.height > 0) {
-        scroller.scrollTop += rect.top - scroller.getBoundingClientRect().top - position.offset;
+        const delta = rect.top - scroller.getBoundingClientRect().top - position.offset;
+        if (Math.abs(delta) > 0.5) scroller.scrollTop += delta;
         return true;
       }
     }
@@ -154,6 +155,6 @@ export function restoreTranscriptReadingPosition(
   // back to it for an approximate position. `false` is reserved for a bookmark
   // with no usable offset at all, which only a never-laid-out pane produces.
   if (!Number.isFinite(position.scrollTop) || position.scrollTop < 0) return false;
-  scroller.scrollTop = position.scrollTop;
+  if (Math.abs(scroller.scrollTop - position.scrollTop) > 0.5) scroller.scrollTop = position.scrollTop;
   return true;
 }

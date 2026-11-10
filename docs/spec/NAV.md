@@ -23,6 +23,7 @@
 
 ## 3. Runtime
 - [README.md](03-runtime/README.md)
+- [Selected upstream reliability, paths, and scrolling: 2026-11-09](../project/upstream-import-2026-11-09-reliability-path-scroll.md)
 - [01-ipc-protocol.md](03-runtime/01-ipc-protocol.md)
 - [02-agent-runtime.md](03-runtime/02-agent-runtime.md)
 - [03-tools-and-permissions.md](03-runtime/03-tools-and-permissions.md)
@@ -55,8 +56,11 @@
 - [Selected upstream fixes: 2026-10-29 (provenance and validation)](../project/upstream-import-2026-10-29.md)
 - [Selected upstream fixes: 2026-11-01 (provenance and validation)](../project/upstream-import-2026-11-01.md)
 - [Selected upstream provider fixes: 2026-11-03 (provenance and validation)](../project/upstream-import-2026-11-03.md)
+- [Selected upstream recovery/settings fixes: 2026-11-08 (candidate and provenance)](../project/upstream-import-2026-11-08.md)
 - [Selected upstream priority changes: 2026-11-05 (candidate and provenance)](../project/upstream-import-2026-11-05.md)
 - [Selected upstream Scheduled and minimap fixes: 2026-11-09](../project/upstream-import-2026-11-09.md)
+- [Selected upstream fixes: 2026-10-30 (provenance and validation)](../project/upstream-import-2026-10-30.md)
+
 - [Selected upstream fixes: 2026-10-26 (provenance and validation)](../project/upstream-import-2026-10-26.md)
 
 ## 4. UX

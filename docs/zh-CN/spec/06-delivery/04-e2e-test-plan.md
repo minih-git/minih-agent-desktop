@@ -9,6 +9,25 @@
 
 ---
 
+## E2E-UPSTREAM-reliability-path-alias-and-scroll
+
+- **前提：** 任务工作树、复用工具链、隔离构建与临时 profile，使用合成会话；
+  不访问真实提供商、用户数据或已安装应用。
+- **运行时：** 大图保存完整、明确上限仅修一次、额度及上下文错误保持终止；
+  DashScope 与完整 JSON code 1308 分类准确。超像素图片不占历史预算，thinking
+  裁剪保留正文且去掉变化签名。正文工具调用报未执行，不执行文本或中止同批调用；
+  Stop 没有草稿快照时恢复原始命令。
+- **项目路径：** `python3 scripts/e2e-project-path-case.py <task-host>` 验证
+  v29 备份、v30、会话与任务统一归属、转录和保温／归档数据完整；显式删除只处理
+  统一项目、暂停其任务，保留磁盘目录和无关会话。Rust 回归覆盖回滚、重启、
+  Unicode、不存在目录、大小写敏感目录、软链接和记忆作用域。
+- **滚动：** `node scripts/e2e-transcript-reading-position.mjs` 验证非阻塞分页、
+  单飞、相反行高变化锚点、原生结算及打断、空页重试、已读页保留、缺口隔离、
+  书签和 Review 焦点。`node scripts/e2e-transcript-prose.mjs` 验证原生指针／滚轮、
+  离屏回收、选区、代码／HTML 与隐藏后的渲染状态。
+- **实际结果与来源：**
+  [选择性适配记录](../../../project/upstream-import-2026-11-09-reliability-path-scroll.md)。
+
 ## E2E-SCHEDULED-independent-loading-and-route-return
 
 - **Preconditions:** Synthetic tasks and controllable API reads; isolated profile.
@@ -22,6 +41,25 @@
 - **Coverage:** Production-hook Node regressions, rendered state checks and
   isolated `scripts/e2e-scheduled.mjs` user path with a local synthetic model.
 
+
+### E2E-UPSTREAM-20261108-selected-recovery-and-settings
+
+- **前提：** 最新 Minih 主线的独立工作树，复用依赖，隔离 Host 数据与 Electron
+  profile；不使用已安装桌面、真实模型、用户数据库或上游提交历史。
+- **步骤：** 追加消息及尾随压缩后读取尾页并重启 Host，对照中间页与空页。
+  清空 Chromium 缓存恢复侧栏，关闭项目后再重启，拒绝其他 renderer 写入；验证
+  损坏备份、迁移、失效恢复和并发用户修改。分别在 MCP All/Project/Global 下新建、
+  导入、市场安装，编辑时切换项目并查目标归属的重复项。标记/取消生图模型并折叠。
+- **预期：** 尾页保留检查点，中间页仍有界，历史 usage 不变；侧栏保留手动标题和
+  关闭意图，Host 仍权威管理工作区/分组。MCP All 优先选中项目，编辑器归属固定，
+  只拒绝目标冲突。生图帮助区分生成/输入并说明聊天排除，折叠仍显示标记，逐模型
+  API 协议等自定义设置不变。
+- **自动化：** `scripts/e2e-compaction-tail.mjs`、`scripts/e2e-sidebar-recovery.mjs`、
+  sidebar/bootstrap/IPC 定向测试、Rust transcript/relocation 测试、
+  `mcp-market-owner-user-path.test.mjs`、`image-model-disclosure-user-path.test.mjs`。
+- **规格/验收：** IPC、数据存储、设置 IA、生图；B/C/E/F。模块测试不等于完整桌面验收。
+- **状态：** 选择性维护候选；实际结果和来源见
+  [迁移记录](../../../project/upstream-import-2026-11-08.md)。
 
 ### E2E-RUNTIME-terminal-provider-errors
 
@@ -62,6 +100,13 @@
   不代表 Rust 存储或已安装应用验收。
 - **状态：** 开发候选；实际检查、来源及限制见
   [选择性导入记录](../../../project/upstream-import-2026-11-01.md)。
+
+### E2E-UPSTREAM-20261030-selected-runtime-settings
+
+- **前提：** 独立任务工作树，复用已安装依赖；隔离配置、文件、本地 HTTP provider 和 Host/IPC 夹具。不使用用户桌面、真实 SSH 主机或付费模型。
+- **步骤：** 只读工具两个 Host 回应均挂起时 Stop，再发新提问并交付晚到结果；写操作仍等执行与取消结算。验证长限流退避、真实停滞和取消；用缓存总量不一致的报告覆盖跨轮、恢复和工具循环，压缩尾部文件及大旧摘要。在 MCP/Skills 切全局默认、重置旧项目覆盖、切项目并延迟旧响应；提交 SSH 安装失败。
+- **预期：** 只读 Stop 不被第二个 RPC 卡住，写入所有权不变；退避不计 idle，不多耗重试。缓存预算不改计费和旧锚点失效规则；分块合规、文件列表完整、切模型窗口保持。全局读写同作用域，项目覆盖可见/可重置且不串项目，全局切换后提示刷新。SSH 使用本地化摘要，不泄露 stderr 或宣称连接根因已修复。
+- **自动化与结果：** `scripts/e2e-upstream-runtime-20261030.mjs`、`apps/desktop/test/upstream-scope-user-path.test.mjs` 及聚焦回归；实际结果和限制见[选择性迁移记录](../../../project/upstream-import-2026-10-30.md)。
 
 ### E2E-UPSTREAM-20261028-selected-capabilities
 

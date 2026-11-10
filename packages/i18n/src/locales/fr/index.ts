@@ -812,6 +812,10 @@ export const fr = {
     "dismiss": "Ignorer"
   },
   "settings": {
+    capabilityOverrideOff: "Désactivé pour ce projet",
+    capabilityOverrideOn: "Activé pour ce projet",
+    capabilityOverrideResetItem: "Rétablir la valeur globale",
+    capabilityOverrideReset: "{{name}} rétabli à la valeur globale",
     learnedMemory: "Mémoire apprise",
     learnedMemoryRead: "Utiliser la mémoire apprise",
     learnedMemoryReadDesc:
@@ -901,6 +905,7 @@ export const fr = {
     "imageModelSaveFailed": "Impossible d’enregistrer le modèle.",
     "clearImageModel": "Effacer",
     "setImageModel": "Définir comme modèle d’images",
+    imageModelChatExclusionHint: "Après enregistrement, les modèles marqués sont retirés des menus de chat et de modèle par défaut. Il s’agit de génération, pas d’entrée d’images. Marquez uniquement les modèles capables de générer des images sur votre endpoint.",
     "imageModelSelected": "Modèle d’images sélectionné",
     "sessionCreateModel": "Modèle de création de session",
     "sessionCreateModelUnset": "Non configuré",
@@ -1451,8 +1456,11 @@ sklm: {
       },
       accountsDevices: {
         title: "Mes appareils",
-        desc: "Les ordinateurs de votre compte et les appareils autorisés à y accéder.",
-        computersTitle: "Ordinateurs de ce compte",
+        desc: "Ordinateurs accessibles et appareils autorisés à accéder à cet ordinateur, y compris les anciens jumelages.",
+        computersTitle: "Ordinateurs auxquels vous pouvez vous connecter",
+        grantsTitle: "Appareils autorisés à accéder à cet ordinateur",
+        grantCreated: "Autorisé le : {{time}}",
+        grantNeverUsed: "Pas encore utilisé sur cet ordinateur",
         computersEmpty: "Aucun ordinateur du compte pour l'instant. Activez l'interrupteur distant pour inscrire celui-ci.",
         online: "En ligne",
         offline: "Hors ligne",
@@ -3344,6 +3352,7 @@ sklm: {
     NETWORK_POLICY_BLOCKED: "Le contrôle d'adresse de l'application a bloqué cette requête. Si vous utilisez un proxy ou un VPN, vérifiez Paramètres → Général → Réseau.",
     "TIMEOUT": "La demande adressée au fournisseur d'IA a expiré.",
     "STREAM_FAILED": "La réponse a été interrompue.",
+    "TOOL_CALL_NOT_EXECUTED": "Le modèle a écrit un appel d’outil sous forme de texte. Cet appel n’a pas été exécuté.",
     "EMPTY_MODEL_RESPONSE": "Le modèle a terminé son tour sans rien dire, deux fois de suite. Réessayez ou reformulez votre demande.",
     "MUTATION_RETRY_BUDGET_EXHAUSTED": "La même modification a échoué trois fois, donc ce tour s'est arrêté au lieu de réessayer en aveugle. Demandez à nouveau pour continuer.",
     "CONTEXT_TOO_LARGE": "Ce chat est encore trop long après la récupération du contexte. Raccourcissez votre message ou démarrez une nouvelle discussion.",

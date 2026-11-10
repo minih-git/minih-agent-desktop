@@ -180,6 +180,17 @@ export function compactionSummaryInputLimit(input: {
   );
 }
 
+/** Reserve the carried summary and the next summary's output budget. */
+export function compactionSummaryReserveTokens(input: {
+  previousSummary?: string;
+  outputBudget: number;
+}): number {
+  return Math.max(
+    Math.ceil((input.previousSummary?.length ?? 0) / ESTIMATED_TEXT_CHARS_PER_TOKEN),
+    input.outputBudget,
+  );
+}
+
 /**
  * Split a summary input into contiguous chunks that each fit the request
  * budget, so a range too large for one prompt is still summarized instead of

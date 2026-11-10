@@ -9,6 +9,7 @@ import {
   canonicalJson,
   deviceGrantSigningPayload,
   deviceRevokeSigningPayload,
+  deviceInstallationSigningPayload,
   hostAdvertisesCapability,
 } from "./racp-account-devices.js";
 import { RACP_HOST_CAPABILITIES, type RacpDeviceGrant, type RacpDeviceRevoke } from "./racp-hostlink.js";
@@ -191,5 +192,23 @@ describe("account device routes", () => {
         hosts: [{ hostId: "h", label: "l", online: true, canConfirm: true, willAcceptGrant: true }],
       }),
     ).toBe(false);
+  });
+});
+
+describe("installation correlation contracts", () => {
+  const installationId = "11111111-1111-4111-8111-111111111111";
+  it("accepts an optional UUID and rejects malformed installation identifiers", () => {
+    expect(Value.Check(RacpDeviceRequestHttpRequestSchema, { deviceLabel: "phone", client: "ios", installationId })).toBe(true);
+    for (const invalid of ["", "phone", "x".repeat(1000), "../device", "AAAAAAAA-1111-4111-8111-111111111111"]) {
+      expect(Value.Check(RacpDeviceRequestHttpRequestSchema, { deviceLabel: "phone", client: "ios", installationId: invalid })).toBe(false);
+    }
+  });
+  it("binds the installation to every signed grant field without changing the legacy grant payload", () => {
+    const payload = deviceInstallationSigningPayload(grant, installationId);
+    expect(payload).not.toBe(deviceInstallationSigningPayload({ ...grant, deviceId: "dev_other" }, installationId));
+    expect(payload).not.toBe(deviceInstallationSigningPayload({ ...grant, tokenHash: "b".repeat(64) }, installationId));
+    expect(payload).not.toBe(deviceInstallationSigningPayload(grant, "22222222-2222-4222-8222-222222222222"));
+    expect(JSON.parse(payload).grant).toBe(deviceGrantSigningPayload(grant));
+    expect(JSON.parse(deviceGrantSigningPayload(grant))).not.toHaveProperty("installationId");
   });
 });

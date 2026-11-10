@@ -2060,3 +2060,13 @@ renderer for compatibility, not a guessed surface. This is applied state, not
 the current saved preference; other window actions and `maximized` are
 unchanged. The settings boundary accepts the optional stored translucency
 field only when it is a boolean.
+
+## 侧栏布局恢复
+
+`minih-agent-desktop/sidebar/preferences/get()` 返回所选应用数据根中的显示备份，
+不存在时为 `null`；`/set(SidebarPreferences)` 原子替换，限制 2 MiB。两通道只允许
+可信主窗口顶层，拒绝其他渲染器和插件 frame。损坏或不可读备份保持错误，不授予
+用空状态覆盖的许可。渲染器在 bootstrap 保存当前项目之前恢复，保留明确关闭的
+项目及手动标题，拒绝失效恢复结果。项目、分组、会话和活动工作区权威仍归 Rust。
+参见 [存储规格](04-data-storage.md) 和
+[恢复决策](../../../adr/sidebar-layout-recovery.md)。

@@ -33,7 +33,9 @@ const { GATEWAY_PAIRING_CODE_LIFETIME_MS } = await import(
 const { SETTINGS_NAV, normalizeSettingsTabId, searchSettings, visibleSettingsNav } = await import(
   "../src/lib/settings-search.ts"
 );
-const { catalogs, en, flattenCatalog } = await import("@minih-agent/i18n");
+const { catalogs, en, flattenCatalog } = await import(
+  "../../../packages/i18n/src/index.ts"
+);
 
 const LINK_STATES = [
   "disabled",
@@ -339,4 +341,16 @@ test("the account-computer notice names a failure and stays silent when there is
   assert.equal(accountComputersNotice({ state: "joined", computers: 2, at: "2026-10-24T00:00:00.000Z" }), null);
   assert.equal(accountComputersNotice({ state: "skipped", reason: "self-only", at: "2026-10-24T00:00:00.000Z" }), null);
   assert.equal(accountComputersNotice({ state: "skipped", reason: "in-flight", at: "2026-10-24T00:00:00.000Z" }), null);
+});
+
+test("device grants have distinct, translated inbound-access copy in every locale", () => {
+  for (const [locale, catalog] of Object.entries(catalogs)) {
+    const flat = flattenCatalog(catalog);
+    for (const name of ["computersTitle", "grantsTitle", "grantCreated", "grantNeverUsed"]) {
+      const value = flat[`settings.accountsDevices.${name}`];
+      assert.equal(typeof value, "string", `${locale}: missing ${name}`);
+      assert.ok(value.trim().length > 0);
+    }
+    assert.notEqual(flat["settings.accountsDevices.computersTitle"], flat["settings.accountsDevices.grantsTitle"]);
+  }
 });
