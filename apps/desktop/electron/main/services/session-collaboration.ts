@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import os from "node:os";
 import type {
   AgentStatus,
   AppSettings,
@@ -575,11 +574,11 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
     },
     drain,
     /**
-     * Identity a confirmed card is stamped with. A build without a configured
-     * host identity falls back to the machine name, which is honest audit data
-     * and never an authorization.
+     * Identity a confirmed card is stamped with, or undefined when this build
+     * has no host identity to offer. It is audit data only and never an
+     * authorization, so an absent value is honest and better than a guess.
      */
-    taskCardHostId: (): string => deps.hostId?.() ?? os.hostname(),
+    taskCardHostId: (): string | undefined => deps.hostId?.(),
   };
 }
 

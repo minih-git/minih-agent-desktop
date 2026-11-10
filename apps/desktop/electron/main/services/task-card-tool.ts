@@ -34,8 +34,12 @@ type StoredDraft = { drafted: DraftedCard };
 export const STEWARD_POLICY_VERSION = "steward-1";
 
 export type TaskCardToolDeps = {
-  /** The host id this desktop is known by; stamped into the Mandate. */
-  hostId: () => string;
+  /**
+   * The host id this desktop is known by, stamped into the Mandate. Absent when
+   * the build has no identity to offer: the card then records the request
+   * without a host, which is truthful and still authorizes nothing by itself.
+   */
+  hostId: () => string | undefined;
   /** Device identity when this build has one; omitted otherwise. */
   deviceId?: () => string | undefined;
   /** Stable policy version of the steward prompt, so a card names its rules. */
@@ -193,7 +197,10 @@ export function createTaskCardTool(deps: TaskCardToolDeps): LocalToolHandler {
       taskId: newTaskId(),
       sourceUtterance,
       requestedBy: {
-        hostId: deps.hostId(),
+        // `local` means "this machine, identity unavailable". It is a valid
+        // identifier so the card still freezes, and it is honest: the card
+        // records who asked, and the host id never grants anything.
+        hostId: deps.hostId() ?? "local",
         ...(deps.deviceId?.() ? { deviceId: deps.deviceId?.() } : {}),
       },
       createdAt: now().toISOString(),
