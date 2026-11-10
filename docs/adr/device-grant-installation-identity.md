@@ -1,4 +1,4 @@
-# Installation-scoped remote device replacement
+# ADR: Installation-scoped remote device replacement
 
 - Status: Accepted
 - Context: [Router-account remote control](remote-control-router-account-binding.md),

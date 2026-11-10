@@ -1,4 +1,3 @@
-import { collectMessageFileOperations } from "./pi-runtime-compaction-plan.js";
 import { PATH_ARG_ALIASES } from "./tool-path-arguments.js";
 import { hostContentBlockText, restoredToolResultContent } from "./tool-result-content.js";
 import {
