@@ -19,10 +19,23 @@ const card = {
   mustAsk: ["push"],
 };
 
+/**
+ * A service stub that records one call. Typed as the real parameter so the
+ * assertions below can read the argument instead of casting it.
+ */
+type ToolService = Parameters<typeof createTaskCardTool>[0];
+type InvokeInput = { operation: string; args: Record<string, unknown> };
+
 function service(result: unknown = { draft: { id: "d1", status: "proposed" } }) {
-  const invokeBuiltin = vi.fn(async () => result);
-  return { invokeBuiltin } as unknown as Parameters<typeof createTaskCardTool>[0] & {
-    invokeBuiltin: typeof invokeBuiltin;
+  const calls: InvokeInput[] = [];
+  const invokeBuiltin = vi.fn(async (input: InvokeInput) => {
+    calls.push(input);
+    return result;
+  });
+  return {
+    service: { invokeBuiltin } as unknown as ToolService,
+    invokeBuiltin,
+    calls,
   };
 }
 
@@ -54,7 +67,7 @@ const draftRecord = (overrides: Record<string, unknown> = {}) => ({
 
 describe("the model cannot confirm a card", () => {
   it("refuses `confirm` without reaching the host", async () => {
-    const stub = service();
+    const { service: stub, invokeBuiltin } = service();
     const result = await call(createTaskCardTool(stub), {
       action: "confirm",
       draftId: "d1",
@@ -63,20 +76,20 @@ describe("the model cannot confirm a card", () => {
     expect(result.ok).toBe(false);
     expect(result.errorCode).toBe("PERMISSION_DENIED");
     expect(String(result.content)).toContain("person's decision");
-    expect(stub.invokeBuiltin).not.toHaveBeenCalled();
+    expect(invokeBuiltin).not.toHaveBeenCalled();
   });
 
   it("accepts only propose, revise and drop", async () => {
-    const stub = service();
+    const { service: stub, invokeBuiltin } = service();
     const result = await call(createTaskCardTool(stub), { action: "approve" });
     expect(result.errorCode).toBe("INVALID_ARGUMENT");
-    expect(stub.invokeBuiltin).not.toHaveBeenCalled();
+    expect(invokeBuiltin).not.toHaveBeenCalled();
   });
 });
 
 describe("propose", () => {
   it("sends the normalized card with its target and the person's words", async () => {
-    const stub = service({ draft: draftRecord() });
+    const { service: stub, calls } = service({ draft: draftRecord() });
     const result = await call(createTaskCardTool(stub), {
       action: "propose",
       targetSessionId: "worker-session",
@@ -87,10 +100,7 @@ describe("propose", () => {
     expect(String(result.content)).toContain("card d1 (proposed)");
     expect(String(result.content)).toContain("deploy, delete, spend");
     expect(String(result.content)).toContain("Nothing runs until the person confirms it");
-    const sent = stub.invokeBuiltin.mock.calls[0][0] as {
-      operation: string;
-      args: Record<string, unknown>;
-    };
+    const sent = calls[0];
     expect(sent.operation).toBe("propose");
     expect(sent.args.targetSessionId).toBe("worker-session");
     expect(sent.args.sourceUtterance).toBe("登录超时今天修掉");
@@ -98,7 +108,7 @@ describe("propose", () => {
   });
 
   it("reports a policy dispatch instead of asking for a click", async () => {
-    const stub = service({ draft: draftRecord({ status: "confirmed" }) });
+    const { service: stub } = service({ draft: draftRecord({ status: "confirmed" }) });
     const result = await call(createTaskCardTool(stub), {
       action: "propose",
       targetSessionId: "worker-session",
@@ -109,7 +119,7 @@ describe("propose", () => {
   });
 
   it("refuses a card with no permission mode or no request behind it", async () => {
-    const stub = service();
+    const { service: stub, invokeBuiltin } = service();
     const noMode = await call(createTaskCardTool(stub), {
       action: "propose",
       targetSessionId: "worker-session",
@@ -124,13 +134,13 @@ describe("propose", () => {
       draft: card,
     });
     expect(noRequest.errorCode).toBe("INVALID_ARGUMENT");
-    expect(stub.invokeBuiltin).not.toHaveBeenCalled();
+    expect(invokeBuiltin).not.toHaveBeenCalled();
   });
 });
 
 describe("revise and drop", () => {
   it("revises only by draft id", async () => {
-    const stub = service({ draft: draftRecord() });
+    const { service: stub, calls } = service({ draft: draftRecord() });
     const result = await call(createTaskCardTool(stub), {
       action: "revise",
       draftId: "d1",
@@ -138,20 +148,20 @@ describe("revise and drop", () => {
       draft: card,
     });
     expect(result.ok).toBe(true);
-    const sent = stub.invokeBuiltin.mock.calls[0][0] as { operation: string; args: Record<string, unknown> };
+    const sent = calls[0];
     expect(sent.operation).toBe("revise");
     expect(sent.args.draftId).toBe("d1");
   });
 
   it("drops by draft id and says nothing was dispatched", async () => {
-    const stub = service({ draft: draftRecord({ status: "dropped" }) });
+    const { service: stub } = service({ draft: draftRecord({ status: "dropped" }) });
     const result = await call(createTaskCardTool(stub), { action: "drop", draftId: "d1" });
     expect(result.ok).toBe(true);
     expect(String(result.content)).toContain("Nothing was dispatched");
   });
 
   it("refuses drop without a draft id", async () => {
-    const stub = service();
+    const { service: stub } = service();
     const result = await call(createTaskCardTool(stub), { action: "drop" });
     expect(result.errorCode).toBe("INVALID_ARGUMENT");
   });

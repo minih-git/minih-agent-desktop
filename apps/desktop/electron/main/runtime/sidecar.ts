@@ -718,10 +718,7 @@ export function createSidecarRuntime({
   s.setLocalTool("SessionCreate", createSessionCreateTool(sessionCollaboration));
   // The steward's task card (ADR bot-sessions-and-steward §3). It holds no
   // workspace capability; confirming freezes the card the person was shown.
-  s.setLocalTool(
-    "TaskCard",
-    createTaskCardTool({ hostId: () => sessionCollaboration.taskCardHostId() }),
-  );
+  s.setLocalTool("TaskCard", createTaskCardTool(sessionCollaboration));
   // Agent-driven work panel preview (D100): open a workspace HTML file in
   // the embedded browser; live reload keeps it current through later edits.
   s.setLocalTool("GenerateImages", createImageGenerationTool({

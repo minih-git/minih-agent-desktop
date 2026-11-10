@@ -57,16 +57,26 @@ type StoredDraft = {
   targetSessionId: string;
 };
 
-const render = (draft: StoredDraft): string =>
-  [
+/**
+ * Show a draft the way the person sees it.
+ *
+ * The card is normalized once here; a stored card always normalizes (the host
+ * validated it on the way in), so the fallback only keeps a damaged row visible
+ * instead of throwing inside a tool result.
+ */
+const render = (draft: StoredDraft): string => {
+  const normalized = normalizeTaskCard(draft.card as TaskCardDraft);
+  const body = normalized.ok
+    ? describeTaskCard(normalized.card)
+    : `goal: ${draft.card.goal ?? "(unreadable card)"}`;
+  return [
     `card ${draft.id} (${draft.status})`,
-    describeTaskCard(normalizeTaskCard(draft.card as TaskCardDraft).ok
-      ? (normalizeTaskCard(draft.card as TaskCardDraft) as { card: never }).card
-      : (draft.card as never)),
+    body,
     `request: ${draft.sourceUtterance}`,
     `target: ${draft.targetSessionId}`,
     `hash: ${draft.cardHash}`,
   ].join("\n");
+};
 
 export function createTaskCardTool(service: SessionCollaborationService): LocalToolHandler {
   return async ({ sessionId, turnId, args, signal }) => {
