@@ -34,6 +34,9 @@ describe("builtin subagent documents", () => {
       "test-runner",
       "fixer",
       "ui-designer",
+      // The steward dispatches work; it is the one builtin that holds the
+      // gateway tools and none of the writing ones (ADR bot-sessions-and-steward).
+      "steward",
     ]);
     expect(definitions).toHaveLength(BUILTIN_SUBAGENT_DOCUMENTS.length);
     // The turn cap is gone (ADR 0253): no builtin document declares one.
@@ -70,6 +73,28 @@ describe("builtin subagent documents", () => {
     expect("maxTurns" in designer).toBe(false);
     expect(designer.description).toBe(findSubagentPreset("ui-designer")?.description);
     expect(designer.prompt).toBe(findSubagentPreset("ui-designer")?.body.trim());
+  });
+
+  it("ships a steward that can dispatch but never writes", async () => {
+    const { definitions } = await loadSubagentDefinitions(null);
+    const steward = definitions.find((definition) => definition.name === "steward")!;
+    expect(steward).toBeDefined();
+    expect(steward.tools).toEqual([
+      "SessionList",
+      "SessionSend",
+      "SessionResult",
+      "SessionCreate",
+      "TaskCard",
+    ]);
+    // No writing capability, and no inheritance that could add one.
+    expect(subagentCanMutate(steward)).toBe(false);
+    expect(steward.inheritTools).toBeUndefined();
+    for (const tool of ["Write", "Edit", "Bash"]) {
+      expect(steward.tools).not.toContain(tool);
+    }
+    // The prompt carries the disciplines it was ported from, and says so.
+    expect(steward.prompt).toContain("dsh-superagent");
+    expect(steward.prompt.toLowerCase()).toContain("mit");
   });
 });
 
