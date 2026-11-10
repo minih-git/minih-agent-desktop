@@ -93,6 +93,130 @@ fn default_permission_mode() -> String {
     "inherit".to_string()
 }
 
+/// Session roles (ADR bot-sessions-and-steward). A bot is a long-lived Agent
+/// session with an explicit role, not a second entity; `user` is every
+/// ordinary conversation, including rows written before the column existed.
+pub const SESSION_ROLES: [&str; 2] = ["user", "bot"];
+
+pub fn is_valid_session_role(role: &str) -> bool {
+    SESSION_ROLES.contains(&role)
+}
+
+fn default_session_role() -> Option<String> {
+    Some("user".to_string())
+}
+
+/// Behaviour classes a task card or a bot profile may ask to confirm. The
+/// executing side always adds `deploy`, `delete` and `spend`.
+pub const BOT_MUST_ASK: [&str; 6] = [
+    "push",
+    "merge",
+    "deploy",
+    "delete",
+    "spend",
+    "criteria-change",
+];
+
+/// Actions no card and no profile can switch off.
+pub const ALWAYS_MUST_ASK: [&str; 3] = ["deploy", "delete", "spend"];
+
+/// Derive the authoritative bot profile from what a caller supplied.
+///
+/// `observe` is required and defaults to true; a caller cannot enable a bot by
+/// omitting the flag, and a profile without a `name` or a known
+/// `permissionMode` is refused rather than stored half-formed. Unknown
+/// `mustAsk` entries are dropped because they name no action the executing
+/// side implements.
+pub fn normalize_bot_profile(raw: &Value) -> Result<Value> {
+    let Some(object) = raw.as_object() else {
+        return Err(anyhow!("INVALID_ARGUMENT: botProfile must be an object"));
+    };
+    let name = object
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| anyhow!("INVALID_ARGUMENT: botProfile.name required"))?;
+    let permission_mode = object
+        .get("permissionMode")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("INVALID_ARGUMENT: botProfile.permissionMode required"))?;
+    if !is_valid_permission_mode(permission_mode) {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: botProfile.permissionMode has unknown mode '{permission_mode}'"
+        ));
+    }
+    let mut must_ask: Vec<String> = ALWAYS_MUST_ASK
+        .iter()
+        .map(|item| item.to_string())
+        .collect();
+    for item in object
+        .get("mustAsk")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let Some(action) = item.as_str() else {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: botProfile.mustAsk must be strings"
+            ));
+        };
+        if !BOT_MUST_ASK.contains(&action) {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: botProfile.mustAsk has unknown action '{action}'"
+            ));
+        }
+        if !must_ask.iter().any(|existing| existing == action) {
+            must_ask.push(action.to_string());
+        }
+    }
+    // Keep the canonical order so two profiles that differ only in the order
+    // the person picked the same actions compare equal.
+    let must_ask: Vec<&str> = BOT_MUST_ASK
+        .iter()
+        .copied()
+        .filter(|action| must_ask.iter().any(|existing| existing == action))
+        .collect();
+    let mut profile = serde_json::Map::new();
+    profile.insert("name".into(), Value::String(name.to_string()));
+    for field in ["avatar", "duty", "homeHostId"] {
+        if let Some(value) = object.get(field).and_then(Value::as_str) {
+            profile.insert(field.into(), Value::String(value.to_string()));
+        }
+    }
+    profile.insert(
+        "permissionMode".into(),
+        Value::String(permission_mode.to_string()),
+    );
+    profile.insert("mustAsk".into(), serde_json::json!(must_ask));
+    profile.insert(
+        "observe".into(),
+        Value::Bool(
+            object
+                .get("observe")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+        ),
+    );
+    Ok(Value::Object(profile))
+}
+
+/// Decode a stored profile the same way, so a value written by another build
+/// cannot be trusted more than one written by this one.
+fn read_bot_profile(raw: Option<&str>) -> Option<Value> {
+    let raw = raw?;
+    let value: Value = serde_json::from_str(raw).ok()?;
+    normalize_bot_profile(&value).ok()
+}
+
+fn validate_session_role(role: &str) -> Result<()> {
+    if is_valid_session_role(role) {
+        Ok(())
+    } else {
+        Err(anyhow!("INVALID_ARGUMENT: unknown session role '{role}'"))
+    }
+}
+
 fn validate_permission_mode(mode: &str) -> Result<()> {
     if is_valid_permission_mode(mode) {
         Ok(())
@@ -154,6 +278,19 @@ pub struct SessionSummary {
     /// the session, populated on summary reads for the sidebar Activity view.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_message_preview: Option<String>,
+    /// `bot` for an employee session (ADR bot-sessions-and-steward). Read from
+    /// the column and refused if it is not one of the two known roles, so an
+    /// unexpected value can never be mistaken for an ordinary conversation.
+    #[serde(
+        default = "default_session_role",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub role: Option<String>,
+    /// The bot's operating identity, normalized on read: `observe` and
+    /// `permission_mode` are required, and an unusable profile is reported
+    /// absent instead of being guessed at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_profile: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1364,11 +1501,27 @@ const SUMMARY_SELECT: &str =
                AND m.text IS NOT NULL
                AND trim(m.text) != ''
              ORDER BY m.seq DESC
-             LIMIT 1) AS last_message_preview
+             LIMIT 1) AS last_message_preview,
+            s.role AS session_role,
+            s.bot_profile_json AS bot_profile_json
      FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
      WHERE s.deleted_at IS NULL";
 
 pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionSummary> {
+    // Read by name: search and listing build their own column lists, so an
+    // alias keeps this mapper independent of any one query's column order. A
+    // query that does not project the bot columns simply reports none.
+    let role = row
+        .get::<_, Option<String>>("session_role")
+        .ok()
+        .flatten()
+        .filter(|role| is_valid_session_role(role));
+    let bot_profile = read_bot_profile(
+        row.get::<_, Option<String>>("bot_profile_json")
+            .ok()
+            .flatten()
+            .as_deref(),
+    );
     Ok(SessionSummary {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -1381,8 +1534,6 @@ pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Sess
         permission_mode: row.get(8)?,
         updated_at: ms_to_ts(row.get(9)?),
         created_at: ms_to_ts(row.get(10)?),
-        // Read by name: search and listing build their own column lists, so the
-        // alias keeps this mapper independent of any one query's column order.
         scheduled_run: row.get("scheduled_run")?,
         worktree: None,
         last_message_preview: normalize_message_preview(
@@ -1390,6 +1541,8 @@ pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Sess
                 .ok()
                 .flatten(),
         ),
+        role,
+        bot_profile,
     })
 }
 
@@ -1444,6 +1597,11 @@ pub struct SessionCreateOptions {
     pub project_path: Option<String>,
     pub thinking_level: Option<String>,
     pub permission_mode: Option<String>,
+    /// `user` or `bot`; omitted keeps every existing caller an ordinary
+    /// conversation (ADR bot-sessions-and-steward).
+    pub role: Option<String>,
+    /// Encoded bot profile; normalized and required together with `role: bot`.
+    pub bot_profile_json: Option<String>,
 }
 
 pub fn create_session_with_thinking(
@@ -1465,6 +1623,8 @@ pub fn create_session_with_thinking(
             project_path,
             thinking_level,
             permission_mode: None,
+            role: None,
+            bot_profile_json: None,
         },
     )
 }
@@ -1486,6 +1646,8 @@ pub fn create_session_with_options(
         project_path,
         thinking_level,
         permission_mode,
+        role,
+        bot_profile_json,
     } = options;
     let now = now_ms();
     let id = Uuid::new_v4().to_string();
@@ -1500,6 +1662,29 @@ pub fn create_session_with_options(
     validate_thinking_level(&thinking_level)?;
     let permission_mode = permission_mode.unwrap_or_else(default_permission_mode);
     validate_permission_mode(&permission_mode)?;
+    // A bot is a session with a role and a profile. The pair is all-or-nothing:
+    // a bot without a normalized profile could not state its own consent gate,
+    // and a profile on a conversation would be an identity nothing reads.
+    let role = role.unwrap_or_else(|| "user".into());
+    validate_session_role(&role)?;
+    let bot_profile = match (role.as_str(), bot_profile_json.as_deref()) {
+        ("bot", Some(raw)) => {
+            let value: Value = serde_json::from_str(raw)
+                .map_err(|_| anyhow!("INVALID_ARGUMENT: botProfile is not valid JSON"))?;
+            Some(serde_json::to_string(&normalize_bot_profile(&value)?)?)
+        }
+        ("bot", None) => {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: a bot session needs a botProfile"
+            ));
+        }
+        (_, Some(_)) => {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: a botProfile requires the bot role"
+            ));
+        }
+        (_, None) => None,
+    };
     let project_id = match project_path
         .as_deref()
         .filter(|path| !path.trim().is_empty())
@@ -1515,8 +1700,8 @@ pub fn create_session_with_options(
         .prepare_cached(
             "INSERT INTO sessions (
                 id, title, project_id, provider_id, model_id, mode, thinking_level,
-                permission_mode, title_source, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+                permission_mode, title_source, role, bot_profile_json, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
         )?
         .execute(params![
             id,
@@ -1528,6 +1713,8 @@ pub fn create_session_with_options(
             thinking_level,
             permission_mode,
             title_source,
+            role,
+            bot_profile,
             now
         ])?;
     Ok(SessionSummary {
@@ -1547,6 +1734,10 @@ pub fn create_session_with_options(
         // A new or forked session starts without a worktree (ADR 0329).
         worktree: None,
         last_message_preview: None,
+        role: Some(role),
+        bot_profile: bot_profile
+            .as_deref()
+            .and_then(|raw| read_bot_profile(Some(raw))),
     })
 }
 
@@ -1907,10 +2098,11 @@ pub fn fork_session_through(
             .prepare_cached(
                 "INSERT INTO sessions (
                     id, title, project_id, provider_id, model_id, mode, thinking_level,
-                    permission_mode, source, pinned, last_seq, created_at, updated_at
+                    permission_mode, source, pinned, last_seq, role, bot_profile_json,
+                    created_at, updated_at
                  )
                  SELECT ?1, ?2, project_id, provider_id, model_id, mode, thinking_level,
-                        permission_mode, NULL, 0, ?3, ?4, ?4
+                        permission_mode, NULL, 0, ?3, role, bot_profile_json, ?4, ?4
                  FROM sessions WHERE id = ?5",
             )?
             .execute(params![id, title, records.len() as i64, now, source_id])?;
@@ -1945,6 +2137,9 @@ pub fn fork_session_through(
         scheduled_run: false,
         // A new or forked session starts without a worktree (ADR 0329).
         worktree: None,
+        // Forking a bot keeps it the same employee; the child is not a new one.
+        role: source.summary.role,
+        bot_profile: source.summary.bot_profile,
         last_message_preview: records
             .iter()
             .enumerate()
@@ -5362,6 +5557,9 @@ mod tests {
             scheduled_run: false,
             worktree: None,
             last_message_preview: None,
+            // An imported conversation is never an employee.
+            role: Some("user".into()),
+            bot_profile: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-02T00:00:00Z".into(),
         };
@@ -5416,6 +5614,9 @@ mod tests {
             scheduled_run: false,
             worktree: None,
             last_message_preview: None,
+            // An imported conversation is never an employee.
+            role: Some("user".into()),
+            bot_profile: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-01T00:00:00Z".into(),
         };
@@ -6641,6 +6842,9 @@ mod tests {
             scheduled_run: false,
             worktree: None,
             last_message_preview: None,
+            // An imported conversation is never an employee.
+            role: Some("user".into()),
+            bot_profile: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-01T00:00:00Z".into(),
         };

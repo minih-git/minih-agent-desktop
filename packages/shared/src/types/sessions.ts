@@ -1,4 +1,5 @@
 /** Shared public types grouped by the owning application domain. */
+import type { BotProfile, SessionRole } from "../bot-session.js";
 import type { RemoteWorkspace } from "./workspace.js";
 import type { Mode } from "./common.js";
 import type { SessionThinkingLevel, ThinkingLevel } from "./models.js";
@@ -80,6 +81,14 @@ export type SessionSummary = {
    * older hosts.
    */
   lastMessagePreview?: string;
+  /**
+   * `bot` for an employee session (ADR bot-sessions-and-steward); absent means
+   * an ordinary conversation, including for every session stored before the
+   * field existed.
+   */
+  role?: SessionRole;
+  /** Present exactly for a bot session; normalized before it is trusted. */
+  botProfile?: BotProfile;
   updatedAt: string;
   createdAt: string;
 };

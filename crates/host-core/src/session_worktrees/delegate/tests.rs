@@ -40,6 +40,8 @@ async fn env() -> Env {
                 project_path: Some(project.to_string_lossy().into_owned()),
                 thinking_level: None,
                 permission_mode: None,
+                role: None,
+                bot_profile_json: None,
             },
         )
         .unwrap()

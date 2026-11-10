@@ -252,3 +252,54 @@ transcript-file line first, index transaction second.
 13. A Goal execution reports each acceptance criterion's outcome before ending
     the turn, and a scheduled/unattended Goal run is rejected with
     `PLAN_REQUIRES_INTERACTIVE_SESSION` exactly like Plan
+
+## 6. Bot sessions, task mandate, and task stage
+
+ADR `bot-sessions-and-steward` and `04-data-storage.md` §4.19 define an employee
+as a session with `role: bot`, and a task's authorization as a Mandate frozen on
+its collaboration ledger entry. This section states the invariants that make
+those two additions safe for the state machine above; it adds no new turn
+state.
+
+1. **Role is not a mode.** `role` and `mode` are orthogonal: a bot session is an
+   ordinary `agent | plan | goal` session whose `role` is `bot`. Bot-ness never
+   changes turn, queue, approval, or compaction behaviour, and a session whose
+   stored role is neither `user` nor `bot` fails closed instead of falling back
+   to `user`.
+2. **A bot is never silently deleted.** A soft or hard session delete of a bot
+   session comes from the bot-dismissal path only, with a second confirmation;
+   ordinary list, tray, and search deletion does not apply to it.
+3. **A Mandate never grants authority.** The effective permission of a delivery
+   that carries a Mandate is the minimum of the Mandate's mode, the ceiling the
+   host grants its source, and the bot profile's ceiling, with `mustAsk` taken
+   as the union plus `deploy`, `delete`, and `spend`. It does not raise a
+   session's admission ceiling, does not bypass a permission card, and does not
+   survive as authority when the ceiling changes.
+4. **A Mandate is immutable.** Correcting or widening scope is a new Mandate
+   with a new `taskId` and a new delivery; an existing confirmation is never
+   rewritten. Changing acceptance criteria inside one task is exactly the
+   `criteria-change` entry of `mustAsk` and returns to the person.
+5. **`observe` starts nothing.** While a bot profile has `observe` set, its
+   task cards are recorded and no delivery to it begins a turn. An absent flag
+   is read as `observe`, never as auto-start.
+6. **Stage is derived, not asserted.** After a report settles, the stage is the
+   first matching row, and a report whose `reportSeq` is not greater than the
+   stored one changes nothing:
+
+   | # | Stage | Disturbs the person |
+   |---|---|---|
+   | 1 | `person/answer` — waiting for an answer or an approval | yes |
+   | 2 | `person/accept` — waiting for the person to accept a finished task | yes |
+   | 3 | `blocked` or `failed` | no |
+   | 4 | `queued` — not started, or waiting for the machine that runs it | no |
+   | 5 | `waiting` — waiting for a trigger the person configured | no |
+   | 6 | `working` | no |
+
+7. **Stage never replaces delivery status.** `queued`, `running`, `completed`,
+   `failed`, `cancelled`, and `interrupted` remain the turn-bound facts the
+   ledger already records; a surface that shows "who is holding this" reads the
+   stage, and a surface that shows "did it finish" reads the status. Neither is
+   inferred from the other.
+8. **A restart keeps the mandate and the stage.** Both are durable columns on
+   the ledger row, so boot recovery interrupts work exactly as before and never
+   loses the record of what was authorized.

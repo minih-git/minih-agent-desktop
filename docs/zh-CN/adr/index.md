@@ -325,6 +325,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | agent-long-term-memory | [分层、可溯源的长期记忆](/adr/agent-long-term-memory) | 已接受待实现（D668；修订 ADR 0234） |
 | learned-memory-consolidation | [学习记忆的整理建议与复核](/adr/learned-memory-consolidation) | 提议中（修订 ADR agent-long-term-memory） |
 | plugin-learned-memory-read | [插件只读列出长期记忆](/adr/plugin-learned-memory-read) | 已接受（D682；修订 ADR agent-long-term-memory §8，仅读取） |
+| bot-sessions-and-steward | [bot 会话、管家与任务授权](/adr/bot-sessions-and-steward) | 已接受待实现（D687；新增会话角色、bot profile 与冻结的 Mandate，跨机派活是后续决策） |
 | conversation-archive | [会话分层归档给插件读取](/adr/conversation-archive) | 已接受待实现（D685；仅沿用 plugin-learned-memory-read 的接线方式） |
 | 0332 | [插件市场由本项目自己的分发仓库提供](/adr/0332-own-plugin-distribution-repository) | 已接受（2026-10-18；取代 ADR 0276 中官方渠道的条款） |
 | 0333 | [项目外的聊天路径只提供“在 Finder 中显示”和复制路径](/adr/0333-chat-refs-outside-roots-reveal-and-copy) | 已接受（2026-10-20；比 ADR 0262 的打开目标收得更窄） |

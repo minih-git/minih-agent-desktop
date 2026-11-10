@@ -100,7 +100,9 @@ fn project_path_upgrade_preserves_every_owner_and_versioned_backup() {
         .conn()
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 30);
+    // A v29 file walks the ordered chain to the newest version in one launch,
+    // so the assertion names the authority rather than the step that ran.
+    assert_eq!(version, crate::db::SCHEMA_VERSION);
     assert_eq!(db.list_projects().unwrap().len(), 1);
     let keep = db.ensure_project(&alias, false).unwrap();
     assert_eq!(

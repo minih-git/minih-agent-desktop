@@ -742,6 +742,17 @@ or general MCP operations:
   and creates at most one completion callback.
 - `session.collaboration.cancel` — cancel queued deliveries or interrupt their
   exact currently-bound turns while retaining the target session and history.
+- `session.collaboration.mandate` — attach the frozen task card (the Mandate of
+  ADR `bot-sessions-and-steward`) to one queued delivery. Only before the
+  delivery starts, and only once: the same card again is idempotent, a different
+  one is `CONFLICT`. The host validates only what it can act on
+  (a concrete `permissionMode` and the size bound) and stores the encoded card
+  opaquely; the shared codec owns the shape.
+- `session.collaboration.report` — record one structured report
+  (`progress | waiting | ready | blocked | failed | dropped`) with the worker's
+  monotonic `seq` and the derived `stage`. A `seq` that is not greater than the
+  stored one is answered `applied: false` instead of moving the task backwards.
+  The stage is reported beside the delivery `status`, never in place of it.
 
 The ledger is durable across a host restart. A queued entry with its
 `turn_queue.session_message_id` remains held for a new Agent Host controller;

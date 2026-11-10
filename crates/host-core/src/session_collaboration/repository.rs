@@ -29,14 +29,45 @@ pub struct Message {
     pub created_at: String,
     pub updated_at: String,
     pub permission_ceiling: String,
+    /// The frozen task authorization (ADR bot-sessions-and-steward), still
+    /// encoded: the host stores and scopes it, the shared codec validates it.
+    #[serde(
+        rename = "mandate",
+        serialize_with = "opaque_json",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mandate_json: Option<String>,
+    /// Derived stage; only `person/*` disturbs the person. Never the status.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+    /// Monotonic per-delivery report counter.
+    pub report_seq: i64,
     #[serde(skip)]
     pub remaining_hops: i64,
 }
 
 pub(super) const SELECT: &str = "SELECT id,plugin_id,source_session_id,source_title,
  target_session_id,target_title,kind,content,status,notify_on_completion,turn_id,
- reply_to_message_id,result,error,created_at,updated_at,remaining_hops,permission_ceiling
+ reply_to_message_id,result,error,created_at,updated_at,remaining_hops,permission_ceiling,
+ mandate_json,stage,report_seq
  FROM session_collaboration_messages";
+
+/// The Mandate is stored encoded and is returned as the object that was frozen,
+/// so a reader never has to parse a second JSON string. A value that does not
+/// parse (only reachable through direct database access) is omitted rather than
+/// emitted as a string, so no client sees a shape it does not expect.
+fn opaque_json<S: serde::Serializer>(
+    value: &Option<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let Some(raw) = value else {
+        return serializer.serialize_none();
+    };
+    match serde_json::from_str::<Value>(raw) {
+        Ok(parsed) => parsed.serialize(serializer),
+        Err(_) => serializer.serialize_none(),
+    }
+}
 
 pub(super) fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
     Ok(Message {
@@ -58,6 +89,9 @@ pub(super) fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
         updated_at: ms_to_ts(row.get(15)?),
         remaining_hops: row.get(16)?,
         permission_ceiling: row.get(17)?,
+        mandate_json: row.get(18)?,
+        stage: row.get(19)?,
+        report_seq: row.get(20)?,
     })
 }
 

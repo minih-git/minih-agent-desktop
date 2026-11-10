@@ -192,6 +192,9 @@ fn handle_with_workspace_policy(
                     .permission_mode
                     .clone()
                     .or_else(|| automatic.then(|| "ask".into())),
+                // An automation transcript is an ordinary session, never a bot.
+                role: None,
+                bot_profile_json: None,
             };
             let uses_task_execution_settings = task.permission_mode.is_some()
                 || task.thinking_level.is_some()

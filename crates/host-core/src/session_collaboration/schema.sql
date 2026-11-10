@@ -23,6 +23,14 @@ CREATE TABLE IF NOT EXISTS session_collaboration_messages (
   idempotency_key TEXT NOT NULL,
   remaining_hops INTEGER NOT NULL,
   permission_ceiling TEXT NOT NULL CHECK(permission_ceiling IN ('ask', 'accept-edits', 'auto')),
+  -- The frozen task authorization (ADR bot-sessions-and-steward). Opaque to
+  -- the host: shape and bounds live in the shared codec.
+  mandate_json TEXT,
+  -- Derived stage: only `person/*` disturbs the person. Never replaces `status`.
+  stage TEXT CHECK (stage IS NULL OR stage IN ('person/answer', 'person/accept',
+                'blocked', 'failed', 'queued', 'waiting', 'working')),
+  -- Monotonic report counter; a report that is not greater is ignorable.
+  report_seq INTEGER NOT NULL DEFAULT 0 CHECK (report_seq >= 0),
   result TEXT,
   error TEXT,
   created_at INTEGER NOT NULL,

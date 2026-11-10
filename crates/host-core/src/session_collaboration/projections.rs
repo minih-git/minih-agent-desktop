@@ -244,6 +244,9 @@ pub(super) fn summary(db: &Database, id: &str) -> Result<Value> {
     if !created.is_empty() {
         value["createdSessions"] = json!(created);
     }
+    let current_stage = current_task
+        .as_ref()
+        .and_then(|message| message.stage.clone());
     if let Some(message) = current_task {
         let sender_available = available.contains(&message.source_session_id);
         value["currentTask"] = json!({"messageId":message.id,"senderSession":{"sessionId":message.source_session_id,"title":message.source_title,"available":sender_available},
@@ -256,6 +259,14 @@ pub(super) fn summary(db: &Database, id: &str) -> Result<Value> {
     }
     if let Some(task) = value.get_mut("currentTask").and_then(Value::as_object_mut) {
         task.retain(|_, value| !value.is_null());
+    }
+    if let Some(stage) = current_stage {
+        if let Some(task) = value.get_mut("currentTask").and_then(Value::as_object_mut) {
+            // The stage says who is holding the task; the status says whether
+            // the turn finished. Both are reported, neither is derived from the
+            // other, and a delivery that never reported simply has no stage.
+            task.insert("stage".into(), Value::String(stage));
+        }
     }
     if let Some(result) = value.get_mut("result").and_then(Value::as_object_mut) {
         result.retain(|_, value| !value.is_null());

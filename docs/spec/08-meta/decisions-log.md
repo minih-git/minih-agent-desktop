@@ -10,6 +10,7 @@ This log freezes previously open questions into concrete decisions.
 
 | ID | Topic | Decision | Rationale |
 |---|---|---|---|
+| D687 | Bot sessions and the steward | **A bot is a durable Agent session with `role: bot` and a `botProfile` (name, avatar, duty, nullable `homeHostId`, permission mode, `mustAsk`, and `observe` required and defaulting to true), not a new entity; the steward is a built-in bot whose only tools are `SessionList/Send/Result/Create` and the task-card tool, with no Write/Edit/Bash/plugin/MCP tool and no inherited tools; a confirmed task card freezes into an immutable, bounded Mandate stored on its ADR 0239 ledger entry, with the executing side recomputing permission as `min(card, source ceiling, bot ceiling)` and unioning `mustAsk`; progress uses the dsh six-value report (progress/waiting/ready/blocked/failed/dropped) and a six-row stage where only `person/*` disturbs the person. Additive per-column schema step: `sessions.role`, `sessions.bot_profile_json`, and `session_collaboration_messages.mandate_json`, `stage`, and `report_seq`. Cross-host dispatch is a later `cross-host-collab` decision. See ADR bot-sessions-and-steward.** | An employee needs an identity that outlives a chat, a frozen record of what the person authorized, and a vocabulary that says who is holding a task; sessions, the collaboration ledger and delegate tool scopes already own identity, delivery and permission, so adding a second entity for any of them would create two sources of truth for one worker. |
 | D686 | Embeddings from the user's own models | **`ModelBinding` gains an optional `kind` (`chat` absent, or `embedding`); a Minih Router model the gateway classifies as `embedding` is saved that way and the user can change it on the model row. An embedding model never appears in a conversation choice (session composer, subagent pin, title, learning, follow-up) and `resolveRuntimeModel` refuses it for a launch. New high-risk permission `embeddings.run` serves `pi.embeddings.embed(modelKey, texts 1..=64 / ≤8 KiB each / ≤256 KiB, dimensions?)` over the OpenAI-compatible `POST /embeddings`, returning `{vectors, modelKey, dims, usage?}`; a vendor-account OAuth or native provider answers `UNSUPPORTED_PROVIDER`, and the credential never leaves Electron main. `pi.models.list` reports each row's `kind` and takes an optional `{kind}` that defaults to `chat`, so existing callers see no change. Additive everywhere: no migration, no schema version bump, no protocol version bump. See ADR plugin-embeddings.** | A plugin that indexes the user's notes had to ask for the same gateway and key a second time in a file the app does not manage, while Desktop already held both; the only missing piece was a way to say which saved models are vector models, and a host call that keeps the key on the host. |
 | D685 | Conversation archive for plugins | **Add a layered conversation archive: host-core projects the transcript in force into turns (user text, agent text, one tool line per call, compaction markers) with thinking, attachments, tool results and system messages dropped by kind and every produced line passed through a fragment credential redactor; schema v29 adds `conversation_summaries` (cursor, revision, lease, attempts) and `conversation_archive_tombstones` (content-free deletion record written before a purge); `plugin.conversations.changes|summary|transcript` serve a bounded, redacted projection under the new high-risk `conversation.read` permission, gated in Electron main by the device-local `learnedMemory.archive` switch, with `changes` answering `enabled:false` and the two session reads refusing `PERMISSION_DENIED` while it is off; a summary generator in Electron main runs on the extractor's triggers, lease, retry and daily budget, and sends the agent's replies plus one line per tool call to the chosen learning model — a wider input than automatic learning, stated in the switch's description, the user guide in both locales, the ADR and the changelog; project identity normalizes the git remote to `host/owner/repo` with any credential removed. Additive everywhere: no protocol version bump, no configuration-sync domain, and the plugin must declare `engines.minihAgent` at the first release that ships the permission. See ADR conversation-archive.** | Conversations are the largest body of knowledge the user produces and the only part that never leaves the machine that made it, so "what did I do in this project last week" could not be answered from another computer; a plugin-facing projection is the only exit that keeps SQLite ownership, the user's switch, and the exclusion of thinking and tool output intact, and the measured 119 MB of tool arguments against 13 MB of conversation text is what makes a summary layer the searchable one. |
 | D684 | The model can read its own context budget | **Amend ADR 0064: add `ContextUsage`, a parameterless, read-only sidecar runtime tool that reports the budget the compaction guard decides on over the live loop messages — tokens in use, model window, request headroom, `hardLimit`, the 90% automatic trigger, tokens left before it (before `hardLimit` when automatic compaction is disabled), whether the count is anchored on a provider usage, and whether `new_context` is queued. It is a core declaration in every mode, needs no permission card, stays registered with compaction disabled, is listed in `plan_mode_allows`, and is denied to delegates. The first-tier budget reminder keeps its trigger but now states the distance to the automatic trigger instead of to `hardLimit`. Thresholds, compaction timing and the composer display are unchanged. See ADR context-usage-tool.** | The only budget signal the model had was a one-shot reminder in the last tier, and the composer ring measures against the full window while compaction starts near 67.5% of it, so neither the model nor its reading of the UI could tell how much room was left. Reading the guard's own numbers keeps the report and the actual compaction point from disagreeing. |
@@ -8495,3 +8496,35 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - See ADR plugin-embeddings, `07-plugins/03-plugin-api.md` §embeddings,
   `07-plugins/13-plugin-permissions-matrix.md`, and
   `03-runtime/04-data-storage.md` §4.17.
+
+## 2026-11-10 — Bot sessions and the steward (D687)
+
+- A bot is a durable Agent session with `role: bot` and a `botProfile`, not a
+  second entity with its own lifecycle. Session identity, transcript
+  ownership, project binding, configuration and permission ceilings stay where
+  ADR 0239 already put them, so a bot cannot drift from the conversation it is.
+- `observe` is required and defaults to true: a new bot records the task cards
+  it would have produced and starts no work until the person switches it on.
+- The steward is a built-in bot whose tool set is `SessionList`, `SessionSend`,
+  `SessionResult`, `SessionCreate` and the task-card tool. It has no `Write`,
+  `Edit`, `Bash`, plugin, MCP, network-write or transcript-reading tool, and it
+  never inherits tools; a steward is denied, not trusted.
+- A confirmed task card freezes into a bounded, immutable Mandate on its ledger
+  entry. The executing side recomputes the effective permission as the minimum
+  of the card, the ceiling it grants the source, and the bot's own ceiling, and
+  unions `mustAsk` with `deploy`, `delete` and `spend` always added. A Mandate
+  asks; it never grants, so a forged or replayed card cannot raise authority.
+- Progress uses the dsh six-value report (`progress`, `waiting`, `ready`,
+  `blocked`, `failed`, `dropped`) and the six-row stage table, where only the
+  `person/*` stages disturb the person. The ledger's delivery `status` keeps
+  answering "did the turn finish" and is never read as a stage.
+- Schema v30 -> v31 adds `sessions.role`, `sessions.bot_profile_json`, and
+  `session_collaboration_messages.mandate_json`, `stage`, `report_seq` as one
+  ordered, transactional step. It is additive and non-destructive, so it keeps
+  no `pi.sqlite.v30.bak` copy; pre-existing sessions read as an ordinary
+  conversation with no profile, and pre-existing ledger entries have no Mandate,
+  no stage, and `report_seq = 0`.
+- Cross-host dispatch, receive policy, bot and device memory scopes, the
+  steward prompt, the task-card UI, push and the board are out of scope here.
+- See ADR bot-sessions-and-steward, `03-runtime/04-data-storage.md` §4.19, and
+  `03-runtime/10-session-state-machine.md` §6.

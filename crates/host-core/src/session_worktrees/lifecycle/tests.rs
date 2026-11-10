@@ -41,6 +41,8 @@ async fn new_session(env: &Env, project: &Path) -> String {
             project_path: Some(project.to_string_lossy().into_owned()),
             thinking_level: None,
             permission_mode: None,
+            role: None,
+            bot_profile_json: None,
         },
     )
     .unwrap()
@@ -259,6 +261,8 @@ fn new_session_blocking(db: &Database, project: &Path) -> String {
             project_path: Some(project.to_string_lossy().into_owned()),
             thinking_level: None,
             permission_mode: None,
+            role: None,
+            bot_profile_json: None,
         },
     )
     .unwrap()

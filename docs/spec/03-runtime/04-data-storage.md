@@ -1045,6 +1045,66 @@ CREATE UNIQUE INDEX idx_session_collaboration_receipt
   Host validation prevents forged, stripped, edited, or regenerated
   collaboration input from becoming ordinary human input. This metadata is
   additive and does not require a column in `messages`.
+### 4.19 bot sessions and the task mandate (schema v31, ADR bot-sessions-and-steward)
+
+An employee is a durable session, so the identity is two nullable columns on
+the row that already owns the conversation, and the authorization is three
+columns on the delivery row that already owns the work. No new table: a bot
+cannot diverge from its session, and a Mandate cannot diverge from the delivery
+that carries it.
+
+```sql
+-- sessions
+role             TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'bot')),
+bot_profile_json TEXT,
+
+-- session_collaboration_messages
+mandate_json TEXT,
+stage        TEXT CHECK (stage IS NULL OR stage IN (
+               'person/answer', 'person/accept', 'blocked', 'failed',
+               'queued', 'waiting', 'working')),
+report_seq   INTEGER NOT NULL DEFAULT 0 CHECK (report_seq >= 0)
+```
+
+- `role` is the only bot discriminator. A value outside the two known roles
+  fails closed on read; it is never normalized to `user`.
+- `bot_profile_json` is the encoded bot profile (`name`, `avatar`, `duty`,
+  nullable `homeHostId`, `permissionMode`, `mustAsk[]`, `observe`). It is
+  present exactly when `role = 'bot'`, is bounded, and `observe` is always
+  written — an absent flag is not read as "auto-start".
+- `mandate_json` is the encoded Mandate frozen when the person confirmed the
+  task card. The host treats it as an opaque, bounded opaque value: it stores,
+  scopes to its delivery, and returns it. Shape, bounds, and invariants are one
+  shared codec, so the renderer, Electron main, the plugin gateway and a later
+  cross-host protocol validate the same thing once. A pre-existing row has no
+  Mandate, which means "delivered without a frozen authorization" and never
+  "authorized without limits".
+- `stage` is null until the work reports, then holds the derived stage of
+  `10-session-state-machine.md` §6. It is written only by the transaction that
+  settles a report, never by a client, and it never replaces the delivery
+  `status`: status answers "did the turn finish", stage answers "who is
+  holding this".
+- `report_seq` is the monotonic per-delivery report counter. A report carrying
+  a sequence not greater than the stored one is ignored, so a duplicated or
+  out-of-order report cannot move a task backwards.
+- Session deletion still cascades the ledger row, so a dismissed bot takes its
+  task history with it; completion receipts outlive a deleted *sender* exactly
+  as before, because `source_session_id` still has no foreign key.
+
+**Schema v30 -> v31.** `migrate_v30_to_v31` runs as one ordered step in the
+same transactional chain as every other structural change (§7) and stamps
+`user_version = 31` only after the last `ALTER TABLE` succeeds; a failure rolls
+the whole step back and leaves v30 authoritative, so the next open retries from
+the same version. It is **not a destructive step** — every statement only adds a
+defaulted column and no row is rewritten — so this build keeps no
+`pi.sqlite.v30.bak` copy, exactly as §7 allows. Each column is still probed with
+`pragma_table_info` first, so a file that already carries some of them (created
+from the current DDL, or re-opened by a fixture that downgrades in place) is
+completed instead of failing on a duplicate column.
+
+Existing rows keep their exact meaning: every pre-existing session is an
+ordinary conversation, and every pre-existing delivery is a plain delivery with
+no Mandate, no stage, and `report_seq = 0`.
 
 ### 4.7 messages — transcript index
 
@@ -1869,7 +1929,9 @@ truncating at a guessed position.
 
 - `PRAGMA user_version` stays the schema authority; future structural changes
   add ordered Rust migration fns again, each in one transaction, with a
-  `pi.sqlite.v<n>.bak` copy before destructive steps.
+  `pi.sqlite.v<n>.bak` copy before destructive steps (a step that only adds
+  defaulted columns is not destructive and may omit the copy, as v30 -> v31
+  does).
 - **v7 is a breaking reset (D119), not a migration.** Opening a database with
   `user_version` 1–6 WAL-checkpoints it, renames it to `pi.sqlite.v6.bak`
   (removing stale `-wal`/`-shm` siblings), and bootstraps a fresh v7 file.
@@ -1916,6 +1978,32 @@ truncating at a guessed position.
   Legacy `planApprovalPermissionMode` is removed from the app settings JSON
   during migration; all unrelated settings remain intact.
 
+- **The bot, profile, mandate, stage, and report-sequence columns are additive
+  and idempotent.** Schema §4.19 adds `sessions.role` (default `user`),
+  `sessions.bot_profile_json`, and
+  `session_collaboration_messages.mandate_json`, `stage`, `report_seq`
+  (D687 / ADR bot-sessions-and-steward). Every pre-existing session stays an
+  ordinary conversation and every pre-existing delivery stays a plain delivery;
+  no row is rewritten. Each column is probed before it is added, so a launch
+  that stopped mid-step is completed on the next open. Like
+  `messages.streaming`, these statements only add a defaulted column, so they
+  run as an idempotent best-effort addition in the boot maintenance path
+  instead of taking a new `user_version` and a migration backup; a build that
+  starts using their values still owns their validation. That early exception
+  is closed: a later structural change to these tables takes an ordered
+  versioned step again (v31 below).
+- **Schema v31 is additive.** Adds `sessions.role` (default `user`),
+  `sessions.bot_profile_json`, and
+  `session_collaboration_messages.mandate_json`, `stage`, `report_seq`
+  (D687 / ADR bot-sessions-and-steward, §4.19). Every pre-existing session
+  stays an ordinary conversation and every pre-existing delivery stays a plain
+  delivery; no row is rewritten. The step is ordered and transactional like
+  every other structural change: `migrate_v30_to_v31` stamps `user_version = 31`
+  only after its last `ALTER TABLE` succeeds, and a failure rolls back to v30.
+  Because adding defaulted columns is not destructive, **no `pi.sqlite.v30.bak`
+  copy precedes it** (§7 permits omitting it for non-destructive steps). Each
+  column is still probed first, so a file that already carries some of them is
+  completed instead of failing.
 - **Schema v15 is additive.** It adds the `turn_queue` table and its two
   indexes (D386 / ADR 0213) so the Host-owned turn queue survives a restart;
   no existing row changes, and a `pi.sqlite.v14.bak` copy precedes the step.
