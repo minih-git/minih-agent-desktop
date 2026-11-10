@@ -79,11 +79,20 @@ reference-equal, and that runs on every streamed token.
    changed no message hands `TranscriptHistory` a reference-equal array and its
    comparator bails on identity instead of deep-walking the mounted rows.
 8. Explicit latest navigation suspends competing paging, restoration and search
-   alignment. Its interruptible animation keeps the current historical range
-   visible until arrival, then commits the live tail. Reader input keeps the
-   prepared history; pane hiding/eviction commits accepted latest intent.
-   Reduced motion completes immediately. Minih's bottom sampling, canonical
-   tail staleness and remote cursor behavior stay intact.
+   alignment. Native smooth travel retains the prepared range until `scrollend`
+   reaches the actual bottom, including late layout. Continuous loaded pages
+   extending the live tail remain reading data; unread gaps are never joined.
+   Reader input cancels without committing, hide/eviction commits latest intent,
+   and reduced motion completes immediately. Minih's actual-bottom sampling,
+   canonical tail staleness and remote opaque cursors stay intact.
+9. Adaptive prefetch uses measured speed and read latency with bounded lead.
+   Paging never locks scroll input. Paragraph/message anchors outlive page IO;
+   row ResizeObservers repair late layout before paint, including changes whose
+   total height cancels out. Navigation/follow/disclosure/search take ownership.
+10. Recycle only measured, same-width offscreen plain prose, retaining message
+    shells. Focus, selection, streaming, search, fences, tables, images and HTML
+    previews preserve their renderers. Per-viewport content observation is shared
+    and completely detached with its final subscriber.
 
 No IPC, storage, host protocol, or pagination change. `SESSION_TRANSCRIPT_PAGE_SIZE`
 and the `session.get` window contract are untouched.
@@ -100,9 +109,9 @@ and the `session.get` window contract are untouched.
   needs a height cache and invalidation for all of it. The trailing window keeps
   the same bounded DOM model; message anchors now correct page/layout changes
   without introducing a full virtualizer.
-- **Unmount by distance from the viewport in both directions:** rejected. The
-  transcript is read from the bottom and streams at the bottom; withholding rows
-  *below* the viewport would fight pinned-follow for no benefit.
+- **Unmount entire rows by distance in both directions:** rejected. Message and
+  minimap anchors must stay addressable. Only ordinary prose inside a measured
+  shell may recycle; stateful content is retained.
 - **Cap the loaded history instead, discarding older pages from the store:**
   rejected. It would make paging non-monotonic and re-fetch rows the user just
   scrolled past, and the store's transcript is also read by the outcome card and

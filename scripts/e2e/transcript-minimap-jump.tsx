@@ -204,26 +204,18 @@ export async function transcriptMinimapJumpProbe() {
       turnTop: turnTop(),
       scrollTop: scroller.scrollTop,
     });
+    let navigationEnded = false;
+    scroller.addEventListener("scrollend", () => { navigationEnded = true; }, { once: true });
     flushSync(() => dashes[0]!.click());
     await until(
       () => distanceFromBottom() > 100,
       "the jump scrolled away from the bottom",
       readout,
     );
-    // The jump lands first; follow mode answers it on the following frames.
-    // Settle that exchange before asserting, or a re-bottom passes as success.
-    // Smooth scrolling finishes on its own schedule and a hidden Electron
-    // window drops frames, so wait for a stable offset instead of a fixed
-    // frame count.
-    let settledTop = Number.NaN;
-    let stableFrames = 0;
-    for (let index = 0; index < 400 && stableFrames < 3; index++) {
-      await frame();
-      const top = scroller.scrollTop;
-      stableFrames = Math.abs(top - settledTop) < 0.5 ? stableFrames + 1 : 0;
-      settledTop = top;
-    }
-    for (let index = 0; index < 3; index++) await frame();
+    // Native travel may pause between compositor frames before it has arrived.
+    // Require its settlement event and the actual target, not three equal frames.
+    await until(() => navigationEnded && turnTop() > -8 && turnTop() < 96,
+      "native minimap navigation reaches its clicked turn", readout);
     assert(
       distanceFromBottom() > 100,
       `the jump was undone by follow: ${JSON.stringify(readout())}`,

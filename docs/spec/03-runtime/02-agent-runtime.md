@@ -334,6 +334,13 @@ the transient retry budget or add backoff, and the caller's `onPayload` rewrite
 remains active. A second opaque failure is terminal, and an abort before the
 repair starts prevents the repair request.
 
+A pre-stream 400/422 or status-less rejection that explicitly states the model's
+completion ceiling shares this single repair allowance. Lower only existing
+numeric output-limit fields above the stated ceiling; do not add absent fields,
+drop Anthropic's required `max_tokens`, or change model selection. The caller's
+payload hook runs first. Credit exhaustion, context overflow and 5xx stay on
+their existing paths; a second limit rejection is surfaced without another repair.
+
 The non-429 delay honors the server first: `retry-after-ms`, `retry-after`
 seconds, then `retry-after` HTTP-date, capped at 8 seconds. Captured headers are
 retained for every status that can carry a usable delay (429, 408, 409, and
@@ -2424,3 +2431,22 @@ minutes earlier. The host can refresh that cache by itself, without a turn:
   because on a gateway that translates Responses `reasoning` into Anthropic
   thinking a lower `max_tokens` would change the thinking budget and break the
   cached prefix the request exists to refresh.
+
+## Selected reliability additions (2026-11-09)
+
+- Historical image replay charges its newest-first aggregate byte budget only
+  after an exact-size read and accepted pixel probe. A rejected tall screenshot
+  or unreadable image keeps its path fallback without starving an older image;
+  candidates larger than the remaining budget are not read.
+- Retained-tail text truncation reserves answer text before readable assistant
+  `thinking`. Shortened thinking drops its signature; fitted and redacted blocks
+  stay unchanged, as do structured tool calls and images. Visible history is not
+  truncated by this model-context operation.
+- Complete text-form XML calls for known tools outside code fences produce the
+  message diagnostic `TOOL_CALL_NOT_EXECUTED`. Prose never executes as a tool,
+  does not trigger an automatic retry, and does not abort valid structured
+  sibling calls or turn settlement.
+- Large OpenAI Images Base64 payloads use flat alphabet and quantum validation,
+  retaining the existing encoded-size limit and malformed-input refusal.
+
+Provenance and verification: [selected adaptation](../../project/upstream-import-2026-11-09-reliability-path-scroll.md).

@@ -124,7 +124,7 @@ test("holding a disclosure leaves follow without a delayed grab-back", () => {
 test("real input, a new turn and every navigation drop the held position", () => {
   assert.match(
     transcript,
-    /lastScrollGestureAtRef\.current = performance\.now\(\);\s*\/\/ Real input takes the viewport back from a held disclosure position\.\s*releaseDisclosureAnchor\(\);/,
+    /lastScrollGestureAtRef\.current = performance\.now\(\);\s*readingInputRef\.current = true;\s*\/\/ Real input takes the viewport back from a held disclosure position\.\s*releaseDisclosureAnchor\(\);/,
   );
   assert.match(
     transcript,

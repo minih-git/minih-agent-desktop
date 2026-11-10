@@ -15,7 +15,7 @@ import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 async function until(predicate: () => boolean, message: string) {
-  for (let n = 0; n < 180; n++) { if (predicate()) return; await frame(); }
+  for (let n = 0; n < 600; n++) { if (predicate()) return; await frame(); }
   throw new Error(message);
 }
 const message = (id: string): UiMessage => ({ id, role: "user", content: `Readable history ${id}\n${"A stable message with visible text. ".repeat(10)}`,
@@ -85,16 +85,25 @@ globalThis.transcriptPriorityNavigationProbe = async () => {
   try {
     await reset();
     move(40);
-    check(calls === 1 && scroller().style.overflowY === "hidden", "hard edge must start one locked page");
+    check(calls === 1 && scroller().style.overflowY !== "hidden", "hard edge must start one nonblocking page");
     const held = snapshot();
     const wheel = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -120 });
     scroller().dispatchEvent(wheel);
-    check(wheel.defaultPrevented, "hard-edge input was not held");
+    check(!wheel.defaultPrevented, "hard-edge input was blocked");
     scroller().dispatchEvent(new Event("scroll", { bubbles: true }));
     check(calls === 1, "two events duplicated a pending read");
     await finishPage(true);
     check(Math.abs(offset(held.messageId!) - held.offset) <= 2, "prepend/lazy layout moved the reading row");
-    checks.push("hard-edge single flight, input hold and lazy-layout message anchoring");
+    const heightBefore = scroller().scrollHeight;
+    scroller().querySelector<HTMLElement>('[data-message-id="older-0"]')!.style.height = "540px";
+    const below = scroller().querySelector<HTMLElement>('[data-message-id="row-39"]')!;
+    below.style.height = "0px";
+    below.style.padding = "0px";
+    below.style.overflow = "hidden";
+    await frame(); await frame();
+    check(Math.abs(scroller().scrollHeight - heightBefore) <= 2, "opposing resize fixture changed total height");
+    check(Math.abs(offset(held.messageId!) - held.offset) <= 2, "settled reading anchor lost opposing row resizes");
+    checks.push("nonblocking hard-edge single flight and persistent pre-paint anchors after opposing resizes");
 
     await reset(); move(1200);
     check(calls === 1 && scroller().style.overflowY !== "hidden", "ahead load blocked input or did not start");
@@ -114,13 +123,14 @@ globalThis.transcriptPriorityNavigationProbe = async () => {
 
     await reset(); move(40);
     check(release, "empty page request did not start");
+    await until(() => control.loadingOlder, "empty page pending state was not rendered");
     release();
     await until(() => !control.loadingOlder && scroller().style.overflowY !== "hidden", "empty page kept input locked");
     scroller().dispatchEvent(new Event("scroll", { bubbles: true }));
     await frame(); await frame();
     check(calls === 1, "empty page automatically retried at an unchanged boundary");
     move(30);
-    check(Number(calls) === 2, "new reader input did not permit an empty-page retry");
+    check(Number(calls) === 2, `new reader input did not permit an empty-page retry: calls=${calls},loading=${control.loadingOlder},top=${scroller().scrollTop}`);
     release();
     await until(() => !control.loadingOlder, "retry did not settle");
     checks.push("empty pages stop automatic retries and new input permits retry");
