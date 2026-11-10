@@ -6,6 +6,7 @@ import {
   MAX_SUBAGENT_DEFINITIONS,
   MAX_SUBAGENT_MAX_TOKENS,
   SUBAGENT_ASSIGNABLE_TOOLS,
+  STEWARD_ONLY_TOOLS,
   SUBAGENT_INHERIT_DENY_TOOLS,
   mergeSubagentDefinitions,
   normalizeSubagentName,
@@ -580,29 +581,57 @@ describe("session messaging stays out of delegates", () => {
     expect(parent).toEqual(["Read", "Grep", ...messaging]);
   });
 
-  it("does not hand a delegate a session-messaging tool it names explicitly", () => {
-    // A document cannot declare one (see the parser test below), but the
-    // resolve step is the gate a delegate's tools pass through, so a definition
-    // built in code must not smuggle one in either.
+  it("grants a session-messaging tool only to a definition that names it", () => {
+    // The steward is the one delegate whose job is handing work out, so the
+    // resolve step honours those names — but only as an explicit declaration.
+    // A document cannot declare one either (see the parser test below), so the
+    // steward definition is the only definition in the product that does.
+    expect(resolveSubagentToolNames({ tools: ["SessionSend", "Read"] }, parent)).toEqual([
+      "SessionSend",
+      "Read",
+    ]);
+    // Listing one is what opts in; inheriting is not a way to acquire it.
     expect(
-      resolveSubagentToolNames({ tools: ["SessionSend", "Read"] }, parent),
-    ).toEqual(["Read"]);
+      resolveSubagentToolNames({ tools: ["Read"], inheritTools: true }, parent),
+    ).not.toContain("SessionSend");
     expect(
       resolveSubagentToolNames(
         { tools: ["SessionSend", "Read"], inheritTools: true },
         parent,
       ),
-    ).not.toContain("SessionSend");
+    ).toContain("SessionSend");
   });
 
-  it("drops an explicitly declared session-messaging tool at parse time", () => {
-    const result = parse(
-      "---\ndescription: Messaging delegate.\ntools: SessionSend, Read\n---\nSend it.",
+  it("never inherits a steward-only tool the definition did not name", () => {
+    for (const name of STEWARD_ONLY_TOOLS) {
+      const inherited = resolveSubagentToolNames(
+        { tools: ["Read"], inheritTools: true },
+        ["Read", ...STEWARD_ONLY_TOOLS],
+      );
+      expect(inherited).not.toContain(name);
+      // A definition that names it gets it, and nothing else from the group.
+      expect(resolveSubagentToolNames({ tools: [name] }, parent)).toEqual([name]);
+    }
+  });
+
+  it("keeps a declared session-messaging tool for the steward and drops anything else", () => {
+    // Declaring the name is what makes a definition a steward, so the parser
+    // keeps it — and keeps nothing it did not declare.
+    const steward = parse(
+      "---\ndescription: Steward.\ntools: SessionList, SessionSend, SessionResult, SessionCreate, TaskCard\n---\nDispatch.",
     );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.definition.tools).toEqual(["Read"]);
-    expect(result.warnings).toEqual(['ignoring unknown tool "SessionSend"']);
+    expect(steward.ok).toBe(true);
+    if (!steward.ok) return;
+    expect(steward.definition.tools).toEqual([...STEWARD_ONLY_TOOLS]);
+    expect(steward.warnings).toEqual([]);
+
+    // An unknown name is still dropped with a warning, so a definition cannot
+    // invent a capability by misspelling one.
+    const typo = parse("---\ndescription: Messaging.\ntools: SessionSnd, Read\n---\nSend it.");
+    expect(typo.ok).toBe(true);
+    if (!typo.ok) return;
+    expect(typo.definition.tools).toEqual(["Read"]);
+    expect(typo.warnings).toEqual(['ignoring unknown tool "SessionSnd"']);
   });
 });
 

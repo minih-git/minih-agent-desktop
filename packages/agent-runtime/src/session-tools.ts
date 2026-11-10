@@ -53,6 +53,40 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
         description: "Send this session one durable completion notice when the target turn settles. Defaults to true.",
       }),
     ),
+    mandate: Type.Optional(
+      Type.Object(
+        {
+          goal: Type.String({ minLength: 1, maxLength: 2_048 }),
+          criteria: Type.Array(
+            Type.Object({
+              id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              text: Type.String({ minLength: 1, maxLength: 500 }),
+            }),
+            { minItems: 1, maxItems: 12 },
+          ),
+          boundaries: Type.Optional(Type.Array(Type.String({ maxLength: 300 }), { maxItems: 12 })),
+          repo: Type.Optional(
+            Type.Object({
+              origin: Type.String({ minLength: 1, maxLength: 512 }),
+              ref: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+            }),
+          ),
+          permissionMode: Type.Union([
+            Type.Literal("auto"),
+            Type.Literal("accept-edits"),
+            Type.Literal("ask"),
+          ]),
+          mustAsk: Type.Optional(Type.Array(Type.String({ maxLength: 32 }))),
+          risk: Type.Optional(
+            Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
+          ),
+        },
+        {
+          description:
+            "The confirmed task card, frozen with the delivery. Only a steward sends one: it is the authorization of this exact task and cannot be changed afterwards.",
+        },
+      ),
+    ),
   },
   SessionCreate: {
     title: Type.String({
@@ -72,6 +106,8 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
 export const sessionToolDescriptions: Record<string, string> = {
   SessionList:
     "List the other Agent sessions that can receive a delivery, optionally filtered by a title substring. Use it to turn a session name the user said into a real Session ID, and to confirm the target before sending. Titles are not unique: when several sessions match, ask the user which one instead of guessing. Only Agent-mode sessions appear.",
+  TaskCard:
+    "Propose, revise, confirm, or drop one task card. A card is what the person confirms before work is dispatched: goal, acceptance criteria, boundaries, repository, permission mode, and the actions that must come back to them. Call it with `action: \"propose\"` to show a card, `\"revise\"` to change a proposed one before anyone confirms it, `\"confirm\"` only when the person has actually said yes, and `\"drop\"` to withdraw one. A card asks for permission and never grants it: `permissionMode` is required, `inherit` is refused, and deploy/delete/spend are always added to `mustAsk`. Confirming freezes the card; widening the task afterwards is a new card, never an edit. Pass the confirmed `mandate` to SessionSend so the authorization and the delivery are one record.",
   SessionSend:
     "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. Choose `delivery: \"now\"` when the target must act on it inside its current turn instead of after that turn ends; the default queues it. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session: use SessionCreate first when no session exists yet. It cannot cancel another sender's delivery either.",
   SessionResult:

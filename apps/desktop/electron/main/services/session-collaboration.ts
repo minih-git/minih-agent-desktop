@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import os from "node:os";
 import type {
   AgentStatus,
   AppSettings,
@@ -6,7 +7,13 @@ import type {
   SessionCollaborationMessage,
   SessionCollaborationSummary,
 } from "@minih-agent/shared";
-import { imageGenerationBindings, isImageGenerationModel, modelWireIdsEqual } from "@minih-agent/shared";
+import {
+  decodeMandate,
+  encodeMandate,
+  imageGenerationBindings,
+  isImageGenerationModel,
+  modelWireIdsEqual,
+} from "@minih-agent/shared";
 import { DESKTOP_PRINCIPAL, type AgentHostBridge } from "../agent-host-bridge";
 import { listReadyPluginModels, parsePluginModelKey } from "../plugin-agent-complete";
 import type { McpControlInvokeInput } from "../mcp-control";
@@ -44,6 +51,14 @@ export type SessionCollaborationDependencies = {
   isQuitting: () => boolean;
   onChanged: () => void;
   log: (message: string, data: Record<string, unknown>) => void;
+  /**
+   * This machine's stable identity, stamped into a task card's `requestedBy`.
+   *
+   * The Mandate records who asked, not where the work runs, so this is display
+   * and audit data: it never authorizes anything and a wrong value cannot widen
+   * permission. It stays optional so a test double need not supply one.
+   */
+  hostId?: () => string;
 };
 
 function fail(code: string, message: string): never {
@@ -462,10 +477,22 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           const kind = input.args.kind === undefined ? "task" : messageKind(input.args.kind);
           const mode = deliveryMode(input.args.delivery);
           const sender: Sender = { ownerId: BUILTIN_SESSION_OWNER, sourceSessionId, sourceTurnId };
+          // A confirmed task card travels with the delivery: the host writes it
+          // in the same row, so an authorized delivery is never briefly an
+          // unauthorized one (ADR bot-sessions-and-steward §3).
+          let mandate: string | undefined;
+          if (input.args.mandate !== undefined) {
+            const decoded = decodeMandate(input.args.mandate);
+            if (!decoded.ok) {
+              fail("INVALID_ARGUMENT", `The mandate is not a valid task card: ${decoded.reason}`);
+            }
+            mandate = encodeMandate(decoded.mandate);
+          }
           const response = await host.call<{ message: SessionCollaborationMessage }>("session.collaboration.send", {
             ...senderFields(sender), content, kind,
             idempotencyKey: text(input.args, "idempotencyKey", false) ?? randomUUID(),
             ...(typeof notify === "boolean" ? { notifyOnCompletion: notify } : {}),
+            ...(mandate ? { mandate } : {}),
             sessionId: text(input.args, "sessionId"),
           });
           return dispatch(response.message, input.signal, mode);
@@ -547,6 +574,12 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
       deps.onChanged();
     },
     drain,
+    /**
+     * Identity a confirmed card is stamped with. A build without a configured
+     * host identity falls back to the machine name, which is honest audit data
+     * and never an authorization.
+     */
+    taskCardHostId: (): string => deps.hostId?.() ?? os.hostname(),
   };
 }
 

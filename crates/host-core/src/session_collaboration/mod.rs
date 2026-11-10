@@ -77,6 +77,21 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
     if pending >= 8 {
         return Err(anyhow!("AGENT_BUSY: target session inbox is full"));
     }
+    // The mandate travels with the delivery, never as a second call: a card a
+    // person confirmed is the authorization of this exact task, so a delivery
+    // that arrives authorized and one that is authorized afterwards must not be
+    // two different states of the ledger (ADR bot-sessions-and-steward §3).
+    let mandate_json = match input.get("mandate") {
+        None | Some(Value::Null) => None,
+        Some(value) => {
+            let encoded = match value {
+                Value::String(raw) => raw.clone(),
+                other => other.to_string(),
+            };
+            progress::validate_mandate(&encoded)?;
+            Some(encoded)
+        }
+    };
     let at = ms_to_ts(now_ms());
     let message = Message {
         id: Uuid::new_v4().to_string(),
@@ -101,7 +116,7 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
             input.get("sourceTurnId").and_then(Value::as_str),
         )?,
         permission_ceiling,
-        mandate_json: None,
+        mandate_json,
         stage: None,
         report_seq: 0,
     };

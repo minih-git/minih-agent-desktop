@@ -107,3 +107,5 @@ export * from "./racp-account-devices.js";
 export * from "./racp-pairing-ticket.js";
 export * from "./learned-memory.js";
 export * from "./bot-session.js";
+export * from "./bot-stage.js";
+export * from "./task-card.js";

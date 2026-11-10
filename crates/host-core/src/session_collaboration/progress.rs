@@ -224,6 +224,67 @@ mod tests {
         .to_string()
     }
 
+    /// The card travels *with* the delivery: one insert, one transaction, so an
+    /// authorized delivery is never briefly an unauthorized one.
+    #[test]
+    fn a_delivery_can_carry_its_mandate_from_the_start() {
+        let db = database();
+        let sender = session(&db, "Steward");
+        let worker = session(&db, "小爪");
+        let message = super::super::send_record(
+            &db,
+            &json!({
+                "sourceSessionId": sender,
+                "pluginId": "builtin:session-messaging",
+                "content": "Fix the login timeout",
+                "idempotencyKey": "carried",
+                "notifyOnCompletion": false,
+                "mandate": card("task-7"),
+            }),
+            &worker,
+            "task",
+        )
+        .unwrap();
+        assert!(message
+            .mandate_json
+            .as_deref()
+            .is_some_and(|raw| raw.contains("task-7")));
+        // It arrives confirmed, so a second attach is a conflict, not an edit.
+        let error = set_mandate(&db, &message.id, &card("task-8")).unwrap_err();
+        assert!(error.to_string().contains("CONFLICT"));
+    }
+
+    #[test]
+    fn a_delivery_refuses_an_invalid_carried_mandate() {
+        let db = database();
+        let sender = session(&db, "Steward");
+        let worker = session(&db, "小爪");
+        let error = super::super::send_record(
+            &db,
+            &json!({
+                "sourceSessionId": sender,
+                "pluginId": "builtin:session-messaging",
+                "content": "Do it",
+                "idempotencyKey": "bad",
+                "mandate": {"version": 1, "permissionMode": "inherit"},
+            }),
+            &worker,
+            "task",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("INVALID_ARGUMENT"));
+        // Nothing was written: a refused card cannot leave a half-authorized row.
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM session_collaboration_messages",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
     #[test]
     fn a_mandate_is_attached_once_and_never_rewritten() {
         let db = database();

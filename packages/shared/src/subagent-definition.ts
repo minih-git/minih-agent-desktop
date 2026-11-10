@@ -141,6 +141,24 @@ export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
 ];
 
 /**
+ * Tools the steward is the only delegate allowed to hold.
+ *
+ * Session messaging is denied to every delegate because a delegate has no user
+ * to confirm an ambiguous target with (ADR builtin-session-messaging §4). A
+ * steward is the deliberate exception: dispatching work *is* its job, and it
+ * holds no tool that changes the workspace, so handing work out is the only
+ * thing it can do. The exception is opt-in by name — never by `tools: inherit`
+ * — so a definition that merely claims to be a steward cannot widen itself.
+ */
+export const STEWARD_ONLY_TOOLS: readonly string[] = [
+  "SessionList",
+  "SessionSend",
+  "SessionResult",
+  "SessionCreate",
+  "TaskCard",
+];
+
+/**
  * Resolve the tool-name set a delegate should receive at spawn time.
  *
  * - Without `inheritTools`, this is the declared list only (today's behavior).
@@ -156,7 +174,11 @@ export function resolveSubagentToolNames(
   definition: Pick<SubagentDefinition, "tools" | "inheritTools">,
   parentToolNames: readonly string[],
 ): string[] {
-  const deny = new Set(SUBAGENT_INHERIT_DENY_TOOLS);
+  // A defined name that is stolen from the deny list is only honoured when it
+  // is one of the steward's own tools; everything else stays denied.
+  const deny = new Set(
+    SUBAGENT_INHERIT_DENY_TOOLS.filter((name) => !STEWARD_ONLY_TOOLS.includes(name)),
+  );
   const declared = definition.tools.filter(
     (name) => name !== SUBAGENT_INHERIT_TOKEN && !deny.has(name),
   );
@@ -164,6 +186,9 @@ export function resolveSubagentToolNames(
   const resolved: string[] = [];
   for (const name of [...parentToolNames, ...declared]) {
     if (deny.has(name)) continue;
+    // Inheritance never carries a steward-only tool: those must be listed by
+    // the definition itself, so "inherit everything" cannot produce a steward.
+    if (STEWARD_ONLY_TOOLS.includes(name) && !declared.includes(name)) continue;
     if (resolved.includes(name)) continue;
     resolved.push(name);
   }
@@ -420,7 +445,9 @@ export function parseSubagentDefinition(
         inheritTools = true;
         continue;
       }
-      if (isSubagentAssignableTool(tool)) {
+      // A steward-only name is accepted exactly as written: it is what makes a
+      // definition the steward, and it cannot arrive through `tools: inherit`.
+      if (isSubagentAssignableTool(tool) || STEWARD_ONLY_TOOLS.includes(tool)) {
         if (!accepted.includes(tool)) accepted.push(tool);
       } else {
         warnings.push(`ignoring unknown tool "${tool}"`);
