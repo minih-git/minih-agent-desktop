@@ -303,3 +303,15 @@ state.
 8. **A restart keeps the mandate and the stage.** Both are durable columns on
    the ledger row, so boot recovery interrupts work exactly as before and never
    loses the record of what was authorized.
+9. **What is enforced today, and what is not.** The list below names the gap
+   explicitly so no reader assumes a rule is live because it is written down;
+   the ADR's "Enforcement status" section is the authority for it.
+   - A card's `permissionMode` narrows the delivery: the ledger ceiling is the
+     narrower of the sender's mode and the card's, and a target session whose
+     mode is wider than that is refused rather than silently downgraded.
+   - `mustAsk` is recorded, not enforced: no tool call is gated by it yet.
+     Approval by action type is a later change.
+   - `observe` has no runtime gate yet because no bot session can receive a
+     delivery before the employee UI exists.
+   - Confirmation is a model tool call that must quote the person's own words;
+     a confirmation produced by an actual person's click is a later change.

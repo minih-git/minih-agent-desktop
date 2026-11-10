@@ -66,17 +66,6 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
             "PERMISSION_DENIED: session communication requires Agent mode"
         ));
     }
-    let permission_ceiling = permissions::effective_mode(db, source)?;
-    permissions::check_target(db, target, &permission_ceiling)?;
-    let pending: i64 = db.conn().query_row(
-        "SELECT COUNT(*) FROM session_collaboration_messages
-        WHERE target_session_id=?1 AND status='queued'",
-        params![target],
-        |row| row.get(0),
-    )?;
-    if pending >= 8 {
-        return Err(anyhow!("AGENT_BUSY: target session inbox is full"));
-    }
     // The mandate travels with the delivery, never as a second call: a card a
     // person confirmed is the authorization of this exact task, so a delivery
     // that arrives authorized and one that is authorized afterwards must not be
@@ -92,6 +81,28 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
             Some(encoded)
         }
     };
+    // A confirmed card is a ceiling of its own: the delivery may only be as
+    // permissive as the *narrower* of what the sender may grant and what the
+    // person confirmed. Without this, a `ask` card would dispatch under the
+    // steward's `auto` and the person's choice would be silently ignored.
+    let sender_ceiling = permissions::effective_mode(db, source)?;
+    let permission_ceiling = match mandate_json.as_deref() {
+        Some(encoded) => permissions::narrower(
+            &sender_ceiling,
+            &progress::mandate_permission_mode(encoded)?,
+        ),
+        None => sender_ceiling,
+    };
+    permissions::check_target(db, target, &permission_ceiling)?;
+    let pending: i64 = db.conn().query_row(
+        "SELECT COUNT(*) FROM session_collaboration_messages
+        WHERE target_session_id=?1 AND status='queued'",
+        params![target],
+        |row| row.get(0),
+    )?;
+    if pending >= 8 {
+        return Err(anyhow!("AGENT_BUSY: target session inbox is full"));
+    }
     let at = ms_to_ts(now_ms());
     let message = Message {
         id: Uuid::new_v4().to_string(),

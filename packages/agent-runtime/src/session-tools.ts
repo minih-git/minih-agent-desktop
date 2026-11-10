@@ -95,6 +95,64 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
       description: "Short title for the new session, as it will appear in the session list.",
     }),
   },
+  // The steward's task card. Declared here so it follows the same lifecycle as
+  // the session tools: Agent mode only, on demand through ToolSearch, and
+  // refused in a Plan or Goal turn (ADR bot-sessions-and-steward §2).
+  TaskCard: {
+    action: Type.Union(
+      [Type.Literal("propose"), Type.Literal("revise"), Type.Literal("confirm"), Type.Literal("drop")],
+      {
+        description:
+          "propose shows a new card; revise changes a card nobody has confirmed; confirm freezes the card the person approved; drop withdraws a proposal.",
+      },
+    ),
+    draftId: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 128,
+        description: "The card handle returned by propose. Required for revise, confirm and drop.",
+      }),
+    ),
+    draft: Type.Optional(
+      Type.Object(
+        {
+          goal: Type.String({ minLength: 1, maxLength: 2_048 }),
+          criteria: Type.Array(
+            Type.Object({
+              id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              text: Type.String({ minLength: 1, maxLength: 500 }),
+            }),
+            { minItems: 1, maxItems: 12 },
+          ),
+          boundaries: Type.Optional(Type.Array(Type.String({ maxLength: 300 }), { maxItems: 12 })),
+          repo: Type.Optional(
+            Type.Object({
+              origin: Type.String({ minLength: 1, maxLength: 512 }),
+              ref: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+            }),
+          ),
+          permissionMode: Type.Union([
+            Type.Literal("auto"),
+            Type.Literal("accept-edits"),
+            Type.Literal("ask"),
+          ]),
+          mustAsk: Type.Optional(Type.Array(Type.String({ maxLength: 32 }))),
+          risk: Type.Optional(
+            Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
+          ),
+        },
+        { description: "The card to propose or revise. Required for propose and revise." },
+      ),
+    ),
+    sourceUtterance: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 4_096,
+        description:
+          "The person's own words for this request. Required for propose and confirm: it is what makes the frozen card reviewable.",
+      }),
+    ),
+  },
   SessionResult: {
     sessionId,
     messageId: Type.Optional(
