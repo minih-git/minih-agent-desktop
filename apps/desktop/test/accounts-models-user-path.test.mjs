@@ -22,7 +22,7 @@ import { createRequire } from "node:module";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
+import { repositoryRoot, resolveElectronBinary, scaledTimeout } from "../../../scripts/e2e/boot.mjs";
 import { loadStyles } from "./helpers/styles.mjs";
 
 const root = repositoryRoot();
@@ -701,7 +701,7 @@ window.accountsProbe = async ({ width, height }) => {
 `;
 
 test("Accounts and models pages: token-only connect, then the catalog is the models page", {
-  timeout: 90_000,
+  timeout: scaledTimeout(90_000),
   skip:
     process.platform === "linux" && !process.env.DISPLAY
       ? "Isolated Electron UI test requires a display"
@@ -772,7 +772,7 @@ app.whenReady().then(async () => {
       stream.setEncoding("utf8");
       stream.on("data", (chunk) => { output += chunk; });
     }
-    const timer = setTimeout(() => child.kill("SIGKILL"), 75_000);
+    const timer = setTimeout(() => child.kill("SIGKILL"), scaledTimeout(75_000));
     let code;
     try {
       code = await new Promise((resolve, reject) => {

@@ -60,6 +60,11 @@ jobs:
       - name: Build workspace packages
         run: pnpm build:js
 
+      - name: Build Desktop bundle
+        # The settings interaction test loads the real renderer's index.html and
+        # stylesheet, so the renderer output has to exist before the unit tests.
+        run: pnpm --filter @minih-agent/desktop build
+
       - name: Typecheck Desktop
         # Workspace dependency builds already run tsc; Vite does not check the app.
         run: pnpm --filter @minih-agent/desktop typecheck
@@ -82,8 +87,12 @@ jobs:
         run: node scripts/check-text-contrast.mjs && node --test scripts/check-text-contrast.test.mjs
 
       # `xvfb-run` gives the Electron interaction tests their DISPLAY; every other
-      # package's tests ignore it.
+      # package's tests ignore it. `MINIH_E2E_TIMEOUT_SCALE` widens their kill and
+      # `node:test` budgets for a two-core runner without a GPU — timeouts only,
+      # never an assertion (see `scripts/e2e/boot.mjs`).
       - name: Unit tests
+        env:
+          MINIH_E2E_TIMEOUT_SCALE: "3"
         run: xvfb-run --auto-servernum pnpm -r --if-present test
 
   rust:

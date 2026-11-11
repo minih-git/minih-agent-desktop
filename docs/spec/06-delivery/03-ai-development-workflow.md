@@ -354,6 +354,16 @@ Every change follows this sequence. Steps may be iterated if the implementation 
   window (`apps/desktop/test/*-user-path.test.mjs`) execute there instead of
   skipping for a missing display. They still skip on a machine without one;
   that skip is an environment limit, not a pass.
+- Those tests carry their own Electron kill budget and `node:test` timeout. `CI`
+  sets `MINIH_E2E_TIMEOUT_SCALE=3` so every budget grows by one factor on a
+  runner that is several times slower than a developer machine; it scales
+  timeouts only and never an assertion, and an unset variable keeps the original
+  numbers. A budget that still expires is a real failure, not something to widen
+  again without evidence.
+- A user-path test may skip in `CI` only with a named cause and a linked issue in
+  its skip text (for example a timing race that issue is tracking). Skipping to
+  make the gate green, or skipping without an issue, is not acceptable: the skip
+  is a recorded gap, not a pass.
 
 - Required E2E jobs that the hosting platform starts before a remote merge do
   not replace the task-candidate gate. Observe and report their result; after

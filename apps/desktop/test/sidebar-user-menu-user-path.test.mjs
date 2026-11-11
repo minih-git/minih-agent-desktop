@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
+import { repositoryRoot, resolveElectronBinary, scaledTimeout } from "../../../scripts/e2e/boot.mjs";
 import { loadStyles } from "./helpers/styles.mjs";
 
 const root = repositoryRoot();
@@ -190,7 +190,7 @@ window.userMenuProbe = async ({ theme, locale }) => {
 `;
 
 test("Sidebar account menu: quotas, keyboard, navigation, stale replies and empty profile", {
-  timeout: 90_000,
+  timeout: scaledTimeout(90_000),
   skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false,
 }, async () => {
   const temp = await mkdtemp(join(root, "apps/desktop/.user-menu-ui-"));
@@ -233,7 +233,7 @@ app.whenReady().then(async () => {
     const child = spawn(resolveElectronBinary(root).electronBinary, [join(temp, "main.cjs")], { env, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     for (const stream of [child.stdout, child.stderr]) { stream.setEncoding("utf8"); stream.on("data", chunk => { output += chunk; }); }
-    const timer = setTimeout(() => child.kill("SIGKILL"), 75_000);
+    const timer = setTimeout(() => child.kill("SIGKILL"), scaledTimeout(75_000));
     let code;
     try { code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("close", resolve); }); }
     finally { clearTimeout(timer); }
