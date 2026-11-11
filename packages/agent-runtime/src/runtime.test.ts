@@ -188,6 +188,7 @@ function createRuntime(
     modelSystemPrompt: string;
     projectInstructions: import("./project-instructions.js").ProjectInstructions;
     projectMemory: string;
+    learnedMemoryIndex: import("@minih-agent/shared").LearnedMemoryIndex;
     pluginTools: PluginToolDef[];
     subagents: SubagentDefinition[];
     subagentProviders: Record<string, RuntimeProviderConfig>;
@@ -228,6 +229,7 @@ function createRuntime(
     subagentModelKeys: overrides.subagentModelKeys,
     projectInstructions: overrides.projectInstructions,
     projectMemory: overrides.projectMemory,
+    learnedMemoryIndex: overrides.learnedMemoryIndex,
     pluginSkills: overrides.pluginSkills,
     ...(overrides.botPersona ? { botPersona: overrides.botPersona } : {}),
     trustedExtensions: overrides.trustedExtensions,
@@ -13693,6 +13695,50 @@ describe("DesktopAgentRuntime keep-warm (ADR 0339)", () => {
     }
   });
 
+  it("replays the latest completed turn after idle rebuild with a changed memory index", async () => {
+    const ledger = new KeepWarmLedger();
+    const first = createRuntime({ history: substantialHistory(), keepWarmLedger: ledger });
+    let recorded: unknown[] = [];
+    try {
+      await runTurn(first, first as unknown as Internals);
+      const before = ledger.get("session-1")!.fingerprint;
+      await runTurn(first, first as unknown as Internals, {
+        content: [{ type: "text", text: "Second completed answer." }],
+      });
+      recorded = prefixMessagesOf(first);
+      expect(ledger.get("session-1")!.fingerprint).not.toBe(before);
+    } finally {
+      await first.dispose();
+    }
+    const rebuilt = createRuntime({
+      history: substantialHistory(),
+      keepWarmLedger: ledger,
+      learnedMemoryIndex: {
+        entries: [{ id: "new-memory", kind: "fact", scopeKind: "user", content: "Added while idle", createdAt: NOW_MS, updatedAt: NOW_MS }],
+        omittedCount: 0,
+        bytes: 16,
+      },
+    });
+    const sent: unknown[][] = [];
+    (rebuilt as unknown as Internals).models.streamSimple = (
+      _model: unknown, context: { messages: unknown[] },
+    ) => {
+      sent.push(context.messages);
+      return messageStream({ ...assistantMessage({ content: [{ type: "text", text: "OK" }] }), usage: WARM_USAGE });
+    };
+    try {
+      await expect(rebuilt.keepWarm()).resolves.toMatchObject({ status: "warmed" });
+      await expect(rebuilt.keepWarm()).resolves.toMatchObject({ status: "warmed" });
+      for (const messages of sent) {
+        expect(firstDifference(recorded, messages.slice(0, -1))).toBeNull();
+        expect(messages.at(-1)).toMatchObject({ role: "user", content: KEEP_WARM_PROMPT });
+      }
+      expect(sent).toHaveLength(2);
+    } finally {
+      await rebuilt.dispose();
+    }
+  });
+
   it("refuses when the system prompt changed after the turn", async () => {
     // The prompt lives in the transcript's system `sections`, not in `content`.
     // A digest that missed it would let a warm request rebuild a cache entry the
@@ -13754,10 +13800,9 @@ describe("DesktopAgentRuntime keep-warm (ADR 0339)", () => {
     // fix it was stored as a bare string while a rebuild produced a text block
     // array — one more difference between the live transcript and a rebuild.
     //
-    // What a rebuild still cannot reproduce is the *position*: the user sends a
-    // steering message while a reply is streaming, so the host records it before
-    // that reply, while pi injects it after. The guard therefore refuses — which
-    // is the safe outcome, and is asserted below.
+    // A rebuild still cannot reproduce the *position*: the host records steering
+    // before the interrupted reply while pi injects it after. Keep-warm must
+    // replay the settled snapshot rather than reject this ordinary user path.
     const ledger = new KeepWarmLedger();
     const stored: UiMessage[] = [...substantialHistory()];
     const hostCall = vi.fn(async (method: string, params: unknown) => {
@@ -13878,11 +13923,19 @@ describe("DesktopAgentRuntime keep-warm (ADR 0339)", () => {
             ),
           ),
         );
-        // The position still differs, so the guard refuses instead of spending.
+        // History order differs, but warming must replay the settled snapshot.
+        const sent: unknown[][] = [];
+        (rebuilt as unknown as Internals).models.streamSimple = (
+          _model: unknown,
+          context: { messages: unknown[] },
+        ) => {
+          sent.push(context.messages);
+          return messageStream({ ...assistantMessage({ content: [{ type: "text", text: "OK" }] }), usage: WARM_USAGE });
+        };
         await expect(rebuilt.keepWarm({ now: Date.now() })).resolves.toMatchObject({
-          status: "skipped",
-          reason: "prefix_changed",
+          status: "warmed",
         });
+        expect(firstDifference(recorded, sent[0]!.slice(0, -1))).toBeNull();
       } finally {
         await rebuilt.dispose();
       }
@@ -14014,6 +14067,8 @@ describe("DesktopAgentRuntime keep-warm (ADR 0339)", () => {
       keepWarmLedger: ledger,
     });
     const internals = runtime as unknown as Internals;
+    await runTurn(runtime, internals);
+    expect(ledger.context("session-1")).toBeDefined();
     internals.models.streamSimple = () =>
       messageStream({
         ...assistantMessage({ content: [], stopReason: "error" }),

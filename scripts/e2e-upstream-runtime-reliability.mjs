@@ -33,7 +33,9 @@ function reply(res, body, calls) {
   for (const [data, finish] of [[delta, null], [{}, calls ? "tool_calls" : "stop"]]) {
     res.write(`data: ${JSON.stringify({ id: `fixture-${++sequence}`, object: "chat.completion.chunk",
       created: 1, model: body.model, choices: [{ index: 0, delta: data, finish_reason: finish }],
-      ...(finish ? { usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } } : {}),
+      ...(finish ? { usage: body.model === "keepwarm-model"
+        ? { prompt_tokens: 48_000, completion_tokens: 5, total_tokens: 48_005, prompt_tokens_details: { cached_tokens: 47_000 } }
+        : { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } } : {}),
     })}\n\n`);
   }
   res.end("data: [DONE]\n\n");
@@ -196,6 +198,26 @@ try {
   assert.ok(worker.messages.some((message) => typeof message.content === "string" && message.content.includes("[resource link] fixture-large: file:///fixture-large")), "resource link survives resume");
   assert.ok(!JSON.stringify(worker.messages).includes("[no tool result recorded]"));
   console.log("PASS Task(resume) real delegate request retains Host image and MCP resources");
+
+  histories.set("keepwarm", [{ id: "warm-history", role: "user", content: "long fixture context ".repeat(6000), createdAt }]);
+  const warmProvider = model("keepwarm-model");
+  await prompt("keepwarm", warmProvider, { compactionSettings: { enabled: false } });
+  await prompt("keepwarm", warmProvider, { compactionSettings: { enabled: false } });
+  const warmParams = { sessionId: "keepwarm", mode: "agent", provider: warmProvider, thinkingLevel: "off", commandShell };
+  const beforeWarmEvents = events.length;
+  assert.equal((await rpc("agent.keepWarm", { ...warmParams, modelSystemPrompt: "temporary changed instructions" })).reason, "prefix_changed");
+  const warmResult = await rpc("agent.keepWarm", { ...warmParams, learnedMemoryIndex: {
+    entries: [{ id: "later", kind: "fact", scopeKind: "user", content: "MEMORY_ADDED_WHILE_IDLE", createdAt: Date.now(), updatedAt: Date.now() }],
+    omittedCount: 0, bytes: 30,
+  } });
+  assert.equal(warmResult.status, "warmed");
+  const warmedRequest = requests.filter((entry) => entry.model === "keepwarm-model").at(-1);
+  assert.match(JSON.stringify(warmedRequest.messages.at(-1)), /Reply with OK/);
+  assert.equal(warmedRequest.messages.filter((entry) => entry.role === "assistant").length, 2,
+    "replay retains both completed turns even when rebuilt history lacks them");
+  assert.ok(!JSON.stringify(warmedRequest).includes("MEMORY_ADDED_WHILE_IDLE"));
+  assert.equal(events.length, beforeWarmEvents, "warm request emits no conversation events");
+  console.log("PASS keep-warm replays latest settled context across sidecar runtime rebuild without importing later memory");
 
   let identity = await prompt("diagnostics", model("diagnostics-model"));
   const same = await prompt("diagnostics", model("diagnostics-model"));

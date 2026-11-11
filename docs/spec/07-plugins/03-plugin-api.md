@@ -1634,6 +1634,15 @@ retries nor queues, and a real turn aborts a request in flight. The spend is
 recorded in `keep_warm_usage` and counted into the usage history, never into a
 turn.
 
+Keep-warm replays the latest successfully settled context from a compressed,
+in-process snapshot, including its original message order and learned-memory
+sections. Idle runtime reclamation and later learned-memory writes do not by
+themselves stop warming. A new real prompt invalidates the snapshot until it
+finishes successfully. Model, thinking, mode, provider, tools, skills and
+instruction configuration changes still refuse warming. Snapshots expire with
+the provider cache lifetime, are released on session disposal, and never survive
+an app/sidecar restart or create persisted conversation copies.
+
 ## 11. Embeddings (requires `embeddings.run`)
 
 `pi.embeddings.embed` turns text into vectors with one of the user's own

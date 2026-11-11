@@ -714,6 +714,7 @@ async function handle(method: string, params: any): Promise<unknown> {
  * where it is unit tested with a controlled clock.
  */
 async function sweepIdleRuntimes(now: number = Date.now()): Promise<string[]> {
+  keepWarmLedger.prune(now);
   const candidates = [...runtimes].map(([sessionId, runtime]) => {
     const status = runtime.getStatus();
     const busy =
