@@ -76,7 +76,13 @@ test("a background Bash call returns a backgroundTaskId and never a blocking std
 });
 
 test("background lifetime is detached but permission admission stays cancellable", () => {
-  assert.match(rpcSources, /cancellation_receiver = if matches!\(p\.tool_name\.as_str\(\), "Bash" \| "GenerateImages"\)[\s\S]*?register_bash_cancellation/);
+  // Background-task tools own no process, so their bounded wait uses the typed
+  // registry; Bash and image generation keep the process registry that can kill
+  // a tree.
+  assert.match(
+    rpcSources,
+    /cancellation_receiver = if background_task_tools::recognizes\(&p\.tool_name\)[\s\S]*?tool_cancellations\.register[\s\S]*?else if matches!\(p\.tool_name\.as_str\(\), "Bash" \| "GenerateImages"\)[\s\S]*?register_bash_cancellation/,
+  );
   assert.ok(rpcSources.includes('"Bash" | "GenerateImages"'));
   assert.doesNotMatch(rpcSources, /&& !p\.run_in_background/);
   assert.match(backgroundTasks, /spawn_background_task_detached/);

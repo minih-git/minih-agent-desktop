@@ -47,6 +47,9 @@
 | `Bash` | 高 | 执行命令 |
 | `asktool` | 低 | 询问一个或多个用户问题并将提交的答案作为工具输出返回 |
 | `TodoWrite` | 低 | 替换当前 Agent 会话清单；由主机校验并持久化完整有序快照 |
+| `BackgroundTaskList` | 低 | 列出本会话的后台 Bash 任务（id、command、state、elapsedMs、exitCode） |
+| `BackgroundTaskOutput` | 低 | 读取本会话的某个后台任务：state、exitCode、有界 stdout/stderr，可选 `waitSeconds` |
+| `BackgroundTaskStop` | 中 | 停止本会话的某个后台任务；幂等 |
 
 > 名称可以在实现过程中进行微调，但语义保持一致。
 
@@ -62,6 +65,9 @@ Plan 和 Goal 保留其 read/inspection 核心。`Skill` 有意不作延迟：`/
 - Agent 模式下的 `Glob` 和 `Grep`
 - `BrowserPreview`
 - `PluginCheck`、`PluginScaffold` 和 `PluginPack`
+- `BackgroundTaskList`、`BackgroundTaskOutput` 和 `BackgroundTaskStop`：一次带
+  `runInBackground: true` 的 `Bash` 成功调用会激活三者，启动进程的模型无需再
+  检索就能读取并停止它
 - 插件声明的代理工具
 
 这些工具出现在有界的 `# On-demand tools` 目录中，具有紧凑的结构
@@ -69,8 +75,9 @@ Plan 和 Goal 保留其 read/inspection 核心。`Skill` 有意不作延迟：`/
 能力查询；匹配的模式在下一个模型回合中可用。
 sidecar 在每个新用户提示开始时重置此延迟集，并从有效会话上下文中的
 成功证据重建：成功 `ToolSearch` 结果使用 canonical
-`details.addedToolNames`，成功的延迟工具结果使用其工具名。为兼容历史
-数据，也接受 `details.activated` 和顶层 `addedToolNames`。失败、中断或
+`details.addedToolNames`，任何自身激活了其他工具的成功结果也使用同一个
+标记（后台 `Bash` 调用激活后台任务工具时如此），成功的延迟工具结果使用其
+工具名。为兼容历史数据，也接受 `details.activated` 和顶层 `addedToolNames`。失败、中断或
 缺少结果的占位行以及助手/用户文本都会被忽略；恢复的名称必须仍在当前
 模式的延迟目录中。主机权限、workspace/scratch 遏制、超时和审核规则
 加载工具时不会改变。`ToolSearch` 本身从不执行工作区操作并且永远不会
@@ -350,7 +357,8 @@ worktree，项目只做快进，因此冲突留在 worktree 中。删除隔离�
 - 前台调用设置强制 60 秒超时；接受 1 秒至 21,600 秒覆盖（D329）
 - 超时返回 `TOOL_TIMEOUT`，错误消息包含实际 `timeoutMs` 预算，并建议延长预算或拆分命令
 - 分别流式传输 stdout 和 stderr，然后返回有界的最终输出
-- 截断大输出而不混合两个流
+- 截断大输出而不混合两个流；stdout 保留两端（开头几行说明跑了什么，结尾几行带失败摘要），
+  stderr 保留结尾
 - 没有交互式 TTY (MVP)
 - 以非零值退出的命令返回 `ok: false`、`isError: true` 和
   `errorCode: TOOL_FAILED`，同时保留其 `exitCode`、stdout 和 stderr
@@ -413,6 +421,30 @@ Host；shell 身份、持久会话模式、工作区隔离、审批与审计规�
 cwd、`PI_PORT`、`PI_PROJECT_ROOT` 与 `PI_WORKTREE_ROOT`。
 
 Host 对每个会话最多允许 10 个运行中任务、全局最多 64 个，两种准入错误分别报告，并保留 16 个已结束条目。会话存在性、两项上限和退出状态都在生命周期锁内、进程启动之前检查；被拒绝的命令没有任何进程副作用。stdout/stderr 各保留最多 256 KiB 并披露截断；退出前排空末尾输出。任务仅存于本次 Host 进程，重启不恢复、不重放，不改变 SQLite。删除单个会话、批量删除会话或移除项目，只向被删除会话的进程发信号，并且不在清理锁内等待排空/回收。归档和切换会话不会停止任务。普通前台 Bash 与远程后台执行的显式拒绝保持不变。
+
+模型用三个内置工具读取和停止自己的任务，三者都按需加载，并由后台 `Bash`
+成功调用激活（见 §2.1）：
+
+- `BackgroundTaskList` 只返回调用会话自己的任务——id、command、state、
+  elapsedMs、exitCode——以及其运行中任务数。
+- `BackgroundTaskOutput` 返回 state、exitCode 与有界 stdout/stderr。state、
+  exitCode 与两条流来自对任务自身输出单元的**一次**加锁读取，因此繁忙的
+  supervisor 只会延后回答而不会变成 `NOT_FOUND`，终态流也不会与 `running`
+  状态同时出现。两条流都保留**结尾**，预算沿用 `Bash` stderr 的预算
+  （96 KB / 4000 行），超限副本写入会话 scratch 目录中按任务和流固定的路径
+  （每次读取覆盖同一文件，轮询大日志只留一个文件），并以行首
+  `[truncated: …]` 标记说明；当环形缓冲本身丢弃过早期文本时 `truncated`
+  也为真。可选 `waitSeconds`（0–60）等待终态，任务结束即提前返回；上限远低于
+  `tools.execute` 预算，超时返回当前状态而不是错误，回合的停止会结束等待但
+  不影响进程。
+- `BackgroundTaskStop` 走与 Composer 相同的停止路径：supervisor 终止进程树并
+  记录 `stopped`。它幂等——第二次调用返回 `stopped: false` 和它看到的状态。
+
+三个工具都不接受会话 id：host-core 按调用会话解析每个 id，属于其他会话的 id
+与未知 id 的答案完全相同（`NOT_FOUND`），因此无法用来探测别的对话在跑什么。
+委托的工具使用父会话的 sessionId，所以它启动的后台任务登记在该会话下，由父级
+工具读取和停止，Composer 任务栏也能看到；但三个工具本身仍属于父代理（§10.2）。
+任务从不通知或唤醒模型：模型主动读取，用户在任务栏看到。
 
 Composer 把 Todo 与后台任务放在同一个按会话划分的 dock 中。折叠时页签仍可点达，选中页签即展开；新的运行中任务以徽标提示，不抢占用户已选中的页签。任务行保留本地化的输出与停止控件，并只匹配当前 `sessionId`；草稿页和远程会话的 Composer 没有本地任务 dock。注册表仍是全局的：过滤只是展示，不是授权边界。移除回执仅影响视图，不能隐藏仍在运行或仍在结算的任务。切换对话从不停止进程。仅轮询展开的输出，忽略过期会话/选择的响应，失败可重试。挂载和切会话不重播历史完成项；本视图观察到刚结束的任务短暂显示且可关闭。这不是交互式终端或持久服务管理器。参见
 [后台任务归属](/adr/background-bash-task-ownership) 与
@@ -535,11 +567,11 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 
 ## 10. 操作模式矩阵
 
-| 模式 | Read/Glob/Grep | BrowserPreview | Write/Edit | 重击 | 插件 |
-|---|---|---|---|---|---|
-| Agent | 允许 | 允许 | 许可政策 | 许可政策 | 注册风险政策 |
-| Plan | 允许 | 允许 | 否认 | Plan/`ask`：确认； `auto`：允许 | 仅 plan-safe 动作 |
-| Goal | 允许 | 允许 | 否认 | Plan/`ask`：确认； `auto`：允许 | 仅 plan-safe 动作 |
+| 模式 | Read/Glob/Grep | BrowserPreview | Write/Edit | 重击 | 插件 | 后台任务工具 |
+|---|---|---|---|---|---|---|
+| Agent | 允许 | 允许 | 许可政策 | 许可政策 | 注册风险政策 | List/Output 允许；Stop 走许可政策 |
+| Plan | 允许 | 允许 | 否认 | Plan/`ask`：确认； `auto`：允许 | 仅 plan-safe 动作 | List/Output 允许；Stop `ask`/`accept-edits`：确认； `auto`：允许 |
+| Goal | 允许 | 允许 | 否认 | Plan/`ask`：确认； `auto`：允许 | 仅 plan-safe 动作 | List/Output 允许；Stop `ask`/`accept-edits`：确认； `auto`：允许 |
 
 ### 注释
 - 权限 UI 之前，Plan 和 Goal 硬拒绝 Write/Edit 以及没有 `planSafeActions` 的插件工具；直接主机
@@ -548,6 +580,11 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
   Write/Edit/Bash 和注册的插件工具。
 - 当用户选择“自动”时，Plan 和 Goal Bash 可能会改变工作区或暂存状态；
   用户界面必须使这种权衡可见。
+- 后台进程比启动它的回合活得更久，而 Plan 和 Goal 允许 Bash，因此这些模式也能
+  启动一个。三个后台任务工具因而与 Bash 同规则：`BackgroundTaskList` 和
+  `BackgroundTaskOutput` 不改变任何东西，像反思读取一样直接放行；
+  `BackgroundTaskStop` 带注册的中等风险，和 Bash 一样走 `ask`/`accept-edits`
+  确认——启动了服务的回合必须能够结束它。
 - 仅针对活动会话记住每个 toolName 的允许会话
 - 会话授权遵循 `sessionId` 跨项目选项卡开关，并且永远不会
   由另一个会话或临时会话继承
@@ -584,14 +621,21 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 （含延迟的插件/MCP 工具）与可分配的额外工具取并集，再去掉 `Task` /
 `TaskWait` / `TaskList` / `TaskStop`、`EnterPlanMode` / `EnterGoalMode`、
 `TodoWrite`、`asktool`、`new_context`、`ContextUsage`、`ToolSearch`、学习记忆工具
-`SessionHistorySearch` / `MemorySearch` / `MemoryRemember`，以及会话消息工具
-`SessionList` / `SessionSend` / `SessionResult` / `SessionCreate`。内置定义不默认开启。`inherit`
+`SessionHistorySearch` / `MemorySearch` / `MemoryRemember`，会话消息工具
+`SessionList` / `SessionSend` / `SessionResult` / `SessionCreate`，以及后台任务工具
+`BackgroundTaskList` / `BackgroundTaskOutput` / `BackgroundTaskStop`。内置定义不默认开启。`inherit`
 写在 Markdown 和设置里；host-core 会保留该标记，因此只有 inherit 的文档
 仍能加载。插件工具、`Skill` 和 MCP 工具只通过这一 opt-in 到达委托，
 不能写进可分配白名单。
 
 该拒绝列表对两个方向都是关卡：同样这些名称也会从定义自身的 `tools` 列表中删除，
 因此显式写出某个名称不能授予 `inherit` 所拒绝的工具。
+
+读取和停止后台任务是父代理的职权，不是委托的。委托的工具使用父会话的
+sessionId，因此它用 `runInBackground` 启动的任务就登记在该会话下：父级的
+`BackgroundTaskList` / `BackgroundTaskOutput` / `BackgroundTaskStop` 读取并停止它，
+Composer 的任务栏也显示它。委托自己不能读写这些任务，原因与嵌套 `Task` 和模式
+切换一样留在父级。
 
 没有 `tools: inherit` 时，委托可用的工具来自其定义，而不是其会话：它
 无法因为父级拥有某个工具而获得该工具，会话也不能把修改权限借给只读
