@@ -1968,7 +1968,16 @@ async fn handle_request(
         "tools.remoteComplete" | "tools.workspaceExecute" | "tools.workspaceAbort" => {
             remote_tools::handle(state, method, params, tx).await
         }
-        method if method.starts_with("session.collaboration.") => {
+        // The collaboration surface keeps its own prefix, and the employee
+        // surface answers to `bot.*` / `taskCard.*`. All three are served by the
+        // same handler, so they must share one routing arm: a prefix the router
+        // does not forward falls through to `method not found`, which is exactly
+        // how `bot.list` broke in the running app.
+        method
+            if method.starts_with("session.collaboration.")
+                || method.starts_with("bot.")
+                || method.starts_with("taskCard.") =>
+        {
             let st = state.lock().await;
             crate::session_collaboration::handle(&st.db, method, &params)
                 .map_err(session_collaboration_rpc_err)
@@ -6120,6 +6129,111 @@ mod tests {
         );
     }
 
+    /// Every `bot.*` / `taskCard.*` method the desktop calls, spelled exactly
+    /// as the desktop sends it. Kept beside the routing test so a method that
+    /// never reaches `handle_request` fails here instead of in the running app.
+    ///
+    /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts` and
+    /// `apps/desktop/electron/main/services/session-collaboration.ts`.
+    const DESKTOP_BOT_METHODS: [&str; 12] = [
+        "bot.list",
+        "bot.create",
+        "bot.update",
+        "bot.dismiss",
+        "bot.seedDefaults",
+        "taskCard.list",
+        "taskCard.get",
+        "taskCard.propose",
+        "taskCard.revise",
+        "taskCard.drop",
+        "taskCard.autoStart",
+        "taskCard.confirm",
+    ];
+
+    /// The employee surface is reachable over the real RPC route, not only
+    /// through the domain modules behind it.
+    ///
+    /// The failure this covers: `bot.list` answered `method not found` in the
+    /// running app, because the top-level router forwarded only
+    /// `session.collaboration.*` while these methods carry a different prefix.
+    /// The domain tests called `bots::list` directly, so nothing covered the
+    /// name the desktop actually sends.
+    #[tokio::test]
+    async fn bot_surface_is_reachable_over_the_real_rpc_route() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = AppState::open(dir.path()).unwrap();
+        app.handshook = true;
+        let session =
+            sessions::create_session(&app.db, Some("Chat".into()), None, None, None, None).unwrap();
+        let state = Arc::new(Mutex::new(app));
+        let tx = mpsc::unbounded_channel().0;
+
+        let seeded = handle_request(state.clone(), "bot.seedDefaults", json!({}), tx.clone())
+            .await
+            .unwrap_or_else(|error| panic!("bot.seedDefaults must be routed: {error:?}"));
+        let created = seeded["created"]
+            .as_array()
+            .expect("seeding reports created");
+        assert!(
+            !created.is_empty(),
+            "seeding must create employees: {seeded}"
+        );
+
+        let listed = handle_request(state.clone(), "bot.list", json!({}), tx.clone())
+            .await
+            .unwrap_or_else(|error| panic!("bot.list must be routed: {error:?}"));
+        let bots = listed["bots"].as_array().expect("bot.list returns bots");
+        assert_eq!(
+            bots.len(),
+            created.len(),
+            "every seeded employee is listed back: {listed}"
+        );
+
+        // `taskCard.list` shares the same missing route. An empty session is a
+        // valid answer, so this asserts the lookup, not the payload shape.
+        let drafts = handle_request(
+            state.clone(),
+            "taskCard.list",
+            json!({ "sessionId": session.id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("taskCard.list must be routed: {error:?}"));
+        assert_eq!(drafts["drafts"], json!([]));
+    }
+
+    /// No desktop method may answer `method not found`.
+    ///
+    /// Arguments are deliberately empty: a routed method answers
+    /// `INVALID_ARGUMENT`, while an unrouted one answers the catch-all `NOT_FOUND`
+    /// with "method not found". That distinction is the assertion, so this test
+    /// stays true when a method's payload changes.
+    #[tokio::test]
+    async fn every_desktop_bot_method_is_routed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = AppState::open(dir.path()).unwrap();
+        app.handshook = true;
+        let session =
+            sessions::create_session(&app.db, Some("Chat".into()), None, None, None, None).unwrap();
+        let state = Arc::new(Mutex::new(app));
+        let tx = mpsc::unbounded_channel().0;
+
+        for method in DESKTOP_BOT_METHODS {
+            let params = match method {
+                "taskCard.list" => json!({ "sessionId": session.id }),
+                _ => json!({}),
+            };
+            let error = match handle_request(state.clone(), method, params, tx.clone()).await {
+                Ok(_) => continue,
+                Err(error) => error,
+            };
+            assert!(
+                !error.message.contains("method not found"),
+                "{method} is not routed to a handler: {}",
+                error.message
+            );
+        }
+    }
     /// The bot-session contract over the real RPC boundary: a delivery accepts
     /// one frozen card, a report moves the stage forward only, and an ordinary
     /// session stays an ordinary conversation.

@@ -73,7 +73,13 @@ export type VendorAuthResolver = (input: {
 // `provider.resolveAuth` is answered by the embedding host itself (never
 // forwarded to host-core) and only for a provider row bound to that same
 // session, so it cannot reach a credential the session was not launched with.
-const HOST_PROXY_ALLOWED = new Set([
+/**
+ * Exported so a test can hold the boundary: the employee surface (`bot.*`,
+ * `taskCard.*`) must never appear here. Those methods answer on the host's RPC
+ * route, but a sidecar, its plugins, and the model behind them have no user to
+ * confirm a card with, so they stay unreachable from that process.
+ */
+export const HOST_PROXY_ALLOWED = new Set([
   "tools.execute",
   "tools.abort",
   "tools.list",
