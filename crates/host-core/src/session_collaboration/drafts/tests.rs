@@ -424,71 +424,65 @@ fn the_employee_surface_lists_status_and_keeps_the_conversation_on_dismiss() {
     assert_eq!(again["skipped"].as_array().unwrap().len(), 3);
     let restored = crate::session_collaboration::bots::list(&db).unwrap();
     assert_eq!(restored["bots"].as_array().unwrap().len(), 4);
+}
 
-    /// A confirmed card whose turn was never started is offered again.
-    ///
-    /// Confirming only writes the ledger row, so an app that closed between confirm
-    /// and start used to leave the work queued forever. The row is claimed before a
-    /// turn runs, so it holds a `turn_id` afterwards and a second pass must not
-    /// offer it again.
-    #[test]
-    fn a_confirmed_card_is_pending_dispatch_until_a_turn_claims_it() {
-        let db = database();
-        let steward = session(&db, "Steward", None, "auto");
-        let worker = session(&db, "小爪", Some("bot"), "accept-edits");
-        let draft = propose_card(&db, &steward, &worker, "accept-edits");
-        let confirmed = super::confirm(&db, confirm_request(&draft, "confirm-once")).unwrap();
-        let delivery_id = confirmed["delivery"]["id"].as_str().unwrap().to_string();
+/// A confirmed card whose turn was never started is offered again.
+///
+/// Confirming only writes the ledger row, so an app that closed between confirm
+/// and start used to leave the work queued forever. The row is claimed before a
+/// turn runs, so it holds a `turn_id` afterwards and a second pass must not
+/// offer it again.
+#[test]
+fn a_confirmed_card_is_pending_dispatch_until_a_turn_claims_it() {
+    let db = database();
+    let steward = session(&db, "Steward", None, "auto");
+    let worker = session(&db, "小爪", Some("bot"), "accept-edits");
+    let draft = propose_card(&db, &steward, &worker, "accept-edits");
+    let confirmed = super::confirm(&db, confirm_request(&draft, "confirm-once")).unwrap();
+    let delivery_id = confirmed["delivery"]["id"].as_str().unwrap().to_string();
 
-        let pending = crate::session_collaboration::repository::pending_dispatch(&db).unwrap();
-        assert_eq!(
-            pending.iter().filter(|row| row.id == delivery_id).count(),
-            1,
-            "the confirmed delivery waits for a turn"
-        );
+    let pending = crate::session_collaboration::repository::pending_dispatch(&db).unwrap();
+    assert_eq!(
+        pending.iter().filter(|row| row.id == delivery_id).count(),
+        1,
+        "the confirmed delivery waits for a turn"
+    );
 
-        // A claim writes the turn id and leaves `queued`.
-        crate::session_collaboration::settlement::begin_turn(
-            &db,
-            &worker,
-            &delivery_id,
-            None,
-            None,
-        )
+    // A claim writes the turn id and leaves `queued`.
+    crate::session_collaboration::settlement::begin_turn(&db, &worker, &delivery_id, None, None)
         .unwrap();
-        let after = crate::session_collaboration::repository::pending_dispatch(&db).unwrap();
-        assert!(
-            after.iter().all(|row| row.id != delivery_id),
-            "a delivery that already has a turn is never offered again"
-        );
-    }
+    let after = crate::session_collaboration::repository::pending_dispatch(&db).unwrap();
+    assert!(
+        after.iter().all(|row| row.id != delivery_id),
+        "a delivery that already has a turn is never offered again"
+    );
+}
 
-    /// The steward's notice is a delivered message, not work.
-    ///
-    /// It must not sit in the ledger looking like a task that never ran, and it must
-    /// never be picked up as something to start.
-    #[test]
-    fn the_steward_notice_is_terminal_and_never_dispatchable() {
-        let db = database();
-        let steward = session(&db, "Steward", None, "auto");
-        let worker = session(&db, "小爪", Some("bot"), "accept-edits");
-        let draft = propose_card(&db, &steward, &worker, "accept-edits");
-        super::confirm(&db, confirm_request(&draft, "confirm-notice")).unwrap();
+/// The steward's notice is a delivered message, not work.
+///
+/// It must not sit in the ledger looking like a task that never ran, and it must
+/// never be picked up as something to start.
+#[test]
+fn the_steward_notice_is_terminal_and_never_dispatchable() {
+    let db = database();
+    let steward = session(&db, "Steward", None, "auto");
+    let worker = session(&db, "小爪", Some("bot"), "accept-edits");
+    let draft = propose_card(&db, &steward, &worker, "accept-edits");
+    super::confirm(&db, confirm_request(&draft, "confirm-notice")).unwrap();
 
-        let notice = crate::session_collaboration::repository::recent(&db, &steward, 20)
-            .unwrap()
-            .into_iter()
-            .find(|row| row.content.contains("confirmed by"))
-            .expect("the steward receives a notice");
-        assert_eq!(
-            notice.status, "completed",
-            "the notice is already delivered"
-        );
-        assert_eq!(notice.kind, "message");
-        let pending = crate::session_collaboration::repository::pending_dispatch(&db).unwrap();
-        assert!(
-            pending.iter().all(|row| row.id != notice.id),
-            "a notice is never picked up as work to start"
-        );
-    }
+    let notice = crate::session_collaboration::repository::recent(&db, &steward, 20)
+        .unwrap()
+        .into_iter()
+        .find(|row| row.content.contains("confirmed by"))
+        .expect("the steward receives a notice");
+    assert_eq!(
+        notice.status, "completed",
+        "the notice is already delivered"
+    );
+    assert_eq!(notice.kind, "message");
+    let pending = crate::session_collaboration::repository::pending_dispatch(&db).unwrap();
+    assert!(
+        pending.iter().all(|row| row.id != notice.id),
+        "a notice is never picked up as work to start"
+    );
 }
