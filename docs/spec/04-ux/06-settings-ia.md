@@ -584,8 +584,8 @@ a usage tab.
   user can see what changed and pick another one.
 - Each chosen card shows the gateway's published record (vendor, category,
   copyable id, input/output prices per 1M tokens, context window, cache price,
-  tiered-pricing marker) with the app's default marked, plus **Configure** and
-  **Remove**. A model the gateway lists no price for is still shown with its
+  tiered-pricing marker), plus **Configure** and **Remove**, without an app-default
+  badge. A model the gateway lists no price for is still shown with its
   configured limits and a line saying no price was returned — the row sends it,
   so it is never hidden.
 - **Configure** opens the shared per-model editor in a modal dialog — the card
