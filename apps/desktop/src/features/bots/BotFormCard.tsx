@@ -43,7 +43,7 @@ const MUST_ASK_LABEL_KEYS: Record<BotMustAsk, string> = {
 export function BotFormCard({
   initial,
   definitions,
-  projects,
+  projects = [],
   title,
   busy,
   error,
@@ -54,7 +54,7 @@ export function BotFormCard({
   /** Definition handles `Task` would offer; the steward is one of them. */
   definitions: readonly { id: string; label: string }[];
   /** Projects the person can bind; an employee without one cannot read code. */
-  projects: readonly { path: string; name: string }[];
+  projects?: readonly { path: string; name: string }[];
   title: string;
   busy: boolean;
   error: string | null;

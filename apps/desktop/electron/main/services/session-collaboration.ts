@@ -90,29 +90,23 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Whether a delivery that could not start will never start.
+ * Failures that can plausibly succeed on the next attempt.
  *
- * The retry loop (`drain`) keeps picking up whatever is still queued, so this
- * distinction is what stops a permanent refusal from being retried forever: a
- * target whose ceiling refuses this work, a session that no longer exists, or a
- * sender that was switched off stays broken no matter how often we ask. A busy
- * target or an unavailable runtime is the opposite — the next attempt can work,
- * so the delivery stays queued.
+ * `drain` keeps picking up whatever is still queued, so a failure that will never
+ * succeed must be closed instead of retried forever: a target whose ceiling
+ * refuses this work, a session that no longer exists, or a sender that was
+ * switched off stays broken no matter how often we ask.
  *
- * An unnamed failure is treated as temporary: keeping a queued row loses
- * nothing, while marking it failed would discard work that might still run.
+ * Only "the runtime is not up yet" stays queued: the next drain will find it
+ * running. Everything else keeps the existing behaviour of being recorded as a
+ * failure — a busy target included, since the ledger already reports that
+ * condition and `completion` keeps its own deferred treatment below.
  */
-const PERMANENT_DELIVERY_FAILURES = new Set([
-  "PERMISSION_DENIED",
-  "NOT_FOUND",
-  "ABORTED",
-  "INVALID_ARGUMENT",
-  "LIMIT_EXCEEDED",
-]);
+const TRANSIENT_DELIVERY_FAILURES = new Set(["HOST_UNAVAILABLE"]);
 
-function isPermanentDeliveryFailure(error: unknown): boolean {
+function isTransientDeliveryFailure(error: unknown): boolean {
   const code = errorCode(error);
-  return code !== undefined && PERMANENT_DELIVERY_FAILURES.has(code);
+  return code !== undefined && TRANSIENT_DELIVERY_FAILURES.has(code);
 }
 
 /** How a delivery enters the target session's queue. */
@@ -353,7 +347,7 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         // queue/turn change: it must not turn a completed task into a failure.
         const deferredCompletion =
           message.kind === "completion" && errorCode(error) === "AGENT_BUSY";
-        if (deps.getHost() === host && !deferredCompletion && isPermanentDeliveryFailure(error)) {
+        if (deps.getHost() === host && !deferredCompletion && !isTransientDeliveryFailure(error)) {
           // The host persists free text, so the code is embedded to keep the
           // stored failure machine-readable and bounded.
           const persisted = `${errorCode(error) ?? "FAILED"}: ${errorMessage(error)}`;

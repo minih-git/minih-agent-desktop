@@ -103,7 +103,7 @@ test("a settlement arriving during an in-flight drain is settled by that same dr
   let pendingCalls = 0;
   let lateSettle;
   const host = createHost("host-1", async (method) => {
-    if (method !== "session.collaboration.pending") return {};
+    if (method !== "session.collaboration.pendingDispatch") return {};
     pendingCalls += 1;
     if (pendingCalls === 1) {
       // This pass has already read the settlements, so only a re-armed pass can
@@ -175,7 +175,7 @@ test("a failed settlement keeps its entry and is retried on the next drain", asy
 async function drainBusyDelivery(kind, failure) {
   const pending = sessionMessage({ id: `message-${kind}`, kind });
   const host = createHost("host-1", (method) => {
-    if (method === "session.collaboration.pending") return { messages: [pending] };
+    if (method === "session.collaboration.pendingDispatch") return { messages: [pending] };
     if (method === "session.collaboration.message") return { message: pending };
     return {};
   });
@@ -204,7 +204,7 @@ test("a busy non-completion delivery persists a coded and bounded failure", asyn
 test("a busy completion delivery stays pending without persisting a failure", async () => {
   const { failures, logs } = await drainBusyDelivery("completion", busyError("Inbox is full"));
   assert.deepEqual(failures, []);
-  assert.ok(logs.some((entry) => entry.message === "Session completion delivery is pending or failed"));
+  assert.ok(logs.some((entry) => entry.message === "Session delivery is pending or failed"));
 });
 
 test("an uncoded delivery failure persists the FAILED fallback code", async () => {
@@ -612,7 +612,7 @@ test("a delivery owned by a plugin still fails when that plugin is gone", async 
   const stored = sessionMessage({ pluginId: "demo-plugin", status: "queued" });
   // drain() reads the completion outbox before dispatching.
   const host = createHost("host-1", (method) => {
-    if (method === "session.collaboration.pending") return { messages: [stored] };
+    if (method === "session.collaboration.pendingDispatch") return { messages: [stored] };
     if (method === "session.collaboration.message") return { message: stored };
     return {};
   });

@@ -102,16 +102,16 @@ describe("a confirmed card starts exactly one turn", () => {
 });
 
 describe("a delivery that cannot start", () => {
-  it("stays queued when the target is merely busy", async () => {
+  it("stays queued when the runtime is not available yet", async () => {
     const { service, failCall } = harness({
-      startTurnError: Object.assign(new Error("session already has an active turn"), {
-        errorCode: "AGENT_BUSY",
+      startTurnError: Object.assign(new Error("The Agent runtime is unavailable"), {
+        errorCode: "HOST_UNAVAILABLE",
       }),
     });
 
     await expect(service.dispatchConfirmed(message(delivery()))).rejects.toBeTruthy();
-    // A busy target can work later, so the row must stay queued for the next
-    // drain instead of being closed as a failure.
+    // This one can succeed on the next drain, so the row must stay queued
+    // instead of being closed as a failure.
     expect(failCall).not.toHaveBeenCalled();
   });
 
