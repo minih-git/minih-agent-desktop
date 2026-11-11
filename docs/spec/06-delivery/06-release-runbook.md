@@ -136,7 +136,7 @@ Surfaces in scope:
 |---|---|
 | `apps/desktop/resources/models.dev/api.json` | Refreshed from https://models.dev/api.json before tagging; the release workflow packages this snapshot unchanged |
 | `packages/shared/src/changelog-en.ts` | Newest-first English entries (source of truth, ADR 0009) |
-| `packages/shared/src/changelog-zh-CN.ts`, `changelog-zh-TW.ts`, `changelog-tr.ts`, `changelog-de.ts`, `changelog-es.ts`, `changelog-fr.ts`, `changelog-ko.ts`, `changelog-pt-BR.ts` | Same version set and highlight counts as English; a newly shipped locale is also registered in `packages/shared/src/changelog.ts` |
+| `packages/shared/src/changelog-zh-CN.ts` | Same version set and highlight counts as English. From 1.5.2 onward, only English and Simplified Chinese are required; other locales retain historical translations and fall back to English for missing releases. UI language support is unchanged. |
 | `packages/shared/src/changelog.test.ts` | Version added at the top of the newest-first list |
 | `package.json`, `apps/*/package.json`, `packages/*/package.json`, `docs/package.json` | Same version (`docs` is a third workspace root, not under `apps`/`packages`) |
 | `Cargo.toml` `[workspace.package]`, `Cargo.lock` `host-core` | Same version |
@@ -157,9 +157,9 @@ Blocking steps:
    counts. Do not treat a minified one-line JSON diff as absent.
 2. Edit `packages/shared/src/changelog-en.ts` **before**
    `node scripts/release.mjs <version>` / `git tag`:
-   - Add a **newest-first** entry under `en` and every shipped product locale
-     (`zh-CN` / `zh-TW` in `changelog-zh-CN.ts` / `changelog-zh-TW.ts`; the
-     remaining catalogs are the sibling `packages/shared/src/changelog-*.ts` files).
+   - Add a **newest-first** entry in `changelog-en.ts` and `changelog-zh-CN.ts`.
+     Other language catalogs do not require new release entries; retain their
+     historical translations and use English for missing versions.
    - Same `version` string (semver **without** a leading `v`, matching
      `apps/desktop` / `APP_VERSION` for a stable cut).
    - Optional ISO `date` (`YYYY-MM-DD`).
@@ -199,11 +199,10 @@ Pre-tag checklist:
 
 - [ ] `apps/desktop/resources/models.dev/api.json` is refreshed or confirmed
       current in the tagged tree
-- [ ] `packages/shared/src/changelog-en.ts` and every shipped locale catalog
+- [ ] `packages/shared/src/changelog-en.ts` and `changelog-zh-CN.ts`
       carry entries for the stable version being shipped or previewed
-- [ ] `packages/shared/src/changelog-de.ts` and the other locale catalogs
-      match the English version set and highlight counts
-- [ ] Highlight counts match across locales
+- [ ] English and Simplified Chinese version sets and highlight counts match
+- [ ] Missing entries in other locales fall back to English; historical translations remain
 - [ ] Shared changelog tests pass
 - [ ] `README.md` and `README.zh-CN.md` state the current release line and
       contain no claims the release invalidates

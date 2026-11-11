@@ -26,7 +26,12 @@ export function loadChangelogCatalog(
   const existing = catalogRequests.get(locale);
   if (existing) return existing;
 
-  const request = catalogLoaders[locale]();
+  const request = locale === "en" || locale === "zh-CN"
+    ? catalogLoaders[locale]()
+    : Promise.all([catalogLoaders[locale](), catalogLoaders.en()]).then(([translated, english]) => {
+        const byVersion = new Map(translated.map((entry) => [entry.version, entry]));
+        return english.map((entry) => byVersion.get(entry.version) ?? entry);
+      });
   catalogRequests.set(locale, request);
   void request.catch(() => {
     if (catalogRequests.get(locale) === request) catalogRequests.delete(locale);
