@@ -349,6 +349,12 @@ Every change follows this sequence. Steps may be iterated if the implementation 
   PR/MR may proceed with that record, but the gate is not satisfied and
   delivery remains incomplete until the suite passes against a candidate that
   contains latest `origin/main`.
+- The `CI` JS job runs the whole unit-test suite under `xvfb-run` and installs
+  the Electron binary, so the renderer interaction tests that drive a real
+  window (`apps/desktop/test/*-user-path.test.mjs`) execute there instead of
+  skipping for a missing display. They still skip on a machine without one;
+  that skip is an environment limit, not a pass.
+
 - Required E2E jobs that the hosting platform starts before a remote merge do
   not replace the task-candidate gate. Observe and report their result; after
   the remote merge, rerun the affected suites when the landed executable

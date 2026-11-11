@@ -35,8 +35,27 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # The desktop unit tests include Electron interaction tests that drive a
+      # real renderer (`*-user-path.test.mjs`). They skip themselves without a
+      # DISPLAY, so this job provides one; the Electron binary comes from the
+      # same install step the E2E job uses, because `pnpm install` here does not
+      # run the package's own downloader.
+      - name: Install virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes xvfb
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Electron binary
+        run: pnpm --filter @minih-agent/desktop exec install-electron
+
+      - name: Configure Chromium SUID sandbox
+        run: |
+          sandbox=apps/desktop/node_modules/electron/dist/chrome-sandbox
+          sudo chown root:root "$sandbox"
+          sudo chmod 4755 "$sandbox"
 
       - name: Build workspace packages
         run: pnpm build:js
@@ -62,8 +81,10 @@ jobs:
       - name: Check text contrast floors
         run: node scripts/check-text-contrast.mjs && node --test scripts/check-text-contrast.test.mjs
 
+      # `xvfb-run` gives the Electron interaction tests their DISPLAY; every other
+      # package's tests ignore it.
       - name: Unit tests
-        run: pnpm -r --if-present test
+        run: xvfb-run --auto-servernum pnpm -r --if-present test
 
   rust:
     name: Rust host-core format / lint / test
