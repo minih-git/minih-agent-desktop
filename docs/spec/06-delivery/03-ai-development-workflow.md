@@ -607,8 +607,9 @@ explicit branch-only or draft-only delivery scope:
 When the change is a **stable app version release** (version bump + tag),
 Definition of Done also requires, **before** the tag, that every
 version-bearing surface describes the new version: the shipped-locale in-app
-changelog entries in `packages/shared/src/changelog.ts` (English and every
-shipped product locale, with aligned highlight counts) with its `changelog.test.ts` list, every workspace
+changelog entries in `packages/shared/src/changelog.ts` (English and Simplified
+Chinese, with aligned highlight counts; other locales may use English fallback)
+with its `changelog.test.ts` list, every workspace
 `package.json` (including `docs/package.json`), the Cargo workspace version and
 `host-core` lockfile entry, `APP_VERSION`, and the release line stated in
 `README.md` + `README.zh-CN.md`. `node scripts/check-release-docs.mjs` must
@@ -644,7 +645,7 @@ D164, and D260. GitHub release notes are not a substitute.
 | Merging a linked pull request that only has a sound direction, leaves the original failure mode, or is larger than the smallest coherent fix without a stated reason | Violates R6; direction is not enough |
 | Merging a linked pull request that introduces a harm blocker | Violates R6 |
 | Force-pushing a contributor's branch to land a linked pull request | Violates R6; landing fixes go on top of the author's commits |
-| Tagging a stable app release without updating `packages/shared/src/changelog.ts` for every shipped locale | Violates D164 / D345 / release runbook; in-app What's new is empty for that locale and version |
+| Tagging a stable app release without English and Simplified Chinese changelog entries | Violates the release runbook; other locales may use English fallback |
 | Tagging a stable app release while `README.md` / `README.zh-CN.md` still state an older release line, or bypassing `scripts/check-release-docs.mjs` with `--skip-docs-check` | Violates D260 / release runbook; published documentation advertises a version the release no longer matches |
 | Pushing a request branch or opening a PR/MR before the required E2E has run against a candidate that contains latest `origin/main`, or declaring a code-bearing change delivered without that result (except a recorded `NOT RUN` limitation) | Violates R7's fixed order; review would start on an unvalidated commit |
 

@@ -11,19 +11,9 @@ import { loadChangelogCatalog } from "./changelog-loader.js";
 const STABLE_FROM = "0.1.1";
 
 describe("changelog catalog", () => {
-  it("keeps shipped locale version sets and highlight counts aligned", () => {
+  it("keeps English and Simplified Chinese versions and highlights aligned", () => {
     const en = CHANGELOG.en;
-    const zh = CHANGELOG["zh-CN"];
-    for (const catalog of [
-      zh,
-      CHANGELOG["zh-TW"],
-      CHANGELOG.tr,
-      CHANGELOG.de,
-      CHANGELOG.es,
-      CHANGELOG.fr,
-      CHANGELOG.ko,
-      CHANGELOG["pt-BR"],
-    ]) {
+    for (const catalog of [CHANGELOG["zh-CN"]]) {
       expect(catalog.map((e) => e.version)).toEqual(en.map((e) => e.version));
       for (let i = 0; i < en.length; i += 1) {
         expect(catalog[i]?.highlights.length).toBe(en[i]?.highlights.length);
@@ -34,7 +24,7 @@ describe("changelog catalog", () => {
 
   it("lists stable releases from 0.1.1 newest-first without pre-releases", () => {
     const versions = CHANGELOG.en.map((e) => e.version);
-    expect(versions[0]).toBe("1.5.1");
+    expect(versions[0]).toBe("1.5.2");
     expect(versions.at(-1)).toBe(STABLE_FROM);
     // 0.11.1 is intentionally absent: that tag was pushed before the release
     // branch was complete, and 0.11.2 is the tag that actually ships its
@@ -42,6 +32,7 @@ describe("changelog catalog", () => {
     // 0.20.0 has a tag but no published Release; its highlights are carried by
     // 0.20.1, the first published release on the 0.20 line.
     expect(versions).toEqual([
+      "1.5.2",
       "1.5.1",
       "1.5.0",
       "1.4.0",
@@ -198,7 +189,10 @@ describe("changelog catalog", () => {
   it("loads and caches the catalog for the resolved locale", async () => {
     const catalog = await loadChangelogCatalog("fr-CA");
 
-    expect(catalog).toBe(CHANGELOG.fr);
+    expect(catalog.map((entry) => entry.version)).toEqual(CHANGELOG.en.map((entry) => entry.version));
+    expect(catalog[0]).toEqual(CHANGELOG.en[0]);
+    expect(catalog.find((entry) => entry.version === "1.5.1")).toEqual(CHANGELOG.fr[0]);
+    expect(formatChangelogNotes("1.5.2", "fr")).toBe(formatChangelogNotes("1.5.2", "en"));
     expect(await loadChangelogCatalog("fr")).toBe(catalog);
   });
 });

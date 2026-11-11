@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.5.2",
+    date: "2026-11-11",
+    highlights: [
+      "修复继续聊天或恢复空闲会话后缓存保活误停的问题。保活现在复用最近完成的对话上下文，同时保留模型、配置和费用保护。",
+      "员工会话现在按指定定义执行，新增员工管理和管家任务卡，可查看任务进度，确认操作需由你点击触发。",
+    ],
+  },
+
+  {
     version: "1.5.1",
     date: "2026-11-10",
     highlights: [
