@@ -43,7 +43,10 @@ jobs:
       - name: Install virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes xvfb
+          # `openbox` is a window manager: without one the hidden window never
+          # composites, so `requestAnimationFrame` — which these tests poll on —
+          # does not advance.
+          sudo apt-get install --no-install-recommends --yes openbox xauth xvfb
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -93,7 +96,7 @@ jobs:
       - name: Unit tests
         env:
           MINIH_E2E_TIMEOUT_SCALE: "3"
-        run: xvfb-run --auto-servernum pnpm -r --if-present test
+        run: xvfb-run --auto-servernum sh -c 'openbox >/dev/null 2>&1 & exec pnpm -r --if-present test'
 
   rust:
     name: Rust host-core format / lint / test
