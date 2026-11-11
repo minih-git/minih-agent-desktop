@@ -418,3 +418,4 @@ Each ADR includes:
 | conversation-archive | [Layered conversation archive for plugins](conversation-archive.md) | Accepted for implementation (2026-11-09, D685; amends the `plugin-learned-memory-read` wiring only) |
 | plugin-embeddings | [Plugin embeddings: generate vectors with the user's own models](plugin-embeddings.md) | Accepted for implementation (2026-11-10, D686) |
 | bot-sessions-and-steward | [Bot sessions, the steward, and the mandate](bot-sessions-and-steward.md) | Accepted for implementation (2026-11-10, D687; adds a session role, a bot profile and a frozen mandate; cross-host dispatch is a later decision) |
+| parent-steers-running-delegation | [The parent steers a running delegation](parent-steers-running-delegation.md) | Accepted for implementation (amends ADR 0062's write-once brief; adds `TaskSend`; sibling and cross-session addressing stay withdrawn per ADR 0165) |
