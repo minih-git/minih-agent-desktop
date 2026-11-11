@@ -525,11 +525,17 @@ pub async fn run_internal_tool_runner() -> Result<i32> {
         Ok(runner_exit_code(status))
     }
 }
-/// Which end of an over-budget payload survives.
+/// Which part of an over-budget payload survives.
+///
+/// `HeadTail` exists because a command's stdout carries information at both
+/// ends: the first lines show what ran, the last lines carry the failure
+/// summary, and a test or build run prints that summary only at the end. A
+/// head-only cut discarded exactly the lines the model acted on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Head,
     Tail,
+    HeadTail,
 }
 
 /// Per-tool output budget (spec 03-runtime/16).
@@ -556,12 +562,13 @@ pub const BUDGET_SEARCH: OutputBudget = OutputBudget {
     direction: Direction::Head,
 };
 
-/// Bash stdout: a command's output is usually the whole point of the call and
-/// cannot be re-derived by narrowing a pattern, so it keeps a larger share.
+/// Bash stdout keeps both ends: the first lines show what the command did and
+/// the last lines carry a failing test's or build's summary, so neither end can
+/// be dropped. `Direction::HeadTail` splits the budget between them.
 pub const BUDGET_SHELL: OutputBudget = OutputBudget {
     max_bytes: 96 * 1024,
     max_lines: 4000,
-    direction: Direction::Head,
+    direction: Direction::HeadTail,
 };
 
 /// Bash stderr keeps the tail: when a command fails, the actionable message is
@@ -674,7 +681,7 @@ fn fits(text: &str, budget: OutputBudget) -> bool {
 /// Truncate to `budget`, first spilling the fuller copy under `scratch` so the
 /// marker can point the model at something it can Grep instead of re-running
 /// the command. Best-effort: a failed spill costs the hint, never the result.
-fn truncate_with_spill(
+pub(crate) fn truncate_with_spill(
     text: &str,
     budget: OutputBudget,
     scratch: Option<&Path>,
@@ -687,98 +694,221 @@ fn truncate_with_spill(
     (truncate_to(text, budget, spilled.as_deref()), true)
 }
 
+/// Share of the line and byte budget the head keeps under
+/// `Direction::HeadTail`; the tail keeps the rest. The tail is the larger half
+/// because a failing command states its verdict last.
+const HEAD_TAIL_DIVISOR: usize = 3;
+
+/// What one end retained of an over-budget payload.
+#[derive(Debug, Default, Clone, Copy)]
+struct Kept {
+    /// Whole lines taken from this end.
+    lines: usize,
+    /// Bytes kept of the boundary line when not even one whole line fit this
+    /// end. Without it a multi-line payload whose boundary line is one huge
+    /// blob (a single-line JSON diagnostic, a minified bundle) would return
+    /// nothing at all for that end, losing the very message it exists to keep.
+    clip_bytes: usize,
+    /// 1-based line number of that clipped boundary line, and its full size.
+    clip_line: usize,
+    clip_line_bytes: usize,
+}
+
+/// `truncate_with_spill` at a caller-chosen, stable path. A caller that reads
+/// the same growing stream repeatedly (one background task's output) would
+/// otherwise leave a dated copy of up to `SPILL_MAX_BYTES` per read; the fixed
+/// name keeps exactly one file that each read overwrites.
+pub(crate) fn truncate_with_stable_spill(
+    text: &str,
+    budget: OutputBudget,
+    scratch: Option<&Path>,
+    file_stem: &str,
+) -> (String, bool) {
+    if fits(text, budget) {
+        return (text.to_string(), false);
+    }
+    let spilled = write_spill(scratch, file_stem, text);
+    (truncate_to(text, budget, spilled.as_deref()), true)
+}
+
 fn truncate_to(text: &str, budget: OutputBudget, spilled: Option<&Path>) -> String {
     let lines: Vec<&str> = text.lines().collect();
-    let window: &[&str] = match budget.direction {
-        Direction::Head => &lines[..lines.len().min(budget.max_lines)],
-        Direction::Tail => &lines[lines.len().saturating_sub(budget.max_lines)..],
+    let (head, tail) = match budget.direction {
+        Direction::Head => (
+            take_head(&lines, budget.max_lines, budget.max_bytes),
+            Kept::default(),
+        ),
+        Direction::Tail => (
+            Kept::default(),
+            take_tail(&lines, budget.max_lines, budget.max_bytes),
+        ),
+        Direction::HeadTail => {
+            // The head takes at most a third of the lines and a third of the
+            // bytes, the tail the rest. Bytes are partitioned by share rather
+            // than by what the head actually used: a head that stopped early on
+            // a long line must not hand the tail its spare bytes, or the two
+            // ends together would overrun the budget.
+            let head_bytes = budget.max_bytes / HEAD_TAIL_DIVISOR;
+            let head = take_head(&lines, budget.max_lines / HEAD_TAIL_DIVISOR, head_bytes);
+            let tail = take_tail(
+                &lines,
+                budget.max_lines.saturating_sub(head.lines),
+                budget.max_bytes - head_bytes,
+            );
+            (head, tail)
+        }
     };
 
-    let mut kept: Vec<&str> = Vec::new();
-    let mut bytes = 0_usize;
-    let mut single_line_clip = None;
+    let marker = truncation_marker(&lines, budget, head, tail, spilled);
     match budget.direction {
-        Direction::Head => {
-            for line in window {
-                let size = line.len() + usize::from(!kept.is_empty());
-                if bytes + size > budget.max_bytes {
-                    break;
-                }
-                kept.push(line);
-                bytes += size;
-            }
+        Direction::Head => format!("{}\n\n{marker}", head_body(&lines, head)),
+        Direction::Tail => format!("{marker}\n\n{}", tail_body(&lines, tail)),
+        Direction::HeadTail => format!(
+            "{}\n\n{marker}\n\n{}",
+            head_body(&lines, head),
+            tail_body(&lines, tail)
+        ),
+    }
+}
+
+/// Leading lines that fit `max_lines` / `max_bytes`, newlines included. When
+/// not even the first line fits, its head is clipped instead of returning
+/// nothing — the single-line case is just the degenerate form of this rule.
+fn take_head(lines: &[&str], max_lines: usize, max_bytes: usize) -> Kept {
+    let mut kept = Kept::default();
+    let mut bytes = 0_usize;
+    for line in lines.iter().take(max_lines) {
+        let size = line.len() + usize::from(kept.lines > 0);
+        if bytes + size > max_bytes {
+            break;
         }
-        Direction::Tail => {
-            for line in window.iter().rev() {
-                let size = line.len() + usize::from(!kept.is_empty());
-                if bytes + size > budget.max_bytes {
-                    break;
-                }
-                kept.push(line);
-                bytes += size;
-            }
-            kept.reverse();
+        kept.lines += 1;
+        bytes += size;
+    }
+    if kept.lines == 0 {
+        if let Some(line) = lines.first() {
+            kept.clip_bytes = clip_head(line, max_bytes).len();
+            kept.clip_line = 1;
+            kept.clip_line_bytes = line.len();
         }
     }
+    kept
+}
 
-    // A single line longer than the entire budget (minified bundle, `tr`-style
-    // one-shot output) fits no complete line, and returning nothing at all
-    // would be worse than returning a prefix of it.
-    if kept.is_empty() {
-        if let Some(line) = match budget.direction {
-            Direction::Head => window.first(),
-            Direction::Tail => window.last(),
-        } {
-            let clipped = match budget.direction {
-                Direction::Head => clip_head(line, budget.max_bytes),
-                Direction::Tail => clip_tail(line, budget.max_bytes),
-            };
-            single_line_clip = Some(clipped.len());
-            kept.push(clipped);
+/// The mirror of [`take_head`]: the largest suffix of whole lines that fits,
+/// else the tail of the last line.
+fn take_tail(lines: &[&str], max_lines: usize, max_bytes: usize) -> Kept {
+    let mut kept = Kept::default();
+    let mut bytes = 0_usize;
+    for line in lines.iter().rev().take(max_lines) {
+        let size = line.len() + usize::from(kept.lines > 0);
+        if bytes + size > max_bytes {
+            break;
+        }
+        kept.lines += 1;
+        bytes += size;
+    }
+    if kept.lines == 0 {
+        if let Some(line) = lines.last() {
+            kept.clip_bytes = clip_tail(line, max_bytes).len();
+            kept.clip_line = lines.len();
+            kept.clip_line_bytes = line.len();
         }
     }
+    kept
+}
 
-    let hint = match spilled {
+fn head_body(lines: &[&str], head: Kept) -> String {
+    if head.lines > 0 {
+        return lines[..head.lines].join("\n");
+    }
+    match lines.first() {
+        Some(line) if head.clip_bytes > 0 => clip_head(line, head.clip_bytes).to_string(),
+        _ => String::new(),
+    }
+}
+
+fn tail_body(lines: &[&str], tail: Kept) -> String {
+    if tail.lines > 0 {
+        return lines[lines.len() - tail.lines..].join("\n");
+    }
+    match lines.last() {
+        Some(line) if tail.clip_bytes > 0 => clip_tail(line, tail.clip_bytes).to_string(),
+        _ => String::new(),
+    }
+}
+
+fn truncation_marker(
+    lines: &[&str],
+    budget: OutputBudget,
+    head: Kept,
+    tail: Kept,
+    spilled: Option<&Path>,
+) -> String {
+    // Nothing but one clipped line was kept: the whole payload could not fit a
+    // single complete line, which is the message the model needs.
+    if head.lines + tail.lines == 0 {
+        return format!(
+            "[truncated: no complete line fits the {}KB limit; kept {} bytes of a single {}-byte line.{}]",
+            budget.max_bytes / 1024,
+            head.clip_bytes + tail.clip_bytes,
+            head.clip_line_bytes.max(tail.clip_line_bytes),
+            truncation_hint(spilled)
+        );
+    }
+
+    let clipped = match (head.clip_line, tail.clip_line) {
+        (0, 0) => String::new(),
+        (line, 0) => format!(
+            " Head keeps the first {} bytes of the {}-byte line {}.",
+            head.clip_bytes, head.clip_line_bytes, line
+        ),
+        (0, line) => format!(
+            " Tail keeps the last {} bytes of the {}-byte line {}.",
+            tail.clip_bytes, tail.clip_line_bytes, line
+        ),
+        (head_line, tail_line) => format!(
+            " Head keeps the first {} bytes of the {}-byte line {}; tail the last {} bytes of the {}-byte line {}.",
+            head.clip_bytes, head.clip_line_bytes, head_line, tail.clip_bytes, tail.clip_line_bytes, tail_line
+        ),
+    };
+
+    let counts = match budget.direction {
+        Direction::HeadTail => format!(
+            "kept the first {} and last {} of {} lines",
+            head.lines + usize::from(head.clip_bytes > 0),
+            tail.lines + usize::from(tail.clip_bytes > 0),
+            lines.len()
+        ),
+        Direction::Tail => format!(
+            "kept the last {} of {} lines",
+            tail.lines + usize::from(tail.clip_bytes > 0),
+            lines.len()
+        ),
+        Direction::Head => format!(
+            "kept the first {} of {} lines",
+            head.lines + usize::from(head.clip_bytes > 0),
+            lines.len()
+        ),
+    };
+
+    format!(
+        "[truncated: {counts}; limit {} lines / {}KB.{clipped}{}]",
+        budget.max_lines,
+        budget.max_bytes.div_ceil(1024),
+        truncation_hint(spilled)
+    )
+}
+
+fn truncation_hint(spilled: Option<&Path>) -> String {
+    match spilled {
         Some(path) => format!(
             " Full output saved to {} — Grep it, or Read it with offset/limit.",
             path.display()
         ),
         None => " Narrow the request to see more.".to_string(),
-    };
-    let marker = match single_line_clip {
-        Some(bytes) => format!(
-            "[truncated: no complete line fits the {}KB limit; kept {} bytes of a single {}-byte line.{}]",
-            budget.max_bytes / 1024,
-            bytes,
-            match budget.direction {
-                Direction::Head => window.first(),
-                Direction::Tail => window.last(),
-            }
-            .map(|line| line.len())
-            .unwrap_or(0),
-            hint
-        ),
-        None => format!(
-            "[truncated: kept the {} {} of {} lines; limit {} lines / {}KB.{}]",
-            match budget.direction {
-                Direction::Head => "first",
-                Direction::Tail => "last",
-            },
-            kept.len(),
-            lines.len(),
-            budget.max_lines,
-            budget.max_bytes / 1024,
-            hint
-        ),
-    };
-
-    let body = kept.join("\n");
-    match budget.direction {
-        Direction::Head => format!("{body}\n\n{marker}"),
-        Direction::Tail => format!("{marker}\n\n{body}"),
     }
 }
-
 fn clip_head(text: &str, max_bytes: usize) -> &str {
     if text.len() <= max_bytes {
         return text;
@@ -806,16 +936,20 @@ fn clip_tail(text: &str, max_bytes: usize) -> &str {
 static SPILL_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn spill_output(scratch: Option<&Path>, label: &str, text: &str) -> Option<PathBuf> {
-    // Created here rather than up front in execute_tool: a session whose
-    // commands all stayed under budget should not get an empty directory.
-    let dir = scratch?.join("tool-output");
-    std::fs::create_dir_all(&dir).ok()?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|since| since.as_millis())
         .unwrap_or(0);
     let seq = SPILL_SEQ.fetch_add(1, Ordering::Relaxed);
-    let path = dir.join(format!("{label}-{stamp}-{seq}.log"));
+    write_spill(scratch, &format!("{label}-{stamp}-{seq}"), text)
+}
+
+fn write_spill(scratch: Option<&Path>, file_stem: &str, text: &str) -> Option<PathBuf> {
+    // Created here rather than up front in execute_tool: a session whose
+    // commands all stayed under budget should not get an empty directory.
+    let dir = scratch?.join("tool-output");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("{file_stem}.log"));
     match std::fs::write(&path, text) {
         Ok(()) => Some(path),
         Err(error) => {
@@ -3238,9 +3372,10 @@ pub fn builtin_tool_defs() -> Value {
         {
             "name": "Bash",
             "description": format!(
-                "Run a non-interactive shell command in the workspace. stdout keeps its first {}KB, stderr its \
-                 last {}KB, and anything over budget is spilled to a file named in the truncation marker. \
-                 Use Read/Glob/Grep for reading and searching instead of shell equivalents; when a shell search \
+                "Run a non-interactive shell command in the workspace. stdout keeps its first and last {}KB \
+                 combined, stderr its last {}KB, and anything over budget is spilled to a file named in the \
+                 truncation marker. Use Read/Glob/Grep for reading and searching instead of shell equivalents; \
+                 when a shell search \
                  is genuinely needed prefer `rg` and exclude build output.",
                 BUDGET_SHELL.max_bytes / 1024,
                 BUDGET_SHELL_ERR.max_bytes / 1024
@@ -3586,6 +3721,11 @@ mod tests {
             "head retained"
         );
         assert!(stdout.contains("[truncated:"), "marker present");
+        assert_eq!(
+            stdout.trim_end().lines().last(),
+            Some(lines.to_string().as_str()),
+            "tail retained"
+        );
 
         // The marker names a spill file that holds the whole output.
         let spill_dir = scratch.join("tool-output");
@@ -3641,6 +3781,354 @@ mod tests {
         assert!(out.starts_with(&"x".repeat(1000)));
         assert!(out.contains("no complete line fits"));
         assert!(out.len() < BUDGET_SEARCH.max_bytes + 512);
+    }
+
+    /// stdout budget for a shell command that printed `total` numbered lines.
+    fn head_tail_text(total: usize) -> String {
+        (1..=total).map(|n| format!("line {n}\n")).collect()
+    }
+
+    /// Splits a head/tail result into (head body, marker, tail body). A body
+    /// that was not returned reads as an empty string.
+    fn split_ends(out: &str) -> (&str, &str, &str) {
+        let (head, rest) = out.split_once("\n\n").expect("head then marker");
+        match rest.split_once("\n\n") {
+            Some((marker, tail)) => (head, marker, tail),
+            None => (head, rest, ""),
+        }
+    }
+
+    #[test]
+    fn bash_stdout_keeps_both_ends_when_lines_overflow() {
+        // A failing test or build prints its summary at the very end of stdout,
+        // so a head-only cut threw away exactly the lines the model needed.
+        let total = BUDGET_SHELL.max_lines + 1000;
+        let text = head_tail_text(total);
+        let (out, truncated) = truncate_with_spill(&text, BUDGET_SHELL, None, "test");
+        assert!(truncated);
+        assert!(
+            out.starts_with("line 1\n"),
+            "head retained: {:?}",
+            &out[..40]
+        );
+        assert!(
+            out.trim_end().ends_with(&format!("line {total}")),
+            "tail retained: {:?}",
+            &out[out.len().saturating_sub(60)..]
+        );
+
+        let marker = out
+            .lines()
+            .find(|line| line.starts_with("[truncated:"))
+            .expect("marker present");
+        assert!(marker.contains("kept the first "), "{marker}");
+        assert!(marker.contains(" and last "), "{marker}");
+        assert!(marker.contains(&format!("of {total} lines")), "{marker}");
+        assert!(
+            marker.contains(&format!(
+                "limit {} lines / {}KB",
+                BUDGET_SHELL.max_lines,
+                BUDGET_SHELL.max_bytes / 1024
+            )),
+            "{marker}"
+        );
+
+        let first = marker
+            .split_once("kept the first ")
+            .and_then(|(_, rest)| rest.split(' ').next())
+            .and_then(|n| n.parse::<usize>().ok())
+            .expect("head count in marker");
+        let last = marker
+            .split_once(" and last ")
+            .and_then(|(_, rest)| rest.split(' ').next())
+            .and_then(|n| n.parse::<usize>().ok())
+            .expect("tail count in marker");
+
+        // Head and tail must be disjoint: the marker replaces exactly the lines
+        // in between. The marker sits on its own line between two blank lines,
+        // so splitting on the marker yields the head and the tail separately.
+        let (before, after) = out
+            .split_once(&format!("{marker}\n\n"))
+            .expect("marker separates the two ends");
+        assert!(before.ends_with("\n\n"), "the marker follows the head body");
+        let head_lines = before.trim_end_matches('\n').lines().count();
+        let tail_lines = after.trim_end_matches('\n').lines().count();
+        // Disjoint ends: the body holds exactly what the marker claims, the
+        // first retained line is the payload's first and the last its last.
+        assert_eq!(
+            (head_lines, tail_lines),
+            (first, last),
+            "body matches marker"
+        );
+        assert!(
+            out.starts_with("line 1\n"),
+            "head starts at the payload start"
+        );
+        assert!(
+            out.trim_end().ends_with(&format!("line {total}")),
+            "tail ends at the payload end"
+        );
+        assert!(head_lines < tail_lines, "the tail gets the larger share");
+        assert!(
+            out.len() <= BUDGET_SHELL.max_bytes + 1024,
+            "budget bounds the result"
+        );
+    }
+
+    #[test]
+    fn bash_stdout_keeps_both_ends_when_bytes_overflow() {
+        // Few lines, each long enough that the byte budget binds first.
+        let line = "y".repeat(4096);
+        let total = 200;
+        let text = (1..=total)
+            .map(|n| format!("{n:04} {line}\n"))
+            .collect::<String>();
+        assert!(text.len() > BUDGET_SHELL.max_bytes);
+        assert!(total < BUDGET_SHELL.max_lines);
+
+        let (out, truncated) = truncate_with_spill(&text, BUDGET_SHELL, None, "test");
+        assert!(truncated);
+        assert!(out.starts_with("0001 "), "head retained");
+        assert!(
+            out.trim_end().ends_with(&format!("{total:04} {line}")),
+            "tail retained"
+        );
+        assert!(
+            out.len() <= BUDGET_SHELL.max_bytes + 1024,
+            "byte budget bounds the result, got {} bytes",
+            out.len()
+        );
+        let marker = out
+            .lines()
+            .find(|line| line.starts_with("[truncated:"))
+            .expect("marker present");
+        assert!(marker.contains("kept the first "), "{marker}");
+        assert!(marker.contains(" and last "), "{marker}");
+    }
+
+    #[test]
+    fn bash_stdout_single_overlong_line_keeps_both_ends() {
+        // A minified one-liner: neither end can be a whole line, so the result
+        // is the head and tail of that line, and both cuts land on a char
+        // boundary of multi-byte text.
+        let unit = "指令é🦀"; // 3 + 2 + 4 bytes per repeat
+        let text = unit.repeat((BUDGET_SHELL.max_bytes / unit.len()) + 1000);
+        let (out, truncated) = truncate_with_spill(&text, BUDGET_SHELL, None, "test");
+        assert!(truncated);
+        let marker = out
+            .lines()
+            .find(|line| line.starts_with("[truncated:"))
+            .expect("marker present");
+        assert!(marker.contains("no complete line fits"), "{marker}");
+        assert!(marker.contains("of a single "), "{marker}");
+        assert!(
+            marker.contains(&format!("{}-byte line", text.len())),
+            "{marker}"
+        );
+        let head = out.split_once("\n\n").expect("head before marker").0;
+        let tail = out
+            .split_once("\n\n")
+            .expect("marker after the head")
+            .1
+            .split_once("\n\n")
+            .expect("tail after the marker")
+            .1
+            .trim_end_matches('\n');
+        assert!(!head.is_empty() && !tail.is_empty(), "both ends kept");
+        // Both clips come from whole repetitions, so no character was split
+        // even though every one of them is multi-byte.
+        assert!(text.starts_with(head), "head is a prefix of the line");
+        assert!(text.ends_with(tail), "tail is a suffix of the line");
+        assert!(head.len() + tail.len() < text.len(), "the middle was cut");
+        assert!(out.len() <= BUDGET_SHELL.max_bytes + 1024);
+    }
+
+    #[test]
+    fn bash_stdout_over_budget_names_the_spill_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = head_tail_text(BUDGET_SHELL.max_lines + 100);
+        let (out, truncated) =
+            truncate_with_spill(&text, BUDGET_SHELL, Some(dir.path()), "bash-stdout");
+        assert!(truncated);
+        let marker = out
+            .lines()
+            .find(|line| line.starts_with("[truncated:"))
+            .expect("marker present");
+        let spilled: Vec<_> = std::fs::read_dir(dir.path().join("tool-output"))
+            .unwrap()
+            .flatten()
+            .collect();
+        assert_eq!(spilled.len(), 1);
+        assert!(
+            marker.contains(&format!(
+                "Full output saved to {}",
+                spilled[0].path().display()
+            )),
+            "{marker}"
+        );
+        assert!(
+            marker.contains("Grep it, or Read it with offset/limit."),
+            "{marker}"
+        );
+        assert!(
+            out.trim_end()
+                .ends_with(&format!("line {}", BUDGET_SHELL.max_lines + 100)),
+            "tail retained"
+        );
+    }
+
+    #[test]
+    fn stderr_keeps_the_tail_of_an_overlong_last_line() {
+        // A command that prints a few short progress lines and then a huge
+        // single-line diagnostic: the last line is the message, so its tail
+        // must survive even though no complete line fits the budget.
+        let long = format!("error: {}", "z".repeat(BUDGET_SHELL_ERR.max_bytes + 1024));
+        let text = format!("building\nlinking\n{long}");
+        let (out, truncated) = truncate_with_spill(&text, BUDGET_SHELL_ERR, None, "test");
+        assert!(truncated);
+        assert!(
+            out.starts_with("[truncated:"),
+            "a tail cut leads with the marker"
+        );
+        let body = out.split_once("\n\n").expect("marker then body").1;
+        assert!(!body.trim().is_empty(), "the body is not empty: {out:?}");
+        assert!(
+            long.ends_with(body.trim_end_matches('\n')),
+            "the overlong last line keeps its tail"
+        );
+        let marker = out.lines().next().expect("marker line");
+        assert!(
+            marker.contains("no complete line fits")
+                && marker.contains(&format!("of a single {}-byte line", long.len())),
+            "the marker names the clipped line and its kept bytes: {marker}"
+        );
+    }
+
+    #[test]
+    fn bash_stdout_clips_an_overlong_first_line() {
+        let long = "a".repeat(BUDGET_SHELL.max_bytes);
+        let text = format!("{long}\nshort\nsummary: 3 passed\n");
+        let (out, truncated) = truncate_with_spill(&text, BUDGET_SHELL, None, "test");
+        assert!(truncated);
+        let (head, rest) = out.split_once("\n\n").expect("head then marker");
+        assert!(
+            !head.is_empty(),
+            "the overlong first line keeps its head: {out:?}"
+        );
+        assert!(long.starts_with(head), "head is a prefix of that line");
+        let (marker, tail) = rest.split_once("\n\n").expect("marker then tail");
+        assert!(
+            marker.contains("line 1"),
+            "the marker names line 1: {marker}"
+        );
+        assert!(
+            tail.trim_end().ends_with("summary: 3 passed"),
+            "the tail still ends where the output ended: {tail:?}"
+        );
+    }
+
+    #[test]
+    fn bash_stdout_clips_an_overlong_last_line() {
+        let long = "b".repeat(BUDGET_SHELL.max_bytes);
+        let text = format!("preamble\nprogress 10%\n{long}");
+        let (out, truncated) = truncate_with_spill(&text, BUDGET_SHELL, None, "test");
+        assert!(truncated);
+        assert!(out.starts_with("preamble\n"), "the head starts at line 1");
+        let (head, rest) = out.split_once("\n\n").expect("head then marker");
+        assert!(
+            head.contains("progress 10%"),
+            "short leading lines are kept"
+        );
+        let (marker, tail) = rest.split_once("\n\n").expect("marker then tail");
+        assert!(
+            !tail.trim().is_empty(),
+            "the overlong last line keeps its tail"
+        );
+        assert!(
+            long.ends_with(tail.trim_end_matches('\n')),
+            "tail is a suffix"
+        );
+        assert!(
+            marker.contains("line 3"),
+            "the marker names line 3: {marker}"
+        );
+    }
+
+    #[test]
+    fn bash_stdout_clips_both_overlong_boundary_lines() {
+        // Both boundary lines overrun their share (head 1/3 of the bytes, tail
+        // the rest), and together the two clipped pieces would fill the budget
+        // exactly, so neither end has room to be returned on its own: the
+        // result is the marker, and it must say so rather than claim content.
+        let budget = OutputBudget {
+            max_bytes: 3000,
+            max_lines: 10,
+            direction: Direction::HeadTail,
+        };
+        let first = "c".repeat(1500);
+        let last = "d".repeat(3000);
+        let text = format!("{first}\nmiddle\n{last}");
+        let out = truncate_to(&text, budget, None);
+        let (head, marker, tail) = split_ends(&out);
+        assert!(head.is_empty() || head.starts_with('c'), "head: {head:?}");
+        assert!(tail.is_empty() || tail.starts_with('d'), "tail: {tail:?}");
+        assert!(marker.starts_with("[truncated:"), "{marker}");
+        assert!(
+            out.len() <= budget.max_bytes + 512,
+            "budget bounds the result"
+        );
+    }
+
+    #[test]
+    fn bash_stdout_clips_both_ends_when_each_line_fits_its_share() {
+        // Both boundary lines overrun the head's share, but the tail still fits
+        // its own lines whole: the head is served by clipping its boundary line
+        // and the tail by keeping whole lines. Both ends carry content, and the
+        // marker names the clipped head line.
+        let budget = OutputBudget {
+            max_bytes: 3000,
+            max_lines: 10,
+            direction: Direction::HeadTail,
+        };
+        let first = "c".repeat(1500);
+        let last = "d".repeat(1000);
+        let text = format!("{first}\nmiddle\n{last}");
+        let out = truncate_to(&text, budget, None);
+        let (head, marker, tail) = split_ends(&out);
+        assert!(
+            !head.is_empty() && first.starts_with(head),
+            "first line keeps its head"
+        );
+        assert!(tail.ends_with(&last), "last line kept whole: {tail:?}");
+        assert!(
+            marker.contains("Head keeps the first ") && marker.contains("line 1"),
+            "{marker}"
+        );
+        assert!(
+            out.len() <= budget.max_bytes + 512,
+            "budget bounds the result"
+        );
+    }
+
+    #[test]
+    fn bash_stdout_under_budget_is_untouched() {
+        let text = head_tail_text(BUDGET_SHELL.max_lines - 1);
+        let (out, truncated) = truncate_with_spill(&text, BUDGET_SHELL, None, "test");
+        assert!(!truncated);
+        assert_eq!(out, text);
+    }
+
+    #[test]
+    fn search_results_still_keep_only_the_head() {
+        let total = BUDGET_SEARCH.max_lines + 100;
+        let text = head_tail_text(total);
+        let (out, truncated) = truncate_with_spill(&text, BUDGET_SEARCH, None, "test");
+        assert!(truncated);
+        assert!(out.starts_with("line 1\n"));
+        assert!(
+            !out.contains(&format!("line {total}")),
+            "no tail for a head cut"
+        );
     }
 
     #[tokio::test]

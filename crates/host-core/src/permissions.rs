@@ -42,7 +42,7 @@ pub enum PermissionDecision {
     Deny,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Risk {
     Low,
@@ -122,38 +122,6 @@ pub struct PermissionManager {
 }
 
 impl PermissionManager {
-    pub fn tool_risk_with_declared(tool_name: &str, declared: Option<&str>) -> Risk {
-        match tool_name {
-            "Read"
-            | "Glob"
-            | "Grep"
-            | "ScheduledTaskList"
-            | "TodoWrite"
-            | "SessionList"
-            | "SessionResult"
-            | "SessionHistorySearch"
-            | "MemorySearch" => Risk::Low,
-            // Sending starts another session's Agent and spends its quota;
-            // creating one brings a durable session into the user's list.
-            "Write" | "Edit" | "Bash" | "GenerateImages" | "SessionSend" | "SessionCreate" => {
-                Risk::High
-            }
-            name if name.starts_with("plugin_") => match declared {
-                Some("low") => Risk::Low,
-                Some("high") => Risk::High,
-                Some("medium") => Risk::Medium,
-                // A missing or malformed manifest declaration is not a
-                // low-risk grant. Medium preserves the normal approval path.
-                _ => Risk::Medium,
-            },
-            // MCP servers are user-configured but their tools are opaque; a
-            // self-declared annotation comes from the server, so it is not
-            // trusted and never lowers the approval path.
-            name if name.starts_with("mcp_") => Risk::Medium,
-            _ => Risk::Medium,
-        }
-    }
-
     /// The risk one call actually carries. A tool's registered risk is its
     /// default; a call whose arguments cross a boundary that default does not
     /// cover passes its own — a recall read of every project rather than the
@@ -162,27 +130,6 @@ impl PermissionManager {
         effective
             .cloned()
             .unwrap_or_else(|| Self::tool_risk_with_declared(tool_name, declared))
-    }
-
-    /// The shared contract-mode allowlist. Plan and Goal expose the same
-    /// read/inspect core plus Bash; only their submit tool differs, and that one
-    /// is a sidecar-side tool that never reaches this gate. `new_context` and
-    /// `ContextUsage` are sidecar-side too, listed so both sides agree.
-    pub fn plan_mode_allows(tool_name: &str) -> bool {
-        matches!(
-            tool_name,
-            "Read"
-                | "Glob"
-                | "Grep"
-                | "Bash"
-                | "BrowserPreview"
-                | "new_context"
-                | "ContextUsage"
-                // Recall reads host-owned history and learned memory and changes
-                // nothing, so a read-only contract negotiation may use it.
-                | "SessionHistorySearch"
-                | "MemorySearch"
-        )
     }
 
     /// Auto-decision with an effective permission mode (D115).
@@ -995,6 +942,8 @@ mod session_messaging_tests {
         );
     }
 }
+
+mod registry;
 
 #[cfg(test)]
 mod recall_tool_tests;

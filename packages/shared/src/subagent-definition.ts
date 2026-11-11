@@ -142,6 +142,16 @@ export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
   "SessionSend",
   "SessionResult",
   "SessionCreate",
+  // Background processes belong to the parent session: a delegate's tools run
+  // under the parent's session id, so a task it starts is registered there and
+  // the parent's `BackgroundTaskList` / `BackgroundTaskOutput` /
+  // `BackgroundTaskStop` already read and stop it. Reading and stopping those
+  // tasks is the parent agent's authority, not a delegate's — the same reason
+  // nested `Task` and mode switches stay above (`03-tools-and-permissions.md`
+  // §10.2).
+  "BackgroundTaskList",
+  "BackgroundTaskOutput",
+  "BackgroundTaskStop",
 ];
 
 /**

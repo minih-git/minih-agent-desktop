@@ -543,6 +543,28 @@ describe("resolveSubagentToolNames", () => {
     );
   });
 
+  it("never hands a delegate the parent's background task tools", () => {
+    // Background processes belong to the session that started them; a delegate
+    // reading or stopping one would act on the user's server, not its own task.
+    const resolved = resolveSubagentToolNames(
+      { tools: ["BackgroundTaskStop"], inheritTools: true },
+      [
+        "Read",
+        "BackgroundTaskList",
+        "BackgroundTaskOutput",
+        "BackgroundTaskStop",
+      ],
+    );
+    expect(resolved).toContain("Read");
+    for (const name of [
+      "BackgroundTaskList",
+      "BackgroundTaskOutput",
+      "BackgroundTaskStop",
+    ]) {
+      expect(resolved).not.toContain(name);
+    }
+  });
+
   it("keeps declared extras and does not duplicate parent names", () => {
     const resolved = resolveSubagentToolNames(
       { tools: ["Edit", "Read"], inheritTools: true },

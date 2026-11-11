@@ -43,6 +43,11 @@ import {
   memoryToolParameters,
   memoryToolDescriptions,
 } from "./memory-tools.js";
+import {
+  BACKGROUND_TASK_TOOL_NAMES,
+  backgroundTaskToolParameters,
+  backgroundTaskToolDescriptions,
+} from "./background-task-tools.js";
 import { withPiFileOpToolNames } from "./pi-file-ops.js";
 import { remoteMutationIdentity } from "./remote-workspace.js";
 import { SideNoteAnswers } from "./side-note-answer.js";
@@ -516,8 +521,14 @@ function toolNameList(value: unknown): string[] {
   ];
 }
 
-/** Read canonical and historical activation markers from a ToolSearch row. */
-function toolSearchActivatedNames(
+/**
+ * Read the activation markers a successful tool result carried. The canonical
+ * marker is `details.addedToolNames`, which a ToolSearch result and any other
+ * result that activates tools itself (a background `Bash` call activating the
+ * background-task tools) both write. `details.activated` and a legacy top-level
+ * `addedToolNames` are accepted for older transcripts.
+ */
+function resultActivatedNames(
   details: unknown,
   legacyAddedToolNames?: unknown,
 ): string[] {
@@ -1509,7 +1520,7 @@ function commandShellToolDescription(
     shellSyntaxGuidance(shell),
     `The session scratch directory variable is ${shellScratchVariable(shell)}.`,
     `An optional timeout from 1 to ${MAX_COMMAND_TIMEOUT_SECONDS} seconds may be supplied; without it, the command defaults to a 60-second timeout.`,
-    `Set runInBackground: true for long-lived processes the user needs after the turn ends (dev servers, watchers, builds). A background call returns a backgroundTaskId immediately, survives turn aborts and timeouts, and its output is visible in the composer's running-tasks bar; do not set it for commands whose output the current turn depends on.`,
+    `Set runInBackground: true for long-lived processes the user needs after the turn ends (dev servers, watchers, builds). A background call returns a backgroundTaskId immediately, survives turn aborts and timeouts, and its output is visible in the composer's running-tasks bar; do not set it for commands whose output the current turn depends on. After starting one, read its output with BackgroundTaskOutput (pass waitSeconds to block until it finishes) and end it with BackgroundTaskStop; BackgroundTaskList shows this session's tasks. They are activated by the successful background call, or found with ToolSearch.`,
     ...(formattedScratch ? [`The session scratch directory is ${formattedScratch}.`] : []),
   ].join(" ");
 }
@@ -1781,7 +1792,7 @@ export function toolResultFromUi(
   const rawAddedToolNames = rawRecord?.addedToolNames;
   const addedToolNames =
     m.toolName === TOOL_SEARCH_NAME
-      ? toolSearchActivatedNames(rawRecord?.details, rawAddedToolNames)
+      ? resultActivatedNames(rawRecord?.details, rawAddedToolNames)
       : toolNameList(rawAddedToolNames);
   if (blocks.length === 0) {
     blocks.push({
@@ -3748,6 +3759,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       if (scheduledToolDescriptions[toolName]) return scheduledToolDescriptions[toolName];
       if (sessionToolDescriptions[toolName]) return sessionToolDescriptions[toolName];
       if (memoryToolDescriptions[toolName]) return memoryToolDescriptions[toolName];
+      if (backgroundTaskToolDescriptions[toolName]) return backgroundTaskToolDescriptions[toolName];
       switch (toolName) {
         case "BrowserPreview":
           return "Open an HTML file in Minih-Agent-Desktop's built-in browser panel. `path` may be relative to a project folder or this session's scratch directory, or an absolute path inside those roots. No project is required for scratch previews. The preview live-reloads on later edits to the file or its sibling assets, so call once per page.";
@@ -3904,7 +3916,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         runInBackground: Type.Optional(
           Type.Boolean({
             description:
-              "Start the command as a background task that outlives the turn (dev servers, watchers, builds). Returns backgroundTaskId immediately; the foreground timeout does not apply.",
+              "Start the command as a background task that outlives the turn (dev servers, watchers, builds). Returns backgroundTaskId immediately; the foreground timeout does not apply. Read its output with BackgroundTaskOutput and stop it with BackgroundTaskStop; that successful call activates both tools plus BackgroundTaskList.",
           }),
         ),
       },
@@ -4322,10 +4334,27 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         } else {
           text = JSON.stringify(rawContent, null, 2);
         }
+        // A successful background Bash call makes this session's own
+        // backgroundTaskId readable: the three read/stop tools were on demand
+        // and the model would otherwise have to search for them first. The
+        // activation is recorded on this result as the canonical
+        // `details.addedToolNames` marker the prompt-time restore replays.
+        const activatedBackgroundTools =
+          isBash &&
+          result.ok &&
+          isRecord(rawContent) &&
+          typeof rawContent.backgroundTaskId === "string"
+            ? this.activateDeferredTools(BACKGROUND_TASK_TOOL_NAMES)
+            : [];
         if (!result.ok) this.failedHostToolCalls.add(toolCallId);
         return {
           content: [{ type: "text", text }, ...imageBlocks],
-          details,
+          details: activatedBackgroundTools.length > 0
+            ? {
+                ...(isRecord(details) ? details : {}),
+                addedToolNames: activatedBackgroundTools,
+              }
+            : details,
           ...(terminateAfterMutationFailure ? { terminate: true } : {}),
           isError: result.isError === true || result.ok === false,
         };
@@ -4337,6 +4366,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         parameters: Type.Object(
           scheduledToolParameters[toolName] ??
             memoryToolParameters[toolName] ??
+            backgroundTaskToolParameters[toolName] ??
             sessionToolParameters[toolName] ??
             parameters[toolName] ?? { command: Type.String() },
         ),
@@ -4442,6 +4472,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       tools.push(...memoryReadToolNames);
       if (this.mode === "agent") tools.push(MEMORY_REMEMBER_TOOL_NAME);
     }
+    // Background tasks belong to the session, not to the turn that started
+    // them, and Bash is admitted in every mode, so a Plan or Goal turn can start
+    // a server, read its output, and end it under the same rule. They stay on
+    // demand — a session that never runs a background command pays no schema for
+    // them — and a successful `runInBackground` Bash call activates all three.
+    tools.push(...BACKGROUND_TASK_TOOL_NAMES);
     const builtins = tools.map(exec);
     const jevTools: AgentTool[] =
       this.mode === "agent" && this.jevApiKey
@@ -4645,9 +4681,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     // Contract modes are read-only: inspection tools, plan-safe plugin
     // actions (ADR 0211), and the one submit tool that belongs to this kind.
     // The recall reads change nothing, and the learned-memory section points at
-    // MemorySearch, so they stay available in both contract modes.
+    // MemorySearch, so they stay available in both contract modes. Background
+    // processes belong to the session and Bash is admitted here, so a contract
+    // turn can start one, read it, and end it under the same rule; the host
+    // still decides Stop's approval.
     if (this.isPlanSafePluginTool(name)) return true;
-    return new Set([
+    return new Set<string>([
       "Read",
       "Glob",
       "Grep",
@@ -4658,6 +4697,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       CONTEXT_USAGE_TOOL_NAME,
       SUBMIT_TOOL_NAMES[kind],
       ...memoryReadToolNames,
+      ...BACKGROUND_TASK_TOOL_NAMES,
     ]).has(name);
   }
 
@@ -6525,7 +6565,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    * can still see. The context keeps every ToolSearch result that announced
    * "Activated on-demand tools: X" and every result X itself produced, so
    * starting a turn with an empty set while those rows remain leaves the
-   * model calling tools that are missing from the schema (#225). Only
+   * model calling tools that are missing from the schema (#225). A result that
+   * activated tools itself — a background `Bash` call activating
+   * `BackgroundTaskList` / `BackgroundTaskOutput` / `BackgroundTaskStop` —
+   * carries the same canonical `details.addedToolNames` marker, so a turn that
+   * started a server from an older window still gets those tools back. Only
    * successful results count, and only for names still in the deferred
    * catalog, which `rebuildToolCatalog` already limits to the current mode.
    */
@@ -6548,17 +6592,28 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       }
     }
     // Legacy histories lack declarations. For current histories, only results
-    // after the last declaration can represent an activation not yet declared.
+    // after the last declaration can represent an activation not yet declared;
+    // a result before it is already reflected in the restored set.
     for (const message of messages.slice(lastSystem + 1)) {
-      if (restored && (message.role !== "toolResult" || message.toolName !== TOOL_SEARCH_NAME)) continue;
       if (message.role !== "toolResult" || message.isError) continue;
       if (isMissingToolResultPlaceholder(message.content)) continue;
-      const names =
+      const markedNames =
         message.toolName === TOOL_SEARCH_NAME
-          ? toolSearchActivatedNames(
+          ? resultActivatedNames(
               message.details,
               (message as unknown as { addedToolNames?: unknown }).addedToolNames,
             )
+          : toolNameList(
+              isRecord(message.details) ? message.details.addedToolNames : undefined,
+            );
+      // A successful non-ToolSearch result also proves its own tool was
+      // active; a result that activated another tool (a background `Bash`
+      // call activating the background-task tools) carries that in the
+      // canonical marker instead.
+      const names = markedNames.length > 0
+        ? markedNames
+        : message.toolName === TOOL_SEARCH_NAME
+          ? []
           : [message.toolName];
       for (const name of names) {
         if (this.deferredToolNames.has(name)) {
