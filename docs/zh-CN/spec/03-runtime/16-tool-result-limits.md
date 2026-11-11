@@ -59,8 +59,9 @@ Goal/`Read` 管道，其输出不受限制。
 
 ```text
 [truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
-[truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Narrow the request to see more.]
-[truncated: no complete line fits the 96KB limit; kept 65536 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
+[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Head keeps the first 32768 bytes of the 4200000-byte line 1. Narrow the request to see more.]
+[truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Tail keeps the last 98304 bytes of the 400000-byte line 51234. Narrow the request to see more.]
+[truncated: no complete line fits the 96KB limit; kept 98304 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
 ```
 
 标记总是标明哪一端幸存下来，有多少被排除在总数之外，
@@ -69,8 +70,14 @@ Goal/`Read` 管道，其输出不受限制。
 
 `BUDGET_SHELL`（Bash stdout）按整行把行数与字节预算的三分之一留在开头、其余
 三分之二留在结尾：失败的测试或构建把结论打印在末尾，而开头说明实际跑了什么。
-单行超过整个预算时改为在首尾各截取一段，并落在 UTF-8 字符边界上。搜索/读取结果
-与 Bash stderr 仍只保留一端（分别为开头和结尾）。
+搜索/读取结果与 Bash stderr 仍只保留一端（分别为开头和结尾）。
+
+每一端单独处理：某一端连一整行都放不下时，就保留其边界行的一段——开头截首行、
+结尾截末行——并落在 UTF-8 字符边界上，标记写明是哪一行、保留了多少字节。因此
+边界行是一整块巨量文本（单行 JSON 诊断、压缩后的 bundle）的多行输出，仍会返回
+那一行对应的一端，而不是什么都不返回。只有当一整行都放不下、且两端截取的片段
+也无法同时容纳时，结果才退化为仅有 `no complete line fits` 标记，单行输出也属于
+这种情况。
 
 Read/Glob/Grep 不在其有效负载中嵌入标记：窗口元数据
 （`offset`、`lineCount`、`totalLines`、`truncated`）加上 `notice` 字符串携带与

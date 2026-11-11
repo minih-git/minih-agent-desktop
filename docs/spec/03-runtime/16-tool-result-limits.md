@@ -61,8 +61,9 @@ between:
 
 ```text
 [truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
-[truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Narrow the request to see more.]
-[truncated: no complete line fits the 96KB limit; kept 65536 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
+[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Head keeps the first 32768 bytes of the 4200000-byte line 1. Narrow the request to see more.]
+[truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Tail keeps the last 98304 bytes of the 400000-byte line 51234. Narrow the request to see more.]
+[truncated: no complete line fits the 96KB limit; kept 98304 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
 ```
 
 A marker always states which end survived, how much was kept out of the total,
@@ -72,9 +73,18 @@ only when a full copy was actually written.
 `BUDGET_SHELL` (Bash stdout) keeps a third of the line and byte budget at the
 head and the remaining two thirds at the tail, in whole lines, because a
 failing test or build prints its summary at the end while the first lines show
-what actually ran. A single line larger than the whole budget is clipped at
-both ends instead, on UTF-8 char boundaries. Search/read results and Bash stderr
-keep a single end (head and tail respectively).
+what actually ran. Search/read results and Bash stderr keep a single end (head
+and tail respectively).
+
+Each end is served independently. When an end cannot fit even one whole line,
+it keeps a clipped piece of its boundary line — the head clips the first line,
+the tail the last — on UTF-8 char boundaries, and the marker names that line
+and how many of its bytes survived. A multi-line payload whose boundary line is
+one huge blob (a single-line JSON diagnostic, a minified bundle) therefore still
+returns that line's relevant end instead of nothing. Only when no whole line
+fits *and* the two clipped pieces cannot both be served does the result collapse
+to the `no complete line fits` marker alone, which is the single-line case as
+well.
 
 Read/Glob/Grep do not embed a marker in their payload: the window metadata
 (`offset`, `lineCount`, `totalLines`, `truncated`) plus a `notice` string carry
