@@ -97,12 +97,16 @@ Three mechanisms, all in `SubagentRun`, make that true:
   drain loop, in the `finally`), `closed` is set and `send()` refuses with
   `SUBAGENT_RUN_CLOSING`. A `send()` racing the last turn sees either a live
   queue or this refusal — never a promise that quietly evaporates.
-- **Cancellation discards and reports.** User Stop, `TaskStop`, runtime
-  disposal and a terminal parent error abort the run. `send()` refuses
-  afterwards with `SUBAGENT_RUN_ABORTED`, the queue is cleared, and the result
-  carries `steering: { delivered, discarded }` plus a line in the report
-  ("N instructions sent to this subagent after it was cancelled were not
-  delivered"). A Stop must not read like a delivered instruction.
+- **Anything accepted and not delivered is reported.** When the run commits to
+  its result, every accepted-but-unsent instruction is counted as discarded:
+  the queue is cleared, the cleared entries are subtracted from what was
+  accepted, and the result carries `steering: { delivered, discarded }` plus a
+  line in the report naming the cause ("N instructions sent to this subagent
+  did not reach it (the subagent was cancelled / it ended first)"). A
+  cancellation — user Stop, `TaskStop`, runtime disposal, terminal parent error
+  — additionally refuses later sends with `SUBAGENT_RUN_ABORTED`. A stop, or a
+  run that ended before a queued turn could be replayed, must never read like a
+  delivered instruction.
 
 `SubagentRunResult.steering` is today's public trace of that accounting; the
 parent reads "queued" and the settled result reads "delivered" or "discarded".

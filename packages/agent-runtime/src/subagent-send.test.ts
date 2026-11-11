@@ -4,7 +4,7 @@ import {
   createAssistantMessageEventStream,
   type Message,
 } from "@earendil-works/pi-ai";
-import { SubagentRun } from "./subagent.js";
+import { SubagentRun, type SubagentRunResult } from "./subagent.js";
 import { chainRowsToMessages } from "./delegation-history.js";
 import type { RuntimeProviderConfig } from "./provider-binding.js";
 
@@ -264,13 +264,35 @@ describe("SubagentRun.send", () => {
 
     expect(result.status).toBe("aborted");
     expect(result.steering).toEqual({ delivered: 0, discarded: 1 });
-    expect(result.report).toContain("not delivered");
+    expect(result.report).toContain("did not reach it (the subagent was cancelled)");
     // A cancelled run refuses everything afterwards instead of queueing
     // instructions nobody will read.
     expect(run.send("Still there?")).toMatchObject({
       kind: "refused",
       code: "SUBAGENT_RUN_ABORTED",
     });
+  });
+
+  it("counts an accepted instruction the run never delivered as dropped", () => {
+    // Delivery can also fail without a Stop: the instruction arrives after the
+    // loop has settled its last turn, so nothing replays it. The run must not
+    // forget it — a caller that got "queued" has to learn it did not land.
+    const run = createRun();
+    const agent = agentOf(run) as unknown as {
+      steer: (message: unknown) => void;
+      clearAllQueues: () => void;
+    };
+    agent.steer = () => undefined;
+    agent.clearAllQueues = () => undefined;
+
+    expect(run.send("Use the other file.")).toEqual({ kind: "queued" });
+    (run as unknown as { discardUnsentSteering: () => void }).discardUnsentSteering();
+    const result = (run as unknown as { result: (...args: unknown[]) => SubagentRunResult })
+      .result("completed", "I did something else.");
+
+    expect(result.steering).toEqual({ delivered: 0, discarded: 1 });
+    expect(result.report).toContain("1 instruction sent to this subagent did not reach it");
+    expect(result.report).toContain("it ended first");
   });
 
   it("refuses an empty instruction", () => {

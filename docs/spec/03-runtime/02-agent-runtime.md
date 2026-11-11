@@ -1194,11 +1194,12 @@ why). `SubagentRun` guarantees it in three ways: after `prompt()` and after
 every retry or fallback `continue()`, `run()` drains the steering queue while
 the transcript still ends on an assistant row, so an accepted message is always
 replayed; once the run commits to producing its final result a `closed` flag
-makes `send()` refuse with `SUBAGENT_RUN_CLOSING`; and a cancellation (user
-Stop, `TaskStop`, dispose, terminal parent error) clears the queue, refuses
-further sends with `SUBAGENT_RUN_ABORTED`, and reports
-`steering: { delivered, discarded }` on the run result plus a line in the
-report, so a Stop never reads like a delivered instruction.
+makes `send()` refuse with `SUBAGENT_RUN_CLOSING`; and at that same point every
+accepted-but-unsent instruction is counted as discarded — the queue is cleared
+and the result reports `steering: { delivered, discarded }` plus a line in the
+report naming the cause (cancelled, or ended before the queued turn could be
+replayed). A cancellation additionally refuses further sends with
+`SUBAGENT_RUN_ABORTED`, so a Stop never reads like a delivered instruction.
 
 A delivered instruction arrives in the delegate's stream as a user
 `message_end`, is persisted with the same `parentToolCallId` / `agentName`

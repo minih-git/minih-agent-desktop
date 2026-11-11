@@ -20988,7 +20988,8 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   `Task(resume: "<id>")`. Step 5 seeds the resumed delegate's history with the
   instruction as a user turn. Step 6 reports the instruction as discarded
   (`steering.discarded` plus a report line) instead of pretending it was
-  delivered, and later sends are refused. Step 7 rejects each call before
+  delivered (it names the cause for either loss case), and later sends are
+  refused. Step 7 rejects each call before
   anything is queued, naming the id problem and the bound. Step 8 declares the
   schema but rejects the call with the contract-mode denial and steers nothing.
 - **Automation**: `packages/agent-runtime/src/subagent-send.test.ts` drives the

@@ -429,10 +429,11 @@ export class SubagentRun {
     } finally {
       signal?.removeEventListener("abort", onAbort);
       this.finalizeCurrentAssistant();
-      // Past this point the run has committed to its final result; a later
-      // `send()` is refused instead of being queued behind a closed run.
+      // Past this point the run has committed to its final result: a later
+      // `send()` is refused instead of being queued behind a closed run, and
+      // anything still queued is reported as dropped rather than forgotten.
       this.closed = true;
-      this.discardSteeringOnAbort();
+      this.discardUnsentSteering();
     }
 
     if (signal?.aborted) {
@@ -536,19 +537,28 @@ export class SubagentRun {
   }
 
   /**
-   * Cancellation drops the queue rather than replaying it into a dead run, and
-   * the result reports what was dropped (ADR parent-steers-running-delegation
-   * §4): a Stop must never look like a delivered instruction.
+   * Whatever was accepted and never reached a request is reported as dropped,
+   * whatever stopped it (ADR parent-steers-running-delegation §3).
+   *
+   * This runs once the run has committed to its final result. A cancellation
+   * drops the queue without replaying it into a dead run; a run that ended for
+   * any other reason before a queued message could be replayed drops it too.
+   * Both must reach the parent through `steering.discarded`, because a call
+   * that returned "queued" must never end in silence.
    */
-  private discardSteeringOnAbort(): void {
+  private discardUnsentSteering(): void {
     const abortReason = this.cancelledReason();
-    if (!abortReason) return;
-    this.sendRefusal = abortReason;
+    if (abortReason) this.sendRefusal = abortReason;
     this.agent.clearAllQueues?.();
     this.discardedSteering = Math.max(
       0,
       this.acceptedSteering - this.deliveredSteering,
     );
+  }
+
+  /** Why the accepted instructions never reached the delegate. */
+  private discardedReason(): string {
+    return this.cancelledReason() ? "the subagent was cancelled" : "it ended first";
   }
 
   /** Why this run can no longer accept instructions, or `undefined`. */
@@ -849,11 +859,11 @@ export class SubagentRun {
           `Model ${failure.model} failed (${failure.code}): ${failure.message}`,
       ),
       ...(degradationNote ? [degradationNote] : []),
-      // A Stop drops whatever was still queued; the parent has to be told
-      // rather than left assuming its last instruction was heard.
-      ...(this.discardedSteering > 0 && status === "aborted"
+      // Whatever the run accepted and never delivered is reported here; the
+      // parent must not be left assuming its last instruction was heard.
+      ...(this.discardedSteering > 0
         ? [
-            `${this.discardedSteering} instruction${this.discardedSteering === 1 ? "" : "s"} sent to this subagent after it was cancelled ${this.discardedSteering === 1 ? "was" : "were"} not delivered.`,
+            `${this.discardedSteering} instruction${this.discardedSteering === 1 ? "" : "s"} sent to this subagent did not reach it (${this.discardedReason()}).`,
           ]
         : []),
     ];
