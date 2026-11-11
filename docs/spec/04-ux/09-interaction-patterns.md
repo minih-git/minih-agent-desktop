@@ -1031,7 +1031,7 @@ may be retained while exactly one workspace supplies the visible shell context.
 
 - Per D306 / D194: budgets are per tool class (see [16-tool-result-limits](../03-runtime/16-tool-result-limits.md)). Search/read results cap at 128KB / 4000 lines; Bash stdout/stderr cap at 96KB / 4000 lines with a spill file.
 - Read/Glob/Grep report `truncated: true` only when this result was cut short (budget, a clipped line, or remaining Grep/Glob hits). A filled Read window of a longer file is not truncated; `notice` names the next offset.
-- Bash markers name which end survived and the spill path, for example `[truncated: kept the first 4000 of 51234 lines; limit 4000 lines / 96KB. …]`.
+- Bash markers name which end survived and the spill path, for example `[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. …]` for stdout and `[truncated: kept the last 1200 of 51234 lines; …]` for stderr.
 - Truncated content is never silently omitted — always marked
 - Disclosure expansion does not load content beyond the host-enforced cap
 - The collapsed-row `truncated` chip follows `details.truncated`

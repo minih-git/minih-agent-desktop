@@ -55,18 +55,26 @@ a `sed`/`awk` pipeline whose output nothing bounded.
 
 ## 3. Truncation marker format
 
-Implemented markers (host-core `truncate_to`), appended for a head cut and
-prepended for a tail cut:
+Implemented markers (host-core `truncate_to`). A head cut appends the marker, a
+tail cut prepends it, and Bash stdout keeps both ends with the marker in
+between:
 
 ```text
-[truncated: kept the first 4000 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
+[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
 [truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Narrow the request to see more.]
-[truncated: no complete line fits the 96KB limit; kept 98304 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
+[truncated: no complete line fits the 96KB limit; kept 65536 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
 ```
 
 A marker always states which end survived, how much was kept out of the total,
 the limit that applied, and where to get the rest. The spill sentence appears
 only when a full copy was actually written.
+
+`BUDGET_SHELL` (Bash stdout) keeps a third of the line and byte budget at the
+head and the remaining two thirds at the tail, in whole lines, because a
+failing test or build prints its summary at the end while the first lines show
+what actually ran. A single line larger than the whole budget is clipped at
+both ends instead, on UTF-8 char boundaries. Search/read results and Bash stderr
+keep a single end (head and tail respectively).
 
 Read/Glob/Grep do not embed a marker in their payload: the window metadata
 (`offset`, `lineCount`, `totalLines`, `truncated`) plus a `notice` string carry

@@ -54,18 +54,23 @@ Goal/`Read` 管道，其输出不受限制。
 
 ## 3. 截断标记格式
 
-已实现的标记 (host-core `truncate_to`)，附加用于头部切割和
-预先进行尾部切割：
+已实现的标记 (host-core `truncate_to`)。头部切割把标记追加在末尾，尾部切割把它
+放在开头，Bash stdout 首尾都保留时标记位于中间：
 
 ```text
-[truncated: kept the first 4000 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
+[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
 [truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Narrow the request to see more.]
-[truncated: no complete line fits the 96KB limit; kept 98304 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
+[truncated: no complete line fits the 96KB limit; kept 65536 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
 ```
 
 标记总是标明哪一端幸存下来，有多少被排除在总数之外，
 适用的限制，以及从哪里获得其余的。出现溢出语句
 仅当实际编写完整副本时。
+
+`BUDGET_SHELL`（Bash stdout）按整行把行数与字节预算的三分之一留在开头、其余
+三分之二留在结尾：失败的测试或构建把结论打印在末尾，而开头说明实际跑了什么。
+单行超过整个预算时改为在首尾各截取一段，并落在 UTF-8 字符边界上。搜索/读取结果
+与 Bash stderr 仍只保留一端（分别为开头和结尾）。
 
 Read/Glob/Grep 不在其有效负载中嵌入标记：窗口元数据
 （`offset`、`lineCount`、`totalLines`、`truncated`）加上 `notice` 字符串携带与
