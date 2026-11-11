@@ -152,8 +152,11 @@ window.botsFormProbe = async () => {
   check(report.beforeClick.every(Boolean), "the always-asked actions were not checked to begin with");
   check(locked.every((label) => box(label).disabled), "the always-asked actions were clickable");
 
-  // A click (even a forced one) must not uncheck them.
+  // Every way a person can reach the control leaves it checked: the input
+  // itself and the wrapping label (which forwards clicks to it).
   for (const label of locked) flushSync(() => box(label).click());
+  await settle();
+  for (const label of locked) flushSync(() => box(label).closest("label")?.click());
   await settle();
   report.afterClick = locked.map((label) => box(label).checked);
   check(report.afterClick.every(Boolean), "a click cleared an always-asked action");

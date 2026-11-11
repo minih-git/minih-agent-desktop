@@ -109,11 +109,13 @@ const setDrafts = (next) => { drafts = next; };
 const clearCalls = () => { calls.length = 0; };
 const callsTo = (channel) => calls.filter((call) => call.channel === channel);
 
+// Switching sessions replaces the dock rather than updating it, which is what a
+// person does when they open another conversation: the previous card must not
+// survive the switch.
 function mount(session) {
-  flushSync(() => rootNode.render(React.createElement(React.Fragment, null,
-    session && isStewardSession(session)
-      ? React.createElement(TaskCardDock, { sessionId: session.id })
-      : null)));
+  flushSync(() => rootNode.render(null));
+  if (!session || !isStewardSession(session)) return;
+  flushSync(() => rootNode.render(React.createElement(TaskCardDock, { sessionId: session.id })));
 }
 
 window.taskCardProbe = async () => {
