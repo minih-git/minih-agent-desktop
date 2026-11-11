@@ -20637,12 +20637,16 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   bounded stdout/stderr that keep the **tail** and carry a truncation marker
   when cut; `waitSeconds` returns as soon as the task ends, reports the current
   state on timeout without an error, and ends immediately on Stop while the
-  process keeps running. `BackgroundTaskList` shows only the calling session's
-  tasks. The second session receives the same `NOT_FOUND` for another session's
+  process keeps running. A contested output cell delays the answer instead of
+  reporting a missing task, and repeated reads of one large stream overwrite one
+  spill file per task rather than leaving a copy per read. `BackgroundTaskList`
+  shows only the calling session's tasks. The second session receives the same `NOT_FOUND` for another session's
   id as for an unknown id, with no hint that the task exists. `BackgroundTaskStop`
-  stops the tree, is idempotent, and never touches another session's task. No
-  delegate receives the three tools, and a delegate's `runInBackground` Bash
-  call is refused.
+  stops the tree, is idempotent, and never touches another session's task. In
+  Plan, all three are offered like Bash, and Stop takes the same approval path
+  Bash does. A delegate's tools run under the parent's session id, so a task it
+  starts appears in the parent's list and the composer dock, while the three
+  tools themselves stay the parent's.
 - **Specs**: `03-runtime/03-tools-and-permissions.md` §2.1, §5
   (Background Bash commands), §10 and §10.2.
 - **Acceptance**: E / F / Quality / Security.

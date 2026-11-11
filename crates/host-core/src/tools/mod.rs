@@ -687,6 +687,23 @@ pub(crate) fn truncate_with_spill(
     (truncate_to(text, budget, spilled.as_deref()), true)
 }
 
+/// `truncate_with_spill` at a caller-chosen, stable path. A caller that reads
+/// the same growing stream repeatedly (one background task's output) would
+/// otherwise leave a dated copy of up to `SPILL_MAX_BYTES` per read; the fixed
+/// name keeps exactly one file that each read overwrites.
+pub(crate) fn truncate_with_stable_spill(
+    text: &str,
+    budget: OutputBudget,
+    scratch: Option<&Path>,
+    file_stem: &str,
+) -> (String, bool) {
+    if fits(text, budget) {
+        return (text.to_string(), false);
+    }
+    let spilled = write_spill(scratch, file_stem, text);
+    (truncate_to(text, budget, spilled.as_deref()), true)
+}
+
 fn truncate_to(text: &str, budget: OutputBudget, spilled: Option<&Path>) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let window: &[&str] = match budget.direction {
@@ -806,16 +823,20 @@ fn clip_tail(text: &str, max_bytes: usize) -> &str {
 static SPILL_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn spill_output(scratch: Option<&Path>, label: &str, text: &str) -> Option<PathBuf> {
-    // Created here rather than up front in execute_tool: a session whose
-    // commands all stayed under budget should not get an empty directory.
-    let dir = scratch?.join("tool-output");
-    std::fs::create_dir_all(&dir).ok()?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|since| since.as_millis())
         .unwrap_or(0);
     let seq = SPILL_SEQ.fetch_add(1, Ordering::Relaxed);
-    let path = dir.join(format!("{label}-{stamp}-{seq}.log"));
+    write_spill(scratch, &format!("{label}-{stamp}-{seq}"), text)
+}
+
+fn write_spill(scratch: Option<&Path>, file_stem: &str, text: &str) -> Option<PathBuf> {
+    // Created here rather than up front in execute_tool: a session whose
+    // commands all stayed under budget should not get an empty directory.
+    let dir = scratch?.join("tool-output");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("{file_stem}.log"));
     match std::fs::write(&path, text) {
         Ok(()) => Some(path),
         Err(error) => {
@@ -827,11 +848,6 @@ fn spill_output(scratch: Option<&Path>, label: &str, text: &str) -> Option<PathB
 
 pub struct BashExecutionOptions {
     pub session_id: String,
-    /// This call runs inside a subagent (ADR 0089). A delegate may run
-    /// foreground commands; a background task is refused because the process
-    /// registry and the model's background-task tools belong to the owning
-    /// session.
-    pub is_delegate: bool,
     pub tool_call_id: String,
     pub command_shell_id: String,
     pub timeout_ms: Option<u64>,
@@ -859,7 +875,6 @@ impl BashExecutionOptions {
             extra_env: Vec::new(),
             run_in_background: false,
             app_state: None,
-            is_delegate: false,
         }
     }
 }
@@ -2885,19 +2900,6 @@ async fn tool_bash(
     // task outlives the turn by design and is reported via
     // `backgroundTasks.changed` / `backgroundTasks.*` RPC.
     if options.run_in_background {
-        // A delegate never owns a background process: the registry entry and
-        // the model's own BackgroundTaskList / Output / Stop all key off the
-        // owning session, and a delegate's session is not a place the user can
-        // see or reach that process. Refusing here says so explicitly instead
-        // of starting a task nobody can observe.
-        if options.is_delegate {
-            return Err((
-                "TOOL_DENIED".into(),
-                "a subagent cannot start a background task: background processes belong to the \
-                 parent session, which must start and stop them"
-                    .into(),
-            ));
-        }
         let Some(app_state) = options.app_state.as_ref() else {
             return Err((
                 "INVALID_ARGUMENT".into(),
@@ -5034,7 +5036,6 @@ mod tests {
                 output_tx: None,
                 extra_env: Vec::new(),
                 run_in_background: false,
-                is_delegate: false,
                 app_state: None,
             }),
         )
@@ -5079,7 +5080,6 @@ mod tests {
                 output_tx: None,
                 extra_env: Vec::new(),
                 run_in_background: false,
-                is_delegate: false,
                 app_state: None,
             }),
         )
@@ -5119,7 +5119,6 @@ mod tests {
                 output_tx: None,
                 extra_env: Vec::new(),
                 run_in_background: false,
-                is_delegate: false,
                 app_state: None,
             }),
         )
@@ -5192,7 +5191,6 @@ mod tests {
             output_tx: Some(tx),
             extra_env: Vec::new(),
             run_in_background: false,
-            is_delegate: false,
             app_state: None,
         };
         let mut notifier = OutputNotifier::new(&options);
@@ -5221,7 +5219,6 @@ mod tests {
             output_tx: None,
             extra_env: Vec::new(),
             run_in_background: false,
-            is_delegate: false,
             app_state: None,
         };
 
@@ -5312,7 +5309,6 @@ mod tests {
             output_tx: None,
             extra_env: Vec::new(),
             run_in_background: false,
-            is_delegate: false,
             app_state: None,
         };
         execute_tool_with_options(

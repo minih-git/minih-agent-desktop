@@ -439,7 +439,6 @@ pub(super) async fn run_setup(
                 extra_env: env_for(&row, Some(&project_path)),
                 run_in_background: false,
                 app_state: None,
-                is_delegate: false,
             }),
             allow_external_paths: false,
             hashline: None,

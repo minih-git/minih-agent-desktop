@@ -66,15 +66,13 @@ async fn settled(state: &tokio::sync::Mutex<AppState>, session_id: &str, id: &st
     for _ in 0..200 {
         {
             let st = state.lock().await;
-            if let Some((_, _, _)) = st.background_tasks.session_task_output(session_id, id) {
-                let summaries = st.background_tasks.summaries();
-                if let Some(summary) = summaries
-                    .iter()
-                    .find(|summary| summary.id == id && summary.session_id == session_id)
-                {
-                    if summary.state != crate::background_tasks::BackgroundTaskState::Running {
-                        return format!("{:?}", summary.state);
-                    }
+            if let Some(snapshot) = st
+                .background_tasks
+                .session_task_snapshot(session_id, id)
+                .await
+            {
+                if snapshot.state != crate::background_tasks::BackgroundTaskState::Running {
+                    return format!("{:?}", snapshot.state);
                 }
             }
         }
@@ -113,22 +111,18 @@ fn registering_risk_matches_the_boundary() {
     assert_eq!(risk_for(STOP), Some(Risk::Medium));
 }
 
-/// A task started before a Plan or Goal turn must stay readable there, while
-/// stopping it is not a contract-mode action: a background task is started by
-/// Bash, which those modes hard-deny.
+/// Plan and Goal admit Bash, so they can start a background task too. All three
+/// tools therefore follow the same rule as Bash: a turn that starts a server can
+/// read it and end it instead of leaving it running with no way to stop it.
 #[test]
-fn contract_modes_read_but_do_not_stop_background_tasks() {
+fn contract_modes_admit_all_three_background_task_tools() {
     use crate::permissions::PermissionManager;
-    for tool in [LIST, OUTPUT] {
+    for tool in [LIST, OUTPUT, STOP] {
         assert!(
             PermissionManager::plan_mode_allows(tool),
-            "{tool} must stay readable in Plan and Goal"
+            "{tool} follows Bash in Plan and Goal"
         );
     }
-    assert!(
-        !PermissionManager::plan_mode_allows(STOP),
-        "Stop is not a contract-mode action"
-    );
 }
 
 #[tokio::test]
@@ -145,16 +139,14 @@ async fn list_and_output_are_scoped_to_the_calling_session() {
     let id = start_task(&state, &owner, dir.path(), "echo owned-output").await;
     settled(&state, &owner, &id).await;
 
-    let listed = execute(
-        &state,
-        &params(LIST, &owner, json!({})),
-        None,
-    )
-    .await;
+    let listed = execute(&state, &params(LIST, &owner, json!({})), None).await;
     assert!(listed.ok, "list failed: {:?}", listed.content);
     assert_eq!(listed.content["count"], json!(1));
     assert_eq!(listed.content["tasks"][0]["id"], json!(id));
-    assert_eq!(listed.content["tasks"][0]["command"], json!("echo owned-output"));
+    assert_eq!(
+        listed.content["tasks"][0]["command"],
+        json!("echo owned-output")
+    );
 
     // Another session sees an empty list and cannot read the id at all: the
     // answer is the same as for an id that never existed.
@@ -162,12 +154,7 @@ async fn list_and_output_are_scoped_to_the_calling_session() {
     assert!(foreign_list.ok);
     assert_eq!(foreign_list.content["count"], json!(0));
 
-    let foreign_output = execute(
-        &state,
-        &params(OUTPUT, &other, json!({ "id": id })),
-        None,
-    )
-    .await;
+    let foreign_output = execute(&state, &params(OUTPUT, &other, json!({ "id": id })), None).await;
     assert!(!foreign_output.ok);
     assert_eq!(foreign_output.error_code.as_deref(), Some("NOT_FOUND"));
 
@@ -295,7 +282,11 @@ async fn wait_timeout_reports_the_running_state() {
         None,
     )
     .await;
-    assert!(output.ok, "a timeout is not a failure: {:?}", output.content);
+    assert!(
+        output.ok,
+        "a timeout is not a failure: {:?}",
+        output.content
+    );
     assert_eq!(output.content["state"], json!("running"));
 
     let _ = execute(&state, &params(STOP, &owner, json!({ "id": id })), None).await;
@@ -329,7 +320,11 @@ async fn cancellation_ends_the_wait_without_touching_the_process() {
     })
     .await
     .expect("a stopped wait must not run out its 60s budget");
-    assert!(output.ok, "a stopped wait still reports: {:?}", output.content);
+    assert!(
+        output.ok,
+        "a stopped wait still reports: {:?}",
+        output.content
+    );
     assert_eq!(output.content["state"], json!("running"));
 
     let stopped = execute(&state, &params(STOP, &owner, json!({ "id": id })), None).await;
@@ -425,41 +420,93 @@ async fn arguments_are_validated() {
     assert_eq!(bad_wait.error_code.as_deref(), Some("INVALID_ARGUMENT"));
 }
 
-/// A delegate never owns a background process, so its `runInBackground` Bash
-/// call is refused before anything is registered. Without this a delegate could
-/// start a task the user cannot see and the parent's tools cannot reach.
 #[tokio::test]
-async fn a_delegate_cannot_start_a_background_task() {
+async fn output_waits_for_a_contended_cell_instead_of_reporting_not_found() {
     let (dir, state) = fixture();
     let owner = {
         let st = state.lock().await;
         new_session(&st)
     };
-    let options = crate::tools::BashExecutionOptions {
-        session_id: owner.clone(),
-        tool_call_id: "delegate-background".into(),
-        command_shell_id: crate::tools::shell::default_shell_id().into(),
-        timeout_ms: None,
-        cancellation: None,
-        output_tx: None,
-        extra_env: Vec::new(),
-        run_in_background: true,
-        app_state: Some(std::sync::Arc::new(state)),
-        is_delegate: true,
+    let command = if cfg!(windows) {
+        "[Console]::Out.Write('contended-output')"
+    } else {
+        "printf contended-output"
     };
-    let result = crate::tools::execute_tool_with_options(
-        Some(dir.path()),
-        None,
-        "Bash",
-        &json!({ "command": "sleep 30" }),
-        None,
-        Some(options),
-    )
-    .await;
-    assert!(!result.ok);
-    assert_eq!(result.error_code.as_deref(), Some("TOOL_DENIED"));
-    assert!(result.content["error"]
-        .as_str()
-        .unwrap()
-        .contains("subagent"));
+    let id = start_task(&state, &owner, dir.path(), command).await;
+    settled(&state, &owner, &id).await;
+
+    // Hold the task's own output cell while the tool call reads it.
+    let shared = {
+        let st = state.lock().await;
+        st.background_tasks
+            .tasks
+            .get(&id)
+            .expect("the registry owns the task")
+            .shared
+            .clone()
+    };
+    let mut guard = Some(shared.lock().await);
+    let release = async {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        drop(guard.take());
+    };
+    let read_params = params(OUTPUT, &owner, json!({ "id": id }));
+    let (output, ()) = tokio::join!(execute(&state, &read_params, None), release);
+
+    assert!(
+        output.ok,
+        "a contended read must answer, not report a missing task: {:?}",
+        output.content
+    );
+    assert_eq!(output.content["id"], json!(id));
+    assert_eq!(output.content["state"], json!("exited"));
+    assert_eq!(output.content["stdout"], json!("contended-output"));
+}
+
+/// Polling a large log must not leave a copy per read. Each task and stream
+/// keeps one fixed spill file that every read overwrites, so a model polling a
+/// noisy dev server cannot fill the user's scratch directory.
+#[tokio::test]
+async fn repeated_reads_overwrite_one_spill_file_per_task_and_stream() {
+    let (dir, state) = fixture();
+    let owner = {
+        let st = state.lock().await;
+        new_session(&st)
+    };
+    let command = if cfg!(windows) {
+        "1..30000 | ForEach-Object { \"line-$_\" }"
+    } else {
+        "awk 'BEGIN { for (i = 1; i <= 30000; i++) print \"line-\" i }'"
+    };
+    let id = start_task(&state, &owner, dir.path(), command).await;
+    settled(&state, &owner, &id).await;
+
+    let read_params = params(OUTPUT, &owner, json!({ "id": id }));
+    for _ in 0..3 {
+        let output = execute(&state, &read_params, None).await;
+        assert!(output.ok, "output failed: {:?}", output.content);
+    }
+
+    let spill_dir = dir.path().join("scratch").join(&owner).join("tool-output");
+    let mut names: Vec<String> = std::fs::read_dir(&spill_dir)
+        .expect("an over-budget read spills its full copy")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec![format!("background-{id}-stdout.log")],
+        "three reads leave exactly one file for the stream, not one per read"
+    );
+
+    // The marker still points the model at that file, so it can Grep the full
+    // log instead of re-running the command.
+    let output = execute(&state, &read_params, None).await;
+    let marker = output.content["stdout"].as_str().unwrap();
+    assert!(
+        marker.contains(&format!("background-{id}-stdout.log")),
+        "the truncation marker names the spill file: {:?}",
+        &marker[..marker.len().min(160)]
+    );
 }

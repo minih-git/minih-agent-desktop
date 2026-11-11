@@ -1,5 +1,5 @@
-mod background_tasks_rpc;
 mod background_task_tools;
+mod background_tasks_rpc;
 mod config_sync_rpc;
 mod easytier_rpc;
 mod memory_rpc;
@@ -4993,7 +4993,6 @@ async fn handle_request(
                     };
                     bash_options = Some(tools::BashExecutionOptions {
                         session_id: p.session_id.clone(),
-                        is_delegate: p.permission_scope.is_some() || p.delegation_id.is_some(),
                         tool_call_id: p.tool_call_id.clone(),
                         command_shell_id: shell_id,
                         timeout_ms: execution_timeout_ms,
@@ -5196,9 +5195,9 @@ async fn handle_request(
             let (cancellation_found, queued) = match tool_name {
                 Some("Bash" | "GenerateImages") => st.abort_or_queue_bash(session_id, tool_call_id),
                 Some(name) if background_task_tools::recognizes(name) => {
-                    let found = st
-                        .tool_cancellations
-                        .abort_or_queue(session_id, tool_call_id, name);
+                    let found =
+                        st.tool_cancellations
+                            .abort_or_queue(session_id, tool_call_id, name);
                     // A background-task tool never owns a process, so an abort
                     // that arrives for one must not leave a Bash tombstone
                     // behind: a later real Bash call reuses the same call id and

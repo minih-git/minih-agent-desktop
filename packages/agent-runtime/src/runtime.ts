@@ -4455,15 +4455,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       if (this.mode === "agent") tools.push(MEMORY_REMEMBER_TOOL_NAME);
     }
     // Background tasks belong to the session, not to the turn that started
-    // them, so a Plan or Goal turn needs the output of a server the same
-    // session started. They stay on demand — a session that never runs a
-    // background command pays no schema for them — and a successful
-    // `runInBackground` Bash call activates all three. A background task is
-    // started by Bash, which Plan/Goal hard-deny, so `BackgroundTaskStop` is
-    // Agent-only: a contract mode may read what already runs, never end it.
-    tools.push(...BACKGROUND_TASK_TOOL_NAMES.filter(
-      (name) => this.mode === "agent" || name !== "BackgroundTaskStop",
-    ));
+    // them, and Bash is admitted in every mode, so a Plan or Goal turn can start
+    // a server, read its output, and end it under the same rule. They stay on
+    // demand — a session that never runs a background command pays no schema for
+    // them — and a successful `runInBackground` Bash call activates all three.
+    tools.push(...BACKGROUND_TASK_TOOL_NAMES);
     const builtins = tools.map(exec);
     const jevTools: AgentTool[] =
       this.mode === "agent" && this.jevApiKey
@@ -4666,9 +4662,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     // Contract modes are read-only: inspection tools, plan-safe plugin
     // actions (ADR 0211), and the one submit tool that belongs to this kind.
     // The recall reads change nothing, and the learned-memory section points at
-    // MemorySearch, so they stay available in both contract modes.
+    // MemorySearch, so they stay available in both contract modes. Background
+    // processes belong to the session and Bash is admitted here, so a contract
+    // turn can start one, read it, and end it under the same rule; the host
+    // still decides Stop's approval.
     if (this.isPlanSafePluginTool(name)) return true;
-    return new Set([
+    return new Set<string>([
       "Read",
       "Glob",
       "Grep",
@@ -4679,6 +4678,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       CONTEXT_USAGE_TOOL_NAME,
       SUBMIT_TOOL_NAMES[kind],
       ...memoryReadToolNames,
+      ...BACKGROUND_TASK_TOOL_NAMES,
     ]).has(name);
   }
 

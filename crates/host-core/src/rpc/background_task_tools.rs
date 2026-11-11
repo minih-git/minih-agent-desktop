@@ -163,15 +163,21 @@ async fn output(
     let (data_dir, snapshot) = {
         let st = state.lock().await;
         let data_dir = st.data_dir.clone();
-        let snapshot = owned_output(&st.background_tasks, &p.session_id, &id).await;
+        // One acquired read: state, exit code, and both streams agree, and a
+        // busy supervisor delays the answer instead of turning it into
+        // NOT_FOUND.
+        let snapshot = st
+            .background_tasks
+            .session_task_snapshot(&p.session_id, &id)
+            .await;
         (data_dir, snapshot)
     };
     let Some(task) = snapshot else {
         return Err(task_not_found());
     };
     let scratch = crate::scratch::session_dir(&data_dir, &p.session_id);
-    let (stdout, stdout_cut) = bounded(&task.stdout, scratch.as_deref(), "background-stdout");
-    let (stderr, stderr_cut) = bounded(&task.stderr, scratch.as_deref(), "background-stderr");
+    let (stdout, stdout_cut) = bounded(&task.stdout, scratch.as_deref(), &task.id, "stdout");
+    let (stderr, stderr_cut) = bounded(&task.stderr, scratch.as_deref(), &task.id, "stderr");
     Ok(json!({
         "id": task.id,
         "command": task.command,
@@ -180,9 +186,9 @@ async fn output(
         "exitCode": task.exit_code,
         "stdout": stdout,
         "stderr": stderr,
-        // The ring reports drops from its own head; the budget above trims the
+        // The ring reports drops from its own head; the budget below trims the
         // copy handed to the model. Either makes the streams incomplete.
-        "truncated": task.ring_truncated || stdout_cut || stderr_cut,
+        "truncated": task.truncated || stdout_cut || stderr_cut,
     }))
 }
 
@@ -233,9 +239,13 @@ async fn stop(
     let id = id_arg(&p.args)?;
     let st = state.lock().await;
     // Ownership first: `stop_task` answers by registry id alone, so it must
-    // never see an id this session does not own.
-    let state_before =
-        owned_state(&st.background_tasks, &p.session_id, &id).ok_or_else(task_not_found)?;
+    // never see an id this session does not own. Reading under the task's own
+    // lock keeps `wasRunning` honest instead of guessing at a contended cell.
+    let before = st
+        .background_tasks
+        .session_task_snapshot(&p.session_id, &id)
+        .await
+        .ok_or_else(task_not_found)?;
     let signalled = background_tasks::stop_task(&st.background_tasks, &id)
         .await
         .map_err(|message| rpc_err(1000, message, "INTERNAL"))?;
@@ -244,8 +254,8 @@ async fn stop(
     Ok(json!({
         "id": id,
         "stopped": signalled,
-        "wasRunning": state_before == BackgroundTaskState::Running,
-        "state": if signalled { BackgroundTaskState::Stopped } else { state_before },
+        "wasRunning": before.state == BackgroundTaskState::Running,
+        "state": if signalled { BackgroundTaskState::Stopped } else { before.state },
     }))
 }
 
@@ -283,19 +293,6 @@ fn wait_seconds_arg(args: &Value) -> Result<u64, JsonRpcError> {
     }
 }
 
-/// One summary whose streams were read under the same lock, so the state and
-/// the output it describes cannot disagree.
-struct OwnedTask {
-    id: String,
-    command: String,
-    state: BackgroundTaskState,
-    elapsed_ms: u64,
-    exit_code: Option<i32>,
-    stdout: String,
-    stderr: String,
-    ring_truncated: bool,
-}
-
 fn owned_state(
     registry: &BackgroundTaskRegistry,
     session_id: &str,
@@ -308,31 +305,19 @@ fn owned_state(
         .map(|summary| summary.state)
 }
 
-/// Ownership and content read together: the session filter and the task's own
-/// output cell are resolved in one step, and both are `None` for an id this
-/// session does not own.
-async fn owned_output(
-    registry: &BackgroundTaskRegistry,
-    session_id: &str,
-    id: &str,
-) -> Option<OwnedTask> {
-    let summary = registry
-        .summaries()
-        .into_iter()
-        .find(|summary| summary.session_id == session_id && summary.id == id)?;
-    let (stdout, stderr, ring_truncated) = registry.session_task_output(session_id, id)?;
-    Some(OwnedTask {
-        id: summary.id,
-        command: summary.command,
-        state: summary.state,
-        elapsed_ms: summary.elapsed_ms,
-        exit_code: summary.exit_code,
-        stdout,
-        stderr,
-        ring_truncated,
-    })
-}
-
-fn bounded(text: &str, scratch: Option<&std::path::Path>, label: &str) -> (String, bool) {
-    crate::tools::truncate_with_spill(text, crate::tools::BUDGET_SHELL_ERR, scratch, label)
+/// Trim one stream to the model's budget. The over-budget copy lands at a path
+/// fixed per task and stream, so polling a large log overwrites one file
+/// instead of leaving a dated copy per read.
+fn bounded(
+    text: &str,
+    scratch: Option<&std::path::Path>,
+    task_id: &str,
+    stream: &str,
+) -> (String, bool) {
+    crate::tools::truncate_with_stable_spill(
+        text,
+        crate::tools::BUDGET_SHELL_ERR,
+        scratch,
+        &format!("background-{task_id}-{stream}"),
+    )
 }

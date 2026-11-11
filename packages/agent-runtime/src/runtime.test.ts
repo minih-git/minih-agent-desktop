@@ -11087,6 +11087,20 @@ describe("DesktopAgentRuntime deferred tool restore (#225)", () => {
     await runtime.dispose();
   });
 
+  it("offers all three background task tools in Plan, where Bash can start one", async () => {
+    // Plan and Goal admit Bash, so they can start a background task; a turn that
+    // started a server must also be able to read it and end it.
+    const runtime = createRuntime({ mode: "plan", history: [] });
+    (runtime as any).activateDeferredTools([...BACKGROUND_TASK_TOOL_NAMES]);
+    (runtime as any).resetDeferredToolsForPrompt();
+
+    expect((runtime as any).deferredToolNames.has("BackgroundTaskStop")).toBe(true);
+    for (const name of BACKGROUND_TASK_TOOL_NAMES) {
+      expect(hasTool(runtime, name)).toBe(true);
+    }
+    await runtime.dispose();
+  });
+
   it("describes the background task tools without falling back to Bash parameters", async () => {
     const runtime = createRuntime({ history: [] });
     (runtime as any).activateDeferredTools([...BACKGROUND_TASK_TOOL_NAMES]);

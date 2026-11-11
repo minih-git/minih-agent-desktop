@@ -53,12 +53,14 @@ impl super::PermissionManager {
                 // nothing, so a read-only contract negotiation may use it.
                 | "SessionHistorySearch"
                 | "MemorySearch"
-                // A Plan or Goal turn may already be waiting on a dev server
-                // this session started, and reading its output changes nothing.
-                // Stop stays out: a task started before the mode is not ended
-                // by a contract-mode action.
+                // Background processes belong to the session, not to a turn, and
+                // Bash is admitted here: a Plan or Goal turn may start a dev
+                // server, read it, and end it under the same rule. Reading is
+                // free; Stop carries the registered medium risk, so it still
+                // takes the normal approval path in these modes.
                 | "BackgroundTaskList"
                 | "BackgroundTaskOutput"
+                | "BackgroundTaskStop"
         )
     }
 }

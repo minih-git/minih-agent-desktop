@@ -366,7 +366,6 @@ pub(super) async fn handle(
                 extra_env: Vec::new(),
                 run_in_background: false,
                 app_state: None,
-                is_delegate: p.permission_scope.is_some() || p.delegation_id.is_some(),
             })
         } else {
             None
