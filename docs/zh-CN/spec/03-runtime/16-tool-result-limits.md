@@ -54,18 +54,30 @@ Goal/`Read` 管道，其输出不受限制。
 
 ## 3. 截断标记格式
 
-已实现的标记 (host-core `truncate_to`)，附加用于头部切割和
-预先进行尾部切割：
+已实现的标记 (host-core `truncate_to`)。头部切割把标记追加在末尾，尾部切割把它
+放在开头，Bash stdout 首尾都保留时标记位于中间：
 
 ```text
-[truncated: kept the first 4000 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
-[truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Narrow the request to see more.]
+[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
+[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Head keeps the first 32768 bytes of the 4200000-byte line 1. Narrow the request to see more.]
+[truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Tail keeps the last 98304 bytes of the 400000-byte line 51234. Narrow the request to see more.]
 [truncated: no complete line fits the 96KB limit; kept 98304 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
 ```
 
 标记总是标明哪一端幸存下来，有多少被排除在总数之外，
 适用的限制，以及从哪里获得其余的。出现溢出语句
 仅当实际编写完整副本时。
+
+`BUDGET_SHELL`（Bash stdout）按整行把行数与字节预算的三分之一留在开头、其余
+三分之二留在结尾：失败的测试或构建把结论打印在末尾，而开头说明实际跑了什么。
+搜索/读取结果与 Bash stderr 仍只保留一端（分别为开头和结尾）。
+
+每一端单独处理：某一端连一整行都放不下时，就保留其边界行的一段——开头截首行、
+结尾截末行——并落在 UTF-8 字符边界上，标记写明是哪一行、保留了多少字节。因此
+边界行是一整块巨量文本（单行 JSON 诊断、压缩后的 bundle）的多行输出，仍会返回
+那一行对应的一端，而不是什么都不返回。只有当一整行都放不下、且两端截取的片段
+也无法同时容纳时，结果才退化为仅有 `no complete line fits` 标记，单行输出也属于
+这种情况。
 
 Read/Glob/Grep 不在其有效负载中嵌入标记：窗口元数据
 （`offset`、`lineCount`、`totalLines`、`truncated`）加上 `notice` 字符串携带与
@@ -161,15 +173,15 @@ type GlobResult = { matches: string[]; count: number; truncated: boolean; notice
 ## 6. 优先级规则
 
 1. 截断时切勿省略截断标记
-2. Bash 标准输出保持领先地位； Bash stderr 保留其**尾巴**，因为失败
-   命令的可操作消息是它最后打印并删除的内容
-   96KB 的进度噪声导致模型盲目重试
+2. Bash 标准输出**首尾都保留**——开头说明实际跑了什么，末尾承载失败的测试或
+   构建的结论；Bash stderr 保留其**尾巴**，因为失败命令的可操作消息是它最后
+   打印的内容，为 96KB 进度噪声丢弃它正是模型盲目重试的原因
 3. 二进制文件：不要将原始二进制文件转储到模型中；返回元数据错误
    `TOOL_BINARY_CONTENT`。通过扩展黑名单加上嗅探来检测
    第一个 4KB（任何 NUL 字节，或 >30% 不可打印）。 Grep 跳过二进制文件
    静默地而不是匹配有损解码的字节
-4. 比整个预算长的单行会产生字符边界安全前缀
-   （或后缀，用于尾部切割），绝不是空的有效负载
+4. 放不进该端份额的行会产生字符边界安全的前缀（尾部切割取后缀，首尾切割两者
+   都取），绝不是空的有效负载
 5. 聚合检查点截断必须保留每个提供商有效的助手
    tool-call/result 配对并在持久化之前重新估计结果尾部
 6.Glob和Grep的相关顺序是文件修改时间，最新的在前，
