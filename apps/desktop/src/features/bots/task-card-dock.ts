@@ -5,10 +5,8 @@ import { ErrorCodes, type TaskCardDraftView } from "@minih-agent/shared";
  *
  * The rules are what the person can observe, so they live here where they can be
  * proven directly: a card is confirmed with the hash that is on screen, a
- * conflict reloads and never retries, and a dropped card disappears.
+ * conflict is its own outcome, and a dropped card disappears.
  */
-
-export type TaskCardError = { draftId: string; message: string; conflict: boolean };
 
 /** What a confirm attempt did, as far as the dock must react. */
 export type ConfirmOutcome =
@@ -42,15 +40,6 @@ export function visibleCards(
   return drafts.filter((draft) => draft.status !== "dropped");
 }
 
-/**
- * Whether to reload after a terminal result. A conflict must repaint the host's
- * card; an ordinary failure reloads too, so a failure caused by a stale screen
- * still resolves itself without the person guessing.
- */
-export function reloadAfter(outcome: ConfirmOutcome): boolean {
-  return outcome.kind !== "ok" || true;
-}
-
 /** The one line a confirmed card collapses to. */
 export function dispatchedLine(
   draft: TaskCardDraftView,
@@ -62,14 +51,6 @@ export function dispatchedLine(
     when: formatWhen(draft.confirmedAt ?? draft.updatedAt, locale),
   });
 }
-
-/**
- * Whether to reload after a confirm attempt. Every outcome reloads: a conflict
- * must show the host's card, and an ordinary failure may still have been caused
- * by a stale screen — reloading resolves that without the person guessing, while
- * it never re-sends the confirmation.
- */
-export const RELOAD_AFTER_CONFIRM = true;
 
 /**
  * `confirmedAt` comes from the requester and is display-only, so this is a local

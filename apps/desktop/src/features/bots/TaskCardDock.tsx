@@ -86,6 +86,14 @@ export function TaskCardDock({
     return result.drafts ?? [];
   };
 
+  /**
+   * The person's click. **Every** outcome reloads afterwards, success and
+   * failure alike: a success must show the host's confirmed card, and any
+   * failure may have come from a screen that had gone stale, so reloading
+   * resolves that without the person guessing. What a reload never does is
+   * re-send the confirmation — that is the person's act alone, so a conflict
+   * only repaints the card and asks them to look again.
+   */
   const confirm = async (draft: TaskCardDraftView) => {
     if (busyId) return;
     setBusyId(draft.id);
