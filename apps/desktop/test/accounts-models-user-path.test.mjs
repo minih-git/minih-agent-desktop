@@ -490,8 +490,9 @@ window.accountsProbe = async ({ width, height }) => {
     hiddenIds: settings.hiddenModelIds?.["router-1"] ?? [],
   };
 
-  // The default the save claimed is reported on the card, not re-settable here.
-  const defaultBadgeShown = document.body.innerText.includes("Default");
+  // Cards do not expose the app's automatically maintained default as a badge.
+  const defaultBadgeShown = [...document.querySelectorAll(".models-chosen-card .badge")]
+    .some((badge) => badge.textContent.trim() === "Default");
 
   // 3) Configure opens a modal dialog, not an inline drawer in the card.
   await waitFor(
@@ -875,7 +876,7 @@ app.whenReady().then(async () => {
       remarkSaved: true,
       designationKeptBinding: true,
       dialogClosesAfterSave: true,
-      defaultBadgeShown: true,
+      defaultBadgeShown: false,
       followGlobalDefault: true,
       // The follow-global default names the style the row now stores.
       protocolOptions: [

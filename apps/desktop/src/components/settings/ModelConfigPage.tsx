@@ -31,7 +31,7 @@ import {
 } from "@minih-agent/shared";
 import { useAppStore } from "../../stores/app-store";
 import { api } from "../../lib/api";
-import { Badge, Button } from "../ui";
+import { Button } from "../ui";
 import { IconConfig, IconPlus, IconServer } from "../icons";
 import {
   MINIH_ROUTER_API_STYLES,
@@ -353,9 +353,6 @@ export function ModelsPage() {
 
   if (!settings) return null;
 
-  const isDefaultModel = (binding: ModelBinding) =>
-    settings.defaultProviderId === routerProvider?.id &&
-    (settings.defaultModelId ?? "").toLowerCase() === binding.id.toLowerCase();
   const addModels = async (models: Parameters<typeof mergeAddedBindings>[1]) => {
     if (!routerProvider) return;
     setAddOpen(false);
@@ -732,11 +729,6 @@ export function ModelsPage() {
                             }
                           />
                           <div className="models-chosen-card-actions">
-                            <span className="models-chosen-card-status">
-                              {isDefaultModel(binding) ? (
-                                <Badge tone="success">{t("settings.modelsDefaultBadge")}</Badge>
-                              ) : null}
-                            </span>
                             <div className="models-chosen-card-buttons">
                               <Button
                                 variant="ghost"

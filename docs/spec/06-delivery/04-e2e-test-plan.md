@@ -19867,7 +19867,7 @@ renderer's durable transcript reads. No real model or provider is contacted.
   as selectable cards with search and paging; the only cards it still offers are
   the removed ones, and confirming restores them. The search wrapper stays at
   input height below the title instead of reserving a tall empty band on either
-  side of the input. Each card reports the default and offers Configure (alias,
+  side of the input. Cards show no app-default badge and offer Configure (alias,
   limits, thinking, capabilities, and a per-model **protocol mode** that defaults
   to "Follow global"). Renderer calls carry only the provider id, never the
   token.
