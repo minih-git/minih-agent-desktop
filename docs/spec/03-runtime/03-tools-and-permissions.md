@@ -446,7 +446,9 @@ Host execution baseline:
 - A timeout returns `TOOL_TIMEOUT` with the effective `timeoutMs` budget and
   guidance to raise that budget or split the command
 - Stream stdout and stderr separately, then return bounded final output
-- Truncate large output without mixing the two streams
+- Truncate large output without mixing the two streams; stdout keeps both ends
+  (the first lines show what ran, the last lines carry the failure summary),
+  stderr keeps its end
 - No interactive TTY (MVP)
 - A command that exits non-zero returns `ok: false`, `isError: true`, and
   `errorCode: TOOL_FAILED` while preserving its `exitCode`, stdout, and stderr

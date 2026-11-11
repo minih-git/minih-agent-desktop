@@ -746,7 +746,7 @@
 
 - 根据 D306 / D194：预算按工具类别计算（见 [16-tool-result-limits](/zh-CN/spec/03-runtime/16-tool-result-limits)）。搜索/读取结果上限为 128KB / 4000 行；Bash stdout/stderr 上限为 96KB / 4000 行并带溢出文件。
 - Read/Glob/Grep 仅在本次结果被切断时报告 `truncated: true`（预算、被剪行，或 Grep/Glob 还有剩余命中）。填满的 Read 窗口即使文件更长也不算截断；`notice` 写出下一个偏移。
-- Bash 标记标明哪一端幸存以及溢出路径，例如 `[truncated: kept the first 4000 of 51234 lines; limit 4000 lines / 96KB. …]`。
+- Bash 标记标明哪一端幸存、为保住该端而截断的边界行，以及溢出路径，例如 stdout 为 `[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. …]`，stderr 为 `[truncated: kept the last 1200 of 51234 lines; …]`。
 - 截断的内容永远不会被默默地省略——总是被标记
 - 披露扩展不会加载超出主机强制上限的内容
 - 折叠行的 `truncated` 芯片跟随 `details.truncated`

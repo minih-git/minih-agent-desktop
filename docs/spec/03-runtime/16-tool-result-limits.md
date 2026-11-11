@@ -55,18 +55,36 @@ a `sed`/`awk` pipeline whose output nothing bounded.
 
 ## 3. Truncation marker format
 
-Implemented markers (host-core `truncate_to`), appended for a head cut and
-prepended for a tail cut:
+Implemented markers (host-core `truncate_to`). A head cut appends the marker, a
+tail cut prepends it, and Bash stdout keeps both ends with the marker in
+between:
 
 ```text
-[truncated: kept the first 4000 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
-[truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Narrow the request to see more.]
+[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Full output saved to <path> — Grep it, or Read it with offset/limit.]
+[truncated: kept the first 1333 and last 2666 of 51234 lines; limit 4000 lines / 96KB. Head keeps the first 32768 bytes of the 4200000-byte line 1. Narrow the request to see more.]
+[truncated: kept the last 1200 of 51234 lines; limit 4000 lines / 96KB. Tail keeps the last 98304 bytes of the 400000-byte line 51234. Narrow the request to see more.]
 [truncated: no complete line fits the 96KB limit; kept 98304 bytes of a single 4200000-byte line. Full output saved to <path> — Grep it, or Read it with offset/limit.]
 ```
 
 A marker always states which end survived, how much was kept out of the total,
 the limit that applied, and where to get the rest. The spill sentence appears
 only when a full copy was actually written.
+
+`BUDGET_SHELL` (Bash stdout) keeps a third of the line and byte budget at the
+head and the remaining two thirds at the tail, in whole lines, because a
+failing test or build prints its summary at the end while the first lines show
+what actually ran. Search/read results and Bash stderr keep a single end (head
+and tail respectively).
+
+Each end is served independently. When an end cannot fit even one whole line,
+it keeps a clipped piece of its boundary line — the head clips the first line,
+the tail the last — on UTF-8 char boundaries, and the marker names that line
+and how many of its bytes survived. A multi-line payload whose boundary line is
+one huge blob (a single-line JSON diagnostic, a minified bundle) therefore still
+returns that line's relevant end instead of nothing. Only when no whole line
+fits *and* the two clipped pieces cannot both be served does the result collapse
+to the `no complete line fits` marker alone, which is the single-line case as
+well.
 
 Read/Glob/Grep do not embed a marker in their payload: the window metadata
 (`offset`, `lineCount`, `totalLines`, `truncated`) plus a `notice` string carry
@@ -169,15 +187,17 @@ counts are the stable signals. The UI truncated chip follows `truncated`.
 ## 6. Priority rules
 
 1. never omit truncation marker when truncated
-2. Bash stdout keeps its head; Bash stderr keeps its **tail**, because a failing
-   command's actionable message is the last thing it printed and dropping it for
-   96KB of progress noise is what makes the model retry blindly
+2. Bash stdout keeps **both ends** — the first lines show what ran, the last
+   lines carry a failing test's or build's summary; Bash stderr keeps its
+   **tail**, because a failing command's actionable message is the last thing it
+   printed and dropping it for 96KB of progress noise is what makes the model
+   retry blindly
 3. binary files: do not dump raw binary into model; return metadata error
    `TOOL_BINARY_CONTENT`. Detected by extension blacklist plus a sniff of the
    first 4KB (any NUL byte, or >30% non-printable). Grep skips binary files
    silently rather than matching lossily-decoded bytes
-4. a single line longer than the whole budget yields a char-boundary-safe prefix
-   (or suffix, for a tail cut), never an empty payload
+4. a line that cannot fit its end's share yields a char-boundary-safe prefix
+   (or suffix for a tail cut, both for a head+tail cut), never an empty payload
 5. aggregate checkpoint truncation must preserve every provider-valid assistant
    tool-call/result pair and re-estimate the resulting tail before persistence
 6. relevance ordering for Glob and Grep is file modification time, newest first,
