@@ -40,7 +40,7 @@ const EXPECTED = {
   general: ["general", "habits", "shortcuts"],
   ai: ["ai", "execution", "instructions", "voice"],
   models: ["agent"],
-  capabilities: ["skills", "mcp", "subagents"],
+  capabilities: ["skills", "mcp", "subagents", "employees"],
   accounts: ["accounts", "devices", "sync", "advanced"],
   projects: ["projects"],
   system: ["network", "storage", "about"],

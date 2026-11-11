@@ -32,3 +32,19 @@ export function listableSessions<T extends Pick<SessionSummary, "scheduledRun">>
 ): T[] {
   return sessions.filter((session) => !isAutomationSession(session));
 }
+
+/**
+ * Whether a session is an employee rather than a conversation the person
+ * switched to.
+ *
+ * A bot is a session (ADR bot-sessions-and-steward §1), but it is entered from
+ * the sidebar's employee group. Two rows for one employee — one that can be
+ * renamed and buried like a chat, one that carries its status — is exactly the
+ * "a bot looks like a chat" failure the ADR refuses, so the ordinary lists drop
+ * it and the employee group owns it.
+ */
+export function isEmployeeSession(
+  session: Pick<SessionSummary, "role"> | null | undefined,
+): boolean {
+  return session?.role === "bot";
+}

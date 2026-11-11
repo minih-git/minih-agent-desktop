@@ -28,6 +28,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { SessionHoverCard } from "../features/sessions/SessionHoverCard";
+import { BotSidebarGroup } from "../features/bots/BotSidebarGroup";
 import { useSessionHoverCard } from "../features/sessions/useSessionHoverCard";
 import { isDefaultSessionTitle, useAppStore } from "../stores/app-store";
 import {
@@ -44,7 +45,7 @@ import {
   resetProjectSessionPage,
   showMoreProjectSessions,
 } from "../lib/sidebar-project-sessions";
-import { listableSessions } from "../lib/session-origin";
+import { isEmployeeSession, listableSessions } from "../lib/session-origin";
 import {
   composerDropItems,
   hasComposerFileDrag,
@@ -715,7 +716,11 @@ export function Sidebar({
     // point (issue #1291). The session stays in the store so the chat surface
     // can still resolve its title, source, and capabilities when it is opened
     // from there.
+    // An employee is a session too, but it is entered from the employee group
+    // below (ADR bot-sessions-and-steward §1): listing it here as well would
+    // give one employee two rows with two different affordances.
     const candidates = listableSessions(sessions)
+      .filter((session) => !isEmployeeSession(session))
       .filter((session) => showArchived || !sessionArchived(session, sessionMeta[session.id]));
     // Empty sessions are durable sidebar rows now. Their message count, not
     // their title, controls New Task reuse, so a manual rename never changes
@@ -2763,6 +2768,15 @@ export function Sidebar({
             ) : null}
           </div>
         </section>
+
+        {/* Employees sit above the projects: they are who the person talks to,
+            and a bot session never appears in the lists below. */}
+        <BotSidebarGroup
+          activeSessionId={activeSessionId}
+          onOpen={(sessionId) => {
+            void selectSession(sessionId).catch(reportError);
+          }}
+        />
 
         <div
           className="sidebar-list-toolbar"
