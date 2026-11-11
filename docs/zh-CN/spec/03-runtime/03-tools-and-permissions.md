@@ -357,7 +357,8 @@ worktree，项目只做快进，因此冲突留在 worktree 中。删除隔离�
 - 前台调用设置强制 60 秒超时；接受 1 秒至 21,600 秒覆盖（D329）
 - 超时返回 `TOOL_TIMEOUT`，错误消息包含实际 `timeoutMs` 预算，并建议延长预算或拆分命令
 - 分别流式传输 stdout 和 stderr，然后返回有界的最终输出
-- 截断大输出而不混合两个流
+- 截断大输出而不混合两个流；stdout 保留两端（开头几行说明跑了什么，结尾几行带失败摘要），
+  stderr 保留结尾
 - 没有交互式 TTY (MVP)
 - 以非零值退出的命令返回 `ok: false`、`isError: true` 和
   `errorCode: TOOL_FAILED`，同时保留其 `exitCode`、stdout 和 stderr

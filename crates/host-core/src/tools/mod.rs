@@ -693,6 +693,7 @@ pub(crate) fn truncate_with_spill(
     let spilled = spill_output(scratch, label, text);
     (truncate_to(text, budget, spilled.as_deref()), true)
 }
+
 /// Share of the line and byte budget the head keeps under
 /// `Direction::HeadTail`; the tail keeps the rest. The tail is the larger half
 /// because a failing command states its verdict last.
