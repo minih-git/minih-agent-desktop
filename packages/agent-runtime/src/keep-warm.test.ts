@@ -137,6 +137,26 @@ describe("keepWarmSkipReason", () => {
 });
 
 describe("KeepWarmLedger", () => {
+  it("detaches, replaces, expires and releases replay snapshots", () => {
+    const ledger = new KeepWarmLedger();
+    const context = { messages: [{ role: "user" as const, content: "original", timestamp: NOW }] };
+    ledger.record("a", prefixState(), context);
+    context.messages[0]!.content = "mutated";
+    expect(ledger.context("a")?.messages[0]).toMatchObject({ content: "original" });
+    const restored = ledger.context("a")!;
+    restored.messages.length = 0;
+    expect(ledger.context("a")?.messages).toHaveLength(1);
+    ledger.record("a", prefixState(), context);
+    expect(ledger.context("a")?.messages[0]).toMatchObject({ content: "mutated" });
+    ledger.settle("a", NOW);
+    ledger.prune(NOW + KEEP_WARM_STALE_AFTER_MS);
+    expect(ledger.context("a")).toBeDefined();
+    ledger.prune(NOW + KEEP_WARM_STALE_AFTER_MS + 1);
+    expect(ledger.context("a")).toBeUndefined();
+    ledger.record("a", prefixState(), context);
+    ledger.forget("a");
+    expect(ledger.context("a")).toBeUndefined();
+  });
   it("records, settles and forgets one session without touching another", () => {
     const ledger = new KeepWarmLedger();
     ledger.record("a", prefixState());

@@ -1,5 +1,23 @@
 # 04. E2E Test Plan
 
+## E2E-CACHE-keep-warm-after-follow-up-and-rebuild
+
+- **Preconditions:** Built task-local shared/runtime packages, reused dependencies,
+  production sidecar and local HTTP model fixture; no user data or paid provider.
+- **Steps:** Complete two prompts, rebuild with changed instructions and confirm
+  refusal. Restore the original configuration with a newer learned-memory index,
+  then request keep-warm. Separately steer while a reply streams and rebuild.
+- **Expected:** Warm requests replay the latest settled snapshot with both turns
+  and original steering order, omit later memory, append only `Reply with OK.`,
+  and emit no conversation events. Explicit configuration changes still refuse;
+  new real prompts invalidate prior snapshots until successful completion.
+  Snapshots detach from live state and are released on expiry/disposal.
+- **Automation:** `node scripts/e2e-upstream-runtime-reliability.mjs`; runtime
+  keep-warm and ledger regressions in `runtime.test.ts` / `keep-warm.test.ts`.
+- **Specs / acceptance:** Plugin API §10; runtime isolation, cost and lifecycle.
+- **Status:** Local synthetic-provider process journey; installed-app and actual
+  provider cache-hit acceptance are separate.
+
 ## E2E-UPSTREAM-reliability-path-alias-and-scroll
 
 - **Preconditions:** Request worktree, reused tools, task-local output and scratch

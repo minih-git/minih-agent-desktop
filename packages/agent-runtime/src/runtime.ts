@@ -46,7 +46,7 @@ import {
 import { withPiFileOpToolNames } from "./pi-file-ops.js";
 import { remoteMutationIdentity } from "./remote-workspace.js";
 import { SideNoteAnswers } from "./side-note-answer.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import {
   settledDelegationMessage,
@@ -2627,11 +2627,14 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const apiKey = providerRequestKey(this.provider);
     const earlyUsage = KEEP_WARM_EARLY_USAGE_APIS.includes(this.model.api);
     const entered = this.keepWarmLedger?.get(this.sessionId);
+    const snapshot = this.keepWarmLedger?.context(this.sessionId);
+    const configChanged = entered?.configFingerprint !== undefined &&
+      entered.configFingerprint !== this.keepWarmConfigFingerprint();
     const controller = new AbortController();
     const assembled = assembleProviderRequest({
       provider: this.provider,
       model: this.model,
-      context: this.keepWarmContext(),
+      context: snapshot ?? this.keepWarmContext(),
       sessionId: this.sessionId,
       base: {
         ...(level === "off" ? {} : { reasoning: level }),
@@ -2672,6 +2675,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       now,
     });
     if (skipped) return { status: "skipped", reason: skipped, model };
+    if (configChanged) return { status: "skipped", reason: "prefix_changed", model };
     const warmed: TranscriptContext = {
       ...assembled.context,
       messages: [
@@ -2779,10 +2783,32 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    * Called once a turn has settled, when pi has appended the answer to the
    * transcript. This is the only moment at which the transcript equals what the
    * next request would send, so it is the only moment a digest is worth
-   * keeping. A turn that failed or was aborted records nothing: its last state
-   * is not a prefix anybody will resume from, and leaving the previous record in
-   * place makes the next warm request refuse rather than spend.
+   * keeping. A new real prompt clears the old record, so a failed or aborted
+   * turn cannot warm an outdated snapshot.
    */
+  private keepWarmConfigFingerprint(): string {
+    return createHash("sha256").update(safeJson({
+      mode: this.mode,
+      provider: this.provider,
+      thinkingLevel: this.thinkingLevel,
+      pluginTools: this.pluginTools,
+      pluginSkills: this.pluginSkills,
+      projectInstructions: this.baseProjectInstructions,
+      customSystemPrompt: this.customSystemPrompt,
+      modelSystemPrompt: this.modelSystemPrompt,
+      projectMemory: this.projectMemory,
+      learnedMemoryRead: this.learnedMemoryRead,
+      subagents: this.subagents,
+      subagentProviders: this.subagentProviders,
+      subagentModelKeys: this.subagentModelKeys,
+      persona: this.personaIdentity,
+      trustedExtensions: trustedExtensionIds(this.trustedExtensionSpecs),
+      projectPath: this.projectPath,
+      workspaceRoot: this.workspaceRoot,
+      commandShell: this.commandShell,
+    })).digest("hex");
+  }
+
   private recordSettledKeepWarmPrefix(): void {
     const ledger = this.keepWarmLedger;
     const last = this.lastKeepWarmRequest;
@@ -2795,6 +2821,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     });
     ledger.record(this.sessionId, {
       fingerprint,
+      configFingerprint: this.keepWarmConfigFingerprint(),
       api: this.model.api,
       providerId: this.provider.id,
       modelId: this.provider.modelId,
@@ -2806,7 +2833,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       ).tokens,
       requestedAt: last.requestedAt,
       settledAt: Date.now(),
-    });
+    }, context);
   }
 
   private agentUsesTranscriptSystemMessages(): boolean {
@@ -9934,6 +9961,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     turnId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
+    this.keepWarmLedger?.forget(this.sessionId);
+    this.lastKeepWarmRequest = undefined;
     let settle!: () => void;
     const settlement = new Promise<void>((resolve) => {
       settle = resolve;
