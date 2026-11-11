@@ -78,7 +78,19 @@ const render = (draft: StoredDraft): string => {
   ].join("\n");
 };
 
-export function createTaskCardTool(service: SessionCollaborationService): LocalToolHandler {
+/**
+ * Called after a card changed, so the app can show it without a reload.
+ *
+ * A card proposed by the model is created outside the renderer's knowledge: the
+ * dock fetched once, when the session opened, and nothing told it a card now
+ * exists. Notifying from here keeps one path for every way a card appears.
+ */
+export type TaskCardChangedNotifier = (change: { sessionId: string; draftId: string }) => void;
+
+export function createTaskCardTool(
+  service: SessionCollaborationService,
+  onCardChanged?: TaskCardChangedNotifier,
+): LocalToolHandler {
   return async ({ sessionId, turnId, args, signal }) => {
     if (args !== undefined && (typeof args !== "object" || args === null || Array.isArray(args))) {
       return failure("INVALID_ARGUMENT", "One object argument is required.");
@@ -132,6 +144,9 @@ export function createTaskCardTool(service: SessionCollaborationService): LocalT
           card.status === "confirmed"
             ? `\nThis card was dispatched automatically (policy), as delivery task for ${card.targetSessionId}.`
             : `\nThis is a proposal. Nothing runs until the person confirms it: tell them the card is ready and stop.`;
+        // The card exists now, whether it is still proposed or was dispatched by
+        // the host's auto-start policy. The person is looking at the old list.
+        onCardChanged?.({ sessionId, draftId: card.id });
         return success(`${render(card)}${started}`);
       } catch (error) {
         return failure(errorCodeOf(error), errorMessageOf(error));
@@ -150,6 +165,9 @@ export function createTaskCardTool(service: SessionCollaborationService): LocalT
         args: { draftId },
         signal,
       })) as { draft: StoredDraft };
+      // A dropped card leaves the dock too, so the renderer needs to know which
+      // draft went away, not just that something changed.
+      onCardChanged?.({ sessionId, draftId: result.draft.id });
       return success(`Card ${result.draft.id} was dropped. Nothing was dispatched.`);
     } catch (error) {
       return failure(errorCodeOf(error), errorMessageOf(error));

@@ -21,8 +21,13 @@ export type BotDraft = {
   mustAsk: BotMustAsk[];
   observe: boolean;
   definition: string;
+  /**
+   * The repository this employee works in. Empty means unbound, which is a real
+   * choice: an employee can dispatch and report without reading code, but it
+   * cannot answer a question about a repository it cannot open.
+   */
+  projectPath: string;
 };
-
 /**
  * A new employee records and does not act, and already asks before the three
  * actions the executing side would add anyway. Showing them pre-checked means
@@ -36,6 +41,7 @@ export const EMPTY_BOT_DRAFT: BotDraft = {
   mustAsk: [...ALWAYS_MUST_ASK],
   observe: true,
   definition: "",
+  projectPath: "",
 };
 
 /** Options in a stable order, so the same profile always renders identically. */
@@ -52,6 +58,7 @@ export function draftFromBot(bot: BotListItem): BotDraft {
     mustAsk: mustAskSelection(profile.mustAsk),
     observe: profile.observe,
     definition: profile.definition ?? "",
+    projectPath: bot.projectPath ?? "",
   };
 }
 
@@ -97,6 +104,14 @@ export function botProfileInput(draft: BotDraft): BotProfileInput {
   };
 }
 
+
+/** The project fields a create or update carries. */
+export function botProjectPatch(draft: BotDraft): { projectPath: string | null } {
+  const path = draft.projectPath.trim();
+  // `null` is an explicit unbind, so clearing a project in the form persists as
+  // "no project" instead of looking like an untouched field.
+  return { projectPath: path ? path : null };
+}
 export function draftIsValid(draft: BotDraft): boolean {
   return draft.name.trim().length > 0;
 }

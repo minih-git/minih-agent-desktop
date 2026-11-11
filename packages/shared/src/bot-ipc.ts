@@ -64,12 +64,18 @@ export type BotCreateRequest = {
 export type BotUpdateRequest = {
   sessionId: string;
   profile: Partial<BotProfileInput>;
+  /**
+   * The repository this employee works in.
+   *
+   * An employee without a project can dispatch and report, but it cannot read
+   * the code it is asked about. `null` unbinds; omitting the key keeps whatever
+   * the employee had, so a rename never silently drops the project.
+   */
+  projectPath?: string | null;
 };
-
 /** Dismissing an employee is not deleting a conversation: the role goes back. */
 export type BotDismissRequest = { sessionId: string };
 
-/** One explicit action that creates the default crew; never runs on startup. */
 export type BotSeedDefaultsResult = {
   created: Array<{ sessionId: string; name: string; definition?: string }>;
   skipped: Array<{ name: string; reason: "exists" }>;
@@ -116,6 +122,14 @@ export type TaskCardConfirmRequest = {
 export type TaskCardConfirmResult = {
   draft: TaskCardDraftView;
   deliveryId: string;
+  /**
+   * Why the dispatched work did not start, when it did not.
+   *
+   * A confirmation is a person's decision and is never rolled back by a start
+   * failure, so the card has to say what happened instead: "dispatched, but it
+   * did not start: the target was busy". Absent means it started.
+   */
+  startError?: string;
 };
 
 export type BotsChangedEvent = { reason: "created" | "updated" | "dismissed" | "seeded" | "status" };

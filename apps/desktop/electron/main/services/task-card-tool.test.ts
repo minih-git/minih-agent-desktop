@@ -94,6 +94,7 @@ describe("propose", () => {
       action: "propose",
       targetSessionId: "worker-session",
       sourceUtterance: "登录超时今天修掉",
+
       draft: card,
     });
     expect(result.ok).toBe(true);
@@ -184,5 +185,35 @@ describe("host refusals reach the model verbatim", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.errorCode).toBe("CONFLICT");
+  });
+});
+
+describe("a card the model creates is announced to the app", () => {
+  it("reports the new draft after propose, with its session", async () => {
+    const { service: stub } = service({ draft: draftRecord(), created: true });
+    const changed: Array<{ sessionId: string; draftId: string }> = [];
+    const handler = createTaskCardTool(stub, (change) => changed.push(change));
+
+    const result = await call(handler, {
+      action: "propose",
+      targetSessionId: "worker-session",
+      sourceUtterance: "帮我查查 router 进度",
+      draft: card,
+    });
+
+    expect(result.ok).toBe(true);
+    // Without this the dock keeps the list it fetched on mount, so a card
+    // proposed afterwards stays invisible until the person switches sessions.
+    expect(changed).toEqual([{ sessionId: "steward-session", draftId: "d1" }]);
+  });
+
+  it("reports a dropped card too", async () => {
+    const { service: stub } = service({ draft: draftRecord({ status: "dropped" }) });
+    const changed: Array<{ sessionId: string; draftId: string }> = [];
+    const handler = createTaskCardTool(stub, (change) => changed.push(change));
+
+    await call(handler, { action: "drop", draftId: "d1" });
+
+    expect(changed).toEqual([{ sessionId: "steward-session", draftId: "d1" }]);
   });
 });

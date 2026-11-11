@@ -1,6 +1,14 @@
-import { IPC, type BotsChangedEvent, type TaskCardsChangedEvent } from "@minih-agent/shared";
+import {
+  IPC,
+  type BotsChangedEvent,
+  type SessionCollaborationMessage,
+  type TaskCardConfirmResult,
+  type TaskCardDraftView,
+} from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
+import type { SessionCollaborationService } from "../services/session-collaboration";
 import type { IpcRegistrar } from "./types";
+import { taskCardsChangedSender } from "../services/task-cards-changed";
 
 /**
  * The employee surface (ADR bot-sessions-and-steward §5).
@@ -18,12 +26,20 @@ export function registerBotIpc({
   registrar,
   getHost,
   sendToRenderer,
+  sessionCollaboration,
 }: {
   registrar: IpcRegistrar;
   getHost: () => HostProcess | null;
   sendToRenderer: (channel: string, payload: unknown) => void;
+  /**
+   * The one dispatcher for a confirmed delivery. Confirming only writes the
+   * ledger row, so the click also has to start it — through the same path an
+   * ordinary send uses, never a second starter.
+   */
+  sessionCollaboration: SessionCollaborationService;
 }): void {
   const { handle } = registrar;
+  const notifyTaskCardsChanged = taskCardsChangedSender(sendToRenderer);
   const host = (): HostProcess => {
     const current = getHost();
     if (!current?.isAvailable()) throw new Error("host unavailable");
@@ -82,14 +98,37 @@ export function registerBotIpc({
       // the natural identity: a retried click cannot dispatch the work twice.
       idempotencyKey: `taskcard-confirm:${draftId}`,
       policyVersion: "steward-1",
-    })) as { draft?: { sessionId?: string; id?: string }; delivery?: { id?: string } };
-    const event: TaskCardsChangedEvent = {
-      sessionId: result.draft?.sessionId ?? "",
-      draftId,
+    })) as {
+      draft?: TaskCardDraftView;
+      delivery?: SessionCollaborationMessage;
     };
-    sendToRenderer(IPC.event.taskCardsChanged, event);
+    // Confirming writes the delivery and stops there. Starting it is the same
+    // step an ordinary send takes, so it goes through the same dispatch; without
+    // it the work stays queued and the person sees a card that did nothing.
+    // A start failure must not undo the person's decision: the card says the
+    // work was dispatched but did not start, and the delivery keeps whatever
+    // state the ledger recorded.
+    let startError: string | undefined;
+    if (result.delivery) {
+      try {
+        await sessionCollaboration.dispatchConfirmed(result.delivery);
+      } catch (error) {
+        startError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    // The person's click is one of three ways a card changes; the emitter keeps
+    // every direction on one channel, so the dock has a single thing to listen to.
+    notifyTaskCardsChanged({
+      sessionId: result.draft?.sessionId ?? "",
+      draftId: draftId ?? "",
+    });
     sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
-    return { draft: result.draft, deliveryId: result.delivery?.id };
+    if (!result.draft) throw new Error("the host confirmed a card but returned no draft");
+    return {
+      draft: result.draft,
+      deliveryId: result.delivery?.id ?? "",
+      ...(startError ? { startError } : {}),
+    } satisfies TaskCardConfirmResult;
   });
 
   handle(IPC.invoke.taskCardDrop, async (request) => {
@@ -98,10 +137,10 @@ export function registerBotIpc({
     const result = (await host().call("taskCard.drop", { draftId })) as {
       draft?: { sessionId?: string };
     };
-    sendToRenderer(IPC.event.taskCardsChanged, {
+    notifyTaskCardsChanged({
       sessionId: result.draft?.sessionId ?? "",
       draftId,
-    } satisfies TaskCardsChangedEvent);
+    });
     return result;
   });
 }

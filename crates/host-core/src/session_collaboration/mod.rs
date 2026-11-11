@@ -272,6 +272,12 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
         "session.collaboration.pending" => Ok(
             json!({"messages":repository::pending_callbacks(db,input.get("sessionId").and_then(Value::as_str))?}),
         ),
+        // Work that still needs a turn started: completion callbacks and
+        // confirmed cards that no one started yet. Separate from `pending`,
+        // whose completion-only meaning other callers already rely on.
+        "session.collaboration.pendingDispatch" => {
+            Ok(json!({"messages":repository::pending_dispatch(db)?}))
+        }
         "session.collaboration.fail" => {
             let id = string(input, "messageId", 256)?;
             let tx = db.conn().unchecked_transaction()?;

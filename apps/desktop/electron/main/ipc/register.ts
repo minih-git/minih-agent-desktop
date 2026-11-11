@@ -18,6 +18,7 @@ import { registerNotificationIpc } from "./notification-ipc";
 import { confirmPluginInterruption } from "../plugin-active-work";
 import { registerPluginIpc } from "./plugin-ipc";
 import { registerPluginUiIpc } from "./plugin-ui-ipc";
+import type { SessionCollaborationService } from "../services/session-collaboration";
 import { registerJevIpc } from "./jev-ipc";
 import { registerMinihRouterIpc } from "./minih-router-ipc";
 import { registerProviderIpc } from "./provider-ipc";
@@ -98,6 +99,11 @@ export type RegisterIpcDependencies = {
   liveVoiceWidget?: LiveVoiceWidget;
   restartForStorage: () => void;
   mcpOAuth?: McpOAuthManager;
+  /**
+   * Confirming a card writes the delivery but does not start it, so the click
+   * starts it through this service's dispatcher.
+   */
+  sessionCollaboration: SessionCollaborationService;
   [name: string]: any;
 };
 
@@ -393,7 +399,12 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
   });
   // Employees and task cards (ADR bot-sessions-and-steward §5). The confirm
   // handler is the only path in the product that freezes a card.
-  registerBotIpc({ registrar, getHost, sendToRenderer });
+  registerBotIpc({
+    registrar,
+    getHost,
+    sendToRenderer,
+    sessionCollaboration: dependencies.sessionCollaboration,
+  });
   registerScheduledIpc({
     registrar,
     getHost,

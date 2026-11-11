@@ -89,6 +89,32 @@ function errorMessage(error: unknown): string {
   try { return JSON.stringify(error) ?? String(error); } catch { return String(error); }
 }
 
+/**
+ * Whether a delivery that could not start will never start.
+ *
+ * The retry loop (`drain`) keeps picking up whatever is still queued, so this
+ * distinction is what stops a permanent refusal from being retried forever: a
+ * target whose ceiling refuses this work, a session that no longer exists, or a
+ * sender that was switched off stays broken no matter how often we ask. A busy
+ * target or an unavailable runtime is the opposite — the next attempt can work,
+ * so the delivery stays queued.
+ *
+ * An unnamed failure is treated as temporary: keeping a queued row loses
+ * nothing, while marking it failed would discard work that might still run.
+ */
+const PERMANENT_DELIVERY_FAILURES = new Set([
+  "PERMISSION_DENIED",
+  "NOT_FOUND",
+  "ABORTED",
+  "INVALID_ARGUMENT",
+  "LIMIT_EXCEEDED",
+]);
+
+function isPermanentDeliveryFailure(error: unknown): boolean {
+  const code = errorCode(error);
+  return code !== undefined && PERMANENT_DELIVERY_FAILURES.has(code);
+}
+
 /** How a delivery enters the target session's queue. */
 type SessionDeliveryMode = "queue" | "now";
 
@@ -164,7 +190,6 @@ export type TaskCardDraftRecord = {
   updatedAt: string;
 };
 
-/** Coordinates reviewed operations; Rust owns all identity and outcome state. */
 /**
  * Confirm a freshly proposed card when — and only when — the host's own policy
  * allows starting it without a person.
@@ -174,9 +199,23 @@ export type TaskCardDraftRecord = {
  * ceiling, and both live in host-core. A refusal leaves the card proposed, which
  * is what a person then sees in the UI.
  */
+/**
+ * Confirm a freshly proposed card when — and only when — the host's own policy
+ * allows starting it without a person.
+ *
+ * The decision is asked of the host (`taskCard.autoStart`), not computed here:
+ * the rule reads the employee's stored `observe` flag and the card's narrowed
+ * ceiling, and both live in host-core. A refusal leaves the card proposed, which
+ * is what a person then sees in the UI.
+ *
+ * A confirmation writes the delivery; starting it is a separate step, so it is
+ * handed to the caller's `start` (the same `dispatch` an ordinary send uses).
+ * Without that step the card is confirmed but nothing ever runs.
+ */
 async function autoConfirmIfAllowed(
   host: Host,
   draft: TaskCardDraftRecord,
+  start: (message: SessionCollaborationMessage) => Promise<unknown>,
 ): Promise<TaskCardDraftRecord> {
   if (draft.status !== "proposed") return draft;
   const decision = await host.call<{ refusal?: string | null }>("taskCard.autoStart", {
@@ -184,7 +223,10 @@ async function autoConfirmIfAllowed(
     card: draft.card,
   });
   if (decision.refusal) return draft;
-  const started = await host.call<{ draft: TaskCardDraftRecord }>("taskCard.confirm", {
+  const started = await host.call<{
+    draft: TaskCardDraftRecord;
+    delivery?: SessionCollaborationMessage;
+  }>("taskCard.confirm", {
     draftId: draft.id,
     cardHash: draft.cardHash,
     confirmedBy: "policy",
@@ -194,6 +236,7 @@ async function autoConfirmIfAllowed(
     // auto-start cannot deliver the same work twice.
     idempotencyKey: `taskcard:${draft.id}`,
   });
+  if (started.delivery) await start(started.delivery);
   return started.draft;
 }
 
@@ -303,9 +346,14 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         deps.onChanged();
         return inserted ? { ...delivery(accepted), inserted } : delivery(accepted);
       } catch (error) {
-        // A full callback inbox is deferred until a later queue/turn change.
-        // It must not turn a successfully completed original task into failure.
-        if (deps.getHost() === host && !(message.kind === "completion" && errorCode(error) === "AGENT_BUSY")) {
+        // Only a failure that can never succeed closes the delivery. A busy
+        // target or an unavailable runtime leaves it queued, so the next drain
+        // retries it instead of the person losing the work to a temporary
+        // condition. A full callback inbox is likewise deferred until a later
+        // queue/turn change: it must not turn a completed task into a failure.
+        const deferredCompletion =
+          message.kind === "completion" && errorCode(error) === "AGENT_BUSY";
+        if (deps.getHost() === host && !deferredCompletion && isPermanentDeliveryFailure(error)) {
           // The host persists free text, so the code is embedded to keep the
           // stored failure machine-readable and bounded.
           const persisted = `${errorCode(error) ?? "FAILED"}: ${errorMessage(error)}`;
@@ -372,12 +420,19 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
               settlements.delete(turnId);
             }
           }
-          const pending = await host.call<{ messages: SessionCollaborationMessage[] }>("session.collaboration.pending", {});
+          // Everything that still needs a turn: a completion callback, or a
+          // confirmed card nobody started (a start that failed, or an app that
+          // closed between confirm and start). `dispatch` skips a row that
+          // already has a turn, so a replay cannot run the same work twice.
+          const pending = await host.call<{ messages: SessionCollaborationMessage[] }>(
+            "session.collaboration.pendingDispatch",
+            {},
+          );
           checkCurrent(host);
           await Promise.all(pending.messages.map(async (message) => {
             try { await dispatch(message); }
             catch (error) {
-              deps.log("Session completion delivery is pending or failed", { messageId: message.id, error: String(error) });
+              deps.log("Session delivery is pending or failed", { messageId: message.id, kind: message.kind, error: String(error) });
             }
           }));
         } while (dirty);
@@ -629,7 +684,11 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           // Auto-start is the host's own rule, never the model's judgement: a
           // narrow card for an employee that is not observing is dispatched at
           // once and recorded as confirmed by policy (ADR §4).
-          const confirmed = await autoConfirmIfAllowed(host, result.draft);
+          const confirmed = await autoConfirmIfAllowed(
+            host,
+            result.draft,
+            (message) => dispatch(message, input.signal),
+          );
           return { draft: confirmed };
         }
         case "revise": {
@@ -659,6 +718,26 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
       await new Promise<void>((resolve) => setImmediate(resolve));
       await drain();
       deps.onChanged();
+    },
+    /**
+     * Start a delivery a confirmed card produced.
+     *
+     * Confirming a card writes the ledger row inside the host's transaction, and
+     * that is all it does: the row stays `queued` until something starts a turn
+     * in the target session. An ordinary `SessionSend` starts it right after
+     * sending, so a confirmed card must go through the same `dispatch` — not a
+     * second starter — or the work sits queued forever, which is exactly what
+     * happened to the card the user confirmed.
+     *
+     * `dispatch` already owns deduplication (`dispatching`), the re-check of the
+     * persisted ceiling, and failed-delivery bookkeeping, so a retried
+     * confirmation and a concurrent drain cannot start the same work twice.
+     */
+    dispatchConfirmed(
+      message: SessionCollaborationMessage,
+      signal?: AbortSignal,
+    ): Promise<SessionDelivery> {
+      return dispatch(message, signal);
     },
     drain,
     /**

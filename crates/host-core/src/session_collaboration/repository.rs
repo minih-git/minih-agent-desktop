@@ -228,6 +228,32 @@ pub fn pending_callbacks(db: &Database, session_id: Option<&str>) -> Result<Vec<
     Ok(values)
 }
 
+/// Queued deliveries that still need a turn started in the target session.
+///
+/// Two kinds qualify, and both are work waiting to be started:
+///
+/// - `completion`: a finished task telling its requester the result.
+/// - `task`: a confirmed card. Confirming only writes the row, so a crash, a
+///   failed start, or an app restart between confirm and start otherwise leaves
+///   it queued forever — the card said "dispatched" and nothing ever ran.
+///
+/// A row that already holds a `turn_id` is never returned: starting it twice
+/// would run the same work twice, and `settlement` owns the once-only claim.
+/// The steward notice written when a card is confirmed is a `message` carrying
+/// no mandate, so it is not picked up here: it is an audit line, not work.
+pub fn pending_dispatch(db: &Database) -> Result<Vec<Message>> {
+    let mut statement = db.conn().prepare_cached(&format!(
+        "{SELECT}
+        WHERE status='queued' AND turn_id IS NULL
+          AND (kind='completion' OR (kind='task' AND mandate_json IS NOT NULL))
+        ORDER BY created_at LIMIT 64"
+    ))?;
+    let values = statement
+        .query_map([], row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(values)
+}
+
 pub fn fail_queued(db: &Database, id: &str, error: &str) -> Result<()> {
     db.conn().execute(
         "UPDATE session_collaboration_messages SET status='failed',error=?2,updated_at=?3
