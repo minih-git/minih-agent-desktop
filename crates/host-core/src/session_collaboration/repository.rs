@@ -129,12 +129,38 @@ pub(super) fn title(db: &Database, id: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("NOT_FOUND: session {id}"))
 }
 
+/// A follow-up delivery must name a task that is already running for exactly
+/// this bot, so a bare `taskId` cannot invent an authorization.
+pub(super) fn require_open_task(db: &Database, task_id: &str, target: &str) -> Result<()> {
+    let open: bool = db.conn().query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM session_collaboration_messages m
+            WHERE m.target_session_id = ?2
+              AND json_extract(m.mandate_json, '$.taskId') = ?1
+              AND m.status IN ('queued', 'running'))",
+        params![task_id, target],
+        |row| row.get(0),
+    )?;
+    if open {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "MANDATE_REQUIRED: no open task '{task_id}' was dispatched to this bot"
+        ))
+    }
+}
+
 pub(super) fn bounded(value: &str, limit: usize) -> String {
     value.chars().take(limit).collect()
 }
 
 pub(super) fn insert(db: &Database, message: &Message, key: &str) -> Result<()> {
-    db.conn().execute(
+    insert_on(db.conn(), message, key)
+}
+
+/// Same statement, on a connection the caller may already hold in a transaction.
+pub(super) fn insert_on(conn: &rusqlite::Connection, message: &Message, key: &str) -> Result<()> {
+    conn.execute(
         "INSERT INTO session_collaboration_messages
         (id,plugin_id,source_session_id,source_title,target_session_id,target_title,kind,content,
          status,notify_on_completion,turn_id,reply_to_message_id,idempotency_key,remaining_hops,

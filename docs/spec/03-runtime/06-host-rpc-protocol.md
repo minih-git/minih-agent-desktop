@@ -751,6 +751,21 @@ or general MCP operations:
   one is `CONFLICT`. The host validates only what it can act on
   (a concrete `permissionMode` and the size bound) and stores the encoded card
   opaquely; the shared codec owns the shape.
+- `bot.list` / `bot.create` / `bot.update` / `bot.dismiss` /
+  `bot.seedDefaults` — the employee surface (§ADRs bot-sessions-and-steward).
+  Each edits a session's `role` and `bot_profile_json`; `bot.list` also answers
+  the status point, derived from the session's latest delivery stage. Dismissing
+  sets the role back to `user` and keeps the conversation. Seeding creates the
+  default crew and is called only from an explicit user action.
+- `taskCard.list` / `taskCard.propose` / `taskCard.revise` / `taskCard.drop` —
+  durable task-card drafts bound to the steward session.
+- `taskCard.autoStart` — whether the host may confirm a proposed card by itself,
+  from the employee's stored `observe` flag and the card's ceiling. Never from
+  the `risk` a model supplied.
+- `taskCard.confirm` — the person's click: it checks the `cardHash` the caller
+  displayed, freezes the card, records `confirmedBy`, dispatches the work and
+  notifies the steward, all in one transaction. Electron main calls it from its
+  IPC handler only; the model has no tool that reaches it.
 - `session.collaboration.report` — record one structured report
   (`progress | waiting | ready | blocked | failed | dropped`) with the worker's
   monotonic `seq` and the derived `stage`. A `seq` that is not greater than the

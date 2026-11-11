@@ -269,15 +269,18 @@ assume a rule is live because it is stated above.
 
 | Rule | Enforced today | Where it lands |
 | --- | --- | --- |
-| A card's `permissionMode` narrows the delivery ceiling | **Yes** — the ledger ceiling is `min(sender, card)` at send time, and turn admission re-checks it | this change |
-| A card can never widen authority | **Yes** — the ceiling is a minimum, and a target wider than the card is refused | this change |
+| A card's `permissionMode` narrows the delivery ceiling | **Yes** — the ledger ceiling is `min(sender, card)` at send time, and turn admission re-checks it | shipped |
+| A card can never widen authority | **Yes** — the ceiling is a minimum, and a target wider than the card is refused | shipped |
+| Confirming is a person's click, not a model decision | **Yes** — `TaskCard` has no `confirm` action, `SessionSend` has no `mandate` argument, and only `taskCard.confirm` (Electron IPC, renderer-only) freezes a card | shipped |
+| A confirmation cannot approve text nobody read | **Yes** — the confirmation carries the `cardHash` the screen showed, and a revise in between is refused | shipped |
+| Work reaches an employee only with an authorization | **Yes** — a delivery to a `role = bot` session needs a confirmed card or a `taskId` naming an open task already dispatched there, else `MANDATE_REQUIRED` | shipped |
+| `observe` keeps an employee from starting by itself | **Yes** — the host's auto-start rule reads the employee's stored `observe` and refuses; a person's click still dispatches | shipped |
+| An employee runs under its definition, not the session's full catalog | **Yes** — the runtime resolves `botProfile.definition` into a tool ceiling and a prompt, and a name that does not resolve fails the turn | shipped |
+| A card draft survives a restart | **Yes** — drafts are a v32 table bound to the steward session, cascading with it | shipped |
 | `deploy` / `delete` / `spend` always in `mustAsk` | **Recorded only.** They are merged into every card and every frozen Mandate, but nothing inspects them at tool-execution time | the approval-by-action PR (stage 1) |
 | Other `mustAsk` actions (`push`, `merge`, `criteria-change`) | **Recorded only**, same as above | the approval-by-action PR (stage 1) |
-| `observe` keeps a bot from starting | **Not reachable yet.** No bot session can receive a delivery before the employee UI exists, so there is nothing to gate | the bot runtime gates with 0-f |
-| The steward holds the gateway tools and nothing that writes | **Yes** — enforced by definition resolution, not by the prompt | this change |
-| A confirmation comes from the person | **Partially.** `confirm` is a model tool call; it must quote the person's own words, and a second confirmation of the same card is refused, but nothing proves the person clicked | the confirmation-token change, with 0-f |
-| The steward cannot read a worker's transcript | **Yes** — it has no such tool | this change |
-| Task stage derives from structured records only | **Yes** — reports and turn state, never reply text | this change |
+| The steward cannot read a worker's transcript | **Yes** — it has no such tool | shipped |
+| Task stage derives from structured records only | **Yes** — reports and turn state, never reply text | shipped |
 
 Two consequences worth stating plainly:
 
@@ -285,9 +288,10 @@ Two consequences worth stating plainly:
   "ask" inside a worker is still the *worker session's* own permission mode.
   What the card adds is a ceiling, not a step-by-step approval protocol; that
   protocol is the `mustAsk` work above.
-- Until the confirmation-token change, "the person confirmed this" rests on the
-  model quoting them truthfully. `sourceUtterance` makes that reviewable after
-  the fact; it does not prove it at the time.
+- Auto-start is the host's decision from stored facts, never from the `risk` a
+  model typed: an observing employee never starts by itself, and an `auto` card
+  always waits for a click. A `policy` confirmation is recorded as `policy`, so
+  an audit can always tell it apart from a person's.
 
 ## Compatibility and validation
 

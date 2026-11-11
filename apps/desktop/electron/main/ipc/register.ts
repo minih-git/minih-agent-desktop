@@ -22,6 +22,7 @@ import { registerJevIpc } from "./jev-ipc";
 import { registerMinihRouterIpc } from "./minih-router-ipc";
 import { registerProviderIpc } from "./provider-ipc";
 import { registerScheduledIpc } from "./scheduled-ipc";
+import { registerBotIpc } from "./bot-ipc";
 import { registerSessionIpc } from "./session-ipc";
 import { registerSettingsIpc } from "./settings-ipc";
 import { registerStorageIpc } from "../storage/ipc";
@@ -390,6 +391,9 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     markMenuRendererReady,
     executeNativeMenuAction,
   });
+  // Employees and task cards (ADR bot-sessions-and-steward §5). The confirm
+  // handler is the only path in the product that freezes a card.
+  registerBotIpc({ registrar, getHost, sendToRenderer });
   registerScheduledIpc({
     registrar,
     getHost,

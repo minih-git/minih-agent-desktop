@@ -41,6 +41,23 @@ export const MAX_BOT_NAME_CHARS = 80;
 export const MAX_BOT_AVATAR_CHARS = 2_048;
 export const MAX_BOT_DUTY_CHARS = 500;
 export const MAX_BOT_PROFILE_BYTES = 8 * 1_024;
+export const MAX_BOT_DEFINITION_CHARS = 64;
+
+/**
+ * Tools an employee definition does not have to list.
+ *
+ * These are not session capabilities: `ToolSearch` only reveals declarations the
+ * catalog already holds, `ContextUsage` reads the runtime's own numbers, and the
+ * rest are runtime bookkeeping. Leaving them out of every definition keeps a
+ * persona list "exactly what the employee may do" while still letting it inspect
+ * what it has.
+ */
+export const CORE_PERSONA_TOOLS: ReadonlySet<string> = new Set([
+  "ToolSearch",
+  "ContextUsage",
+  "new_context",
+  "asktool",
+]);
 
 export type BotProfile = {
   name: string;
@@ -55,6 +72,15 @@ export type BotProfile = {
    * person switches this off. Required in a stored profile.
    */
   observe: boolean;
+  /**
+   * Subagent definition this bot runs as, e.g. `steward`.
+   *
+   * When present, the runtime runs each turn of this session under that
+   * definition: its prompt becomes part of the system prompt and its tool list
+   * becomes the session's tool ceiling. That is what makes "the steward cannot
+   * touch the workspace" a host rule instead of a sentence in a prompt.
+   */
+  definition?: string;
 };
 
 export const MANDATE_VERSION = 1;
@@ -256,6 +282,10 @@ export function normalizeBotProfile(value: unknown): BotProfile | null {
   const avatar = trimmed(raw.avatar, MAX_BOT_AVATAR_CHARS);
   const duty = trimmed(raw.duty, MAX_BOT_DUTY_CHARS);
   const homeHostId = typeof raw.homeHostId === "string" ? boundedId(raw.homeHostId, 128) : undefined;
+  // A definition name is resolved against the delegate catalog, so it must be
+  // a plain definition id — never a path or something a caller could smuggle in.
+  const definition =
+    raw.definition === undefined ? undefined : boundedId(raw.definition, MAX_BOT_DEFINITION_CHARS);
   const mustAsk = Array.isArray(raw.mustAsk)
     ? Array.from(new Set(raw.mustAsk.filter(isBotMustAsk)))
     : [];
@@ -273,6 +303,9 @@ export function normalizeBotProfile(value: unknown): BotProfile | null {
   }
   if (homeHostId) {
     profile.homeHostId = homeHostId;
+  }
+  if (definition) {
+    profile.definition = definition;
   }
   return profile;
 }

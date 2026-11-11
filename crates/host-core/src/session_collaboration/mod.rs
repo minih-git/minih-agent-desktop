@@ -9,6 +9,8 @@ use crate::{
     db::{ms_to_ts, now_ms, Database},
     sessions,
 };
+pub mod bots;
+pub mod drafts;
 mod permissions;
 pub mod progress;
 mod projections;
@@ -34,6 +36,21 @@ pub(super) fn string<'a>(input: &'a Value, key: &str, limit: usize) -> Result<&'
 }
 
 fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result<Message> {
+    send_record_on(db, db.conn(), input, target, kind)
+}
+
+/// The one delivery path, usable inside a caller's transaction.
+///
+/// A confirmation writes the delivery and the draft's own state in one
+/// transaction (ADR bot-sessions-and-steward §3), so this takes the connection
+/// the caller already opened instead of starting a second one.
+fn send_record_on(
+    db: &Database,
+    conn: &rusqlite::Connection,
+    input: &Value,
+    target: &str,
+    kind: &str,
+) -> Result<Message> {
     let source = string(input, "sourceSessionId", 256)?;
     let plugin = string(input, "pluginId", 256)?;
     let content = string(input, "content", 65_536)?;
@@ -94,7 +111,25 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
         None => sender_ceiling,
     };
     permissions::check_target(db, target, &permission_ceiling)?;
-    let pending: i64 = db.conn().query_row(
+    // Work delivered to an employee needs an authorization (ADR
+    // bot-sessions-and-steward §3): either the confirmed card travelling with
+    // this delivery, or a follow-up that names a task already dispatched to
+    // that same bot and still running. Without this a steward could skip the
+    // card entirely and hand work to a bot as if it were a plain conversation.
+    if sessions::session_role(db, target)?.as_deref() == Some("bot") {
+        match mandate_json.as_deref() {
+            Some(_) => {}
+            None => match input.get("taskId").and_then(Value::as_str) {
+                Some(task) => repository::require_open_task(db, task, target)?,
+                None => {
+                    return Err(anyhow!(
+                        "MANDATE_REQUIRED: a delivery to a bot needs a confirmed task card or the task it continues"
+                    ))
+                }
+            },
+        }
+    }
+    let pending: i64 = conn.query_row(
         "SELECT COUNT(*) FROM session_collaboration_messages
         WHERE target_session_id=?1 AND status='queued'",
         params![target],
@@ -131,7 +166,7 @@ fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result
         stage: None,
         report_seq: 0,
     };
-    repository::insert(db, &message, key)?;
+    repository::insert_on(conn, &message, key)?;
     Ok(message)
 }
 
@@ -251,6 +286,59 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
             Ok(json!({"callback":settle_turn(db,string(input,"turnId",256)?)?}))
         }
         "session.collaboration.cancel" => settlement::cancel(db, input),
+        // Task-card drafts (ADR bot-sessions-and-steward §3). The model reaches
+        // propose/revise/drop; `confirm` is reached only from the desktop's IPC,
+        // because a confirmation is a person's click, not a tool call.
+        // The employee surface (ADR bot-sessions-and-steward §5): every row is a
+        // session with a role and a profile, so there is no second lifecycle.
+        "bot.list" => bots::list(db),
+        "bot.create" => bots::create(db, input),
+        "bot.update" => bots::update(db, input),
+        "bot.dismiss" => bots::dismiss(db, input),
+        "bot.seedDefaults" => bots::seed_defaults(db),
+        "taskCard.list" => bots::list_drafts(db, string(input, "sessionId", 256)?),
+        "taskCard.get" => Ok(json!({
+            "draft": drafts::get(db, string(input, "draftId", 256)?)?,
+        })),
+        "taskCard.propose" => drafts::propose(db, input),
+        "taskCard.revise" => drafts::revise(db, input),
+        "taskCard.drop" => drafts::drop(db, input),
+        // Whether the host may start this card by itself, from stored facts.
+        "taskCard.autoStart" => {
+            let target = string(input, "targetSessionId", 256)?;
+            let card = input
+                .get("card")
+                .cloned()
+                .ok_or_else(|| anyhow!("INVALID_ARGUMENT: card required"))?;
+            Ok(json!({"refusal": drafts::auto_start_refusal(db, target, &card)?}))
+        }
+        "taskCard.confirm" => drafts::confirm(
+            db,
+            drafts::ConfirmRequest {
+                draft_id: string(input, "draftId", 256)?,
+                card_hash: string(input, "cardHash", 128)?,
+                // The host records *how* it was confirmed; the only two values
+                // are a person's click and the host's own auto-start policy.
+                confirmed_by: match input.get("confirmedBy").and_then(Value::as_str) {
+                    None | Some("user") => drafts::CONFIRMED_BY_USER,
+                    Some("policy") => drafts::CONFIRMED_BY_POLICY,
+                    Some(other) => {
+                        return Err(anyhow!("INVALID_ARGUMENT: unknown confirmedBy '{other}'"))
+                    }
+                },
+                host_id: input.get("hostId").and_then(Value::as_str),
+                device_id: input.get("deviceId").and_then(Value::as_str),
+                policy_version: input
+                    .get("policyVersion")
+                    .and_then(Value::as_str)
+                    .unwrap_or("steward-1"),
+                notify_on_completion: input
+                    .get("notifyOnCompletion")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+                idempotency_key: string(input, "idempotencyKey", 256)?,
+            },
+        ),
         // Task progress (ADR bot-sessions-and-steward): attach the frozen card,
         // record a structured report, and read one delivery's progress.
         "session.collaboration.mandate" => crate::session_collaboration::progress::set_mandate(

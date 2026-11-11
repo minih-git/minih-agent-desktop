@@ -221,6 +221,12 @@ async function runtimeFor(
   const pluginSkills = params.pluginSkills ?? [];
   const trustedExtensions = params.trustedExtensions ?? [];
   const subagents = params.subagents ?? [];
+  // The employee definition this session runs as, resolved by Electron main
+  // against the same catalog (ADR bot-sessions-and-steward §2).
+  const botPersona = (params as { botPersona?: unknown }).botPersona as
+    | { definition: (typeof subagents)[number] }
+    | { missingName: string }
+    | undefined;
   const subagentModelKeys = params.subagentModelKeys ?? [];
   const subagentProviders = Object.fromEntries(
     Object.entries(params.subagentProviders ?? {}).map(([key, pinned]) => [
@@ -255,6 +261,7 @@ async function runtimeFor(
     pluginSkills,
     trustedExtensions,
     subagents,
+    ...(botPersona ? { botPersona } : {}),
     subagentProviders,
     subagentModelKeys,
     jevApiKey: params.jevApiKey,
@@ -335,6 +342,7 @@ async function runtimeFor(
     pluginSkills,
     trustedExtensions,
     subagents,
+    ...(botPersona ? { botPersona } : {}),
     subagentProviders,
     subagentModelKeys,
     projectPath: params.projectPath,
