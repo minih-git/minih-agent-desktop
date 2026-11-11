@@ -45,7 +45,13 @@ const [
   read("../../../packages/agent-runtime/src/runtime.ts"),
   read("../electron/main/builtin-commands.ts"),
   read("../../../crates/host-core/src/rpc/mod.rs"),
-  read("../../../crates/host-core/src/permissions.rs"),
+  // The registered-risk table and the contract-mode allowlist live in
+  // `permissions/registry.rs`; the module is read together with its registry
+  // so a pin matches wherever the table is defined.
+  Promise.all([
+    read("../../../crates/host-core/src/permissions.rs"),
+    read("../../../crates/host-core/src/permissions/registry.rs"),
+  ]).then((parts) => parts.join("\n")),
   read("../../../crates/host-core/src/sessions.rs"),
   read("../../../crates/host-core/src/transcripts.rs"),
   readTranscriptSource(),

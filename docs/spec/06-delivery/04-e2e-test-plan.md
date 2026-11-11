@@ -11053,7 +11053,7 @@ selection already in place shows it without waiting for another event.
 | C / Quality / Accessibility — Right-side notification cards | E2E-NOTIFICATION-right-side-cards |
 | C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
-| Quality / Security — Selected upstream Bash/layout import | E2E-BASH-background-task-lifecycle-and-output, E2E-LAYOUT-sidebar-reopen-preserves-width-preference |
+| Quality / Security — Selected upstream Bash/layout import | E2E-BASH-background-task-lifecycle-and-output, E2E-BASH-agent-reads-and-stops-own-background-task, E2E-LAYOUT-sidebar-reopen-preserves-width-preference |
 | C / E / Security / Quality — Live Voice four-stage interaction | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
@@ -20619,6 +20619,44 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Automation**: `scripts/e2e-background-tasks-host.mjs`,
   `scripts/e2e-background-tasks.mjs`, runtime and host-core companion tests.
 - **Status**: Run on the exact request candidate; document unrun platforms.
+
+### E2E-BASH-agent-reads-and-stops-own-background-task
+
+- **Preconditions**: The request worktree's built Host and an isolated
+  data/profile; deterministic local commands and a scripted provider that calls
+  the model tools, so no real provider, no cost, and no user Desktop.
+- **Steps**: In one session, call `Bash` with `runInBackground: true` and a
+  command that prints several lines and stays alive; then call
+  `BackgroundTaskOutput` with `waitSeconds`, `BackgroundTaskList`, and
+  `BackgroundTaskStop`. Repeat the same id from a second session. Start a third
+  task, start a later turn, and call `BackgroundTaskOutput` again after a
+  context compaction. Repeat the `BackgroundTaskStop` call a second time.
+- **Expected**: The successful background call activates `BackgroundTaskList`,
+  `BackgroundTaskOutput`, and `BackgroundTaskStop` in the same turn (recorded as
+  `details.addedToolNames` on the `Bash` result) and they stay active after a
+  restart or compaction. `BackgroundTaskOutput` returns state, exitCode, and
+  bounded stdout/stderr that keep the **tail** and carry a truncation marker
+  when cut; `waitSeconds` returns as soon as the task ends, reports the current
+  state on timeout without an error, and ends immediately on Stop while the
+  process keeps running. A contested output cell delays the answer instead of
+  reporting a missing task, and repeated reads of one large stream overwrite one
+  spill file per task rather than leaving a copy per read. `BackgroundTaskList`
+  shows only the calling session's tasks. The second session receives the same `NOT_FOUND` for another session's
+  id as for an unknown id, with no hint that the task exists. `BackgroundTaskStop`
+  stops the tree, is idempotent, and never touches another session's task. In
+  Plan, all three are offered like Bash, and Stop takes the same approval path
+  Bash does. A delegate's tools run under the parent's session id, so a task it
+  starts appears in the parent's list and the composer dock, while the three
+  tools themselves stay the parent's.
+- **Specs**: `03-runtime/03-tools-and-permissions.md` §2.1, §5
+  (Background Bash commands), §10 and §10.2.
+- **Acceptance**: E / F / Quality / Security.
+- **Milestone**: Post-M6 maintenance.
+- **Automation**: host-core `rpc::background_task_tools::tests`, agent-runtime
+  `runtime.test.ts` deferred-activation cases, and a scripted-provider scenario
+  under `scripts/` once the suite harness supports model-tool calls.
+- **Status**: Host and runtime companion tests automated; the scripted-provider
+  E2E scenario is NOT RUN until it is written.
 
 ### E2E-LAYOUT-sidebar-reopen-preserves-width-preference
 

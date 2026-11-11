@@ -199,6 +199,57 @@ impl BackgroundTaskRegistry {
         });
         list
     }
+
+    /// One consistent read of a task **owned by `session_id`**, for the model's
+    /// own background-task tools. The registry is process-wide and these reads
+    /// carry no authorization of their own, so the session identity is checked
+    /// here: an id owned by another session answers exactly like an unknown id.
+    ///
+    /// The cell is awaited rather than `try_lock`ed. A task that logs
+    /// continuously (a dev server, a watcher) makes its supervisor hold
+    /// `TaskShared` often, and a snapshot that cannot take the lock is *not*
+    /// evidence that the task is gone — reporting one would tell the model its
+    /// task vanished and make it restart or abandon working work. The lock
+    /// order matches `task_output`, which awaits the same cell under the
+    /// AppState mutex, so waiting here introduces no new cycle.
+    ///
+    /// State, exit code, and both streams come from that one acquired cell, so
+    /// a caller can never see a terminal stream next to a `running` state.
+    pub async fn session_task_snapshot(
+        &self,
+        session_id: &str,
+        id: &str,
+    ) -> Option<BackgroundTaskSnapshot> {
+        let task = self
+            .tasks
+            .get(id)
+            .filter(|task| task.session_id == session_id)?;
+        let shared = task.shared.lock().await;
+        Some(BackgroundTaskSnapshot {
+            id: task.id.clone(),
+            command: task.command.clone(),
+            state: shared.state,
+            elapsed_ms: task.started_at.elapsed().as_millis() as u64,
+            exit_code: shared.exit_code,
+            stdout: TaskShared::render(&shared.stdout),
+            stderr: TaskShared::render(&shared.stderr),
+            truncated: shared.truncated,
+        })
+    }
+}
+
+/// One task as read under its own output lock, for the model's background-task
+/// tools. `truncated` covers both the ring dropping earlier text and the
+/// caller's own budget cut.
+pub struct BackgroundTaskSnapshot {
+    pub id: String,
+    pub command: String,
+    pub state: BackgroundTaskState,
+    pub elapsed_ms: u64,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub truncated: bool,
 }
 
 pub(crate) async fn spawn_background_task_detached(
