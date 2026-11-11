@@ -93,10 +93,19 @@ jobs:
       # package's tests ignore it. `MINIH_E2E_TIMEOUT_SCALE` widens their kill and
       # `node:test` budgets for a two-core runner without a GPU — timeouts only,
       # never an assertion (see `scripts/e2e/boot.mjs`).
+      #
+      # `-s "-screen 0 1920x1400x24"` sizes the virtual screen above the largest
+      # viewport these tests ask for (1600x1100): the Xvfb default is 1280x1024,
+      # and a window larger than the screen is clamped, so a test waiting for its
+      # requested size would wait forever. `openbox` is a window manager: without
+      # one a hidden window never composites and `requestAnimationFrame`, which
+      # these tests poll on, does not advance.
       - name: Unit tests
         env:
           MINIH_E2E_TIMEOUT_SCALE: "3"
-        run: xvfb-run --auto-servernum sh -c 'openbox >/dev/null 2>&1 & exec pnpm -r --if-present test'
+        run: >-
+          xvfb-run --auto-servernum -s "-screen 0 1920x1400x24"
+          sh -c 'openbox >/dev/null 2>&1 & exec pnpm -r --if-present test'
 
   rust:
     name: Rust host-core format / lint / test
