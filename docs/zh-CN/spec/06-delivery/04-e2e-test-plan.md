@@ -1725,6 +1725,13 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 - **接受**：G（市场安装+权限审查）
 - **状态**：单元测试+协议方法已记录/host-core
 
+- **慢速下载回归**：本地服务器持续以超过 1 KiB/s 的速度发送至少 32 秒，安装应完整
+  下载并校验，不能在 30 秒 curl 或 130 秒 RPC 限时处中断。再测试传输停滞、首次进度
+  后取消、声明大小不符和 SHA-256 不符。停滞达到 30 秒低速窗口时失败；取消保留
+  `PLUGIN_CANCELLED`；无效内容不得写入已安装记录或已校验缓存。目录保留 30 秒限时。
+  自动覆盖：`crates/host-core/src/plugins/install/download_tests.rs` 和
+  `packages/shared/src/protocol.test.ts`。
+
 #### E2E-024C：插件包安装和自动更新路径
 
 - **先决条件**：市场目录有较新版本或本地 `.piplug`。

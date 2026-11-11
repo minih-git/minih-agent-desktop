@@ -1014,6 +1014,12 @@ against a live host, and replaying one after the final row would be wrong.
   `PLUGIN_MARKET_*`), and install one catalog release
 - `market.checkUpdates` / `market.applyUpdates`
 
+`market.install` and `market.applyUpdates` have no aggregate transport deadline.
+Each package download enforces its own connection, low-speed and total limits;
+progress and `market.cancelInstall` remain active throughout a slow transfer.
+Other marketplace methods retain the default RPC timeout. See
+`07-plugins/07-plugin-marketplace.md` for the download budgets.
+
 ### Providers and models
 - `providers.list` / `providers.get` / `providers.create` /
   `providers.update` / `providers.delete`
