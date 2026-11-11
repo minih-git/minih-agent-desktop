@@ -9186,8 +9186,9 @@ selection already in place shows it without waiting for another event.
     or exits 2, Grep falls back in-process (D315).
   - The binary read fails with `TOOL_BINARY_CONTENT` and no binary reaches the
     model; Grep skips it silently.
-  - Bash stdout keeps its head, stderr keeps its tail, both markers name which
-    end survived and the spill path, and each spill file opens with the fuller
+  - Bash stdout keeps both its head and its tail, stderr keeps its tail, both
+    markers name which end survived (including any boundary line clipped to
+    serve it) and the spill path, and each spill file opens with the fuller
     output.
   - The agent answers in the language the user wrote in, precedes each tool
     batch with a sentence about what it is doing, never leaves more than one
