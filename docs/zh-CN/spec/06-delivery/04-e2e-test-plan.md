@@ -6084,6 +6084,8 @@ eleven-tool-round desktop paths are verified by
 | 品质（模型回退隔离） | E2E-SUBAGENT-ordered-model-fallback-preserves-work |
 | C — 对话与流式（旧版子代理回合上限） | E2E-SUBAGENT-legacy-turn-limit-frontmatter-is-ignored |
 | 品质（旧版子代理回合上限） | E2E-SUBAGENT-legacy-turn-limit-frontmatter-is-ignored |
+| C — 对话与流式（纠偏运行中的委派） | E2E-SUBAGENT-parent-steers-a-running-delegation |
+| 品质（纠偏运行中的委派） | E2E-SUBAGENT-parent-steers-a-running-delegation |
 | M6+（展开详情保持阅读位置） | E2E-CHAT-disclosure-toggle-keeps-reading-position |
 | M6+（能力跨级别迁移） | E2E-CAPABILITY-move-across-levels |
 | E — 工具与权限（内置子代理默认项） | E2E-SUBAGENT-settings-lists-builtin-defaults |
@@ -10836,3 +10838,14 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **验收**：发布元数据完整性，安装包字节不变。
 - **里程碑**：维护。
 - **状态**：本地文件夹具直接执行生产合并步骤，已自动化。
+
+#### E2E-SUBAGENT-parent-steers-a-running-delegation
+
+- **前置条件**：配置一个带确定性本地 transport 的 provider，以及至少一个会发出多次模型请求的子代理定义（例如先读一个文件再汇报的 `explorer`）。
+- **步骤**：1) `Task` 派发该委派，并在它仍在运行时用 `TaskSend` 发送一条纠偏指令。2) 检查子代理的下一请求。3) 让委派跑完并读结果。4) 对已结束的 `delegationId` 调用 `TaskSend`。5) 用 `Task(resume: "<id>")` 续跑该链路并检查种子历史。6) 重复步骤 1，但在下一次请求前 Stop 该委派。7) 分别用未知 id、空消息、超过 12000 字符上限的消息发送。8) 切到 Plan 模式，保留 `TaskSend` 声明后调用它。
+- **预期**：步骤 1 立即返回"已入队"，绝不在子代理上阻塞。步骤 2 中该指令以 user 消息出现在子代理自身请求里，位置在此前那轮 assistant 与其工具批次之后——绝不在工具调用内部。步骤 3 显示 `steering: { delivered: 1, discarded: 0 }`，且委派会话（拓扑面板与子代理标签页）原位渲染该指令与其标记，而父级 turn 流只显示 `TaskSend` 这一行。步骤 4 返回工具错误，说明该委派已不在运行并给出 `Task(resume: "<id>")`。步骤 5 的种子历史包含该指令作为一条 user 轮次。步骤 6 如实报告该指令被丢弃（`steering.discarded` 加一行原因说明），而不是假称已送达；之后的发送被拒绝。步骤 7 在入队前就各自拒绝，并指出 id 问题与长度上限。步骤 8 保留声明但以契约模式拒绝执行，且不纠偏任何委派。
+- **自动化**：`packages/agent-runtime/src/subagent-send.test.ts` 用真实 pi 循环覆盖送达、关闭时拒绝、运行结束竞争、abort 记账与续跑投影；`packages/agent-runtime/src/subagent-send-wiring.test.ts` 用真实 runtime + 真实 `SubagentRun` + 本地 OpenAI 兼容 fixture 覆盖送达行、未纠偏时不得出现 user 行，以及"先恢复、后投递"的顺序；`packages/shared/src/subagent-definition.test.ts` 与 `apps/desktop/test/subagent-transcript-turns.test.mjs` 覆盖 deny 列表与转录投影。
+- **关联规格**：`03-runtime/02-agent-runtime.md` §5f、`03-runtime/03-tools-and-permissions.md` §10.2、ADR parent-steers-running-delegation、ADR 0062 §5/§6、ADR 0279。
+- **验收标准**：C — 会话与流式；品质（不静默丢失指令、不委派纠偏权限）。
+- **里程碑**：维护。
+- **状态**：运行时与投影层已自动化；经真实 sidecar 的 Electron 端到端通过仍待完成。合并后必需的测试套件：`test:e2e`、`test:e2e:subagents`。
