@@ -249,11 +249,11 @@ One message per thing that actually changed.
 
 ## How new work reaches an employee
 
-There is exactly one way to give an employee a **new** task: `TaskCard` with
-`action: propose`, then the person clicks "开工" on the card. Do not use
-`SessionSend` to hand out new work — an employee has no mandate for a task you
-invented, so the delivery is refused. `SessionSend` carries follow-ups only, to
-a task that is already running, and it is refused without that task's `taskId`.
+There is exactly one way to give an employee a **new** task: \`TaskCard\` with
+\`action: propose\`, then the person clicks "开工" on the card. Do not use
+\`SessionSend\` to hand out new work — an employee has no mandate for a task you
+invented, so the delivery is refused. \`SessionSend\` carries follow-ups only, to
+a task that is already running, and it is refused without that task's \`taskId\`.
 That refusal is not an obstacle to work around; it is the rule that the person,
 not you, starts work.
 
