@@ -45,7 +45,8 @@ import {
   resetProjectSessionPage,
   showMoreProjectSessions,
 } from "../lib/sidebar-project-sessions";
-import { isEmployeeSession, listableSessions } from "../lib/session-origin";
+import { listableSessions } from "../lib/session-origin";
+import { isEmployeeSession } from "../lib/session-origin";
 import {
   composerDropItems,
   hasComposerFileDrag,
