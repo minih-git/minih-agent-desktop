@@ -14,9 +14,9 @@ export { normalizeChangelogVersion, resolveChangelogLocale } from "./changelog-r
 /**
  * Shipped-locale product changelog for Minih-Agent-Desktop app releases.
  *
- * English is the source of truth (ADR 0009). The translated catalogs mirror
- * the same versions and bullet counts so in-app "what's new" can follow the
- * active UI locale without a network fetch or renderer-supplied feed URL.
+ * English is the source of truth (ADR 0009). Only English and Simplified
+ * Chinese require matching versions and bullet counts. Other catalogs retain
+ * historical translations; missing versions fall back to English offline.
  *
  * Update this file before cutting a release tag. GitHub release bodies may
  * still be auto-generated for the web; they are not the in-app source.

@@ -2,6 +2,15 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.5.2",
+    date: "2026-11-11",
+    highlights: [
+      "Fixed cache keep-warm stopping after follow-up messages or idle session restoration. It now reuses the latest completed conversation context while retaining model, configuration and spending safeguards.",
+      "Employee sessions now follow their assigned definitions, with employee management and steward task cards showing progress and requiring your click for confirmations.",
+    ],
+  },
+
+  {
     version: "1.5.1",
     date: "2026-11-10",
     highlights: [

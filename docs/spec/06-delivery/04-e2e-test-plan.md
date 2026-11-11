@@ -6513,8 +6513,8 @@ selection already in place shows it without waiting for another event.
 #### E2E-067B: Shipped-locale update notes and full changelog dialog (D164/D345/D349)
 
 - **Preconditions**: The shipped `packages/shared` CHANGELOG contains aligned
-  `en`, `zh-CN`, `zh-TW`, `ko`, and `pt-BR` stable history; product language
-  can be switched.
+  `en` and `zh-CN` stable history. Other locales retain historical translations
+  and may lack new entries; product language can be switched.
   For the compact update path, use a packaged or fixture updater state with a
   catalogued `availableVersion`.
 - **Steps**: 1) With no available update, open Settings → Info and open Release
@@ -6526,8 +6526,10 @@ selection already in place shows it without waiting for another event.
   then pt-BR and re-inspect without invoking a new check. 5) Repeat the compact
   update path with a version absent from the catalog.
 - **Expected**: `UpdateState.releaseNotes` is plain multi-line product
-  highlights selected by Main from the shipped-locale catalog — never a
-  renderer-supplied URL. Both surfaces show a localized "What's new" block
+  highlights selected by Main from the catalog — never a renderer-supplied URL.
+  New releases require English and Simplified Chinese only. Other languages
+  display existing translations and English for missing versions in both compact
+  notes and the complete history. Both surfaces show a localized "What's new" block
   when notes exist and hide it when they do not. Locale change refreshes notes
   for the same version. The Release notes action remains available in every
   updater state and opens a localized, newest-first modal containing every

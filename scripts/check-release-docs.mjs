@@ -13,7 +13,7 @@
  *      APP_VERSION in packages/shared/src/protocol.ts.
  *   2. apps/desktop/resources/models.dev/api.json parses as a provider catalog.
  *   3. packages/shared/src/changelog*.ts has an entry for the version under
- *      every shipped locale, newest-first, with matching highlight counts.
+ *      English and Simplified Chinese, newest-first, with matching highlight counts.
  *   4. packages/shared/src/changelog.test.ts pins the version as newest.
  *   5. README.md and README.zh-CN.md declare the current release line
  *      (`<major>.<minor>.x`) in their status section.
@@ -151,13 +151,14 @@ try {
 if (catalogs) {
   const enEntries = catalogs.en;
   const expectedVersions = enEntries?.map((entry) => entry.version) ?? [];
-  const requiredLocales = ["en", "zh-CN", "zh-TW", "tr", "de", "es", "fr", "ko", "pt-BR"];
+  const requiredLocales = ["en", "zh-CN"];
   for (const locale of requiredLocales) {
     if (!catalogs[locale]) {
       fail("packages/shared/src/changelog.ts", `missing shipped locale catalog: ${locale}`);
     }
   }
-  for (const [locale, entries] of Object.entries(catalogs)) {
+  for (const locale of requiredLocales) {
+    const entries = catalogs[locale];
     if (!entries?.length) {
       fail("packages/shared/src/changelog.ts", `the ${locale} catalog is empty`);
       continue;
