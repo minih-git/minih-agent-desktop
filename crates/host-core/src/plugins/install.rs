@@ -705,7 +705,7 @@ pub(crate) fn download_url_observed(
         "--location".into(),
         "--fail".into(),
         "--max-time".into(),
-        "30".into(),
+        if package_guard.is_some() { "600" } else { "30" }.into(),
         "--max-redirs".into(),
         "5".into(),
         "--max-filesize".into(),
@@ -713,6 +713,18 @@ pub(crate) fn download_url_observed(
         "--user-agent".into(),
         "minih-agent-desktop-host-core".into(),
     ];
+    if package_guard.is_some() {
+        // Packages can be large on a slow proxy. Bound connection and stalled
+        // transfers independently instead of cutting off healthy progress.
+        args.extend([
+            "--connect-timeout".into(),
+            "15".into(),
+            "--speed-time".into(),
+            "30".into(),
+            "--speed-limit".into(),
+            "1024".into(),
+        ]);
+    }
     args.extend(crate::network_proxy::curl_proxy_args());
     args.extend(crate::network_proxy::curl_tls_args());
     if package_guard.is_some() && url.starts_with("https://") {
@@ -781,12 +793,12 @@ pub(crate) fn download_url_observed(
         }
         let _ = fs::remove_file(&scratch);
         let err = decode_curl_output(&output.stderr);
-        // Fall through to raw HTTP only for http:// URLs.
-        if url.starts_with("https://") {
+        // A guarded package must keep curl's transfer bounds on failure.
+        if url.starts_with("https://") || package_guard.is_some() {
             bail!("PLUGIN_NETWORK: curl failed for {url}: {err}");
         }
-    } else if url.starts_with("https://") {
-        bail!("PLUGIN_NETWORK: curl is required to fetch https marketplace urls");
+    } else if url.starts_with("https://") || package_guard.is_some() {
+        bail!("PLUGIN_NETWORK: curl is required to fetch marketplace packages or https urls");
     }
 
     if let Some(rest) = url.strip_prefix("http://") {
@@ -807,8 +819,8 @@ pub(crate) fn download_url_observed(
         stream.set_read_timeout(Some(Duration::from_secs(15)))?;
         stream.set_write_timeout(Some(Duration::from_secs(15)))?;
         let req = format!(
-        "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nUser-Agent: minih-agent-desktop-host-core\r\nAccept: */*\r\n\r\n"
-    );
+            "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nUser-Agent: minih-agent-desktop-host-core\r\nAccept: */*\r\n\r\n"
+        );
         stream.write_all(req.as_bytes())?;
         let mut buf = Vec::new();
         stream.read_to_end(&mut buf)?;
@@ -826,3 +838,6 @@ pub(crate) fn download_url_observed(
 
     bail!("PLUGIN_NETWORK: unsupported marketplace url: {url}")
 }
+
+#[cfg(test)]
+mod download_tests;

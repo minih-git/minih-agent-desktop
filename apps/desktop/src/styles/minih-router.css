@@ -776,12 +776,6 @@
   border-top: 1px solid var(--ds-border-default);
 }
 
-.models-chosen-card-status {
-  display: flex;
-  align-items: center;
-  min-height: 24px;
-}
-
 .models-chosen-card-buttons {
   display: flex;
   align-items: center;

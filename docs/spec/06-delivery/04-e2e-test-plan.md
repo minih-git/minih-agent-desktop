@@ -4163,6 +4163,17 @@ identify the platform validation still needed.
 - **Acceptance**: G (marketplace install + permission review)
 - **Status**: Documented / host-core covered by unit tests + protocol methods
 
+- **Slow-transfer regression**: Serve a loopback package continuously at more
+  than 1 KiB/s for at least 32 seconds. Install and batch-update requests stay
+  pending until the verified result, without a 30-second curl or 130-second RPC
+  cutoff. Repeat with a stalled stream, a cancel after the first byte report,
+  incorrect declared size, and an incorrect SHA-256. Stalls fail after the
+  30-second low-speed window; cancellation stays `PLUGIN_CANCELLED`; invalid
+  bytes never reach the installed registry or verified download cache. Catalog
+  requests retain their 30-second budget. Covered by real-curl loopback tests
+  in `crates/host-core/src/plugins/install/download_tests.rs` and RPC contract
+  checks in `packages/shared/src/protocol.test.ts`.
+
 #### E2E-024R: Install a center-published plugin from the official marketplace
 
 - **Preconditions**: A `schemaVersion: 2` catalog served from the distribution repository, with one plugin carrying provenance and an approved review verdict, its package under `packages/`. A second fixture declares `artifactBaseUrl` for the mirror/enterprise case.
@@ -19867,7 +19878,7 @@ renderer's durable transcript reads. No real model or provider is contacted.
   as selectable cards with search and paging; the only cards it still offers are
   the removed ones, and confirming restores them. The search wrapper stays at
   input height below the title instead of reserving a tall empty band on either
-  side of the input. Each card reports the default and offers Configure (alias,
+  side of the input. Cards show no app-default badge and offer Configure (alias,
   limits, thinking, capabilities, and a per-model **protocol mode** that defaults
   to "Follow global"). Renderer calls carry only the provider id, never the
   token.

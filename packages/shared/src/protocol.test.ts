@@ -296,6 +296,13 @@ describe("Plan protocol contracts", () => {
     expect(rpcTimeoutMs("agent.getStatus", { sessionId: "s" })).toBe(130_000);
   });
 
+  it("lets marketplace installs finish under the downloader's own limits", () => {
+    expect(rpcTimeoutMs("market.install", {})).toBeUndefined();
+    expect(rpcTimeoutMs("market.applyUpdates", {})).toBeUndefined();
+    expect(rpcTimeoutMs("market.refresh", {})).toBe(130_000);
+    expect(rpcTimeoutMs("market.cancelInstall", {})).toBe(130_000);
+  });
+
   it("leaves a whole cloud sync unbounded and observable after navigation", () => {
     // The Host owns sync execution; progress is supplementary, and navigating
     // away from Settings must not impose a transport deadline on that request.
