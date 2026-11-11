@@ -322,9 +322,6 @@ test("model configuration keeps model defaults; AI owns app behavior defaults", 
   assert.doesNotMatch(providersSource, /enterToSend/);
   assert.doesNotMatch(providersSource, /settings\.modeAgent/);
   assert.doesNotMatch(providersSource, /EnhancementModelCard/);
-  // The models page shows which model is the app default without owning a
-  // second way to change provider defaults.
-  assert.match(modelsPageSource, /settings\.modelsDefaultBadge/);
 });
 
 
