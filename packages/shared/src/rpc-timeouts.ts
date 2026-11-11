@@ -98,6 +98,9 @@ export function rpcTimeoutMs(
     return WORKTREE_DELEGATE_RPC_TIMEOUT_MS;
   }
   if (method === "configSync.syncNow") return undefined;
+  // Install/update own bounded transfers and cancellation. A batch may contain
+  // multiple packages, so the transport must not expire before the downloader.
+  if (method === "market.install" || method === "market.applyUpdates") return undefined;
   if (method === "tools.execute" || method === "tools.workspaceExecute") return undefined;
   return DEFAULT_RPC_TIMEOUT_MS;
 }

@@ -621,6 +621,10 @@ off | minimal | low | medium | high | xhigh | max
   目录中的一个发布版本
 - `market.checkUpdates` / `market.applyUpdates`
 
+`market.install` 和 `market.applyUpdates` 不设置总 RPC 限时，每个包由下载器分别限制
+连接、低速停滞和总传输时间；慢速下载期间仍报告进度并接受 `market.cancelInstall`。
+其他市场方法保留默认 RPC 限时。具体下载预算见 `07-plugins/07-plugin-marketplace.md`。
+
 ### 提供商与模型
 - `providers.list` / `providers.get` / `providers.create` /
 - `providers.update` / `providers.delete` 拒绝插件自有的行

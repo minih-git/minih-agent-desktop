@@ -69,6 +69,14 @@ URL 与 sha256，因此安装只抓取该 URL 一次，并按目录声明的摘�
 sha256、解包、注册、启用，之前不会先向第二个服务解析。因此安装失败只可能是
 `PLUGIN_NETWORK`、`PLUGIN_INTEGRITY`、`PLUGIN_MARKET_INVALID`、
 `PLUGIN_MARKET_UNTRUSTED_HOST` 或 `PLUGIN_CANCELLED`。
+
+目录抓取保留 30 秒总限时。安装包允许最长 10 分钟传输，连接限时为 15 秒；
+传输速度连续 30 秒低于 1 KiB/s 时失败。持续达到该速度的下载不会仅因经过
+30 秒而中断。受保护的安装包下载失败后不会再尝试原始 HTTP 回退。
+`market.install` 和 `market.applyUpdates` 不设置总 RPC 限时，下载器负责每个包的
+限时、进度和取消，批量更新可下载多个包；宿主关闭仍会结束请求。
+主机白名单、TLS 验证、大小和 SHA-256 校验继续生效。
+
 ### 安装进度与取消
 
 安装或更新是一次请求，因此它在进行期间会报告自己处于哪一步。

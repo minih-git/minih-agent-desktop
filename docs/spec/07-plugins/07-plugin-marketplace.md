@@ -94,6 +94,16 @@ failed install can therefore only report `PLUGIN_NETWORK`, `PLUGIN_INTEGRITY`,
 `PLUGIN_MARKET_INVALID`, `PLUGIN_MARKET_UNTRUSTED_HOST`, or
 `PLUGIN_CANCELLED`.
 
+Catalog fetches retain a 30-second total deadline. Package transfers allow up
+to 10 minutes, with a 15-second connection deadline and a low-speed guard that
+fails after 30 seconds below 1 KiB/s. A transfer still making progress above
+that threshold must not fail solely because 30 seconds elapsed. A failed
+guarded package fetch does not retry through the raw HTTP fallback. The
+`market.install` and `market.applyUpdates` RPCs have no aggregate transport
+deadline: the downloader owns each transfer's limits, progress and cancellation,
+and batches may download multiple packages. Host shutdown still ends the call.
+Host allowlists, TLS verification, size and SHA-256 checks remain enforced.
+
 ### Install progress and cancellation
 
 An install or update is one request, so while it runs it reports where it is.
