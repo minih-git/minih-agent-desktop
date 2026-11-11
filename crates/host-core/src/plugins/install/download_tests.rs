@@ -168,10 +168,9 @@ fn size_and_hash_still_gate_the_download_cache() {
         if size == info.size_bytes {
             assert!(error.contains("checksum mismatch"), "{error}");
         }
-        assert!(
-            !dir.path()
-                .join("plugins/cache/download/demo.integrity-1.0.0.piplug")
-                .exists()
-        );
+        assert!(!dir
+            .path()
+            .join("plugins/cache/download/demo.integrity-1.0.0.piplug")
+            .exists());
     }
 }
