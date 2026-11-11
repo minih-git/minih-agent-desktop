@@ -87,12 +87,18 @@ ends in exactly one of two observable states:
 
 Three mechanisms, all in `SubagentRun`, make that true:
 
-- **Drain before closing.** After `prompt()` returns and after every retry or
-  fallback `continue()`, `run()` checks the queue. A queued message while the
-  transcript still ends on an assistant row means the delegate is not done:
-  the run calls `continue()`, which replays the queue, and loops. A run that
-  accepted an instruction therefore cannot reach its final result with that
-  instruction still waiting.
+- **Drain before closing, but after recovery.** `run()` checks the queue on
+  every idle, across the same loop that retries and falls back. A queued
+  message while the transcript still ends on a *healthy* assistant row means
+  the delegate is not done: the run calls `continue()`, which replays the
+  queue, and loops. A run that accepted an instruction therefore cannot reach
+  its final result with that instruction still waiting.
+  Ordering is load-bearing: recovery runs first, and a failed or aborted row
+  never counts as a boundary to resume from. Otherwise the run would
+  `continue()` on top of a failure, and pi answers a queued steer from an
+  assistant tail by starting a fresh prompt — retry and fallback skipped, the
+  errored row carried into the request, and the recovery state left pointing
+  at a tail that has moved.
 - **A closing flag.** Once the run commits to producing a result (after the
   drain loop, in the `finally`), `closed` is set and `send()` refuses with
   `SUBAGENT_RUN_CLOSING`. A `send()` racing the last turn sees either a live

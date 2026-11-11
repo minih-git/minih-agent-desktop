@@ -51,7 +51,11 @@ function agentOf(run: SubagentRun) {
 }
 
 function createRun(
-  options: { signal?: AbortSignal; fallbackModels?: SubagentRunOptions["fallbackModels"] } = {},
+  options: {
+    signal?: AbortSignal;
+    fallbackModels?: SubagentRunOptions["fallbackModels"];
+    onEvent?: SubagentRunOptions["onEvent"];
+  } = {},
 ) {
   const run = new SubagentRun({
     definition,
@@ -64,7 +68,7 @@ function createRun(
     thinkingLevel: "off",
     systemPrompt: "system",
     tools: [],
-    onEvent: () => undefined,
+    onEvent: options.onEvent ?? (() => undefined),
     ...(options.signal ? { signal: options.signal } : {}),
     ...(options.fallbackModels ? { fallbackModels: options.fallbackModels } : {}),
   });

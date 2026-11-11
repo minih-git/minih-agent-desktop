@@ -9,6 +9,7 @@ import type {
 import { chainRowsToMessages, selectChainRows } from "./delegation-history.js";
 import type { RuntimeProviderConfig } from "./provider-binding.js";
 import { DesktopAgentRuntime } from "./runtime.js";
+import { SubagentRun } from "./subagent.js";
 
 /**
  * The real wiring for `TaskSend` (ADR parent-steers-running-delegation): a
@@ -82,6 +83,54 @@ async function fixture() {
     supportedThinkingLevels: ["off"],
   };
   return { requests, provider, releaseFirst };
+}
+
+
+/**
+ * A provider that rejects the primary model and serves a fallback one, so the
+ * run has to recover before it can carry anything else.
+ */
+async function failingFixture() {
+  const requests: RequestBody[] = [];
+  const server = createServer(async (req, res) => {
+    let raw = "";
+    for await (const part of req) raw += part;
+    const body = JSON.parse(raw) as RequestBody;
+    requests.push(body);
+    if (body.model === "fixture-model") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "model not found" } }));
+      return;
+    }
+    answer(res, "Recovered, and applied the correction.");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  cleanups.push(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        server.closeAllConnections();
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  );
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("missing fixture address");
+  const base = `http://127.0.0.1:${address.port}/v1`;
+  const model = (id: string): RuntimeProviderConfig => ({
+    id,
+    name: id,
+    modelId: id,
+    baseUrl: base,
+    apiKey: "fixture-key",
+    authKind: "api_key_and_base_url",
+    apiStyle: "openai-chat",
+    supportsReasoning: false,
+    supportedThinkingLevels: ["off"],
+  });
+  return {
+    requests,
+    primary: { ...model("fixture-model"), id: "fixture" },
+    fallback: { ...model("fallback-model"), id: "fallback" },
+  };
 }
 
 const explorer: SubagentDefinition = {
@@ -236,5 +285,63 @@ describe("TaskSend through the real runtime wiring", () => {
     } finally {
       await runtime.dispose();
     }
+  });
+});
+
+describe("TaskSend ordering against a recovering run", () => {
+
+  it("repairs the failure before it delivers the queued instruction", async () => {
+    // The instruction is queued while the failed row is still the tail. Sending
+    // first would `continue()` on that row, and pi answers by replaying the
+    // queue as a fresh prompt over the failure: no fallback, and the errored
+    // assistant row carried into the request.
+    const { requests, primary, fallback } = await failingFixture();
+    let steered = false;
+    const run = new SubagentRun({
+      definition: explorer,
+      sessionId: "session-1",
+      turnId: "turn-1",
+      parentToolCallId: "task-call-3",
+      delegationId: "delegation-3",
+      task: "Find where the permission dialog is rendered.",
+      provider: primary,
+      thinkingLevel: "off",
+      systemPrompt: "Find the answer and report it.",
+      tools: [],
+      fallbackModels: [{ key: "fallback/fallback-model", provider: fallback }],
+      onEvent: (envelope) => {
+        if (envelope.event.type !== "message_end") return;
+        const message = envelope.event.message as { role?: string; status?: string };
+        // Queued synchronously, while the failure is still the tail. The run
+        // also emits a row per recorded model failure, so steer only once.
+        if (steered) return;
+        if (message.role === "assistant" && message.status === "error") {
+          steered = true;
+          run.send("Use the new dialog.");
+        }
+      },
+    });
+
+    const result = await run.run();
+
+    // 1. Recovery ran: the fallback model answered after the rejection.
+    expect(requests.map((request) => request.model)).toEqual([
+      "fixture-model",
+      "fallback-model",
+    ]);
+    // 2. No request ever carried the errored row, so recovery happened on the
+    //    tail it was recorded against instead of on top of it.
+    const carriesFailure = requests.filter((request) =>
+      JSON.stringify(request.messages).includes("model not found"),
+    );
+    expect(carriesFailure).toHaveLength(0);
+    // 3. The instruction is delivered exactly once, in the fallback request.
+    const withInstruction = requests.filter((request) =>
+      JSON.stringify(request.messages).includes("Use the new dialog."),
+    );
+    expect(withInstruction).toHaveLength(1);
+    expect(withInstruction[0].model).toBe("fallback-model");
+    expect(result.steering).toEqual({ delivered: 1, discarded: 0 });
+    expect(result.status).toBe("completed");
   });
 });

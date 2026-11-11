@@ -418,15 +418,28 @@ export class SubagentRun {
       }
       await this.agent.prompt(this.opts.task);
       await this.agent.waitForIdle();
-      // One loop, so every idle checks the steering queue first (ADR
-      // parent-steers-running-delegation §3). Draining before the run decides it
-      // is finished is what keeps an accepted instruction from being dropped: a
-      // queued message means the delegate is not done. Checking it inside the
-      // retry/fallback loop too means an instruction that arrives while the
-      // delegate is recovering is delivered rather than discarded.
-      // `continue()` replays queued steers only when the transcript still ends
-      // on the delegate's own assistant row.
+      // One loop, so every idle checks both recovery and the steering queue
+      // (ADR parent-steers-running-delegation §3). A queued message means the
+      // delegate is not done, so delivering it before the run commits to a
+      // result is what keeps an accepted instruction from being dropped — and
+      // checking it here, rather than once after `prompt()`, means one that
+      // arrives while the delegate is recovering is delivered too.
       while (!this.runSignal().aborted) {
+        // Recovery comes first. A failure is repaired against the tail it was
+        // recorded on; delivering an instruction ahead of that would call
+        // `continue()` on a failed assistant row, and pi answers that by
+        // replaying the queue as a fresh prompt over the failure — retry and
+        // fallback both skipped, and the failed row carried into the request.
+        if (this.pendingProviderRetry) {
+          await this.retryPendingProviderFailure();
+          continue;
+        }
+        if (this.streamError && this.useNextModel()) {
+          await this.agent.continue();
+          await this.agent.waitForIdle();
+          continue;
+        }
+        // Only a settled, healthy turn boundary takes an instruction.
         if (this.steerIsResumable()) {
           const before = this.deliveredSteering;
           await this.agent.continue();
@@ -436,15 +449,6 @@ export class SubagentRun {
             this.agent.clearAllQueues?.();
             break;
           }
-          continue;
-        }
-        if (this.pendingProviderRetry) {
-          await this.retryPendingProviderFailure();
-          continue;
-        }
-        if (this.streamError && this.useNextModel()) {
-          await this.agent.continue();
-          await this.agent.waitForIdle();
           continue;
         }
         break;
@@ -564,7 +568,16 @@ export class SubagentRun {
       queued.length > 0 || this.agent.hasQueuedMessages?.() === true;
     if (!hasQueued) return false;
     const last = this.agent.state.messages.at(-1);
-    return last?.role === "assistant";
+    if (last?.role !== "assistant") return false;
+    // A failed or aborted row is not a boundary an instruction may resume from:
+    // `continue()` would replay the queue as a fresh prompt on top of the
+    // failure instead of letting retry or fallback repair it first.
+    const settled = last as { stopReason?: string; errorMessage?: string };
+    return (
+      settled.stopReason !== "error" &&
+      settled.stopReason !== "aborted" &&
+      !settled.errorMessage
+    );
   }
 
   /**
