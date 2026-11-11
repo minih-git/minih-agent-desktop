@@ -127,7 +127,13 @@ that was pruned: the model's only correct action is identical.
 ### 5. Persistence and resume
 
 An injected instruction reaches the delegate's own stream as a `message_end`
-with `role: "user"`. Two existing paths are extended, not replaced:
+with `role: "user"`. Only the objects `send()` handed to the queue are
+forwarded, matched by identity: the opening brief is a user message in the same
+stream, and forwarding it would duplicate it on resume (the brief is rebuilt
+from the `Task` row's arguments) and read as an instruction in the delegate's
+transcript. The run emits the row itself, because that is the only place that
+can tell "delivered" from "queued". Two existing paths are extended, not
+replaced:
 
 - the runtime appends it to `transcriptHistory` through the same
   `appendDelegationRow` path every other delegate row uses, tagged with

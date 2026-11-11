@@ -5875,17 +5875,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     }
     // An instruction the parent sent with `TaskSend` arrives in the delegate's
     // own stream as a user row. It is history the delegate acted on, so it is
-    // persisted like every other delegate row — with `parentToolCallId` and
-    // `agentName`, which is what lets a later `Task(resume)` replay it (ADR
-    // parent-steers-running-delegation).
+    // attributed and kept like every other delegate row, which is what lets a
+    // later `Task(resume)` replay it (ADR parent-steers-running-delegation).
+    // The row keeps the id `SubagentRun` minted: Electron persists the same
+    // message object, so the transcript holds one row, not two.
     if (event.type === "message_end" && event.message.role === "user") {
-      this.appendDelegationRow(record, envelope, {
-        ...event.message,
-        id: randomUUID(),
-        agentName: record.agentName,
-        status: "complete",
-      });
-      this.onEvent(envelope);
+      this.appendDelegationRow(record, envelope, event.message);
     }
     if (
       (event.type === "message_start" || event.type === "message_update") &&

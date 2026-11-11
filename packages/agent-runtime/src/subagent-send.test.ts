@@ -4,7 +4,11 @@ import {
   createAssistantMessageEventStream,
   type Message,
 } from "@earendil-works/pi-ai";
-import { SubagentRun, type SubagentRunResult } from "./subagent.js";
+import {
+  SubagentRun,
+  type SubagentRunOptions,
+  type SubagentRunResult,
+} from "./subagent.js";
 import { chainRowsToMessages } from "./delegation-history.js";
 import type { RuntimeProviderConfig } from "./provider-binding.js";
 
@@ -46,7 +50,9 @@ function agentOf(run: SubagentRun) {
   return (run as unknown as { agent: { streamFunction: unknown } }).agent;
 }
 
-function createRun(signal?: AbortSignal) {
+function createRun(
+  options: { signal?: AbortSignal; fallbackModels?: SubagentRunOptions["fallbackModels"] } = {},
+) {
   const run = new SubagentRun({
     definition,
     sessionId: "session-1",
@@ -59,7 +65,8 @@ function createRun(signal?: AbortSignal) {
     systemPrompt: "system",
     tools: [],
     onEvent: () => undefined,
-    ...(signal ? { signal } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.fallbackModels ? { fallbackModels: options.fallbackModels } : {}),
   });
   return run;
 }
@@ -162,11 +169,15 @@ function requestedText(requests: RequestLog, index: number): string {
     .join("\n");
 }
 
-/** Resolve once `check` holds, without a fixed sleep. */
+/**
+ * Resolve once `check` holds. Yields to the event loop rather than sleeping a
+ * fixed amount, because the conditions under test advance on timers (a provider
+ * retry delay) as well as on microtasks.
+ */
 async function waitFor(check: () => boolean, label: string): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (let attempt = 0; attempt < 2_000; attempt += 1) {
     if (check()) return;
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 1));
   }
   throw new Error(`Timed out waiting for: ${label}`);
 }
@@ -202,6 +213,53 @@ describe("SubagentRun.send", () => {
     expect(result.status).toBe("completed");
     expect(result.report).toContain("Rebuilt the dialog from the new spec.");
     expect(result.steering).toEqual({ delivered: 1, discarded: 0 });
+  });
+
+  it("delivers an instruction sent while the delegate is retrying", async () => {
+    // Recovery keeps the run busy long after `prompt()` returned. pi polls the
+    // steering queue at every turn boundary inside `continue()` and the run now
+    // checks it after every idle too, so an instruction sent mid-recovery is
+    // delivered instead of being stranded when the run commits to its result.
+    const run = createRun();
+    const requests: RequestLog = [];
+    let gate: ReturnType<typeof holdStream> | undefined;
+    (run as unknown as { retryState: Record<string, unknown> }).retryState.status = 429;
+    (run as unknown as { retryState: Record<string, unknown> }).retryState.headers = {
+      "retry-after": "0",
+    };
+    agentOf(run).streamFunction = ((_model: unknown, context: { messages: Message[] }) => {
+      requests.push([...context.messages]);
+      if (requests.length === 1) {
+        const failure = {
+          ...assistantMessage(""),
+          stopReason: "error",
+          errorMessage: "429: too many requests",
+        };
+        const stream = createAssistantMessageEventStream();
+        queueMicrotask(() => {
+          stream.push({ type: "start", partial: failure } as never);
+          stream.push({ type: "done", reason: "error", message: failure as never } as never);
+          stream.end(failure as never);
+        });
+        return stream;
+      }
+      if (requests.length === 2) {
+        gate = holdStream(() => undefined);
+        return gate.answerWhenReleased("Recovered successfully.");
+      }
+      return immediateStream("Applied the correction from the parent.");
+    }) as never;
+
+    const running = run.run();
+    // Explicit sync point: the retry request is in flight.
+    await waitFor(() => gate !== undefined, "the delegate's retry request");
+    // Explicit sync point: the retry request is in flight.
+    expect(run.send("Use the new dialog.")).toEqual({ kind: "queued" });
+    gate?.release();
+    const result = await running;
+
+    expect(result.steering).toEqual({ delivered: 1, discarded: 0 });
+    expect(requestedText(requests, requests.length - 1)).toContain("Use the new dialog.");
   });
 
   it("refuses a settled delegation, which the runtime maps to a resume hint", async () => {
@@ -247,7 +305,7 @@ describe("SubagentRun.send", () => {
 
   it("reports an instruction a Stop dropped instead of counting it as delivered", async () => {
     const controller = new AbortController();
-    const run = createRun(controller.signal);
+    const run = createRun({ signal: controller.signal });
     let gate: ReturnType<typeof holdStream> | undefined;
     agentOf(run).streamFunction = (() => {
       gate = holdStream(() => undefined);

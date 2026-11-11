@@ -239,6 +239,20 @@ export function composeSubagentSystemPrompt(options: {
     .join("\n\n");
 }
 
+/** Text of a user message, whether it arrived as a string or text blocks. */
+function userMessageText(message: AgentMessage): string {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) =>
+      block && typeof block === "object" && typeof (block as { text?: unknown }).text === "string"
+        ? (block as { text: string }).text
+        : "",
+    )
+    .join("");
+}
+
 function boundedReport(value: string): string {
   const text = value.trim();
   if (text.length <= MAX_SUBAGENT_REPORT_CHARS) return text;
@@ -298,6 +312,12 @@ export class SubagentRun {
   private readonly runAbortController = new AbortController();
   /** Instructions this run accepted from its parent, delivered or still queued. */
   private acceptedSteering = 0;
+  /**
+   * The exact message objects queued by `send()`, matched by identity when the
+   * loop replays them. The opening brief is also a user message, and it must
+   * never become a delegate row: resume rebuilds it from the `Task` arguments.
+   */
+  private readonly injectedSteering = new Set<AgentMessage>();
   /** Accepted instructions the delegate's loop actually picked up. */
   private deliveredSteering = 0;
   /** Instructions dropped because the run was cancelled instead of delivered. */
@@ -398,31 +418,36 @@ export class SubagentRun {
       }
       await this.agent.prompt(this.opts.task);
       await this.agent.waitForIdle();
-      // The loop can end in the same tick a `send()` enqueues (ADR
-      // parent-steers-running-delegation). Draining before the run decides it
-      // is finished is what keeps an accepted instruction from being dropped:
-      // a queued message means the delegate is not done.
-      // `continue()` replays a queued steer only when the transcript still ends
-      // on the delegate's own assistant row; anything else leaves the queue.
-      while (!this.runSignal().aborted && this.steerIsResumable()) {
-        const before = this.deliveredSteering;
-        await this.agent.continue();
-        await this.agent.waitForIdle();
-        if (this.deliveredSteering === before) {
-          // Refused by the queue itself; stop retrying it.
-          this.agent.clearAllQueues?.();
-          break;
-        }
-      }
+      // One loop, so every idle checks the steering queue first (ADR
+      // parent-steers-running-delegation §3). Draining before the run decides it
+      // is finished is what keeps an accepted instruction from being dropped: a
+      // queued message means the delegate is not done. Checking it inside the
+      // retry/fallback loop too means an instruction that arrives while the
+      // delegate is recovering is delivered rather than discarded.
+      // `continue()` replays queued steers only when the transcript still ends
+      // on the delegate's own assistant row.
       while (!this.runSignal().aborted) {
-        if (this.pendingProviderRetry) {
-          await this.retryPendingProviderFailure();
-        } else if (this.streamError && this.useNextModel()) {
+        if (this.steerIsResumable()) {
+          const before = this.deliveredSteering;
           await this.agent.continue();
           await this.agent.waitForIdle();
-        } else {
-          break;
+          if (this.deliveredSteering === before) {
+            // The queue itself refused it; stop retrying.
+            this.agent.clearAllQueues?.();
+            break;
+          }
+          continue;
         }
+        if (this.pendingProviderRetry) {
+          await this.retryPendingProviderFailure();
+          continue;
+        }
+        if (this.streamError && this.useNextModel()) {
+          await this.agent.continue();
+          await this.agent.waitForIdle();
+          continue;
+        }
+        break;
       }
     } catch (error) {
       caughtError = classifyAgentError(error);
@@ -513,7 +538,13 @@ export class SubagentRun {
         message: "This subagent has already finished its work.",
       };
     }
-    this.agent.steer({ role: "user", content: message, timestamp: Date.now() });
+    const injected: AgentMessage = {
+      role: "user",
+      content: message,
+      timestamp: Date.now(),
+    };
+    this.injectedSteering.add(injected);
+    this.agent.steer(injected);
     this.acceptedSteering += 1;
     return { kind: "queued" };
   }
@@ -550,6 +581,9 @@ export class SubagentRun {
     const abortReason = this.cancelledReason();
     if (abortReason) this.sendRefusal = abortReason;
     this.agent.clearAllQueues?.();
+    // Whatever was still queued will never be emitted: a stray row after the run
+    // has committed to its result would be a row the delegate never acted on.
+    this.injectedSteering.clear();
     this.discardedSteering = Math.max(
       0,
       this.acceptedSteering - this.deliveredSteering,
@@ -942,6 +976,19 @@ export class SubagentRun {
     );
   }
 
+  /** The transcript row for one injected instruction. */
+  private newUserRow(message: AgentMessage): UiMessage {
+    return {
+      id: randomUUID(),
+      role: "user",
+      content: userMessageText(message),
+      createdAt: nowIso(),
+      status: "complete",
+      parentToolCallId: this.opts.parentToolCallId,
+      agentName: this.opts.definition.name,
+    };
+  }
+
   private newAssistantRow(): UiMessage {
     return {
       id: randomUUID(),
@@ -1029,10 +1076,18 @@ export class SubagentRun {
         break;
       }
       case "message_end": {
-        // A parent instruction the loop picks up arrives as a user row: this is
-        // the only place that can tell delivered from merely queued.
+        // A parent instruction the loop picks up arrives as a user row. Only the
+        // objects this run injected count: the opening brief is a user message
+        // too, and forwarding it would duplicate it on resume (ADR
+        // parent-steers-running-delegation §5). Delivery is the only place that
+        // can tell "delivered" from "queued", so the row is emitted here.
         if (event.message.role === "user") {
-          if (this.deliveredSteering < this.acceptedSteering) this.deliveredSteering += 1;
+          if (!this.injectedSteering.delete(event.message as AgentMessage)) break;
+          this.deliveredSteering += 1;
+          this.emit({
+            type: "message_end",
+            message: this.newUserRow(event.message as AgentMessage),
+          });
           break;
         }
         if (event.message.role !== "assistant") break;
