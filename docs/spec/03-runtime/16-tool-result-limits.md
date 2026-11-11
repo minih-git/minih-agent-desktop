@@ -187,15 +187,17 @@ counts are the stable signals. The UI truncated chip follows `truncated`.
 ## 6. Priority rules
 
 1. never omit truncation marker when truncated
-2. Bash stdout keeps its head; Bash stderr keeps its **tail**, because a failing
-   command's actionable message is the last thing it printed and dropping it for
-   96KB of progress noise is what makes the model retry blindly
+2. Bash stdout keeps **both ends** — the first lines show what ran, the last
+   lines carry a failing test's or build's summary; Bash stderr keeps its
+   **tail**, because a failing command's actionable message is the last thing it
+   printed and dropping it for 96KB of progress noise is what makes the model
+   retry blindly
 3. binary files: do not dump raw binary into model; return metadata error
    `TOOL_BINARY_CONTENT`. Detected by extension blacklist plus a sniff of the
    first 4KB (any NUL byte, or >30% non-printable). Grep skips binary files
    silently rather than matching lossily-decoded bytes
-4. a single line longer than the whole budget yields a char-boundary-safe prefix
-   (or suffix, for a tail cut), never an empty payload
+4. a line that cannot fit its end's share yields a char-boundary-safe prefix
+   (or suffix for a tail cut, both for a head+tail cut), never an empty payload
 5. aggregate checkpoint truncation must preserve every provider-valid assistant
    tool-call/result pair and re-estimate the resulting tail before persistence
 6. relevance ordering for Glob and Grep is file modification time, newest first,
