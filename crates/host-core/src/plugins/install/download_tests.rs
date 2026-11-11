@@ -23,8 +23,16 @@ fn server(
         stream
             .set_write_timeout(Some(Duration::from_secs(5)))
             .unwrap();
-        let mut request = [0u8; 4096];
-        stream.read(&mut request).unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0u8; 1];
+            stream.read_exact(&mut byte).unwrap();
+            request.push(byte[0]);
+            assert!(
+                request.len() <= 4096,
+                "fixture request headers are too large"
+            );
+        }
         write!(
             stream,
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
