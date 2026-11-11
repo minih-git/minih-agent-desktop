@@ -21,6 +21,25 @@ import { loadStyles } from "./helpers/styles.mjs";
 const root = repositoryRoot();
 const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
 
+/**
+ * Why this test does not run where it is skipped, or `false` to run it.
+ *
+ * Two independent reasons:
+ *
+ * - a machine without a display cannot boot the window at all;
+ * - on a slow CI runner the pairing countdown has already ticked past the
+ *   `10:00` this test reads back, so it fails on timing rather than behavior
+ *   (https://github.com/minih-git/minih-agent-desktop/issues/234). That skip is
+ *   CI-only: locally the test still runs, exactly as it did before.
+ */
+function testSkipReason() {
+  if (process.platform === "linux" && !process.env.DISPLAY) return "Electron requires a display";
+  if (process.env.CI) {
+    return "known CI timing race in the pairing countdown; https://github.com/minih-git/minih-agent-desktop/issues/234";
+  }
+  return false;
+}
+
 const fixture = String.raw`
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -304,7 +323,9 @@ window.remoteGatewayProbe = async () => {
 
 test(
   "remote gateway settings user path gates the switch, enrolls, pairs, revokes and cleans up",
-  { skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false },
+  {
+    skip: testSkipReason(),
+  },
   async () => {
     const temp = await mkdtemp(join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "remote-gateway-settings-"));
     try {

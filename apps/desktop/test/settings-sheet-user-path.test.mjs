@@ -13,7 +13,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
+import { repositoryRoot, resolveElectronBinary, scaledTimeout } from "../../../scripts/e2e/boot.mjs";
 
 const root = repositoryRoot();
 const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
@@ -664,7 +664,7 @@ app.whenReady().then(async () => {
         stream.setEncoding("utf8");
         stream.on("data", (chunk) => { output += chunk; });
       }
-      const timer = setTimeout(() => child.kill("SIGKILL"), 90_000);
+      const timer = setTimeout(() => child.kill("SIGKILL"), scaledTimeout(90_000));
       let code;
       try {
         code = await new Promise((resolve, reject) => {

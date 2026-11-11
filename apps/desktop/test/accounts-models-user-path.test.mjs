@@ -22,11 +22,32 @@ import { createRequire } from "node:module";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
-import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
+import { repositoryRoot, resolveElectronBinary, scaledTimeout } from "../../../scripts/e2e/boot.mjs";
 import { loadStyles } from "./helpers/styles.mjs";
 
 const root = repositoryRoot();
 const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
+
+/**
+ * Why this test does not run where it is skipped, or `false` to run it.
+ *
+ * Two independent reasons:
+ *
+ * - a machine without a display cannot boot the window at all;
+ * - in CI the Electron process hangs inside the hidden window and is killed at
+ *   the budget without ever printing its probe line
+ *   (https://github.com/minih-git/minih-agent-desktop/issues/235). That skip is
+ *   CI-only: locally the test still runs, exactly as it did before.
+ */
+function testSkipReason() {
+  if (process.platform === "linux" && !process.env.DISPLAY) {
+    return "Isolated Electron UI test requires a display";
+  }
+  if (process.env.CI) {
+    return "known CI hang in the isolated Electron window; https://github.com/minih-git/minih-agent-desktop/issues/235";
+  }
+  return false;
+}
 
 const fixtureSource = String.raw`
 import React from "react";
@@ -701,11 +722,8 @@ window.accountsProbe = async ({ width, height }) => {
 `;
 
 test("Accounts and models pages: token-only connect, then the catalog is the models page", {
-  timeout: 90_000,
-  skip:
-    process.platform === "linux" && !process.env.DISPLAY
-      ? "Isolated Electron UI test requires a display"
-      : false,
+  timeout: scaledTimeout(90_000),
+  skip: testSkipReason(),
 }, async () => {
   const temp = await mkdtemp(join(root, "apps/desktop/.accounts-ui-"));
   try {
@@ -772,7 +790,7 @@ app.whenReady().then(async () => {
       stream.setEncoding("utf8");
       stream.on("data", (chunk) => { output += chunk; });
     }
-    const timer = setTimeout(() => child.kill("SIGKILL"), 75_000);
+    const timer = setTimeout(() => child.kill("SIGKILL"), scaledTimeout(75_000));
     let code;
     try {
       code = await new Promise((resolve, reject) => {

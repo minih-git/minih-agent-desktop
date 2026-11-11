@@ -48,3 +48,24 @@ export function assertDesktopBuild(root = repositoryRoot()) {
 export function createTempDataDir(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
 }
+
+/**
+ * A kill or `node:test` budget that survives a slow CI runner.
+ *
+ * These Electron interaction tests boot a real window and drive the DOM; on a
+ * two-core runner without a GPU the same work takes several times what it takes
+ * on a developer machine, and a fixed budget then kills a run that would have
+ * passed. CI sets `MINIH_E2E_TIMEOUT_SCALE` (see `.github/workflows/ci.yml`) so
+ * every budget grows by one factor instead of each file guessing its own.
+ *
+ * The scale applies to timeouts only: no assertion changes with it, and a local
+ * run without the variable keeps the original numbers.
+ */
+export function scaledTimeout(ms) {
+  const raw = process.env.MINIH_E2E_TIMEOUT_SCALE;
+  const scale = raw === undefined || raw.trim() === "" ? 1 : Number(raw);
+  if (!Number.isFinite(scale) || scale <= 0) {
+    throw new Error("MINIH_E2E_TIMEOUT_SCALE must be a positive number, got: " + raw);
+  }
+  return Math.round(ms * scale);
+}
