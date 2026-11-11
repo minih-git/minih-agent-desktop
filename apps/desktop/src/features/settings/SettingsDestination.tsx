@@ -17,6 +17,7 @@ import { ProjectsPage } from "../../pages/ProjectsPage";
 import { AgentSkillsPage } from "../../components/settings/AgentSkillsPage";
 import { AgentMcpPage } from "../../components/settings/AgentMcpPage";
 import { AgentSubagentsPage } from "../../components/settings/AgentSubagentsPage";
+import { BotsSettingsPage } from "../bots/BotsSettingsPage";
 import { PluginScenicThemesDestination } from "../../components/settings/PluginScenicThemesDestination";
 import { ConfigSyncPage } from "../../components/settings/ConfigSyncPage";
 import type { SettingsTabId } from "../../lib/settings-search";
@@ -177,6 +178,7 @@ export function SettingsDestination({
         {tab === "skills" && <AgentSkillsPage />}
         {tab === "mcp" && <AgentMcpPage />}
         {tab === "subagents" && <AgentSubagentsPage />}
+        {tab === "employees" && <BotsSettingsPage />}
 
         {tab === "accounts" && <AccountsPage />}
         {tab === "devices" && <DevicesPage />}

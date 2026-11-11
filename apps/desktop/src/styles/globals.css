@@ -15,6 +15,8 @@
 @import "./chat-shell.css";
 @import "./composer.css";
 @import "./sidebar-threads.css";
+@import "./bots.css";
+@import "./bot-settings.css";
 @import "./messages.css";
 @import "./prose.css";
 @import "./ui-kit.css";

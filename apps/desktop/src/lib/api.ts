@@ -16,6 +16,16 @@ import type {
   LearnedMemoryUpdateRequest,
   LearnedMemoryUpdateResult,
   ActivationScope,
+  BotCreateRequest,
+  BotList,
+  BotSeedDefaultsResult,
+  BotUpdateRequest,
+  BotsChangedEvent,
+  TaskCardConfirmRequest,
+  TaskCardConfirmResult,
+  TaskCardDraftView,
+  TaskCardList,
+  TaskCardsChangedEvent,
   ScheduledTaskRun,
   AgentCapabilityMove,
   AgentCapabilityQuery,
@@ -1586,6 +1596,46 @@ export const api = {
   /** Registry entries reveal by id; project documents pass their own path. */
   revealSubagent: (target: { id?: string; path?: string }) =>
     invoke(IPC.invoke.subagentReveal, target),
+
+  // --- Employees (ADR bot-sessions-and-steward) -----------------------------
+  /**
+   * Every session whose role is `bot`, with the status dot the host derived
+   * from its latest delivery. Seeding is a separate, explicit call: opening
+   * this list never creates an employee.
+   */
+  listBots: () => invoke<BotList>(IPC.invoke.botList),
+  createBot: (request: BotCreateRequest) =>
+    invoke<{ session: SessionSummary }>(IPC.invoke.botCreate, request),
+  updateBot: (request: BotUpdateRequest) =>
+    invoke<{ session: SessionSummary }>(IPC.invoke.botUpdate, request),
+  /** Not a delete: the role returns to `user` and the conversation stays. */
+  dismissBot: (sessionId: string) =>
+    invoke<{ session: SessionSummary }>(IPC.invoke.botDismiss, { sessionId }),
+  seedDefaultBots: () => invoke<BotSeedDefaultsResult>(IPC.invoke.botSeedDefaults),
+  /** Task-card drafts of one steward session, newest first. */
+  listTaskCards: (sessionId: string) =>
+    invoke<TaskCardList>(IPC.invoke.taskCardList, { sessionId }),
+  /**
+   * The person's click. `cardHash` is the hash of the card the screen showed,
+   * so a revise between render and click is refused with `CONFLICT` instead of
+   * approving text nobody read.
+   */
+  confirmTaskCard: (request: TaskCardConfirmRequest) =>
+    invoke<TaskCardConfirmResult>(IPC.invoke.taskCardConfirm, request),
+  dropTaskCard: (draftId: string) =>
+    invoke<{ draft: TaskCardDraftView }>(IPC.invoke.taskCardDrop, { draftId }),
+  onBotsChanged: (listener: (event: BotsChangedEvent) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.botsChanged, (payload) =>
+      listener((payload ?? { reason: "updated" }) as BotsChangedEvent),
+    );
+  },
+  onTaskCardsChanged: (listener: (event: TaskCardsChangedEvent) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.taskCardsChanged, (payload) =>
+      listener((payload ?? { sessionId: "" }) as TaskCardsChangedEvent),
+    );
+  },
   openPluginPanel: (id: string) => invoke(IPC.invoke.pluginOpenPanel, id),
   togglePluginLauncher: () => invoke(IPC.invoke.pluginLauncherToggle),
   dismissPluginLauncher: () => invoke(IPC.invoke.pluginLauncherDismiss),

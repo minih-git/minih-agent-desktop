@@ -32,6 +32,8 @@ import { ComposerAutocomplete } from "./ComposerAutocomplete";
 import { AskToolCard } from "./AskToolCard";
 import { PlanApprovalBar } from "./PlanApprovalBar";
 import { TaskDock } from "./TaskDock";
+import { isStewardSession } from "../features/bots/bot-status";
+import { TaskCardDock } from "../features/bots/TaskCardDock";
 import {
   COMPOSER_MAX_VISIBLE_ROWS,
   COMPOSER_MIN_HEIGHT_PX,
@@ -569,6 +571,12 @@ export function Composer({
             header, so the gate now covers both the way it already covered the
             todo dock. */}
         {activeSessionId && localToolsAllowed ? <TaskDock sessionId={activeSessionId} /> : null}
+        {/* The steward's cards dock beside the plan bar: both are things the
+            person must act on, and both belong above the composer rather than
+            inside the transcript (ADR bot-sessions-and-steward §3). */}
+        {activeSessionId && isStewardSession(activeSessionSummary) ? (
+          <TaskCardDock sessionId={activeSessionId} />
+        ) : null}
         {planCheckpoint?.status === "pending" ? (
           <PlanApprovalBar proposal={planCheckpoint} />
         ) : null}

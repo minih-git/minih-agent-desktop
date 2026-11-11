@@ -1,0 +1,220 @@
+/*
+  Settings → Employees, and the steward's task-card dock.
+
+  Rows follow the settings card's own pitch; the only new surfaces are the
+  must-ask list (which must show locked items), the two-step dismiss, and the
+  task card. Every colour is an existing token.
+*/
+
+.bot-settings .bot-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.bot-list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.bot-list-row:last-child {
+  border-bottom: none;
+}
+
+.bot-list-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bot-list-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+}
+
+.bot-list-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+
+.bot-list-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.bot-dismiss-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-bg-hover);
+}
+
+.bot-dismiss-copy {
+  display: flex;
+  max-width: 260px;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.bot-seed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.bot-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.bot-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bot-form-group-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.bot-must-ask-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.bot-must-ask-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bot-form-note {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+
+.bot-form-error {
+  margin: 0;
+  color: var(--ds-error);
+  font-size: var(--text-xs);
+}
+
+.bot-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* --- Task-card dock ------------------------------------------------------ */
+
+.task-card-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.task-card {
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-elevated);
+  padding: 10px 12px;
+}
+
+.task-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+
+.task-card-goal {
+  margin: 6px 0 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  line-height: var(--leading-row);
+}
+
+.task-card-section {
+  margin-top: 8px;
+}
+
+.task-card-section-title {
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.task-card-list {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.task-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+
+.task-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.task-card-error {
+  margin: 8px 0 0;
+  color: var(--ds-error);
+  font-size: var(--text-xs);
+}
+
+.task-card-source {
+  margin-top: 6px;
+}
+
+.task-card-source-text {
+  margin: 4px 0 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+}
+
+.task-card-dispatched {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}

@@ -1,0 +1,127 @@
+/*
+  Sidebar employee group (ADR bot-sessions-and-steward §5).
+
+  Rows reuse the sidebar's row pitch and hover paint so an employee reads like
+  any other row; only the avatar, the status dot, and the "waiting on you" tint
+  are new. Every colour is an existing token: no surface here introduces one.
+*/
+
+.sidebar-session-group.bot-group {
+  flex: 0 0 auto;
+}
+
+.bot-group-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 6px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-none);
+}
+
+.sidebar-bot-row {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 4px 20px;
+  border-radius: var(--radius-sm);
+  color: var(--ds-text-secondary);
+  text-align: left;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.sidebar-bot-row:hover,
+.sidebar-bot-row.active {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+
+.sidebar-bot-row.active {
+  background: var(--ds-bg-active);
+}
+
+.sidebar-bot-avatar {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-active);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-none);
+}
+
+.sidebar-bot-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.sidebar-bot-name {
+  overflow: hidden;
+  font-size: var(--text-md);
+  line-height: var(--leading-row);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-bot-subtitle {
+  overflow: hidden;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-none);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Only `person/*` stages disturb the person, so only they change the paint. */
+.sidebar-bot-row.needs-person .sidebar-bot-subtitle {
+  color: var(--ds-warning);
+}
+
+.sidebar-bot-status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+  background: var(--ds-text-muted);
+}
+
+.sidebar-bot-status-dot.idle {
+  background: var(--ds-text-muted);
+}
+
+.sidebar-bot-status-dot.busy {
+  background: var(--ds-success);
+}
+
+.sidebar-bot-status-dot.queued {
+  background: var(--ds-info);
+}
+
+.sidebar-bot-status-dot.blocked {
+  background: var(--ds-error);
+}
+
+.sidebar-bot-status-dot.offline {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ds-text-muted);
+}
+
+.sidebar-bot-status-dot.attention {
+  background: var(--ds-warning);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ds-warning) 18%, transparent);
+  animation: sidebar-status-breathe 1.6s ease-in-out infinite;
+}
