@@ -43,6 +43,7 @@ import { automaticCompactionThresholdFor } from "./context-budget.js";
 import { COMPACTION_SUMMARY_MAX_RETRIES } from "./compaction-summary-input.js";
 import { loadInstructionChain, type ProjectInstructions } from "./project-instructions.js";
 import { classifyAgentError } from "./agent-errors.js";
+import { BACKGROUND_TASK_TOOL_NAMES, backgroundTaskToolDescriptions } from "./background-task-tools.js";
 import {
   PROVIDER_RATE_LIMIT_MAX_RETRIES,
   PROVIDER_TRANSIENT_MAX_RETRIES,
@@ -1618,6 +1619,66 @@ describe("DesktopAgentRuntime configuration matching", () => {
     }
     expect(host.call).toHaveBeenCalledTimes(3);
     await runtime.dispose();
+  });
+
+  it("keeps the background task tools on demand and activates them after a background Bash call", async () => {
+    const host = {
+      call: vi.fn().mockResolvedValue({
+        ok: true,
+        content: { backgroundTaskId: "task-1", command: "npm run dev" },
+      }),
+    };
+    const runtime = createRuntime({ host });
+    const agent = Reflect.get(runtime, "agent") as Agent;
+    const bash = agent.state.tools.find((tool) => tool.name === "Bash");
+    if (!bash) throw new Error("Bash tool is missing");
+    try {
+      // On demand: no schema for the three until something activates them, and
+      // ToolSearch can find them, which is what makes them reachable at all.
+      const hasToolNow = (name: string) =>
+        agent.state.tools.some((tool) => tool.name === name);
+      for (const name of BACKGROUND_TASK_TOOL_NAMES) {
+        expect(hasToolNow(name)).toBe(false);
+        expect((runtime as any).deferredToolNames.has(name)).toBe(true);
+      }
+      expect((runtime as any).findDeferredTools("background task output")).toContain(
+        "BackgroundTaskOutput",
+      );
+
+      const result = await bash.execute("bash-background", {
+        command: "npm run dev",
+        runInBackground: true,
+      });
+      expect((result.details as { addedToolNames?: string[] }).addedToolNames).toEqual([
+        ...BACKGROUND_TASK_TOOL_NAMES,
+      ]);
+
+      (runtime as any).resetDeferredToolsForPrompt();
+      for (const name of BACKGROUND_TASK_TOOL_NAMES) {
+        expect(hasToolNow(name)).toBe(true);
+      }
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("does not activate the background task tools for a foreground Bash call", async () => {
+    const host = {
+      call: vi.fn().mockResolvedValue({ ok: true, content: { stdout: "done" } }),
+    };
+    const runtime = createRuntime({ host });
+    const agent = Reflect.get(runtime, "agent") as Agent;
+    const bash = agent.state.tools.find((tool) => tool.name === "Bash");
+    if (!bash) throw new Error("Bash tool is missing");
+    try {
+      const result = await bash.execute("bash-foreground", { command: "printf done" });
+      expect(
+        (result.details as { addedToolNames?: string[] }).addedToolNames,
+      ).toBeUndefined();
+      expect((runtime as any).activeDeferredToolNames.has("BackgroundTaskOutput")).toBe(false);
+    } finally {
+      await runtime.dispose();
+    }
   });
 
   it("opts into background Bash without changing foreground timeout forwarding", async () => {
@@ -10993,6 +11054,55 @@ describe("DesktopAgentRuntime deferred tool restore (#225)", () => {
       expect(hasTool(runtime, "BrowserPreview")).toBe(true);
       await runtime.dispose();
     }
+  });
+
+  it("restores the background task tools from a background Bash result", async () => {
+    // A compaction or a new window can drop the Bash row that activated them;
+    // the canonical marker on the Bash result keeps them in the schema.
+    const runtime = createRuntime({
+      history: [
+        assistantRow,
+        {
+          id: "tool-bash-background",
+          role: "tool",
+          content: "",
+          createdAt: now(),
+          status: "complete",
+          toolName: "Bash",
+          toolCallId: "call-bash-background",
+          toolStatus: "success",
+          toolArgs: { command: "npm run dev", runInBackground: true },
+          toolResult: {
+            content: [{ type: "text", text: "{\"backgroundTaskId\":\"task-1\"}" }],
+            details: { addedToolNames: [...BACKGROUND_TASK_TOOL_NAMES] },
+          },
+        },
+      ],
+    });
+
+    (runtime as any).resetDeferredToolsForPrompt();
+    for (const name of BACKGROUND_TASK_TOOL_NAMES) {
+      expect(hasTool(runtime, name)).toBe(true);
+    }
+    await runtime.dispose();
+  });
+
+  it("describes the background task tools without falling back to Bash parameters", async () => {
+    const runtime = createRuntime({ history: [] });
+    (runtime as any).activateDeferredTools([...BACKGROUND_TASK_TOOL_NAMES]);
+    (runtime as any).resetDeferredToolsForPrompt();
+    const tools = (runtime as any).agent.state.tools as Array<{
+      name: string;
+      description: string;
+      parameters: unknown;
+    }>;
+    for (const name of BACKGROUND_TASK_TOOL_NAMES) {
+      const tool = tools.find((candidate) => candidate.name === name);
+      expect(tool?.description).toBe(backgroundTaskToolDescriptions[name]);
+      // The generic fallback is `{ command: string }`; these tools take an id.
+      expect(JSON.stringify(tool?.parameters)).not.toContain('"command"');
+    }
+    await runtime.dispose();
   });
 
   it("restores all activated tools when only some have been called", async () => {

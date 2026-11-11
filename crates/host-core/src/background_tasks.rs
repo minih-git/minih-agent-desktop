@@ -199,6 +199,29 @@ impl BackgroundTaskRegistry {
         });
         list
     }
+
+    /// Rendered output of one task **owned by `session_id`**, for the model's
+    /// own background-task tools. The registry is process-wide and these reads
+    /// carry no authorization of their own, so the session identity is checked
+    /// here: an id owned by another session answers exactly like an unknown id.
+    /// The snapshot is a `try_lock`, so a contended cell reads as "no output
+    /// yet" and never blocks a supervisor.
+    pub fn session_task_output(
+        &self,
+        session_id: &str,
+        id: &str,
+    ) -> Option<(String, String, bool)> {
+        let task = self
+            .tasks
+            .get(id)
+            .filter(|task| task.session_id == session_id)?;
+        let shared = task.shared.try_lock().ok()?;
+        Some((
+            TaskShared::render(&shared.stdout),
+            TaskShared::render(&shared.stderr),
+            shared.truncated,
+        ))
+    }
 }
 
 pub(crate) async fn spawn_background_task_detached(

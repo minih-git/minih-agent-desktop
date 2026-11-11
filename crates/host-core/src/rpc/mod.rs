@@ -1,4 +1,5 @@
 mod background_tasks_rpc;
+mod background_task_tools;
 mod config_sync_rpc;
 mod easytier_rpc;
 mod memory_rpc;
@@ -4457,8 +4458,27 @@ async fn handle_request(
             // turn's Stop (ADR tool-stop-side-effect-boundaries). Every other
             // call, including remote workspace tools and the session-delivery
             // tools, uses the typed registry keyed by tool name.
-            let cancellation_receiver = if matches!(p.tool_name.as_str(), "Bash" | "GenerateImages")
-            {
+            // Background task tools own no process, but their bounded wait must
+            // still end when the turn is stopped, so they keep the typed
+            // registry instead of the Bash process registry.
+            let cancellation_receiver = if background_task_tools::recognizes(&p.tool_name) {
+                let mut st = state.lock().await;
+                let shutting_down = st.shutting_down;
+                match st.tool_cancellations.register(
+                    shutting_down,
+                    &p.session_id,
+                    &p.tool_call_id,
+                    &p.tool_name,
+                ) {
+                    Ok(receiver) => Some(receiver),
+                    Err(error_code) if error_code == "HOST_SHUTTING_DOWN" => {
+                        return Err(rpc_err(1001, "host is shutting down", &error_code));
+                    }
+                    Err(error_code) => {
+                        return Err(rpc_err(1008, "tool already executing", &error_code));
+                    }
+                }
+            } else if matches!(p.tool_name.as_str(), "Bash" | "GenerateImages") {
                 let mut st = state.lock().await;
                 match st.register_bash_cancellation(&p.session_id, &p.tool_call_id) {
                     Ok(receiver) => Some(receiver),
@@ -4585,6 +4605,10 @@ async fn handle_request(
                     let recall_reason = memory_tools::risk_for(&p.tool_name, &p.args)
                         .is_some()
                         .then_some("Reads conversations from every project");
+                    // Background task reads are cheap low-risk calls; Stop keeps
+                    // the default medium risk so a state change still takes the
+                    // normal approval path instead of the low-risk auto-allow.
+                    let task_risk = background_task_tools::risk_for(&p.tool_name);
                     let mut auto = st
                         .permissions
                         .evaluate_auto_with_permission_mode_and_risk_and_path(
@@ -4595,7 +4619,7 @@ async fn handle_request(
                                 permission_mode: &effective_pm,
                                 session_grants: &st.session_grants,
                                 declared_risk: p.declared_risk.as_deref(),
-                                effective_risk: recall_risk.clone(),
+                                effective_risk: task_risk.clone().or(recall_risk.clone()),
                                 requires_external_path_permission: external_path_permission,
                                 plan_safe_actions: p.plan_safe_actions.as_deref(),
                             },
@@ -4969,6 +4993,7 @@ async fn handle_request(
                     };
                     bash_options = Some(tools::BashExecutionOptions {
                         session_id: p.session_id.clone(),
+                        is_delegate: p.permission_scope.is_some() || p.delegation_id.is_some(),
                         tool_call_id: p.tool_call_id.clone(),
                         command_shell_id: shell_id,
                         timeout_ms: execution_timeout_ms,
@@ -5004,6 +5029,12 @@ async fn handle_request(
                     // so they run here with the calling session's own scope.
                     let st = state.lock().await;
                     memory_tools::execute(&st, &p)
+                } else if background_task_tools::recognizes(&p.tool_name) {
+                    // Background processes are owned by the session, not by the
+                    // turn that started them: list/output/stop resolve the id
+                    // against the calling session only, and a bounded wait ends
+                    // on the same Stop signal.
+                    background_task_tools::execute(&state, &p, cancellation_receiver.clone()).await
                 } else if let Some(remote) = remote_workspace.clone() {
                     remote_tools::execute_remote_tool(
                         &state,
@@ -5164,6 +5195,20 @@ async fn handle_request(
                 st.cancel_pending_permission(session_id, tool_call_id, tool_name);
             let (cancellation_found, queued) = match tool_name {
                 Some("Bash" | "GenerateImages") => st.abort_or_queue_bash(session_id, tool_call_id),
+                Some(name) if background_task_tools::recognizes(name) => {
+                    let found = st
+                        .tool_cancellations
+                        .abort_or_queue(session_id, tool_call_id, name);
+                    // A background-task tool never owns a process, so an abort
+                    // that arrives for one must not leave a Bash tombstone
+                    // behind: a later real Bash call reuses the same call id and
+                    // would start pre-aborted. Clearing is keyed by the same
+                    // (session, tool call) pair, and only a tombstone can be
+                    // there — a Bash call with this id would be the abort target
+                    // instead.
+                    st.clear_queued_bash_abort(session_id, tool_call_id);
+                    found
+                }
                 Some(name) => st
                     .tool_cancellations
                     .abort_or_queue(session_id, tool_call_id, name),

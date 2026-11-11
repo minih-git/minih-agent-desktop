@@ -42,6 +42,9 @@ Let the agent get things done, but stay under control by default.
 | `Bash` | high | Execute commands |
 | `asktool` | low | Ask one or more user questions and return the submitted answers as tool output |
 | `TodoWrite` | low | Replace the current Agent session checklist; host validates and persists the full ordered snapshot |
+| `BackgroundTaskList` | low | List this session's background Bash tasks (id, command, state, elapsedMs, exitCode) |
+| `BackgroundTaskOutput` | low | Read one of this session's background tasks: state, exitCode, bounded stdout/stderr, optional `waitSeconds` |
+| `BackgroundTaskStop` | medium | Stop one of this session's background tasks; idempotent |
 
 > Names may be fine-tuned during implementation, but semantics stay consistent.
 
@@ -59,6 +62,10 @@ their full schemas up front:
 
 - `BrowserPreview`
 - `PluginCheck`, `PluginScaffold`, and `PluginPack`
+- `BackgroundTaskList`, `BackgroundTaskOutput`, and `BackgroundTaskStop`: a
+  successful `Bash` call with `runInBackground: true` activates all three, so
+  the model that started a process can read and stop it without a search round
+  trip
 - plugin-declared agent tools
 - `JevClassify` when the user enables Jev and saves a TypeSafe API key
 
@@ -67,12 +74,14 @@ descriptions. The model calls the local `ToolSearch` tool with an exact name or
 capability query; the matching schemas become available on the next model turn.
 At the beginning of every new user prompt, the sidecar clears the in-memory
 deferred set and restores only successful activation evidence from the effective
-session context: canonical `details.addedToolNames` on successful `ToolSearch`
-results and the names of successful deferred-tool results. For compatibility,
-historical `details.activated` and top-level `addedToolNames` markers are
-accepted as well. Failed rows, interrupted or missing-result placeholders, and
-assistant/user prose are ignored. Restored names must still be in the current
-mode's deferred catalog. The host permission,
+session context: canonical `details.addedToolNames` on a successful
+`ToolSearch` result, the same marker on any other successful result that
+activated tools itself (a background `Bash` call activating the
+background-task tools), and the names of successful deferred-tool results. For
+compatibility, historical `details.activated` and top-level `addedToolNames`
+markers are accepted as well. Failed rows, interrupted or missing-result
+placeholders, and assistant/user prose are ignored. Restored names must still be
+in the current mode's deferred catalog. The host permission,
 workspace/scratch containment, timeout, and audit rules do not change when a
 tool is loaded. `ToolSearch` itself never executes a workspace operation and
 never bypasses host-core policy.
@@ -537,6 +546,32 @@ reappear on a mount or session switch; tasks observed finishing in the current
 view leave a short dismissible receipt. This is not an interactive TTY or a
 durable service manager.
 
+The model reads and stops its own tasks with three built-in tools, all
+on-demand and activated by the successful background `Bash` call (see §2.1):
+
+- `BackgroundTaskList` returns only the calling session's tasks — id, command,
+  state, elapsedMs, exitCode — and the count of its running tasks.
+- `BackgroundTaskOutput` returns state, exitCode, and bounded stdout and stderr.
+  Both streams keep their **tail** under the `Bash` stderr budget (96 KB / 4000
+  lines), the over-budget copy spills to the session scratch directory, and a
+  leading `[truncated: …]` marker says so; `truncated` is also true when the
+  ring itself dropped earlier text. The optional `waitSeconds` (0–60) waits for
+  a terminal state and returns early when the task ends; the host caps it well
+  below the `tools.execute` budget, a timeout returns the current state instead
+  of an error, and the turn's Stop ends the wait without touching the process.
+- `BackgroundTaskStop` signals the same stop path the composer uses: the
+  supervisor kills the process tree and records `stopped`. It is idempotent —
+  a second call answers `stopped: false` and the state it found.
+
+The three tools take no session id: host-core resolves every id against the
+calling session, and an id owned by another session answers exactly like an
+unknown one (`NOT_FOUND`), so they cannot be used to probe what another
+conversation runs. They are never handed to a delegate (§10.2), and a
+delegate's own `Bash` with `runInBackground` is refused, because the registry
+entry and these tools all key off the session that owns the process. Tasks
+never notify or wake the model: the model reads them, the user sees them in the
+task dock.
+
 See [background task ownership](../../adr/background-bash-task-ownership.md)
 and [the Host RPC contract](06-host-rpc-protocol.md#background-tasks).
 
@@ -662,11 +697,11 @@ for the current key-log policy.
 
 ## 10. Operating-mode matrix
 
-| Mode | Read/Glob/Grep | BrowserPreview | Write/Edit | Bash | Plugins |
-|---|---|---|---|---|---|
-| Agent | allow | allow | permission policy | permission policy | registered risk policy |
-| Plan | allow | allow | deny | `ask`/`accept-edits`: confirm; `auto`: allow | plan-safe actions only |
-| Goal | allow | allow | deny | `ask`/`accept-edits`: confirm; `auto`: allow | plan-safe actions only |
+| Mode | Read/Glob/Grep | BrowserPreview | Write/Edit | Bash | Plugins | Background task tools |
+|---|---|---|---|---|---|---|
+| Agent | allow | allow | permission policy | permission policy | registered risk policy | List/Output allow; Stop permission policy |
+| Plan | allow | allow | deny | `ask`/`accept-edits`: confirm; `auto`: allow | plan-safe actions only | List/Output allow; Stop unavailable |
+| Goal | allow | allow | deny | `ask`/`accept-edits`: confirm; `auto`: allow | plan-safe actions only | List/Output allow; Stop unavailable |
 
 ### Notes
 - Plan and Goal hard-deny Write/Edit and plugin tools without `planSafeActions` before permission UI; a direct host
@@ -675,6 +710,13 @@ for the current key-log policy.
   Write/Edit/Bash and registered plugin tools.
 - Plan and Goal Bash may mutate workspace or scratch state when the user selected Auto;
   the UI must make that tradeoff visible.
+- Background processes outlive the turn that started them, so a Plan or Goal
+  turn reads what the same session already runs: `BackgroundTaskList` and
+  `BackgroundTaskOutput` change nothing and are admitted like the recall reads.
+  `BackgroundTaskStop` is omitted from the catalog in both modes and is not on
+  the contract-mode allowlist: a background task is started by Bash, which Plan
+  and Goal hard-deny, so one running there predates the mode. In Agent mode
+  Stop carries the registered medium risk and takes the normal approval path.
 - allow-session is remembered per toolName for the active session only
 - Session grants follow `sessionId` across project-tab switches and are never
   inherited by another session or Temporary conversation
@@ -715,8 +757,9 @@ the runtime unions `toolCatalog` keys (including deferred plugin/MCP tools)
 with any assignable extras, then drops `Task` / `TaskWait` / `TaskList` /
 `TaskStop`, `EnterPlanMode` / `EnterGoalMode`, `TodoWrite`, `asktool`,
 `new_context`, `ContextUsage`, `ToolSearch`, the learned-memory tools `SessionHistorySearch` /
-`MemorySearch` / `MemoryRemember`, and the session-messaging tools `SessionList` /
-`SessionSend` / `SessionResult` / `SessionCreate`.
+`MemorySearch` / `MemoryRemember`, the session-messaging tools `SessionList` /
+`SessionSend` / `SessionResult` / `SessionCreate`, and the background-task tools
+`BackgroundTaskList` / `BackgroundTaskOutput` / `BackgroundTaskStop`.
 Builtins do not opt in. `inherit` is visible in the Markdown and
 in Settings; host-core keeps the token so an inherit-only document still
 loads. Plugin tools, `Skill`, and MCP tools are therefore available to a
@@ -726,6 +769,12 @@ assignable whitelist.
 That deny list is the gate in both directions: the same names are dropped from
 a definition's own `tools` list, so naming one explicitly cannot grant what
 `inherit` refuses.
+
+Background processes belong to the parent session, not to a delegate: host-core
+resolves every task id against the calling session and refuses a delegate's
+`Bash` with `runInBackground`, so these tools could only ever answer "no tasks"
+for a delegate — and where a delegate sees its parent's catalog they would let
+it stop a server the user is still using. The parent keeps all three.
 
 Without `tools: inherit`, a delegate's available tools are its definition's,
 never its session's: it cannot gain a tool because the parent has it, and a

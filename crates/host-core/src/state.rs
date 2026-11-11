@@ -316,6 +316,15 @@ impl AppState {
         self.pending_bash_aborts.remove(&key);
     }
 
+    /// Drop a queued Bash abort for a call id now owned by a background-task
+    /// tool. A typed abort names its tool, so a tombstone left by a misrouted
+    /// earlier abort would make a later Bash call with the same id start
+    /// pre-aborted.
+    pub fn clear_queued_bash_abort(&mut self, session_id: &str, tool_call_id: &str) {
+        self.pending_bash_aborts
+            .remove(&(session_id.to_string(), tool_call_id.to_string()));
+    }
+
     pub fn shutdown(&mut self) {
         self.shutting_down = true;
         for sender in self.active_bash_cancellations.values() {

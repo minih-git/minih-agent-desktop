@@ -140,6 +140,7 @@ async fn isolated_session_user_path_from_create_to_delete() {
             extra_env: env,
             run_in_background: false,
             app_state: None,
+            is_delegate: false,
         })),
     )
     .await;
