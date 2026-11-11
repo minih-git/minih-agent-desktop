@@ -54,11 +54,11 @@ schedules it.**
    (`packages/agent-runtime/src/keep-warm.ts`). It is written when the turn
    settles, not when the request goes out: at request time the transcript does
    not yet hold the answer the next request will resume after, so a digest taken
-   there could never match. A keep-warm request re-assembles the prefix and sends
-   nothing unless the digest matches. This is what makes the dynamic parts of the
-   system prompt (the date in the learned-memory section, a memory note written
-   since the last turn, a changed tool catalogue) a refusal instead of a wasted
-   cache write.
+   there could never match. The ledger also keeps a compressed, detached copy of
+   that settled context. Keep-warm replays this snapshot and verifies its digest,
+   rather than reconstructing message order or learned-memory sections from
+   current history. A separate configuration digest still refuses model,
+   thinking, mode, tools, skills, provider and instruction changes.
    The digest covers what an adapter writes, not what this runtime keeps. Each
    message is projected to a whitelist checked against pi-ai 1.1.0:
    `role`, `content`, `sections`, `toolsAdded`, `toolsRemoved`, `toolCallId`,
@@ -75,15 +75,16 @@ schedules it.**
    and replayed by none of them (the Responses adapter sends no
    `previous_response_id`), so it stays out; an adapter that starts replaying it
    has to add it here.
-   A turn that failed or was aborted records nothing: its last state is not a
-   prefix anybody resumes from, and the previous record then makes the next warm
-   request refuse.
+   A new real prompt invalidates the previous record before execution; only a
+   successfully completed turn replaces it. Failed or aborted turns cannot warm
+   a stale snapshot.
 4. The ledger lives in the sidecar, not in the runtime instance: the idle sweep
    reclaims a runtime after thirty minutes, and the first request is due at
-   fifty. A rebuilt runtime assembles the same prefix from history and is checked
-   against the same record. Restarting the app empties the ledger and every
-   session then answers `no_prior_request` — accepted, because the cache is gone
-   by then anyway.
+   fifty. A rebuilt runtime uses the settled snapshot even when persisted
+   steering order or the current learned-memory index differs. Snapshots are
+   gzip-compressed in memory, replaced on each successful turn, removed on
+   explicit disposal and pruned after the cache lifetime. Nothing is persisted.
+   Restarting the app empties the ledger and answers `no_prior_request`.
 5. **One storage rule for user messages.** Every path that creates a user
    message stores it in the same content form — a text block array — because that
    is what pi produces for a prompted message and what the request then carries.

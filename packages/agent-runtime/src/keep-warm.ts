@@ -10,13 +10,15 @@
  * The record lives in this process, not in the runtime instance, because the
  * sidecar reclaims an idle runtime after thirty minutes while the first
  * keep-warm request is due at fifty. A reclaimed runtime is rebuilt from
- * history, and the rebuilt prefix is compared against this record. Restarting
+ * history, but warming replays the compressed settled context in this ledger.
+ * Expired snapshots are pruned by the idle sweep. Restarting
  * the app empties the record, and a keep-warm request then answers
  * `no_prior_request` — the accepted degradation, since the cache is gone by
  * then anyway.
  */
 
-import type { Api, AssistantMessageEventStream, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { gzipSync, gunzipSync } from "node:zlib";
+import type { Api, AssistantMessageEventStream, Context, Model, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import {
   KEEP_WARM_MIN_CONTEXT_TOKENS,
   KEEP_WARM_STALE_AFTER_MS,
@@ -43,6 +45,8 @@ export const KEEP_WARM_SUPPORTED_APIS: readonly string[] = [
  */
 export type KeepWarmPrefixState = {
   fingerprint: string;
+  /** Configuration identity excluding the frozen learned-memory snapshot. */
+  configFingerprint?: string;
   api: string;
   providerId: string;
   modelId: string;
@@ -66,9 +70,18 @@ export type KeepWarmPrefixState = {
  */
 export class KeepWarmLedger {
   private readonly entries = new Map<string, KeepWarmPrefixState>();
+  private readonly contexts = new Map<string, Buffer>();
 
-  record(sessionId: string, state: KeepWarmPrefixState): void {
+  record(sessionId: string, state: KeepWarmPrefixState, context?: Pick<TranscriptContext, "messages">): void {
     this.entries.set(sessionId, state);
+    if (context) this.contexts.set(sessionId, gzipSync(JSON.stringify(context)));
+    else this.contexts.delete(sessionId);
+  }
+
+  /** A detached replay snapshot; never persisted or shared with a live Agent. */
+  context(sessionId: string): TranscriptContext | undefined {
+    const compressed = this.contexts.get(sessionId);
+    return compressed ? JSON.parse(gunzipSync(compressed).toString("utf8")) as TranscriptContext : undefined;
   }
 
   /** Mark the request settled, without touching what it sent. */
@@ -84,6 +97,15 @@ export class KeepWarmLedger {
 
   forget(sessionId: string): void {
     this.entries.delete(sessionId);
+    this.contexts.delete(sessionId);
+  }
+
+  prune(now: number): void {
+    for (const [id, state] of this.entries) {
+      if (now - (state.settledAt ?? state.requestedAt) > KEEP_WARM_STALE_AFTER_MS) {
+        this.contexts.delete(id);
+      }
+    }
   }
 
   get size(): number {
