@@ -35,6 +35,8 @@ window.minihAgent = { platform: "linux", on() { return () => {}; },
       return new Promise(resolve => pending.push({ id: input.providerId, resolve }));
     }
     if (channel === IPC.invoke.updatesGetState) return Promise.resolve({ ok: true, data: { status: "idle", currentVersion: "0.20.5" } });
+    // The sidebar also lists employees now; this fixture has none.
+    if (channel === IPC.invoke.botList) return Promise.resolve({ ok: true, data: { bots: [] } });
     unexpected.push(channel);
     return Promise.resolve({ ok: false, error: { code: "TEST_UNEXPECTED", message: "Unexpected fixture request" } });
   } };
