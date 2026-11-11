@@ -427,6 +427,7 @@ export const zhCN = {
     followUpSuggestionSend: "点击发送这条建议",
     sendWhileRunning: "发送后续消息 · {{shortcut}} 立即转向",
     steeringUnavailable: "当前轮已无法接收转向输入，草稿已保留。",
+    delegateInstruction: "已发送给子智能体的指令",
     sideNote: "旁注",
     nativeSessionBusy: "该原生 Pi 会话仍在回复中，请先停止或等待回复结束后再发送。",
     stopGenerating: "停止生成",

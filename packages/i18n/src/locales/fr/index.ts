@@ -416,6 +416,7 @@ export const fr = {
     "followUpSuggestionSend": "Cliquez pour envoyer cette suggestion",
     sendWhileRunning: "Envoyer à la suite · {{shortcut}} pour réorienter",
     steeringUnavailable: "Ce tour ne peut plus recevoir de consignes. Votre brouillon a été conservé.",
+    "delegateInstruction": "Instruction au sous-agent",
     "sideNote": "Note en passant",
     nativeSessionBusy: "Cette session Pi native répond encore. Arrêtez-la ou attendez la fin de la réponse avant d'envoyer.",
     "stopGenerating": "Arrêter de générer",

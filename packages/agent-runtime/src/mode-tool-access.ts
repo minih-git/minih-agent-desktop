@@ -4,7 +4,7 @@ import { CORE_PERSONA_TOOLS, type Mode } from "@minih-agent/shared";
 export { CORE_PERSONA_TOOLS };
 
 /** Known editing/delegation names stay declared across contract-mode changes. */
-const RETAINED_MODE_TOOLS = new Set(["Write", "Edit", "Task", "TaskWait", "TaskList", "TaskStop"]);
+const RETAINED_MODE_TOOLS = new Set(["Write", "Edit", "Task", "TaskWait", "TaskList", "TaskStop", "TaskSend"]);
 
 export function retainModeToolDeclaration(name: string): boolean {
   return RETAINED_MODE_TOOLS.has(name);
