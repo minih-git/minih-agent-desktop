@@ -220,6 +220,75 @@ globalThis.sessionReadingPositionProbe = async () => {
       !useAppStore.getState().transcriptViews["real-A"],
       "a bottom bookmark must not reopen a history page",
     );
+
+    // E2E-SESSION-return-after-released-follow-opens-latest: expanding a row
+    // while a reply streams releases follow mode (#324). The reply keeps growing
+    // below the reader, so the bookmark must still describe the reading
+    // operation it was taken for - not the tail of a later layout sample - or
+    // every later visit restores a page around the prompt the reader was passing.
+    const appendRow = (next: UiMessage) => {
+      const index = messages.findIndex((candidate) => candidate.id === next.id);
+      if (index >= 0) messages[index] = next;
+      else messages.push(next);
+      useAppStore.setState((state) => ({
+        messages: [...state.messages.filter((candidate) => candidate.id !== next.id), next],
+      }));
+    };
+    const promptRow: UiMessage = {
+      id: "real-turn-prompt", role: "user", content: "And the next step?", createdAt, status: "complete",
+    };
+    const turnToolRow: UiMessage = {
+      id: "real-turn-tool", role: "tool", content: "", createdAt, status: "complete",
+      toolName: "Read", toolCallId: "call-real-turn-tool", toolStatus: "success",
+      toolArgs: { path: "src/example.ts" }, toolResult: "Synthetic tool output.",
+    };
+    const answerRow = (content: string, status: UiMessage["status"]): UiMessage => ({
+      id: "real-turn-answer", role: "assistant", content, createdAt, status,
+    });
+    await until(atBottom, "a new turn starts at the tail");
+    assert(getTranscriptReadingPosition("real-A")?.pinned === true, "follow is intact before the new turn");
+    flushSync(() => useAppStore.setState((state) => ({
+      runningSessions: { ...state.runningSessions, "real-A": true }, isRunning: true,
+    })));
+    flushSync(() => appendRow(promptRow));
+    await frame();
+    flushSync(() => appendRow(turnToolRow));
+    await frame();
+    const turnHeader = row(turnToolRow.id)?.querySelector<HTMLElement>(".tool-row-header");
+    assert(turnHeader, "the tool row of the running turn did not render");
+    // Mid-reply: the expansion hands the viewport to the disclosure anchor.
+    flushSync(() => turnHeader.click());
+    for (let step = 1; step <= 4; step++) {
+      flushSync(() => appendRow(answerRow(`${"A long streamed answer. ".repeat(6 * step)}\n\n`, "streaming")));
+      await frame();
+      await frame();
+    }
+    flushSync(() => appendRow(answerRow(`${"A long streamed answer. ".repeat(40)}\n\n`, "complete")));
+    flushSync(() => useAppStore.setState((state) => ({
+      runningSessions: { ...state.runningSessions, "real-A": false }, isRunning: false,
+    })));
+    await frame();
+    await frame();
+    const released = scroller();
+    const releasedGap = released.scrollHeight - released.clientHeight - released.scrollTop;
+    assert(releasedGap > 200, `the reply must grow past the released viewport: ${releasedGap}`);
+    const releasedBookmark = getTranscriptReadingPosition("real-A");
+    assert(releasedBookmark?.pinned === false, "expanding a row mid-reply releases the follow bookmark");
+    await select("B");
+    await select("A");
+    await until(atBottom, "returning to a session whose follow was released opens its newest turn");
+    assert(
+      !host.querySelector('[data-visible="true"] .jump-latest-btn'),
+      "the reopen must not offer to load later messages",
+    );
+    assert(
+      !useAppStore.getState().transcriptViews["real-A"],
+      "the reopen must follow the newest turn instead of restoring a reading page",
+    );
+    assert(
+      releasedBookmark.tailMessageId === turnToolRow.id,
+      `the bookmark must anchor the tail of the reader's own operation: ${JSON.stringify(releasedBookmark)}`,
+    );
     assert(unexpected.length === 0, `unexpected IPC: ${unexpected}`);
     return { ok: true, anchor: id, restoredOffset, aroundReads, panes: 3 };
   } catch (error) {

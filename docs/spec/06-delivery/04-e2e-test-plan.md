@@ -54,7 +54,8 @@
 - **Scrolling:** `node scripts/e2e-transcript-reading-position.mjs` covers
   nonblocking hard-edge/ahead loading, single-flight IO, persistent pre-paint
   anchors under opposing row resizes, interruptible native latest travel, late
-  layout convergence, saved follow intent, empty-page retry and Review focus.
+  layout convergence, saved follow intent, a session whose follow was released
+  mid-reply reopening at its newest turn, empty-page retry and Review focus.
   Continuous pages stay reading data; unread/disjoint gaps never join model input.
   `node scripts/e2e-transcript-prose.mjs` covers native pointer/wheel input,
   measured recycling, selection, code/HTML and hidden-pane renderer retention.
@@ -21064,3 +21065,26 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Status**: Automated at the runtime and projection level; an Electron
   end-to-end pass through a live sidecar remains outstanding. Required
   post-integration suites: `test:e2e`, `test:e2e:subagents`.
+
+## E2E-SESSION-return-after-released-follow-opens-latest
+
+- **Preconditions:** A session with a long transcript sitting at its newest turn,
+  and at least one other session to switch to. Synthetic fixture IPC; no
+  provider, Host sidecar or user profile.
+- **Steps:** 1) Send a prompt so a reply starts. 2) While the reply streams,
+  expand a tool row's title, which hands the viewport to the disclosure anchor
+  and releases follow mode (#324). 3) Let the reply keep growing below the
+  reader and finish. 4) Switch to another session and back.
+- **Expected:** The session reopens at its newest turn: the scroller is at its
+  bottom, no Jump to latest pill is offered, and no restored reading page
+  (`transcriptViews[id].restored`) opens, because the bookmark still anchors the
+  tail of the reader's own disclosure rather than the tail of a later layout
+  sample. A session whose reply had already finished when the reader scrolled up
+  keeps restoring its bookmarked row and offset (E2E-071g, #A100).
+- **Automation:** `node scripts/e2e-transcript-reading-position.mjs`.
+- **Specs linked:** `04-ux/09-interaction-patterns.md` §5,
+  `04-ux/08-component-spec.md` §1.6, ADR 0137.
+- **Acceptance:** C (chat stream), Quality.
+- **Milestone:** Maintenance.
+- **Status:** Automated (isolated React/Electron, fixture IPC); live UI scenario
+  Draft.
