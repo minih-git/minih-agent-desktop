@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { TaskView } from "@minih-agent/shared";
 import { useTranslation } from "react-i18next";
+import { WorktreeBehindMarker } from "../worktree/WorktreeBehind";
 import { taskStageLabelKey, taskStatusTone } from "./bot-status";
 
 /**
@@ -116,6 +117,10 @@ function BotTaskRow({
         {task.title}
         {repo ? <span className="sidebar-bot-task-repo"> · {repo}</span> : null}
       </span>
+      {/* A task's workspace is an ADR 0329 worktree too, so the same "behind
+          the project" count applies to it: the person has to be able to see
+          that the task is working on stale code before it delivers. */}
+      {!archived ? <WorktreeBehindMarker sessionId={task.sessionId} /> : null}
       <span className="sidebar-bot-task-stage">{archived ? t("bots.tasks.archived") : stage}</span>
     </button>
   );

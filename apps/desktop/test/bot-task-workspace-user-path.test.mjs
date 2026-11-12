@@ -37,6 +37,8 @@ import { IPC } from "@minih-agent/shared";
 import { EmployeeWorkbench } from "../../apps/desktop/src/features/bots/EmployeeWorkbench";
 import { ConversationTopbar } from "../../apps/desktop/src/components/ConversationTopbar";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
+import { useWorktreeUi } from "../../apps/desktop/src/features/worktree/worktree-ui-store";
+import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
   resources: { en: { translation: flattenCatalog(catalogs.en) } },
@@ -219,6 +221,21 @@ window.workspaceProbe = async () => {
   check(/Workspace ready/.test(text(row)), "the row does not say the workspace is ready: " + text(row));
   check(/local main/.test(text(row)), "the row does not say where the branch started: " + text(row));
   report.row = text(row);
+
+  // 2b. The task row carries the same "behind the project" count an isolated
+  //     session does: ADR 0329's marker, read from the store that
+  //     worktree.behindAll fills.
+  useWorktreeUi.setState({ behind: { "sess-task-0001": 3 } });
+  mount(React.createElement(BotSidebarGroup, {
+    bots, tasks, onOpenBot: () => undefined, onOpenTask: () => undefined,
+  }));
+  await until(
+    () => document.querySelector("[data-sidebar-bot-task='task-0001'] [data-worktree-behind]"),
+    "the behind marker on the task row",
+  );
+  const marked = document.querySelector("[data-sidebar-bot-task='task-0001']");
+  check(/↓3/.test(text(marked)), "the task row does not show how far behind it is: " + text(marked));
+  report.behind = text(marked);
 
   // 3. A preparation that failed sends nothing, says why, and retries.
   tasks = [task("task-0002", "sess-task-0002", {
