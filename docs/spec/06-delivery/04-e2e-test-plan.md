@@ -1,5 +1,22 @@
 # 04. E2E Test Plan
 
+## E2E-PROVIDER-anthropic-fallback-preserves-version-path
+
+- **Preconditions:** Request worktree with reused dependencies; local synthetic
+  Anthropic HTTP/SSE endpoints only, without user data or a paid provider.
+- **Steps:** Complete a request on the primary endpoint, return 503 on the next
+  request, then send another request during fallback cooldown. Exercise network
+  failures and 502/503/504 with fallback roots, `/v1`, and nested service paths.
+- **Expected:** The real request assembly and Anthropic adapter complete every
+  reply. Primary and fallback receive `/v1/messages?beta=true` exactly once;
+  nested prefixes survive and cooldown requests bypass the failed primary.
+  Existing Chat Completions fallback and authorization behavior stay unchanged.
+- **Automation:** `packages/agent-runtime/src/anthropic-endpoint-fallback.test.ts`
+  runs the real adapter against local HTTP fixtures plus controlled transports;
+  `provider-binding.test.ts` retains the other protocols' fallback regressions.
+- **Scope:** Request/adapter/HTTP integration, not installed Desktop or live
+  EasyTier acceptance. See provider config schema, Anthropic base URL handling.
+
 ## E2E-CACHE-keep-warm-after-follow-up-and-rebuild
 
 - **Preconditions:** Built task-local shared/runtime packages, reused dependencies,
