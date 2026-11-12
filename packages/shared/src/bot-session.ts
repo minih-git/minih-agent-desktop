@@ -16,7 +16,13 @@
 
 import type { PermissionMode } from "./types/permissions.js";
 
-export const SESSION_ROLES = ["user", "bot"] as const;
+/**
+ * Session roles (ADR bot-sessions-and-steward). `bot` is a long-lived employee,
+ * `task` is one piece of that employee's work (its own transcript and
+ * workspace, owned by the employee through `owner_session_id`), and `user` is
+ * every ordinary conversation.
+ */
+export const SESSION_ROLES = ["user", "bot", "task"] as const;
 export type SessionRole = (typeof SESSION_ROLES)[number];
 export const DEFAULT_SESSION_ROLE: SessionRole = "user";
 

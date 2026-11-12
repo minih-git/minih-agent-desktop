@@ -32,6 +32,7 @@ mod session_search;
 mod session_worktrees;
 mod sessions;
 mod state;
+mod tasks;
 mod todos;
 mod tool_budget;
 mod tool_cancellation;

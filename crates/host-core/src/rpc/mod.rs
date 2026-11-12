@@ -1983,6 +1983,12 @@ async fn handle_request(
             crate::session_collaboration::handle(&st.db, method, &params)
                 .map_err(session_collaboration_rpc_err)
         }
+        // Tasks under an employee (ADR bot-sessions-and-steward §7).
+        method if method.starts_with("task.") => {
+            let st = state.lock().await;
+            crate::session_collaboration::handle_task(&st.db, method, &params)
+                .map_err(session_collaboration_rpc_err)
+        }
         "app.handshake" => {
             let client_version = params
                 .get("protocolVersion")
@@ -6244,6 +6250,108 @@ mod tests {
         .await
         .unwrap_or_else(|error| panic!("taskCard.list must be routed: {error:?}"));
         assert_eq!(drafts["drafts"], json!([]));
+    }
+
+    /// Every `task.*` method the desktop calls, spelled exactly as it sends it.
+    ///
+    /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts`.
+    const DESKTOP_TASK_METHODS: [&str; 4] =
+        ["task.create", "task.list", "task.get", "task.archive"];
+
+    /// Tasks answer on the real RPC route, with real arguments.
+    ///
+    /// The failure this catches is the one `bot.list` already had: a method the
+    /// renderer sends and the router never forwards, which the domain tests
+    /// cannot see because they call the module directly.
+    #[tokio::test]
+    async fn every_desktop_task_method_is_routed_and_works() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = AppState::open(dir.path()).unwrap();
+        app.handshook = true;
+        let employee = sessions::create_session_with_options(
+            &app.db,
+            sessions::SessionCreateOptions {
+                title: Some("Router 后端".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    r#"{"name":"Router 后端","permissionMode":"accept-edits","mustAsk":[],"observe":false}"#
+                        .into(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let state = Arc::new(Mutex::new(app));
+        let tx = mpsc::unbounded_channel().0;
+
+        for method in DESKTOP_TASK_METHODS {
+            let error = match handle_request(state.clone(), method, json!({}), tx.clone()).await {
+                Ok(_) => continue,
+                Err(error) => error,
+            };
+            assert!(
+                !error.message.contains("method not found"),
+                "{method} is not routed to a handler: {}",
+                error.message
+            );
+        }
+
+        let created = handle_request(
+            state.clone(),
+            "task.create",
+            json!({
+                "employeeSessionId": employee.id,
+                "title": "Fix the login timeout",
+                "origin": "direct",
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("task.create must work over RPC: {error:?}"));
+        let task_id = created["task"]["id"].as_str().unwrap().to_string();
+        assert_eq!(created["task"]["stage"], json!("queued"));
+        assert_eq!(created["session"]["role"], json!("task"));
+
+        let listed = handle_request(
+            state.clone(),
+            "task.list",
+            json!({ "employeeSessionId": employee.id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(listed["tasks"].as_array().unwrap().len(), 1);
+
+        let fetched = handle_request(
+            state.clone(),
+            "task.get",
+            json!({ "taskId": task_id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(fetched["task"]["title"], json!("Fix the login timeout"));
+
+        let archived = handle_request(
+            state.clone(),
+            "task.archive",
+            json!({ "taskId": task_id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(archived["task"]["archivedAt"].is_string());
+        let open = handle_request(
+            state,
+            "task.list",
+            json!({ "employeeSessionId": employee.id }),
+            tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(open["tasks"], json!([]));
     }
 
     /// No desktop method may answer `method not found`.

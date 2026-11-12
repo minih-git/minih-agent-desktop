@@ -96,7 +96,12 @@ fn default_permission_mode() -> String {
 /// Session roles (ADR bot-sessions-and-steward). A bot is a long-lived Agent
 /// session with an explicit role, not a second entity; `user` is every
 /// ordinary conversation, including rows written before the column existed.
-pub const SESSION_ROLES: [&str; 2] = ["user", "bot"];
+///
+/// `task` is one piece of work an employee holds (ADR §7): the transcript of a
+/// task, owned by an employee through `owner_session_id`. It is a session for
+/// the same reason a bot is — one transcript, one project, one workspace — and
+/// not an employee, because it has no profile and is never addressed by name.
+pub const SESSION_ROLES: [&str; 3] = ["user", "bot", "task"];
 
 pub fn is_valid_session_role(role: &str) -> bool {
     SESSION_ROLES.contains(&role)

@@ -10,12 +10,14 @@ use crate::{
     sessions,
 };
 pub mod bots;
+pub mod task_api;
+pub(crate) use crate::tasks;
 pub mod drafts;
 mod permissions;
 pub mod progress;
 mod projections;
 mod provenance;
-mod repository;
+pub(crate) mod repository;
 mod settlement;
 pub use provenance::{prepare_append, validate_replacement};
 pub use repository::{get, Message};
@@ -37,6 +39,18 @@ pub(super) fn string<'a>(input: &'a Value, key: &str, limit: usize) -> Result<&'
 
 fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result<Message> {
     send_record_on(db, db.conn(), input, target, kind)
+}
+
+/// The one delivery write, reachable from a sibling module's tests without
+/// re-opening the plugin round trip that normally produces it.
+#[cfg(test)]
+pub(crate) fn dispatch_send_for_test(
+    db: &Database,
+    input: &Value,
+    target: &str,
+    kind: &str,
+) -> Result<Message> {
+    send_record(db, input, target, kind)
 }
 
 /// The one delivery path, usable inside a caller's transaction.
@@ -170,6 +184,65 @@ fn send_record_on(
     Ok(message)
 }
 
+/// What a derived session takes from the session that creates it.
+pub(super) struct SpawnRequest<'a> {
+    /// The session whose configuration is inherited.
+    pub source: &'a str,
+    pub title: String,
+    /// An explicit override; absent means the source's own binding is kept.
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    /// `None` for a worker: a worker inherits configuration, never an identity.
+    pub role: Option<String>,
+}
+
+/// Create a child of an existing session, and inherit exactly what a child may.
+///
+/// This is the one place a derived session is created, shared by the plugin's
+/// worker `spawn` and by a task created under an employee (ADR
+/// bot-sessions-and-steward §7). The rule is the same in both directions:
+///
+/// - **inherited**: mode (`agent`), project, thinking level, and the permission
+///   mode of the source session — a child never starts wider than its parent,
+///   and never wider than what the source already had to be allowed to do;
+/// - **overridden by the caller**: provider and model, when the request names
+///   them, because the source may not have a model bound at all;
+/// - **not inherited**: an employee's `role`/`botProfile` and its transcript.
+///   A child is a session in its own right; copying an identity would make two
+///   rows claim to be the same employee.
+///
+/// The caller owns the transaction and the surrounding bookkeeping (a worker's
+/// link row, or the task row), so a failure there rolls the session back too.
+pub(super) fn spawn_session(
+    db: &Database,
+    request: SpawnRequest<'_>,
+) -> Result<sessions::SessionSummary> {
+    let parent = sessions::get_session_with_options(
+        db,
+        request.source,
+        sessions::SessionReadOptions {
+            message_limit: Some(1),
+            content_limit: Some(1),
+            ..Default::default()
+        },
+    )?
+    .ok_or_else(|| anyhow!("NOT_FOUND: parent session"))?;
+    sessions::create_session_with_options(
+        db,
+        sessions::SessionCreateOptions {
+            title: Some(request.title),
+            mode: Some("agent".into()),
+            provider_id: request.provider_id,
+            model_id: request.model_id,
+            project_path: parent.summary.project_path,
+            thinking_level: Some(parent.summary.thinking_level),
+            permission_mode: Some(parent.summary.permission_mode),
+            role: request.role,
+            bot_profile_json: None,
+        },
+    )
+}
+
 fn spawn(db: &Database, input: &Value) -> Result<Value> {
     let source = string(input, "sourceSessionId", 256)?;
     let plugin = string(input, "pluginId", 256)?;
@@ -200,27 +273,15 @@ fn spawn(db: &Database, input: &Value) -> Result<Value> {
     if parent_active >= 4 || plugin_active >= 16 {
         return Err(anyhow!("LIMIT_EXCEEDED: active worker limit reached"));
     }
-    let parent = sessions::get_session_with_options(
+    let created = spawn_session(
         db,
-        source,
-        sessions::SessionReadOptions {
-            message_limit: Some(1),
-            content_limit: Some(1),
-            ..Default::default()
-        },
-    )?
-    .ok_or_else(|| anyhow!("NOT_FOUND: parent session"))?;
-    let created = sessions::create_session_with_options(
-        db,
-        sessions::SessionCreateOptions {
-            title: Some(
-                input
-                    .get("title")
-                    .and_then(Value::as_str)
-                    .map(|value| repository::bounded(value, 80))
-                    .unwrap_or_else(|| repository::bounded(content, 80)),
-            ),
-            mode: Some("agent".into()),
+        SpawnRequest {
+            source,
+            title: input
+                .get("title")
+                .and_then(Value::as_str)
+                .map(|value| repository::bounded(value, 80))
+                .unwrap_or_else(|| repository::bounded(content, 80)),
             provider_id: input
                 .get("providerId")
                 .and_then(Value::as_str)
@@ -229,19 +290,25 @@ fn spawn(db: &Database, input: &Value) -> Result<Value> {
                 .get("modelId")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
-            project_path: parent.summary.project_path,
-            thinking_level: Some(parent.summary.thinking_level),
-            permission_mode: Some(parent.summary.permission_mode),
             // A worker is not an employee: it inherits configuration, never a
             // bot identity, so it cannot be addressed as one later.
             role: None,
-            bot_profile_json: None,
         },
     )?;
     db.conn().execute("INSERT INTO session_collaboration_links(session_id,created_by_session_id,plugin_id,created_at) VALUES(?1,?2,?3,?4)",params![created.id,source,plugin,now_ms()])?;
     let message = send_record(db, input, &created.id, "task")?;
     tx.commit()?;
     Ok(json!({"sessionId":created.id,"message":message}))
+}
+
+/// The task surface (`task.*`, ADR bot-sessions-and-steward §7).
+///
+/// Kept beside `handle` rather than inside it: tasks are a different identity
+/// (a session's work, not a delivery) and their own module, but they answer on
+/// the same host route, so a missing prefix would fail exactly the way `bot.*`
+/// once did.
+pub fn handle_task(db: &Database, method: &str, input: &Value) -> Result<Value> {
+    task_api::handle(db, method, input)
 }
 
 pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {

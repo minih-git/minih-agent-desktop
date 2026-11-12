@@ -394,6 +394,44 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
          WHERE id=?1 AND status='proposed'",
         params![draft.id, request.confirmed_by, now_ms(), message.id],
     )?;
+    // Employee mode 0.5: the confirmed work belongs to a task, not to the
+    // employee's own transcript (ADR bot-sessions-and-steward §7). The task is
+    // created here, in the same transaction as the confirmation, so there is no
+    // state in which a card is confirmed but its work has no home; the delivery
+    // is then addressed to the new task session instead of the employee.
+    let task = super::tasks::create_in(
+        db,
+        &tx,
+        super::tasks::CreateRequest {
+            employee_session_id: &draft.target_session_id,
+            title: draft
+                .card
+                .get("goal")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+            origin: "steward",
+            project_path: draft
+                .card
+                .pointer("/repo/origin")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            branch: draft
+                .card
+                .pointer("/repo/ref")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            source_utterance: Some(draft.source_utterance.clone()),
+            delivery_id: Some(message.id.clone()),
+        },
+    )?;
+    tx.execute(
+        "UPDATE session_collaboration_messages SET target_session_id=?2, target_title=?3
+         WHERE id=?1 AND status='queued'",
+        params![message.id, task.session_id, task.title],
+    )?;
+    let mut message = message;
+    message.target_session_id = task.session_id.clone();
+    message.target_title = task.title.clone();
     // The steward has to know what happened to the card it proposed: a person's
     // click dispatched it, and this notice is the only signal it gets.
     //
@@ -445,6 +483,9 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
     Ok(json!({
         "draft": get(db, &draft.id)?,
         "delivery": Message::clone(&message),
+        // The task the confirmed work now belongs to, so a caller can open it
+        // without a second lookup.
+        "task": task,
     }))
 }
 

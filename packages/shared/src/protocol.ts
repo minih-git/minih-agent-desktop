@@ -156,6 +156,15 @@ export const IPC = {
     taskCardList: "minih-agent-desktop/taskCard/list",
     taskCardConfirm: "minih-agent-desktop/taskCard/confirm",
     taskCardDrop: "minih-agent-desktop/taskCard/drop",
+    /**
+     * Tasks under an employee (ADR bot-sessions-and-steward §7). A task is one
+     * piece of work the employee holds; it owns a session, so opening a task is
+     * opening a conversation, and archiving one ends it.
+     */
+    taskCreate: "minih-agent-desktop/task/create",
+    taskList: "minih-agent-desktop/task/list",
+    taskGet: "minih-agent-desktop/task/get",
+    taskArchive: "minih-agent-desktop/task/archive",
     sessionCreate: "minih-agent-desktop/session/create",
     sessionFork: "minih-agent-desktop/session/fork",
     sessionMoveProject: "minih-agent-desktop/session/moveProject",
@@ -586,6 +595,8 @@ export const IPC = {
     botsChanged: "minih-agent-desktop/bot/event/changed",
     /** A task-card draft was proposed, confirmed or dropped. */
     taskCardsChanged: "minih-agent-desktop/taskCard/event/changed",
+    /** A task under an employee was created, moved, or archived. */
+    tasksChanged: "minih-agent-desktop/task/event/changed",
     remoteInteractions: "minih-agent-desktop/remote/event/interactions",
     notificationActivated: "minih-agent-desktop/notification/event/activated",
     notificationSound: "minih-agent-desktop/notification/event/sound",

@@ -14,9 +14,17 @@ import { HOST_PROXY_ALLOWED } from "./agent-sidecar.js";
 describe("host proxy allowlist", () => {
   it("never exposes the employee surface to the sidecar", () => {
     const leaked = [...HOST_PROXY_ALLOWED].filter(
-      (method) => method.startsWith("bot.") || method.startsWith("taskCard."),
+      (method) =>
+        method.startsWith("bot.") || method.startsWith("taskCard.") || method.startsWith("task."),
     );
     expect(leaked).toEqual([]);
+  });
+
+  it("keeps the task surface out of the sidecar", () => {
+    // `task.create` makes a session under an employee and `task.archive` ends
+    // one: both are a person's acts in the workbench, reached over IPC, and a
+    // process that runs model-directed code has nobody to act for it.
+    expect([...HOST_PROXY_ALLOWED].filter((method) => method.startsWith("task."))).toEqual([]);
   });
 
   it("keeps the methods the sidecar does need", () => {

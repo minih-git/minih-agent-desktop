@@ -1,0 +1,759 @@
+//! Tasks under an employee (ADR bot-sessions-and-steward §7).
+//!
+//! Employee mode 0.5 separates the employee from the work it does. The employee
+//! row stays a durable container with a profile; every piece of work is a
+//! **task**: its own session (so its own transcript, project and workspace),
+//! owned by the employee it belongs to, with one origin, one stage, and one
+//! archive stamp.
+//!
+//! Two rules shape this module:
+//!
+//! - **A task session is created by inheriting, never by copying.** It takes the
+//!   employee's project, model, thinking level and permission mode through the
+//!   same [`spawn_session`] the plugin's worker `spawn` uses, and it never takes
+//!   the employee's identity: `role = 'task'`, no profile.
+//! - **A stage is written by the host only.** It starts at the ADR's queued
+//!   value and moves only when the ledger delivery the task is bound to reports
+//!   a new stage (`progress::report`), or when settlement proves the turn
+//!   ended. Nothing else — not a client, not a model — writes it.
+//!
+//! Archiving is one timestamp in two places: `tasks.archived_at` and the same
+//! value on its session, written in one transaction, so a task never leaves the
+//! sidebar while its session still looks active. Archiving twice returns the
+//! first timestamp instead of an error, because a second click is not a mistake
+//! the person should have to understand.
+
+use crate::db::{ms_to_ts, now_ms, Database};
+use crate::session_collaboration::{spawn_session, string, SpawnRequest};
+use crate::sessions;
+use anyhow::{anyhow, Result};
+use rusqlite::{params, OptionalExtension};
+use serde_json::{json, Value};
+use uuid::Uuid;
+
+/// The stage every task starts in: nobody is holding it yet.
+const INITIAL_STAGE: &str = "queued";
+
+/// How many tasks one employee may hold open at once. A bound, not a workflow:
+/// an employee with more than this is not tracking its work.
+pub const MAX_OPEN_TASKS_PER_EMPLOYEE: i64 = 200;
+
+/// The stages a task may be in; the same seven the ledger stores.
+pub const STAGES: [&str; 7] = [
+    "person/answer",
+    "person/accept",
+    "blocked",
+    "failed",
+    "queued",
+    "waiting",
+    "working",
+];
+
+pub fn is_valid_stage(stage: &str) -> bool {
+    STAGES.contains(&stage)
+}
+
+/// One stored task, in the shape the desktop reads.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Task {
+    pub id: String,
+    pub employee_session_id: String,
+    pub session_id: String,
+    pub title: String,
+    pub origin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    pub stage: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_utterance: Option<String>,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_progress: Option<String>,
+    /// The short identifier a task header shows: the first block of its id.
+    pub short_id: String,
+}
+
+const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title, t.origin,
+    p.path, t.branch, t.stage, t.delivery_id, t.source_utterance, t.created_at,
+    t.archived_at,
+    (SELECT substr(m.text, 1, 200) FROM messages m
+      WHERE m.session_id = t.session_id AND m.role = 'assistant'
+        AND m.text IS NOT NULL AND trim(m.text) != ''
+      ORDER BY m.seq DESC LIMIT 1)
+ FROM tasks t LEFT JOIN projects p ON p.id = t.project_id";
+
+fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
+    let id: String = row.get(0)?;
+    Ok(Task {
+        short_id: short_id(&id),
+        id,
+        employee_session_id: row.get(1)?,
+        session_id: row.get(2)?,
+        title: row.get(3)?,
+        origin: row.get(4)?,
+        project_path: row.get(5)?,
+        branch: row.get(6)?,
+        stage: row.get(7)?,
+        delivery_id: row.get(8)?,
+        source_utterance: row.get(9)?,
+        created_at: ms_to_ts(row.get(10)?),
+        archived_at: row.get::<_, Option<i64>>(11)?.map(ms_to_ts),
+        latest_progress: row.get(12)?,
+    })
+}
+
+/// The part of a task id a person can quote. Ids are UUIDs, so the first block
+/// is unique enough to name a task in a header and short enough to read.
+pub fn short_id(id: &str) -> String {
+    id.split('-').next().unwrap_or(id).chars().take(6).collect()
+}
+
+pub fn get_task(db: &Database, task_id: &str) -> Result<Option<Task>> {
+    Ok(db
+        .conn()
+        .prepare_cached(&format!("{SELECT} WHERE t.id=?1"))?
+        .query_row(params![task_id], row)
+        .optional()?)
+}
+
+fn optional_text(input: &Value, key: &str, limit: usize) -> Result<Option<String>> {
+    match input.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            if trimmed.chars().count() > limit {
+                return Err(anyhow!("LIMIT_EXCEEDED: {key} too long"));
+            }
+            Ok(Some(trimmed.to_owned()))
+        }
+        Some(_) => Err(anyhow!("INVALID_ARGUMENT: {key} must be a string")),
+    }
+}
+
+/// Everything a create needs.
+pub struct CreateRequest<'a> {
+    pub employee_session_id: &'a str,
+    pub title: &'a str,
+    pub origin: &'a str,
+    pub project_path: Option<String>,
+    pub branch: Option<String>,
+    pub source_utterance: Option<String>,
+    pub delivery_id: Option<String>,
+}
+
+/// Create a task and its session, atomically.
+///
+/// The session is created through [`spawn_session`], so it inherits the
+/// employee's configuration exactly as a worker inherits its parent's, and the
+/// task row records what only this task knows: who started it, which delivery
+/// authorized it, and where it works.
+///
+/// A `steward` task always names the delivery that carried the confirmed card;
+/// a `direct` task never does, because a person typing into the workbench did
+/// not dispatch anything through the ledger.
+pub fn create_in(
+    db: &Database,
+    conn: &rusqlite::Connection,
+    request: CreateRequest<'_>,
+) -> Result<Task> {
+    if request.origin != "steward" && request.origin != "direct" {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: origin must be steward or direct, got '{}'",
+            request.origin
+        ));
+    }
+    let title = request.title.trim();
+    if title.is_empty() {
+        return Err(anyhow!("INVALID_ARGUMENT: title required"));
+    }
+    if title.chars().count() > 200 {
+        return Err(anyhow!("LIMIT_EXCEEDED: title too long"));
+    }
+    let employee_role = sessions::session_role(db, request.employee_session_id)?;
+    if employee_role.as_deref() != Some("bot") {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: a task belongs to an employee session"
+        ));
+    }
+    let open: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tasks WHERE employee_session_id=?1 AND archived_at IS NULL",
+        params![request.employee_session_id],
+        |row| row.get(0),
+    )?;
+    if open >= MAX_OPEN_TASKS_PER_EMPLOYEE {
+        return Err(anyhow!(
+            "LIMIT_EXCEEDED: this employee already holds {open} open tasks"
+        ));
+    }
+    // The repository is what the task works in. A named project wins; otherwise
+    // the employee's own project is the default, because that is the repository
+    // the employee was hired to read.
+    let project_id = match request.project_path.as_deref() {
+        Some(path) => Some(db.ensure_project(path, false)?),
+        None => employee_project_id(db, request.employee_session_id)?,
+    };
+    let task_session = spawn_session(
+        db,
+        SpawnRequest {
+            source: request.employee_session_id,
+            title: title.to_owned(),
+            // An explicit model binding is the employee's; a task does not
+            // re-select one.
+            provider_id: None,
+            model_id: None,
+            role: Some("task".into()),
+        },
+    )?;
+    conn.execute(
+        "UPDATE sessions SET owner_session_id=?2 WHERE id=?1",
+        params![task_session.id, request.employee_session_id],
+    )?;
+    let id = Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO tasks
+         (id, employee_session_id, session_id, title, origin, project_id, branch,
+          stage, delivery_id, source_utterance, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            id,
+            request.employee_session_id,
+            task_session.id,
+            title,
+            request.origin,
+            project_id,
+            request.branch,
+            INITIAL_STAGE,
+            request.delivery_id,
+            request.source_utterance,
+            now_ms()
+        ],
+    )?;
+    get_task(db, &id)?
+        .ok_or_else(|| anyhow!("NOT_STORED: the task was written but cannot be read back"))
+}
+
+fn employee_project_id(db: &Database, employee_session_id: &str) -> Result<Option<i64>> {
+    Ok(db
+        .conn()
+        .prepare_cached("SELECT project_id FROM sessions WHERE id=?1")?
+        .query_row(params![employee_session_id], |row| row.get(0))
+        .optional()?
+        .flatten())
+}
+
+/// The open tasks of one employee, newest first.
+pub fn employee_tasks(db: &Database, employee_session_id: &str) -> Result<Vec<Task>> {
+    let mut statement = db.conn().prepare_cached(&format!(
+        "{SELECT} WHERE t.employee_session_id=?1 AND t.archived_at IS NULL
+         ORDER BY t.created_at DESC, t.rowid DESC"
+    ))?;
+    let rows = statement.query_map(params![employee_session_id], row)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// What an employee's dot reports, given the tasks it holds.
+///
+/// The dot answers "is it doing something", so waiting on the person wins over
+/// being busy, being busy wins over everything else, and no open task means
+/// idle. It is the same rule the sidebar and the workbench apply; keeping it in
+/// one place is what stops them disagreeing.
+pub fn task_status_point(tasks: &[Task]) -> Value {
+    let stage_of = |wanted: &[&str]| {
+        tasks
+            .iter()
+            .find(|task| wanted.contains(&task.stage.as_str()))
+            .map(|task| task.stage.clone())
+    };
+    if let Some(stage) = stage_of(&["person/answer", "person/accept"]) {
+        return json!({ "kind": "stage", "stage": stage });
+    }
+    if let Some(stage) = stage_of(&["working", "queued", "waiting", "blocked", "failed"]) {
+        return json!({ "kind": "stage", "stage": stage });
+    }
+    json!({ "kind": "idle" })
+}
+
+/// `task.create`. One transaction: the session, the task row, and the link the
+/// archive will later use.
+pub fn create(db: &Database, input: &Value) -> Result<Value> {
+    let employee = string(input, "employeeSessionId", 256)?.to_owned();
+    let title = string(input, "title", 200)?.to_owned();
+    let origin = string(input, "origin", 16)?.to_owned();
+    let tx = db.conn().unchecked_transaction()?;
+    let task = create_in(
+        db,
+        &tx,
+        CreateRequest {
+            employee_session_id: &employee,
+            title: &title,
+            origin: &origin,
+            project_path: optional_text(input, "projectPath", 4_096)?,
+            branch: optional_text(input, "branch", 255)?,
+            source_utterance: optional_text(input, "sourceUtterance", 4_096)?,
+            delivery_id: optional_text(input, "deliveryId", 256)?,
+        },
+    )?;
+    tx.commit()?;
+    Ok(json!({
+        "task": task,
+        "session": sessions::session_summary(db, &task.session_id)?,
+    }))
+}
+
+/// `task.list`: the tasks of one employee, or of everyone.
+///
+/// `includeArchived` is what the sidebar's "history (N)" is built from, and
+/// `since` bounds it by creation time so a long-lived employee does not return
+/// its whole history on every refresh.
+pub fn list(db: &Database, input: &Value) -> Result<Value> {
+    let employee = input.get("employeeSessionId").and_then(Value::as_str);
+    let include_archived = input
+        .get("includeArchived")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let since = input.get("since").and_then(Value::as_i64);
+    let mut statement = db.conn().prepare_cached(&format!(
+        "{SELECT}
+         WHERE (?1 IS NULL OR t.employee_session_id=?1)
+           AND (?2 OR t.archived_at IS NULL)
+           AND (?3 IS NULL OR t.created_at >= ?3)
+         ORDER BY t.created_at DESC, t.rowid DESC
+         LIMIT 500"
+    ))?;
+    let tasks = statement
+        .query_map(params![employee, include_archived, since], row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(json!({ "tasks": tasks }))
+}
+
+pub fn detail(db: &Database, input: &Value) -> Result<Value> {
+    let task_id = string(input, "taskId", 256)?;
+    let task = get_task(db, task_id)?.ok_or_else(|| anyhow!("NOT_FOUND: task"))?;
+    Ok(json!({ "task": task }))
+}
+
+/// `task.archive`: the task and its session leave the sidebar together.
+///
+/// Repeated archiving keeps the first timestamp. A task that already left the
+/// open list is not an error the second time somebody clicks; it is the same
+/// answer.
+pub fn archive(db: &Database, input: &Value) -> Result<Value> {
+    let task_id = string(input, "taskId", 256)?;
+    let tx = db.conn().unchecked_transaction()?;
+    let existing: Option<(Option<i64>, String)> = tx
+        .query_row(
+            "SELECT archived_at, session_id FROM tasks WHERE id=?1",
+            params![task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((archived_at, session_id)) = existing else {
+        return Err(anyhow!("NOT_FOUND: task"));
+    };
+    let stamped = match archived_at {
+        Some(at) => at,
+        None => {
+            let at = now_ms();
+            tx.execute(
+                "UPDATE tasks SET archived_at=?2 WHERE id=?1 AND archived_at IS NULL",
+                params![task_id, at],
+            )?;
+            tx.execute(
+                "UPDATE sessions SET archived_at=?2, updated_at=?2 WHERE id=?1",
+                params![session_id, at],
+            )?;
+            at
+        }
+    };
+    tx.commit()?;
+    Ok(json!({
+        "task": get_task(db, task_id)?,
+        "archivedAt": ms_to_ts(stamped),
+    }))
+}
+
+/// Move the stage of the task bound to a delivery, if there is one.
+///
+/// Called from the same transaction that accepts a report or settles a turn, so
+/// a task can never show a stage the ledger does not have. A delivery with no
+/// task is the ordinary case (a worker, a plain message) and does nothing.
+pub fn sync_stage(conn: &rusqlite::Connection, delivery_id: &str, stage: &str) -> Result<()> {
+    if !is_valid_stage(stage) {
+        return Err(anyhow!("INVALID_ARGUMENT: unknown task stage '{stage}'"));
+    }
+    conn.execute(
+        "UPDATE tasks SET stage=?2
+         WHERE delivery_id=?1 AND archived_at IS NULL AND stage <> ?2",
+        params![delivery_id, stage],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session_collaboration::repository;
+    use serde_json::json;
+
+    /// The ledger write `spawn` uses, reached through the same module so the
+    /// test does not need a plugin round trip to create one delivery.
+    fn send_record_for_test(
+        db: &Database,
+        input: &Value,
+        target: &str,
+        kind: &str,
+    ) -> Result<crate::session_collaboration::Message> {
+        crate::session_collaboration::dispatch_send_for_test(db, input, target, kind)
+    }
+
+    fn database() -> (tempfile::TempDir, Database) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+        (dir, db)
+    }
+
+    fn employee(db: &Database, name: &str) -> String {
+        crate::sessions::create_session_with_options(
+            db,
+            crate::sessions::SessionCreateOptions {
+                title: Some(name.into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                thinking_level: Some("high".into()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({
+                        "name": name,
+                        "permissionMode": "accept-edits",
+                        "mustAsk": [],
+                        "observe": false
+                    })
+                    .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id
+    }
+
+    /// The inheritance rule, checked on the row a task session actually gets.
+    #[test]
+    fn a_task_session_inherits_the_employees_configuration_but_not_its_identity() {
+        let (dir, db) = database();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let repo_path = repo.to_string_lossy().to_string();
+        let owner = crate::sessions::create_session_with_options(
+            &db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("Router 后端".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                thinking_level: Some("high".into()),
+                project_path: Some(repo_path.clone()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({"name": "Router 后端", "permissionMode": "accept-edits", "observe": false})
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let created = create(
+            &db,
+            &json!({
+                "employeeSessionId": owner,
+                "title": "Fix the login timeout",
+                "origin": "direct",
+            }),
+        )
+        .unwrap();
+        let session = &created["session"];
+        assert_eq!(session["role"], json!("task"));
+        assert_eq!(session["permissionMode"], json!("accept-edits"));
+        assert_eq!(session["thinkingLevel"], json!("high"));
+        // A project path is stored canonical, so a temporary directory on macOS
+        // comes back as `/private/var/...`.
+        assert_eq!(
+            session["projectPath"].as_str().unwrap(),
+            std::fs::canonicalize(&repo_path).unwrap().to_string_lossy()
+        );
+        assert!(session["botProfile"].is_null(), "a task is not an employee");
+        let task = &created["task"];
+        assert_eq!(task["employeeSessionId"], json!(owner));
+        assert_eq!(task["origin"], json!("direct"));
+        assert_eq!(task["stage"], json!("queued"));
+        assert_eq!(task["projectPath"], session["projectPath"]);
+        // The session points back at its employee, which is what an archive
+        // and a later "show me this employee's work" read.
+        let session_owner: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT owner_session_id FROM sessions WHERE id=?1",
+                params![task["sessionId"].as_str().unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(session_owner.as_deref(), Some(owner.as_str()));
+    }
+
+    #[test]
+    fn a_task_needs_an_employee_and_a_known_origin() {
+        let (_dir, db) = database();
+        let chat = crate::sessions::create_session_with_options(
+            &db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("Chat".into()),
+                mode: Some("agent".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let error = create(
+            &db,
+            &json!({"employeeSessionId": chat, "title": "X", "origin": "direct"}),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("INVALID_ARGUMENT"), "{error}");
+        let owner = employee(&db, "小爪");
+        let error = create(
+            &db,
+            &json!({"employeeSessionId": owner, "title": "X", "origin": "somebody"}),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("INVALID_ARGUMENT"), "{error}");
+        // Neither refusal left a task or a stray session behind.
+        let tasks = list(&db, &json!({})).unwrap();
+        assert_eq!(tasks["tasks"], json!([]));
+        let sessions = crate::sessions::list_sessions(&db).unwrap();
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn archiving_moves_the_task_and_its_session_and_is_idempotent() {
+        let (_dir, db) = database();
+        let owner = employee(&db, "小爪");
+        let created = create(
+            &db,
+            &json!({"employeeSessionId": owner, "title": "Fix it", "origin": "direct"}),
+        )
+        .unwrap();
+        let id = created["task"]["id"].as_str().unwrap().to_string();
+        let session_id = created["task"]["sessionId"].as_str().unwrap().to_string();
+        assert_eq!(
+            list(&db, &json!({})).unwrap()["tasks"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let first = archive(&db, &json!({"taskId": id})).unwrap();
+        assert!(first["task"]["archivedAt"].is_string());
+        assert_eq!(list(&db, &json!({})).unwrap()["tasks"], json!([]));
+        let with_history = list(&db, &json!({"includeArchived": true})).unwrap();
+        assert_eq!(with_history["tasks"].as_array().unwrap().len(), 1);
+        let archived_session: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT archived_at FROM sessions WHERE id=?1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            archived_session.is_some(),
+            "the session leaves with its task"
+        );
+
+        // A second click is the same answer, not an error.
+        let second = archive(&db, &json!({"taskId": id})).unwrap();
+        assert_eq!(second["archivedAt"], first["archivedAt"]);
+        assert!(archive(&db, &json!({"taskId": "missing"})).is_err());
+    }
+
+    /// A ledger report moves the task bound to that delivery and nothing else.
+    #[test]
+    fn a_report_on_the_bound_delivery_moves_the_task_stage() {
+        let (_dir, db) = database();
+        let owner = employee(&db, "小爪");
+        let sender = crate::sessions::create_session_with_options(
+            &db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("Steward".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("auto".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        // The task session is the delivery's target, which is what a confirmed
+        // card does: the work runs where the task is, not in the employee.
+        let task_session = crate::sessions::create_session_with_options(
+            &db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("Fix the login timeout".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                role: Some("task".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let delivery = send_record_for_test(
+            &db,
+            &json!({
+                "sourceSessionId": sender,
+                "pluginId": "builtin:session-messaging",
+                "content": "Fix the login timeout",
+                "idempotencyKey": "one",
+                "notifyOnCompletion": false,
+            }),
+            &task_session,
+            "task",
+        )
+        .unwrap();
+        // A task row for that session, written directly so the test controls
+        // which session the delivery targets.
+        db.conn()
+            .execute(
+                "INSERT INTO tasks (id, employee_session_id, session_id, title, origin,
+                  stage, delivery_id, created_at)
+                 VALUES ('task-1', ?1, ?2, 'Fix the login timeout', 'steward', 'queued', ?3, 1)",
+                params![owner, task_session, delivery.id],
+            )
+            .unwrap();
+        let created = json!({"task": {"sessionId": task_session}});
+        let id = "task-1".to_string();
+
+        crate::session_collaboration::progress::report(&db, &delivery.id, 1, "progress", "working")
+            .unwrap();
+        assert_eq!(get_task(&db, &id).unwrap().unwrap().stage, "working");
+        crate::session_collaboration::progress::report(
+            &db,
+            &delivery.id,
+            2,
+            "waiting",
+            "person/answer",
+        )
+        .unwrap();
+        assert_eq!(get_task(&db, &id).unwrap().unwrap().stage, "person/answer");
+
+        // Settlement records the machine's own outcome.
+        let task_session = created["task"]["sessionId"].as_str().unwrap().to_string();
+        let turn =
+            crate::session_collaboration::begin_turn(&db, &task_session, &delivery.id, None, None)
+                .unwrap();
+        db.conn()
+            .execute(
+                "UPDATE turns SET status='completed' WHERE id=?1",
+                params![turn],
+            )
+            .unwrap();
+        crate::session_collaboration::settle_turn(&db, &turn).unwrap();
+        assert_eq!(get_task(&db, &id).unwrap().unwrap().stage, "person/accept");
+    }
+
+    /// A delivery that belongs to no task writes nothing, and payment of the
+    /// stage vocabulary is refused rather than stored.
+    #[test]
+    fn a_report_without_a_task_is_harmless_and_an_unknown_stage_is_refused() {
+        let (_dir, db) = database();
+        let owner = employee(&db, "小爪");
+        create(
+            &db,
+            &json!({"employeeSessionId": owner, "title": "Fix it", "origin": "direct"}),
+        )
+        .unwrap();
+        sync_stage(db.conn(), "no-such-delivery", "working").unwrap();
+        assert!(sync_stage(db.conn(), "no-such-delivery", "person/waiting").is_err());
+        let tasks = list(&db, &json!({})).unwrap();
+        assert_eq!(tasks["tasks"][0]["stage"], json!("queued"));
+    }
+
+    /// The task a confirmed card creates is the delivery's target, so the work
+    /// reaches the task and not the employee's own transcript.
+    #[test]
+    fn a_confirmed_card_dispatches_into_a_new_task_of_that_employee() {
+        let (_dir, db) = database();
+        let steward = crate::sessions::create_session_with_options(
+            &db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("Steward".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("auto".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let owner = employee(&db, "小爪");
+        let card = json!({
+            "goal": "Fix the login timeout",
+            "criteria": [{"id": "c1", "text": "A failing repro exists"}],
+            "boundaries": [],
+            "permissionMode": "accept-edits",
+            "mustAsk": [],
+            "risk": "low",
+            "repo": {"origin": "github.com/minih-git/minih-agent-desktop", "ref": "fix/login"},
+        });
+        let proposed = crate::session_collaboration::drafts::propose(
+            &db,
+            &json!({
+                "sessionId": steward,
+                "targetSessionId": owner,
+                "sourceUtterance": "登录超时今天修掉",
+                "card": card,
+            }),
+        )
+        .unwrap();
+        let draft_id = proposed["draft"]["id"].as_str().unwrap().to_string();
+        let hash = proposed["draft"]["cardHash"].as_str().unwrap().to_string();
+        let confirmed = crate::session_collaboration::drafts::confirm(
+            &db,
+            crate::session_collaboration::drafts::ConfirmRequest {
+                draft_id: &draft_id,
+                card_hash: &hash,
+                confirmed_by: crate::session_collaboration::drafts::CONFIRMED_BY_USER,
+                host_id: Some("mac-mini"),
+                device_id: None,
+                policy_version: "steward-1",
+                notify_on_completion: true,
+                idempotency_key: "confirm-1",
+            },
+        )
+        .unwrap();
+        let task = &confirmed["task"];
+        assert_eq!(task["origin"], json!("steward"));
+        assert_eq!(task["employeeSessionId"], json!(owner));
+        assert_eq!(task["branch"], json!("fix/login"));
+        assert_eq!(task["sourceUtterance"], json!("登录超时今天修掉"));
+        let delivery = repository::get(&db, confirmed["delivery"]["id"].as_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(delivery.target_session_id, task["sessionId"]);
+        assert!(
+            delivery
+                .mandate_json
+                .as_deref()
+                .is_some_and(|raw| raw.contains("Fix the login timeout")),
+            "the confirmed card travels with the delivery"
+        );
+    }
+}

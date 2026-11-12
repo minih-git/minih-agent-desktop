@@ -152,6 +152,11 @@ impl Database {
                 tx.execute_batch(KEEP_WARM_DDL)?;
                 tx.execute_batch(CONVERSATION_ARCHIVE_DDL)?;
                 tx.execute_batch(TASK_CARD_DRAFT_DDL)?;
+                // Tasks under an employee (schema v33): the same DDL the
+                // v32 -> v33 step applies.
+                tx.execute_batch(TASKS_DDL)?;
+                // Tasks under an employee (schema v33): the same DDL the
+                // v32 -> v33 step applies.
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -308,6 +313,10 @@ impl Database {
         }
         if migrated_version == 31 {
             super::task_card_draft_migration::migrate(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version == 32 {
+            super::task_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

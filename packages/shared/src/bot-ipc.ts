@@ -26,6 +26,14 @@ export type BotListItem = {
   /** Latest delivery id whose stage produced `status`, when there is one. */
   currentDeliveryId?: string;
   projectPath?: string;
+  /**
+   * How many tasks this employee holds open (ADR bot-sessions-and-steward §7).
+   *
+   * An employee no longer runs turns of its own, so the count it shows in the
+   * sidebar and its status dot both come from its tasks; the host counts them
+   * so a list read stays one query.
+   */
+  openTaskCount?: number;
   modelKey?: string;
   updatedAt: string;
   createdAt: string;

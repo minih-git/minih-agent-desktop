@@ -165,12 +165,18 @@ pub fn report(
             "message": repository::get(db, message_id)?,
         }));
     }
-    tx.execute(
+    let applied = tx.execute(
         "UPDATE session_collaboration_messages
          SET report_seq=?2, stage=?3, updated_at=?4
          WHERE id=?1 AND report_seq < ?2",
         params![message_id, seq, stage, now_ms()],
     )?;
+    // A task bound to this delivery moves with it, in the same transaction: the
+    // task list must never disagree with the ledger about who is holding the
+    // work.
+    if applied > 0 {
+        crate::tasks::sync_stage(&tx, message_id, stage)?;
+    }
     tx.commit()?;
     Ok(json!({
         "applied": true,

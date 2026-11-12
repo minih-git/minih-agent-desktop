@@ -2,13 +2,18 @@ import {
   IPC,
   type BotsChangedEvent,
   type SessionCollaborationMessage,
+  type TaskArchiveResult,
   type TaskCardConfirmResult,
   type TaskCardDraftView,
+  type TaskCreateResult,
+  type TaskList,
+  type TaskView,
 } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
 import type { SessionCollaborationService } from "../services/session-collaboration";
 import type { IpcRegistrar } from "./types";
 import { taskCardsChangedSender } from "../services/task-cards-changed";
+import { taskChangedSender } from "../services/tasks-changed";
 
 /**
  * The employee surface (ADR bot-sessions-and-steward §5).
@@ -40,6 +45,45 @@ export function registerBotIpc({
 }): void {
   const { handle } = registrar;
   const notifyTaskCardsChanged = taskCardsChangedSender(sendToRenderer);
+  const notifyTaskChanged = taskChangedSender(sendToRenderer);
+  /**
+   * The stage Main last announced per task, so a stage the host moved on its
+   * own (a ledger report or settlement) is still delivered exactly once.
+   */
+  const lastKnownStage = new Map<string, string>();
+
+  function announceTask(task: TaskView, reason: "created" | "stage" | "archived"): void {
+    const previous = lastKnownStage.get(task.id);
+    lastKnownStage.set(task.id, task.stage);
+    if (reason === "stage" && previous === task.stage) return;
+    notifyTaskChanged({
+      employeeSessionId: task.employeeSessionId,
+      taskId: task.id,
+      reason,
+    });
+  }
+
+  /**
+   * Ask the host what changed since the last answer.
+   *
+   * Nothing in the ledger calls Main, so a stage the host moved is discovered
+   * by reading the tasks that are still open. The compare-and-emit lives here,
+   * and every path that can move a stage funnels through it.
+   */
+  async function reconcileTaskStages(): Promise<void> {
+    let tasks: TaskView[];
+    try {
+      tasks = ((await host().call("task.list", {})) as TaskList).tasks ?? [];
+    } catch {
+      // A host that is restarting answers nothing; the next event reconciles.
+      return;
+    }
+    const open = new Set(tasks.map((task) => task.id));
+    for (const task of tasks) announceTask(task, "stage");
+    for (const id of [...lastKnownStage.keys()]) {
+      if (!open.has(id)) lastKnownStage.delete(id);
+    }
+  }
   const host = (): HostProcess => {
     const current = getHost();
     if (!current?.isAvailable()) throw new Error("host unavailable");
@@ -101,6 +145,7 @@ export function registerBotIpc({
     })) as {
       draft?: TaskCardDraftView;
       delivery?: SessionCollaborationMessage;
+      task?: TaskView;
     };
     // Confirming writes the delivery and stops there. Starting it is the same
     // step an ordinary send takes, so it goes through the same dispatch; without
@@ -116,6 +161,13 @@ export function registerBotIpc({
         startError = error instanceof Error ? error.message : String(error);
       }
     }
+    // The confirmed card created a task under its employee (the host does that
+    // in the confirmation's own transaction), so the work now lives in that
+    // task's session. Announced once, before anything else can report it.
+    if (result.task) announceTask(result.task, "created");
+    // A dispatch moves the task's stage from `queued` to `working`; the
+    // reconcile reads it back rather than guessing, and emits once.
+    await reconcileTaskStages();
     // The person's click is one of three ways a card changes; the emitter keeps
     // every direction on one channel, so the dock has a single thing to listen to.
     notifyTaskCardsChanged({
@@ -129,6 +181,31 @@ export function registerBotIpc({
       deliveryId: result.delivery?.id ?? "",
       ...(startError ? { startError } : {}),
     } satisfies TaskCardConfirmResult;
+  });
+
+  // Tasks under an employee (ADR bot-sessions-and-steward §7). Creating one also
+  // makes its session, so the renderer opens the session the host returned; the
+  // first user message is sent afterwards through the normal send path.
+  handle(IPC.invoke.taskCreate, async (request) => {
+    const result = (await host().call("task.create", (request ?? {}) as Record<string, unknown>)) as
+      TaskCreateResult;
+    announceTask(result.task, "created");
+    return result;
+  });
+
+  handle(IPC.invoke.taskList, async (request) =>
+    host().call("task.list", (request ?? {}) as Record<string, unknown>),
+  );
+
+  handle(IPC.invoke.taskGet, async (request) =>
+    host().call("task.get", (request ?? {}) as Record<string, unknown>),
+  );
+
+  handle(IPC.invoke.taskArchive, async (request) => {
+    const result = (await host().call("task.archive", (request ?? {}) as Record<string, unknown>)) as
+      TaskArchiveResult;
+    announceTask(result.task, "archived");
+    return result;
   });
 
   handle(IPC.invoke.taskCardDrop, async (request) => {
