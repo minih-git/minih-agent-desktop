@@ -253,7 +253,7 @@ test("pending approval keeps the draft while gating every composer control", () 
   // §7).
   assert.match(
     composerSource,
-    /const sendBlocked = approvalPending \|\| pasting \|\| nativeInputBlocked \|\| archivedTask;/,
+    /const sendBlocked = approvalPending \|\| pasting \|\| nativeInputBlocked \|\| taskComposer\.archived;/,
   );
   assert.match(storeSource, /if \(get\(\)\.pendingPlans\[sessionId\]\?\.status === "pending"\) return/);
 });

@@ -46,13 +46,12 @@ const { createSessionCollaborationService } = load(
 const { createTaskCardTool } = load("../electron/main/services/task-card-tool.ts", {
   "@minih-agent/shared": shared,
 });
-const tasksChanged = load("../electron/main/services/tasks-changed.ts", {
+const { createTaskChangeAnnouncer } = load("../electron/main/services/task-changes.ts", {
   "@minih-agent/shared": shared,
 });
 const { registerBotIpc } = load("../electron/main/ipc/bot-ipc.ts", {
   "@minih-agent/shared": shared,
   "../services/task-cards-changed": taskCardsChanged,
-  "../services/tasks-changed": tasksChanged,
 });
 
 function ledgerRow(overrides = {}) {
@@ -76,6 +75,9 @@ function ledgerRow(overrides = {}) {
 /** A host that holds one ledger row, like host-core does for a confirmed card. */
 function harness({ startTurnError } = {}) {
   let row = ledgerRow();
+  // What `task.list` reports for the task bound to this delivery. It moves when
+  // the delivery settles or fails, exactly as the host's own row would.
+  let taskStage = "working";
   const failCalls = [];
   const startTurn = async () => {
     if (startTurnError) throw startTurnError;
@@ -83,6 +85,7 @@ function harness({ startTurnError } = {}) {
     return { turn: { id: "turn-1", status: "running" } };
   };
   let turnStarts = 0;
+  const settleCalls = [];
   const host = {
     isAvailable: () => true,
     calls: [],
@@ -120,7 +123,7 @@ function harness({ startTurnError } = {}) {
               sessionId: "task-session-1",
               title: row.content,
               origin: "steward",
-              stage: row.status === "queued" ? "queued" : "working",
+              stage: taskStage,
               createdAt: row.createdAt,
               shortId: "task-1",
             },
@@ -128,9 +131,19 @@ function harness({ startTurnError } = {}) {
         };
       }
       if (method === "session.collaboration.message") return { message: { ...row } };
+      // Nothing else waits for a turn: the drain only has this settlement.
+      if (method === "session.collaboration.pendingDispatch") return { messages: [] };
+      if (method === "session.collaboration.settle") {
+        // The host settles the delivery and moves the bound task's stage.
+        settleCalls.push(params);
+        row = { ...row, status: "completed" };
+        taskStage = "person/accept";
+        return {};
+      }
       if (method === "session.collaboration.fail") {
         failCalls.push(params);
         row = { ...row, status: "failed" };
+        taskStage = "failed";
         return { ok: true };
       }
       return {};
@@ -145,6 +158,12 @@ function harness({ startTurnError } = {}) {
     },
     queue: { list: () => [], prioritize: async () => undefined },
   };
+  const emitted = [];
+  const taskChanges = createTaskChangeAnnouncer({
+    sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
+    getHost: () => host,
+    log: () => undefined,
+  });
   const service = createSessionCollaborationService({
     getHost: () => host,
     getSidecar: () => ({}),
@@ -154,11 +173,11 @@ function harness({ startTurnError } = {}) {
     isPluginLoaded: () => true,
     isQuitting: () => false,
     onChanged: () => undefined,
+    onTaskChanged: () => taskChanges.reconcileStages(),
     log: () => undefined,
     hostId: () => "mac-mini",
   });
   const handlers = new Map();
-  const emitted = [];
   registerBotIpc({
     registrar: {
       ipcMain: {},
@@ -169,9 +188,15 @@ function harness({ startTurnError } = {}) {
     getHost: () => host,
     sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
     sessionCollaboration: service,
+    tasks: taskChanges,
   });
   return {
     emitted,
+    taskChanges,
+    settleCalls,
+    setStage: (stage) => {
+      taskStage = stage;
+    },
     confirm: handlers.get(shared.IPC.invoke.taskCardConfirm),
     service,
     row: () => row,
@@ -333,6 +358,11 @@ test("a task create announces the new task once and opens nothing else", async (
     getHost: () => host,
     sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
     sessionCollaboration: {},
+    tasks: createTaskChangeAnnouncer({
+      sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
+      getHost: () => host,
+      log: () => undefined,
+    }),
   });
 
   await handlers.get(shared.IPC.invoke.taskCreate)({
@@ -353,4 +383,86 @@ test("a task create announces the new task once and opens nothing else", async (
     taskId: "task-9",
     reason: "created",
   });
+});
+
+/**
+ * B4: the sidebar must not stay on "working" after the work ends.
+ *
+ * The host writes the task's new stage inside the transaction that settles or
+ * fails the delivery, and nothing in the ledger calls Main — so these two paths
+ * are the only signal the interface ever gets. Both go through the announcer, so
+ * one move is exactly one event.
+ */
+test("a settled task session announces its stage exactly once", async () => {
+  const h = harness();
+  // Prime: the task is already "working" as far as Main knows.
+  await h.taskChanges.reconcileStages();
+  h.emitted.length = 0;
+
+  await h.service.settle("task-session-1", "turn-1");
+
+  assert.deepEqual(h.settleCalls, [{ turnId: "turn-1" }], "the delivery was settled");
+  const stageEvents = h.emitted.filter(
+    (event) => event.channel === shared.IPC.event.tasksChanged && event.payload.reason === "stage",
+  );
+  assert.equal(stageEvents.length, 1, "one stage move is one announcement");
+  assert.deepEqual(stageEvents[0].payload, {
+    employeeSessionId: "router-backend",
+    taskId: "task-1",
+    reason: "stage",
+  });
+  // A second reconcile of an unchanged stage is silent.
+  await h.taskChanges.reconcileStages();
+  assert.equal(
+    h.emitted.filter((event) => event.channel === shared.IPC.event.tasksChanged).length,
+    1,
+  );
+});
+
+test("a failed delivery announces its task's stage exactly once", async () => {
+  const h = harness({
+    startTurnError: Object.assign(new Error("PERMISSION_DENIED: ceiling"), {
+      errorCode: "PERMISSION_DENIED",
+    }),
+  });
+  await h.taskChanges.reconcileStages();
+  h.emitted.length = 0;
+
+  await assert.rejects(() => h.service.dispatchConfirmed({ ...h.row() }));
+
+  const stageEvents = h.emitted.filter(
+    (event) => event.channel === shared.IPC.event.tasksChanged && event.payload.reason === "stage",
+  );
+  assert.equal(stageEvents.length, 1, "a failed delivery is one stage move");
+});
+
+/**
+ * M2: a host that is not there is quiet; a real read failure is not.
+ *
+ * Silently swallowing both made a broken sidebar indistinguishable from an idle
+ * employee, which is the failure the reviewer flagged next to B4.
+ */
+test("a failed task read is logged unless the host is simply away", async () => {
+  const logged = [];
+  const make = (error) => {
+    const announcer = createTaskChangeAnnouncer({
+      sendToRenderer: () => undefined,
+      getHost: () => ({
+        async call() {
+          throw error;
+        },
+      }),
+      log: (message) => logged.push(message),
+    });
+    return announcer;
+  };
+
+  const away = Object.assign(new Error("host unavailable"), { code: "HOST_UNAVAILABLE" });
+  await make(away).reconcileStages();
+  assert.deepEqual(logged, [], "a host that is restarting is not an error");
+
+  const broken = Object.assign(new Error("no such column: stage"), { code: "INVALID_STATE" });
+  await make(broken).reconcileStages();
+  assert.equal(logged.length, 1, "a real read failure is reported");
+  assert.match(logged[0], /Task stages could not be read back/);
 });

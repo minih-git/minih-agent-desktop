@@ -6,15 +6,13 @@ import {
   type TaskCardConfirmResult,
   type TaskCardDraftView,
   type TaskCreateResult,
-  type TaskList,
   type TaskView,
 } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
 import type { SessionCollaborationService } from "../services/session-collaboration";
 import type { IpcRegistrar } from "./types";
 import { taskCardsChangedSender } from "../services/task-cards-changed";
-import { taskChangedSender } from "../services/tasks-changed";
-
+import type { TaskChangeAnnouncer } from "../services/task-changes";
 /**
  * The employee surface (ADR bot-sessions-and-steward §5).
  *
@@ -32,6 +30,7 @@ export function registerBotIpc({
   getHost,
   sendToRenderer,
   sessionCollaboration,
+  tasks,
 }: {
   registrar: IpcRegistrar;
   getHost: () => HostProcess | null;
@@ -42,48 +41,16 @@ export function registerBotIpc({
    * ordinary send uses, never a second starter.
    */
   sessionCollaboration: SessionCollaborationService;
+  /**
+   * The one writer of the task channel. Every direction a task can change —
+   * this module's own calls, and the delivery settlements `session.collaboration`
+   * performs — goes through this same object.
+   */
+  tasks: TaskChangeAnnouncer;
 }): void {
   const { handle } = registrar;
   const notifyTaskCardsChanged = taskCardsChangedSender(sendToRenderer);
-  const notifyTaskChanged = taskChangedSender(sendToRenderer);
-  /**
-   * The stage Main last announced per task, so a stage the host moved on its
-   * own (a ledger report or settlement) is still delivered exactly once.
-   */
-  const lastKnownStage = new Map<string, string>();
-
-  function announceTask(task: TaskView, reason: "created" | "stage" | "archived"): void {
-    const previous = lastKnownStage.get(task.id);
-    lastKnownStage.set(task.id, task.stage);
-    if (reason === "stage" && previous === task.stage) return;
-    notifyTaskChanged({
-      employeeSessionId: task.employeeSessionId,
-      taskId: task.id,
-      reason,
-    });
-  }
-
-  /**
-   * Ask the host what changed since the last answer.
-   *
-   * Nothing in the ledger calls Main, so a stage the host moved is discovered
-   * by reading the tasks that are still open. The compare-and-emit lives here,
-   * and every path that can move a stage funnels through it.
-   */
-  async function reconcileTaskStages(): Promise<void> {
-    let tasks: TaskView[];
-    try {
-      tasks = ((await host().call("task.list", {})) as TaskList).tasks ?? [];
-    } catch {
-      // A host that is restarting answers nothing; the next event reconciles.
-      return;
-    }
-    const open = new Set(tasks.map((task) => task.id));
-    for (const task of tasks) announceTask(task, "stage");
-    for (const id of [...lastKnownStage.keys()]) {
-      if (!open.has(id)) lastKnownStage.delete(id);
-    }
-  }
+  const { announce: announceTask, reconcileStages: reconcileTaskStages } = tasks;
   const host = (): HostProcess => {
     const current = getHost();
     if (!current?.isAvailable()) throw new Error("host unavailable");

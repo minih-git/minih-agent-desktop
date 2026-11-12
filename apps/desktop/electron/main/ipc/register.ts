@@ -24,6 +24,7 @@ import { registerMinihRouterIpc } from "./minih-router-ipc";
 import { registerProviderIpc } from "./provider-ipc";
 import { registerScheduledIpc } from "./scheduled-ipc";
 import { registerBotIpc } from "./bot-ipc";
+import type { TaskChangeAnnouncer } from "../services/task-changes";
 import { registerSessionIpc } from "./session-ipc";
 import { registerSettingsIpc } from "./settings-ipc";
 import { registerStorageIpc } from "../storage/ipc";
@@ -104,6 +105,12 @@ export type RegisterIpcDependencies = {
    * starts it through this service's dispatcher.
    */
   sessionCollaboration: SessionCollaborationService;
+  /**
+   * The one writer of the task channel (ADR bot-sessions-and-steward §7). The
+   * delivery service owns it too, so a stage the host moved on settle or fail is
+   * announced by the same object that announces a created task.
+   */
+  taskChanges: TaskChangeAnnouncer;
   [name: string]: any;
 };
 
@@ -404,6 +411,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     getHost,
     sendToRenderer,
     sessionCollaboration: dependencies.sessionCollaboration,
+    tasks: dependencies.taskChanges,
   });
   registerScheduledIpc({
     registrar,

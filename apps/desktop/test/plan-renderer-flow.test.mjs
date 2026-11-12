@@ -62,7 +62,7 @@ test("pending input is retained but every composer/model mutation control is gat
   );
   assert.match(
     composer,
-    /const sendBlocked = approvalPending \|\| pasting \|\| nativeInputBlocked \|\| archivedTask;/,
+    /const sendBlocked = approvalPending \|\| pasting \|\| nativeInputBlocked \|\| taskComposer\.archived;/,
   );
   assert.match(store, /pendingPlans\[sessionId\]\?\.status === "pending"/);
   assert.match(store, /pendingPlans\[resolution\.sessionId\]/);

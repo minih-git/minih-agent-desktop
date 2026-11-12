@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TaskView } from "@minih-agent/shared";
 import { api } from "../../lib/api";
-import { useBots } from "./use-bots";
 
 /**
  * The tasks of one employee, or of everyone, as a surface renders them
@@ -68,32 +67,4 @@ export function useTasks(
   useEffect(() => api.onTasksChanged(() => void reload()), [reload]);
 
   return { tasks, loading, hydrated: hydrated.current, error, reload };
-}
-
-/**
- * The task behind the session on screen, with the employee's name for the
- * composer's placeholder.
- *
- * A task session's compose box talks to that task's employee, so the wording
- * needs both the task (is it archived?) and the employee (who am I addressing?).
- * Everything is read from the host, and a non-task session costs one render and
- * no request.
- */
-export function useTaskSession(
-  session: { id?: string; role?: string } | null | undefined,
-): { task: TaskView; archivedAt?: string; employeeName?: string } | null {
-  const isTask = session?.role === "task";
-  // Every task of every employee: one read answers "is this session a task, and
-  // is it archived", which is all the composer asks.
-  const state = useTasks(null, { includeArchived: true });
-  const tasks = isTask ? state.tasks : [];
-  const task = tasks.find((row) => row.sessionId === session?.id);
-  const bots = useBots();
-  if (!task) return null;
-  const employee = bots.bots.find((bot) => bot.sessionId === task.employeeSessionId);
-  return {
-    task,
-    ...(task.archivedAt ? { archivedAt: task.archivedAt } : {}),
-    ...(employee ? { employeeName: employee.profile.name || employee.title } : {}),
-  };
 }

@@ -253,7 +253,24 @@ window.tasksProbe = async () => {
   check(stageChip && stageChip.textContent.trim() === "Queued", "the header shows no stage: " + headerText);
   report.header = headerText;
 
-  // 5. Archiving moves the task into history, and the session header says so.
+  // 5. The employee's row reads the completion stage in words, and its tone:
+  //    waiting for the person is the only stage allowed to be loud.
+  tasks = tasks.map((row) => ({ ...row, stage: "person/accept" }));
+  mount(React.createElement(BotSidebarGroup, {
+    bots, tasks: [...tasks, ...archived], onOpenBot: () => undefined, onOpenTask: () => undefined,
+  }));
+  await until(
+    () => document.querySelector("[data-sidebar-bot-task='task-0001'][data-task-tone='attention']"),
+    "the completed task's sidebar row",
+  );
+  const completedRow = document.querySelector("[data-sidebar-bot-task='task-0001']");
+  check(
+    /Waiting for you/.test(completedRow.textContent),
+    "the row does not name the stage it is in: " + completedRow.textContent,
+  );
+  report.completedRow = completedRow.textContent.replace(/\s+/g, " ").trim();
+
+  // 6. Archiving moves the task into history, and the session header says so.
   //    One call, made through the API the workbench uses.
   await api.archiveTask("task-0001");
   mount(React.createElement(BotSidebarGroup, { bots, tasks: [...tasks, ...archived], onOpenBot: () => undefined, onOpenTask: () => undefined }));
