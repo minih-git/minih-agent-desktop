@@ -2295,6 +2295,36 @@ describe("DesktopAgentRuntime employee persona", () => {
     return [...(runtime as any).toolCatalog.keys()];
   }
 
+  /**
+   * An employee's own tools are declared, not searched for.
+   *
+   * A deployed steward had to spend a search before it could reach the tools its
+   * definition names, and in one real turn it tried `SessionSend` first and was
+   * refused four times before it found `TaskCard`. Declaring the definition's
+   * own list removes that detour; the cap itself is unchanged.
+   */
+  it("declares the definition's own tools instead of deferring them", async () => {
+    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const deferred = (runtime as any).deferredToolNames as Set<string>;
+
+    for (const name of ["TaskCard", "SessionSend", "SessionList"]) {
+      expect(catalogNames(runtime)).toContain(name);
+      expect(deferred.has(name)).toBe(false);
+    }
+    // Still capped: nothing outside the definition and the core reads appears.
+    expect(catalogNames(runtime)).not.toContain("Write");
+    await runtime.dispose();
+  });
+
+  it("regression: an ordinary session still defers the same tools", async () => {
+    const runtime = createRuntime();
+    const deferred = (runtime as any).deferredToolNames as Set<string>;
+
+    expect(deferred.has("TaskCard")).toBe(true);
+    expect(deferred.has("SessionSend")).toBe(true);
+    await runtime.dispose();
+  });
+
   it("declares only the definition's tools and never a workspace mutation tool", async () => {
     const runtime = createRuntime({ botPersona: { definition: steward } });
     const names = catalogNames(runtime);

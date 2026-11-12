@@ -6278,6 +6278,89 @@ mod tests {
             );
         }
     }
+
+    /// Binding a project to an employee over the real RPC route.
+    ///
+    /// A session stores `project_id`, so an update that wrote a path column
+    /// would fail with `no such column` the first time a person picked a
+    /// project. This drives `bot.update` and reads the result back through
+    /// `bot.list`, which is the pair the settings page actually uses.
+    #[tokio::test]
+    async fn bot_update_binds_and_clears_the_project_over_rpc() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = AppState::open(dir.path()).unwrap();
+        app.handshook = true;
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let repo_path = repo.to_string_lossy().to_string();
+        let employee = sessions::create_session_with_options(
+            &app.db,
+            sessions::SessionCreateOptions {
+                title: Some("Router 后端".into()),
+                mode: Some("agent".into()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({
+                        "name": "Router 后端",
+                        "permissionMode": "ask",
+                        "mustAsk": [],
+                        "observe": true
+                    })
+                    .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let state = Arc::new(Mutex::new(app));
+        let tx = mpsc::unbounded_channel().0;
+
+        handle_request(
+            state.clone(),
+            "bot.update",
+            json!({
+                "sessionId": employee.id,
+                "profile": {},
+                "projectPath": repo_path,
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("bot.update must accept a project: {error:?}"));
+
+        let listed = handle_request(state.clone(), "bot.list", json!({}), tx.clone())
+            .await
+            .unwrap();
+        // The host canonicalizes a project path on the way in, so compare against
+        // the canonical form rather than the string we handed it.
+        let stored = listed["bots"][0]["projectPath"]
+            .as_str()
+            .unwrap_or_else(|| panic!("the bound project comes back through bot.list: {listed}"))
+            .to_string();
+        assert_eq!(
+            std::fs::canonicalize(&stored).unwrap_or_else(|_| std::path::PathBuf::from(&stored)),
+            std::fs::canonicalize(&repo).unwrap(),
+            "the bound project is the repository we named: {listed}"
+        );
+
+        // Clearing the binding is an explicit act, not an omitted field.
+        handle_request(
+            state.clone(),
+            "bot.update",
+            json!({ "sessionId": employee.id, "profile": {}, "projectPath": null }),
+            tx.clone(),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("bot.update must accept null: {error:?}"));
+        let cleared = handle_request(state, "bot.list", json!({}), tx)
+            .await
+            .unwrap();
+        assert!(
+            cleared["bots"][0].get("projectPath").is_none(),
+            "an unbound employee reports no project: {cleared}"
+        );
+    }
+
     /// The bot-session contract over the real RPC boundary: a delivery accepts
     /// one frozen card, a report moves the stage forward only, and an ordinary
     /// session stays an ordinary conversation.

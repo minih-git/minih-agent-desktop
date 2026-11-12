@@ -194,10 +194,38 @@ pub fn update(db: &Database, input: &Value) -> Result<Value> {
         }
     }
     let profile_json = serde_json::to_string(&sessions::normalize_bot_profile(&merged)?)?;
-    db.conn().execute(
+    let tx = db.conn().unchecked_transaction()?;
+    tx.execute(
         "UPDATE sessions SET bot_profile_json=?2, updated_at=?3 WHERE id=?1 AND role='bot'",
         params![session_id, profile_json, now_ms()],
     )?;
+    // The project is what the employee reads when it runs, so binding one is
+    // part of editing the employee. `null` or blank clears the binding; an
+    // absent key keeps the row's value, like every other patchable field here.
+    //
+    // A session stores `project_id`, not a path, so this resolves through the
+    // same upsert-by-path the session create path uses (`ensure_project`).
+    if let Some(project) = input.get("projectPath") {
+        let path = match project {
+            Value::Null => None,
+            Value::String(path) if path.trim().is_empty() => None,
+            Value::String(path) => Some(path.trim().to_owned()),
+            _ => {
+                return Err(anyhow!(
+                    "INVALID_ARGUMENT: projectPath must be a string or null"
+                ))
+            }
+        };
+        let project_id = match path {
+            Some(path) => Some(db.ensure_project(&path, false)?),
+            None => None,
+        };
+        tx.execute(
+            "UPDATE sessions SET project_id=?2, updated_at=?3 WHERE id=?1 AND role='bot'",
+            params![session_id, project_id, now_ms()],
+        )?;
+    }
+    tx.commit()?;
     Ok(json!({ "session": sessions::session_summary(db, &session_id)? }))
 }
 

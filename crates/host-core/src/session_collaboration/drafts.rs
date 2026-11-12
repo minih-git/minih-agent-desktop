@@ -422,7 +422,10 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
                 "card {} confirmed by {}. Dispatched to {}.",
                 draft.id, request.confirmed_by, target_title
             ),
-            status: "queued".into(),
+            // Already delivered: this row tells the steward what happened, and
+            // nothing will ever start a turn for it. Leaving it `queued` made the
+            // ledger show a task that looked stuck forever.
+            status: "completed".into(),
             notify_on_completion: false,
             turn_id: None,
             reply_to_message_id: None,

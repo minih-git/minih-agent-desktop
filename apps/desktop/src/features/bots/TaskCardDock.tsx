@@ -44,6 +44,10 @@ export function TaskCardDock({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Target session id → its project path (empty when unbound). */
+  const [targetProjects, setTargetProjects] = useState<Record<string, string>>({});
+  /** Why a dispatched card never started, keyed by draft. */
+  const [startErrors, setStartErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!readHost) return undefined;
@@ -60,12 +64,33 @@ export function TaskCardDock({
       }
     };
     void load();
+    // The employee's project decides whether the card can be carried out, so the
+    // dock reads it once and keeps it current with the roster's own event.
+    const loadProjects = async () => {
+      try {
+        const roster = await api.listBots();
+        if (cancelled) return;
+        setTargetProjects(
+          Object.fromEntries(
+            (roster.bots ?? []).map((bot) => [bot.sessionId, bot.projectPath ?? ""]),
+          ),
+        );
+      } catch {
+        // A failed read only costs the project line, never the card itself.
+      }
+    };
+    void loadProjects();
+    const stopBots = api.onBotsChanged(() => void loadProjects());
     // Only this session's cards move this dock: another steward's event must
     // not refetch, or blank, the transcript the person is reading.
-    return api.onTaskCardsChanged((event) => {
+    const stopCards = api.onTaskCardsChanged((event) => {
       if (event.sessionId && event.sessionId !== sessionId) return;
       void load();
     });
+    return () => {
+      stopCards?.();
+      stopBots?.();
+    };
   }, [readHost, sessionId]);
 
   const drafts = providedDrafts ?? loadedDrafts;
@@ -99,7 +124,13 @@ export function TaskCardDock({
     setBusyId(draft.id);
     setError(draft.id, null);
     try {
-      await onConfirm(draft);
+      const result = (await onConfirm(draft)) as { startError?: string } | undefined;
+      // A card can be dispatched and still not start (a busy target). The
+      // confirmation stands, so the dock says what happened instead of showing a
+      // calm "dispatched" line over work that is not running.
+      if (result?.startError) {
+        setStartErrors((current) => ({ ...current, [draft.id]: result.startError! }));
+      }
       await reload();
     } catch (cause) {
       const outcome = classifyConfirmError(cause);
@@ -164,7 +195,12 @@ export function TaskCardDock({
       {visible.map((draft) =>
         draft.status === "confirmed" ? (
           <div key={draft.id} className="task-card-dispatched" data-draft-id={draft.id}>
-            {dispatchedLine(draft, t)}
+            <span>{dispatchedLine(draft, t)}</span>
+            {startErrors[draft.id] ? (
+              <span className="task-card-error" role="alert">
+                {t("bots.card.startFailed", { reason: startErrors[draft.id] })}
+              </span>
+            ) : null}
           </div>
         ) : (
           <TaskCard
@@ -173,6 +209,7 @@ export function TaskCardDock({
             busy={busyId === draft.id}
             error={errors[draft.id] ?? null}
             onConfirm={() => void confirm(draft)}
+            project={targetProjects[draft.targetSessionId]}
             onDrop={() => void drop(draft)}
           />
         ),
@@ -185,12 +222,15 @@ function TaskCard({
   draft,
   busy,
   error,
+  project,
   onConfirm,
   onDrop,
 }: {
   draft: TaskCardDraftView;
   busy: boolean;
   error: string | null;
+  /** The target employee's project; empty or absent means unbound. */
+  project?: string;
   onConfirm: () => void;
   onDrop: () => void;
 }) {
@@ -244,6 +284,10 @@ function TaskCard({
           {t("bots.card.permission")}: {t(permissionKey(card.permissionMode))}
         </span>
         {card.mustAsk.length > 0 ? <span>{t("bots.card.mustAsk")}</span> : null}
+        <span className={project ? undefined : "task-card-warning"}>
+          {t("bots.card.project")}:{" "}
+          {project ? project : t("bots.card.projectUnbound")}
+        </span>
       </div>
 
       <div className="task-card-source">

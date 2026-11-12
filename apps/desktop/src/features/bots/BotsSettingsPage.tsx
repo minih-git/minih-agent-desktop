@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BotListItem, BotProfileInput } from "@minih-agent/shared";
 import { api } from "../../lib/api";
@@ -34,20 +34,40 @@ export function BotsSettingsPage({
   const [editing, setEditing] = useState<"new" | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // The projects a person can bind an employee to. Read here rather than in the
+  // form so the list is fetched once per page, not once per open.
+  const [projects, setProjects] = useState<{ path: string; name: string }[]>([]);
+  useEffect(() => {
+    let live = true;
+    void api
+      .listProjects()
+      .then((result) => {
+        if (!live) return;
+        setProjects(result.projects.map((project) => ({ path: project.path, name: project.name })));
+      })
+      // A failed read leaves the picker with only "unbound": the employee form
+      // still works, and the person is not blocked from editing anything else.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   const [pendingDismiss, setPendingDismiss] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedNote, setSeedNote] = useState<string | null>(null);
 
   const editingBot = editing && editing !== "new" ? bots.find((bot) => bot.sessionId === editing) : undefined;
 
-  const save = async (profile: BotProfileInput) => {
+  const save = async (profile: BotProfileInput, projectPath: string | null) => {
     setBusy(true);
     setFormError(null);
     try {
       if (editing === "new") {
-        await api.createBot({ profile });
+        await api.createBot({ profile, ...(projectPath ? { projectPath } : {}) });
       } else if (editing) {
-        await api.updateBot({ sessionId: editing, profile });
+        // Always sent: `null` is the person unbinding the project, which must not
+        // look like an omitted field that keeps the old value.
+        await api.updateBot({ sessionId: editing, profile, projectPath });
       }
       setEditing(null);
       await reload();
@@ -96,6 +116,10 @@ export function BotsSettingsPage({
 
   const definitionLabel = (handle: string | undefined) =>
     handle ? (definitions.find((item) => item.id === handle)?.label ?? handle) : t("bots.settings.definitionNone");
+  const botProjectLabel = (path: string | undefined) =>
+    path
+      ? (projects.find((project) => project.path === path)?.name ?? path)
+      : t("bots.settings.projectUnbound");
 
   return (
     <div className="settings-stack bot-settings">
@@ -159,6 +183,14 @@ export function BotsSettingsPage({
                     <span>{t("bots.settings.homeLocal")}</span>
                     <span>{t(`bots.settings.permission${permissionSuffix(bot.profile.permissionMode)}`)}</span>
                     <span>{definitionLabel(bot.profile.definition)}</span>
+                    {/* The project decides whether this employee can read any
+                        code, so it is a row fact, not a hidden setting. */}
+                    <span
+                      className={bot.projectPath ? undefined : "bot-list-meta-warning"}
+                      title={bot.projectPath ?? undefined}
+                    >
+                      {botProjectLabel(bot.projectPath)}
+                    </span>
                   </div>
                 </div>
                 <div className="bot-list-actions">
@@ -218,6 +250,7 @@ export function BotsSettingsPage({
           key={editing}
           initial={editing === "new" || !editingBot ? EMPTY_BOT_DRAFT : draftFromBot(editingBot)}
           definitions={definitions}
+          projects={projects}
           title={editing === "new" ? t("bots.settings.addTitle") : t("bots.settings.editTitle")}
           busy={busy}
           error={formError}
@@ -225,7 +258,7 @@ export function BotsSettingsPage({
             setEditing(null);
             setFormError(null);
           }}
-          onSubmit={(profile) => void save(profile)}
+          onSubmit={(profile, project) => void save(profile, project)}
         />
       ) : null}
 

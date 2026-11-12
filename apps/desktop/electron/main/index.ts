@@ -1029,6 +1029,7 @@ const liveCallService = createLiveCallService({
 
 function registerIpc() {
   return registerIpcHandlers({
+    sessionCollaboration,
     generateSessionTitle: sessionTitleGenerator.run,
     generateFollowUpSuggestion,
     announceSessionTitleChanged: (sessionId) => void sessionChangeNotifier.titleChanged(sessionId),

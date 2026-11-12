@@ -4702,6 +4702,13 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
   }
 
   private isCoreTool(name: string): boolean {
+    // An employee's whole job is the handful of tools its definition names. If
+    // those were on-demand, the model would have to spend a search before doing
+    // the one thing it exists for — and real turns went that way: a steward
+    // reached for `SessionSend` before it found `TaskCard`. A persona's own list
+    // is therefore declared up front. This decides declaration only: the cap is
+    // still `isToolAllowedByPersona`, so nothing is widened.
+    if (this.personaToolCeiling?.has(name)) return true;
     return (
       name === CONTEXT_COMPACTION_TOOL_NAME ||
       name === CONTEXT_USAGE_TOOL_NAME ||

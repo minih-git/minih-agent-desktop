@@ -13,6 +13,7 @@ import { SettingsMenuSelect } from "../../components/settings/SettingsMenuSelect
 import { SettingsCard, SettingsRow } from "../settings/primitives";
 import {
   botProfileInput,
+  botProjectPatch,
   draftIsValid,
   isMustAskLocked,
   toggleMustAsk,
@@ -42,6 +43,7 @@ const MUST_ASK_LABEL_KEYS: Record<BotMustAsk, string> = {
 export function BotFormCard({
   initial,
   definitions,
+  projects = [],
   title,
   busy,
   error,
@@ -51,11 +53,13 @@ export function BotFormCard({
   initial: BotDraft;
   /** Definition handles `Task` would offer; the steward is one of them. */
   definitions: readonly { id: string; label: string }[];
+  /** Projects the person can bind; an employee without one cannot read code. */
+  projects?: readonly { path: string; name: string }[];
   title: string;
   busy: boolean;
   error: string | null;
   onCancel: () => void;
-  onSubmit: (profile: ReturnType<typeof botProfileInput>) => void;
+  onSubmit: (profile: ReturnType<typeof botProfileInput>, projectPath: string | null) => void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<BotDraft>(initial);
@@ -127,6 +131,20 @@ export function BotFormCard({
           />
         </SettingsRow>
         <SettingsRow
+          title={t("bots.settings.project")}
+          description={t("bots.settings.projectHint")}
+        >
+          <SettingsMenuSelect
+            label={t("bots.settings.project")}
+            value={draft.projectPath}
+            options={[
+              { id: "", label: t("bots.settings.projectNone") },
+              ...projects.map((project) => ({ id: project.path, label: project.name })),
+            ]}
+            onChange={(projectPath) => setDraft({ ...draft, projectPath })}
+          />
+        </SettingsRow>
+        <SettingsRow
           title={t("bots.settings.definition")}
           description={t("bots.settings.definitionHint")}
         >
@@ -155,7 +173,7 @@ export function BotFormCard({
           <Button
             variant="primary"
             disabled={busy || !draftIsValid(draft)}
-            onClick={() => onSubmit(botProfileInput(draft))}
+            onClick={() => onSubmit(botProfileInput(draft), botProjectPatch(draft).projectPath)}
           >
             {busy ? t("bots.settings.saving") : t("bots.settings.save")}
           </Button>
