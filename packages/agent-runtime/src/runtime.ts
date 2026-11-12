@@ -1521,6 +1521,7 @@ function commandShellToolDescription(
     `The session scratch directory variable is ${shellScratchVariable(shell)}.`,
     `An optional timeout from 1 to ${MAX_COMMAND_TIMEOUT_SECONDS} seconds may be supplied; without it, the command defaults to a 60-second timeout.`,
     `Set runInBackground: true for long-lived processes the user needs after the turn ends (dev servers, watchers, builds). A background call returns a backgroundTaskId immediately, survives turn aborts and timeouts, and its output is visible in the composer's running-tasks bar; do not set it for commands whose output the current turn depends on. After starting one, read its output with BackgroundTaskOutput (pass waitSeconds to block until it finishes) and end it with BackgroundTaskStop; BackgroundTaskList shows this session's tasks. They are activated by the successful background call, or found with ToolSearch.`,
+    "Do not hold a foreground call in a sleep loop to wait for external state (CI, a deployment, a service becoming ready): start the wait with runInBackground: true and poll it with BackgroundTaskOutput.",
     ...(formattedScratch ? [`The session scratch directory is ${formattedScratch}.`] : []),
   ].join(" ");
 }

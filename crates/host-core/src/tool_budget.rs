@@ -5,7 +5,12 @@ use std::time::Duration;
 use tokio::sync::Notify;
 
 pub const MAX_IN_FLIGHT_TOOLS: usize = 16;
-pub const MAX_IN_FLIGHT_SHELL: usize = 4;
+/// A foreground `Bash` call holds its slot from spawn to exit, so one session
+/// polling an external state (`sleep 600; curl ...`) can occupy a slot for
+/// minutes. Size this above `MAX_IN_FLIGHT_PER_SESSION` so several sessions can
+/// wait at once without starving everyone else; waiting belongs in a background
+/// task anyway.
+pub const MAX_IN_FLIGHT_SHELL: usize = 8;
 pub const MAX_IN_FLIGHT_READS: usize = 8;
 pub const MAX_IN_FLIGHT_MUTATIONS: usize = 2;
 pub const MAX_IN_FLIGHT_MUTATIONS_PER_SESSION: usize = 1;
@@ -33,6 +38,13 @@ impl ToolClass {
             "Read" | "Glob" | "Grep" => Self::Read,
             "Write" | "Edit" => Self::Mutation,
             "Bash" => Self::Shell,
+            // Background-task tools start no process: they read or stop a task
+            // this session already registered, and `BackgroundTaskOutput` only
+            // waits on that task. Counting them as plugin tools would let shell
+            // congestion move into the plugin quota, so they share the read
+            // quota. Names repeat `crate::rpc::background_task_tools`' constants,
+            // which that private module cannot lend this lower-level budget.
+            "BackgroundTaskList" | "BackgroundTaskOutput" | "BackgroundTaskStop" => Self::Read,
             _ => Self::Plugin,
         }
     }

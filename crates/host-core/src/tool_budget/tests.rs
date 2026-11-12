@@ -1,4 +1,7 @@
-use super::{AdmissionError, ToolBudget, ToolPermit, MAX_QUEUED_TOOLS};
+use super::{
+    AdmissionError, ToolBudget, ToolClass, ToolPermit, MAX_IN_FLIGHT_PLUGINS, MAX_IN_FLIGHT_SHELL,
+    MAX_QUEUED_TOOLS,
+};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
@@ -25,7 +28,7 @@ where
 async fn limits_shell_concurrency_and_reports_active_work() {
     let budget = ToolBudget::new();
     let mut permits = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         permits.push(
             budget
                 .acquire(&format!("session-{index}"), "Bash")
@@ -34,8 +37,8 @@ async fn limits_shell_concurrency_and_reports_active_work() {
         );
     }
     let snapshot = budget.snapshot();
-    assert_eq!(snapshot.active, 4);
-    assert_eq!(snapshot.shell, 4);
+    assert_eq!(snapshot.active, MAX_IN_FLIGHT_SHELL);
+    assert_eq!(snapshot.shell, MAX_IN_FLIGHT_SHELL);
     assert_eq!(snapshot.queued, 0);
 
     let mut waiter = Box::pin(budget.acquire("session-waiter", "Bash"));
@@ -77,7 +80,7 @@ async fn serializes_mutations_within_a_session() {
 async fn shell_backlog_does_not_reserve_global_capacity() {
     let budget = ToolBudget::new();
     let mut running = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         running.push(
             budget
                 .acquire(&format!("running-{index}"), "Bash")
@@ -92,13 +95,13 @@ async fn shell_backlog_does_not_reserve_global_capacity() {
         waiting.push(request);
     }
     let snapshot = budget.snapshot();
-    assert_eq!(snapshot.active, 4);
-    assert_eq!(snapshot.shell, 4);
+    assert_eq!(snapshot.active, MAX_IN_FLIGHT_SHELL);
+    assert_eq!(snapshot.shell, MAX_IN_FLIGHT_SHELL);
     assert_eq!(snapshot.queued, 12);
 
     let read = admitted(Box::pin(budget.acquire("interactive", "Read")).as_mut());
     let write = admitted(Box::pin(budget.acquire("interactive", "Write")).as_mut());
-    assert_eq!(budget.snapshot().active, 6);
+    assert_eq!(budget.snapshot().active, MAX_IN_FLIGHT_SHELL + 2);
     assert_eq!(budget.snapshot().queued, 12);
     drop((read, write, waiting, running));
     assert_eq!(budget.snapshot().active, 0);
@@ -130,7 +133,7 @@ async fn session_backlog_does_not_reserve_read_capacity() {
 async fn class_backlog_does_not_reserve_session_capacity() {
     let budget = ToolBudget::new();
     let mut running = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         running.push(
             budget
                 .acquire(&format!("shell-{index}"), "Bash")
@@ -145,7 +148,7 @@ async fn class_backlog_does_not_reserve_session_capacity() {
         waiting.push(request);
     }
     let read = admitted(Box::pin(budget.acquire("busy", "Read")).as_mut());
-    assert_eq!(budget.snapshot().active, 5);
+    assert_eq!(budget.snapshot().active, MAX_IN_FLIGHT_SHELL + 1);
     assert_eq!(budget.snapshot().queued, 4);
     drop((read, waiting, running));
 }
@@ -154,7 +157,7 @@ async fn class_backlog_does_not_reserve_session_capacity() {
 async fn cancelling_waiter_removes_queue_entry_and_releases_capacity() {
     let budget = ToolBudget::new();
     let mut running = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         running.push(
             budget
                 .acquire(&format!("shell-{index}"), "Bash")
@@ -167,7 +170,7 @@ async fn cancelling_waiter_removes_queue_entry_and_releases_capacity() {
     assert_eq!(budget.snapshot().queued, 1);
     drop(waiter);
     assert_eq!(budget.snapshot().queued, 0);
-    assert_eq!(budget.snapshot().active, 4);
+    assert_eq!(budget.snapshot().active, MAX_IN_FLIGHT_SHELL);
     drop(running);
     assert_eq!(budget.snapshot().active, 0);
 }
@@ -176,7 +179,7 @@ async fn cancelling_waiter_removes_queue_entry_and_releases_capacity() {
 async fn cancelling_notified_waiter_returns_reserved_capacity() {
     let budget = ToolBudget::new();
     let mut running = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         running.push(
             budget
                 .acquire(&format!("shell-{index}"), "Bash")
@@ -195,12 +198,12 @@ async fn cancelling_notified_waiter_returns_reserved_capacity() {
     assert_eq!(budget.snapshot().shell, 0);
 
     let mut recovered = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         recovered.push(admitted(
             Box::pin(budget.acquire(&format!("recovered-{index}"), "Bash")).as_mut(),
         ));
     }
-    assert_eq!(budget.snapshot().active, 4);
+    assert_eq!(budget.snapshot().active, MAX_IN_FLIGHT_SHELL);
 }
 
 #[tokio::test]
@@ -235,7 +238,7 @@ async fn all_tool_classes_enforce_shared_alias_limits() {
     for (tool, alias, limit) in [
         ("Read", "Grep", 8),
         ("Write", "Edit", 2),
-        ("Bash", "Bash", 4),
+        ("Bash", "Bash", MAX_IN_FLIGHT_SHELL),
         ("plugin_first", "plugin_second", 4),
     ] {
         let budget = ToolBudget::new();
@@ -295,7 +298,7 @@ async fn mutation_backlog_does_not_reserve_other_sessions_mutation_capacity() {
 async fn bounded_queue_rejects_overflow_and_recovers_after_cancellation() {
     let budget = ToolBudget::new();
     let mut running = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         running.push(
             budget
                 .acquire(&format!("running-{index}"), "Bash")
@@ -333,7 +336,7 @@ async fn bounded_queue_rejects_overflow_and_recovers_after_cancellation() {
 async fn older_eligible_waiter_is_admitted_before_new_requests() {
     let budget = ToolBudget::new();
     let mut running = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         running.push(
             budget
                 .acquire(&format!("running-{index}"), "Bash")
@@ -358,7 +361,7 @@ async fn older_eligible_waiter_is_admitted_before_new_requests() {
 async fn timeout_removes_only_its_queue_entry_and_preserves_running_capacity() {
     let budget = ToolBudget::new();
     let mut running = Vec::new();
-    for index in 0..4 {
+    for index in 0..MAX_IN_FLIGHT_SHELL {
         running.push(
             budget
                 .acquire(&format!("running-{index}"), "Bash")
@@ -378,8 +381,8 @@ async fn timeout_removes_only_its_queue_entry_and_preserves_running_capacity() {
         _ => panic!("exhausted capacity must time out without admission"),
     }
     assert_eq!(budget.snapshot().queued, 1);
-    assert_eq!(budget.snapshot().active, 4);
-    assert_eq!(budget.snapshot().shell, 4);
+    assert_eq!(budget.snapshot().active, MAX_IN_FLIGHT_SHELL);
+    assert_eq!(budget.snapshot().shell, MAX_IN_FLIGHT_SHELL);
     drop(running.pop());
     let permit = admitted(older.as_mut());
     assert_eq!(budget.snapshot().queued, 0);
@@ -391,28 +394,31 @@ async fn timeout_removes_only_its_queue_entry_and_preserves_running_capacity() {
 async fn dispatch_skips_a_blocked_class_for_the_oldest_runnable_request() {
     let budget = ToolBudget::new();
     let mut running = Vec::new();
-    for (session, tool) in [
-        ("reads-a", "Read"),
-        ("reads-b", "Read"),
-        ("shells", "Bash"),
-        ("plugins", "plugin_tool"),
+    for (session, tool, count) in [
+        ("shells-a", "Bash", MAX_IN_FLIGHT_SHELL / 2),
+        ("shells-b", "Bash", MAX_IN_FLIGHT_SHELL / 2),
+        ("plugins", "plugin_tool", 4),
+        ("reads", "Read", 4),
     ] {
-        for _ in 0..4 {
+        for _ in 0..count {
             running.push(budget.acquire(session, tool).await.unwrap());
         }
     }
+    assert_eq!(budget.snapshot().active, 16);
     let mut shell = Box::pin(budget.acquire("queued-shell", "Bash"));
     let mut write = Box::pin(budget.acquire("queued-write", "Write"));
     assert!(poll_once(shell.as_mut()).is_pending());
     assert!(poll_once(write.as_mut()).is_pending());
+    // Freeing a read slot must skip the older shell request: its class is still
+    // full, so the younger write goes in and the shell keeps waiting.
     drop(running.pop());
     let write_permit = admitted(write.as_mut());
     assert!(poll_once(shell.as_mut()).is_pending());
     assert_eq!(budget.snapshot().active, 16);
     assert_eq!(budget.snapshot().queued, 1);
     assert_eq!(budget.snapshot().mutations, 1);
-    // Release a shell, rather than another plugin, to unblock the older call.
-    drop(running.remove(8));
+    // Release a shell, rather than another read, to unblock the older call.
+    drop(running.remove(0));
     let shell_permit = admitted(shell.as_mut());
     assert_eq!(budget.snapshot().active, 16);
     assert_eq!(budget.snapshot().queued, 0);
@@ -513,4 +519,62 @@ async fn an_abandoned_hold_releases_waiting_calls() {
     drop(hold);
     drop(admitted(late.as_mut()));
     drop(running);
+}
+
+/// The names must match `crate::rpc::background_task_tools`' constants; that
+/// module is private to `rpc`, so this repeats them as the budget sees them.
+#[test]
+fn background_task_tools_share_the_read_class() {
+    for name in [
+        "BackgroundTaskList",
+        "BackgroundTaskOutput",
+        "BackgroundTaskStop",
+    ] {
+        assert_eq!(ToolClass::from_name(name), ToolClass::Read, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn a_saturated_shell_class_still_admits_a_background_task_read() {
+    let budget = ToolBudget::new();
+    let mut shells = Vec::new();
+    for index in 0..MAX_IN_FLIGHT_SHELL {
+        shells.push(
+            budget
+                .acquire(&format!("shell-{index}"), "Bash")
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(budget.snapshot().shell, MAX_IN_FLIGHT_SHELL);
+
+    // Waiting on a task this session started must not need a shell slot: a
+    // long foreground poll holds one for its whole lifetime.
+    let output = admitted(Box::pin(budget.acquire("shell-0", "BackgroundTaskOutput")).as_mut());
+    assert_eq!(budget.snapshot().shell, MAX_IN_FLIGHT_SHELL);
+    assert_eq!(budget.snapshot().reads, 1);
+    drop((output, shells));
+    assert_eq!(budget.snapshot().active, 0);
+}
+
+#[tokio::test]
+async fn a_saturated_plugin_class_still_admits_a_background_task_read() {
+    let budget = ToolBudget::new();
+    let mut plugins = Vec::new();
+    for _ in 0..MAX_IN_FLIGHT_PLUGINS {
+        plugins.push(
+            budget
+                .acquire("plugin-session", "plugin_tool")
+                .await
+                .unwrap(),
+        );
+    }
+    let mut waiting = Box::pin(budget.acquire("waiting", "plugin_other"));
+    assert!(poll_once(waiting.as_mut()).is_pending());
+
+    let output = admitted(Box::pin(budget.acquire("waiting", "BackgroundTaskOutput")).as_mut());
+    assert_eq!(budget.snapshot().plugins, MAX_IN_FLIGHT_PLUGINS);
+    assert_eq!(budget.snapshot().reads, 1);
+    drop((output, waiting, plugins));
+    assert_eq!(budget.snapshot().active, 0);
 }

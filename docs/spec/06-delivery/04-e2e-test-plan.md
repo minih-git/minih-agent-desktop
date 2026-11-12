@@ -1365,10 +1365,10 @@ identify the platform validation still needed.
   read tools and shell commands. 2) Observe `app.health` while the burst runs.
   3) Terminate host-core during active calls. 4) Wait for one supervised
   restart. 5) Allow the persistence outbox to flush.
-- **Expected**: Active shell processes never exceed the configured global and
-  per-session limits. Excess work returns `HOST_OVERLOADED` or waits in the
-  bounded queue. Queued requests do not reserve execution capacity: with four
-  running Bash calls and twelve queued Bash calls, another session can still
+- **Expected**: Active shell processes never exceed the configured global shell
+  limit. Excess work returns `HOST_OVERLOADED` or waits in the
+  bounded queue. Queued requests do not reserve execution capacity: with eight
+  running Bash calls and eight queued Bash calls, another session can still
   Read and Write. A saturated session cannot reserve spare class capacity, and
   admission-future cancellation/timeout restores queue and execution counters.
   Only one restart loop runs; stale-generation calls fail fast

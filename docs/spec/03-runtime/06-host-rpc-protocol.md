@@ -61,8 +61,12 @@ The RPC dispatcher caps active requests at 32. `tools.execute` then enters a
 bounded execution budget:
 
 - 16 total tool executions
-- 4 concurrent `Bash` processes globally, 2 per session
-- 8 read/search tools globally
+- 8 concurrent `Bash` processes globally; a session-level limit would also cap
+  the subagents that share its id, so each session is bounded only by the total
+  per-session tool limit
+- 8 read/search tools globally; the background task tools (`BackgroundTaskList`,
+  `BackgroundTaskOutput`, `BackgroundTaskStop`) spend this quota because they
+  start no process
 - 2 mutating tools globally, 1 per session
 - 4 plugin tools globally
 - 4 tool executions per session
