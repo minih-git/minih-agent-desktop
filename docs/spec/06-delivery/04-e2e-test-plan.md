@@ -9150,8 +9150,15 @@ selection already in place shows it without waiting for another event.
   origin (`direct` or `from your steward`) and a short id. The session does not
   appear in "My sessions" or a project group. Archiving moves the task into
   history (N) and marks the session's header archived, with its composer closed.
-  A confirmed card's delivery targets the task session it created, not the
-  employee's own transcript.
+- **Expected, where the work runs**: the session's project is the repository
+  chosen in step 1 — the value the runtime launches the turn in — and the task
+  row reports the same project; with no repository chosen, the employee's own
+  project is used.
+- **Expected, steward path**: a confirmed card's delivery targets the task
+  session it created, not the employee's own transcript, and creating it adds no
+  project row for the card's `repo.origin` (a git remote, not a folder). When the
+  task's turn settles or its delivery fails, the sidebar row and the header show
+  the new stage after exactly one change event.
 - **Specs linked**: `03-runtime/04-data-storage.md` §4.19a, ADR
   `bot-sessions-and-steward` §7
 - **Acceptance**: C (conversation & stream), F (persistence), Quality

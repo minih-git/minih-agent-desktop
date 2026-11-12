@@ -1142,6 +1142,9 @@ archived_at        INTEGER
 
 - `session_id` is `UNIQUE`: one session carries exactly one task. That is what
   makes "the task of this conversation" a lookup rather than a guess.
+- `project_id` mirrors `sessions.project_id`, which is written first and read
+  back: the runtime launches a turn in the session's workspace, so the task's
+  repository has one source of truth and the two rows cannot disagree.
 - `origin` is `steward` for work a confirmed card dispatched and `direct` for
   work the person typed into the employee's workbench. It is provenance only.
 - `stage` uses the §4.19 vocabulary and is written by the host alone: the same
@@ -1150,6 +1153,9 @@ archived_at        INTEGER
   delivery.
 - `archived_at` is written together with `sessions.archived_at` in one
   transaction. A second archive keeps the first timestamp.
+- `branch` is the card's `repo.ref`. `repo.origin` — a normalized git remote
+  (`host/owner/name`), not a path — is never resolved into a project; mapping a
+  remote origin to a local checkout belongs to the worktree slice.
 - `workspace_path` exists for a later slice that gives a task an isolated
   worktree (ADR 0329); nothing writes it yet.
 
@@ -1163,11 +1169,17 @@ the fresh schema.
 Because dropping a table other tables reference makes SQLite run an implicit
 `DELETE FROM`, the rebuild runs with constraint enforcement off
 (`migrate_v32_to_v33` sets `PRAGMA foreign_keys = OFF` before its transaction —
-inside one the pragma is a silent no-op) and validates the whole file with
-`pragma_foreign_key_check` before committing. The step refuses to run if
-enforcement is still on, rather than risk emptying every session-owned table.
-A pre-existing session keeps its exact role and its NULL new columns, and
-`tasks` starts empty.
+inside one the pragma is a silent no-op). The step refuses to run if enforcement
+is still on, rather than risk emptying every session-owned table.
+
+Before committing it proves two things: the copy kept every session (the row
+count is unchanged), and the rebuild added no dangling reference — the whole
+file is counted with `pragma_foreign_key_check` before and after, and only an
+increase fails the step. A real user database arrives with orphan rows from
+older builds, and repairing them is a separate decision that needs the person's
+authorization; a step that refused on any of them left the application unable
+to start at all. A pre-existing session keeps its exact role and its NULL new
+columns, and `tasks` starts empty.
 
 ### 4.7 messages — transcript index
 

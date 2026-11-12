@@ -822,6 +822,8 @@ archived_at        INTEGER
 
 - `session_id` 唯一：一个会话只承载一件任务，因此「这个会话是哪件任务」是一次
   查询而不是猜测。
+- `project_id` 镜像 `sessions.project_id`：后者先写入、再由任务行读回。运行时在
+  **会话**的工作区里启动回合，所以任务的仓库只有一个事实来源，两行不可能不一致。
 - `origin` 区分秘书确认的卡片（`steward`）与员工工作台里直接输入（`direct`），
   只表示来源。
 - `stage` 复用 §4.19 的七个阶段，只由宿主写入：接受账本报告的同一事务
@@ -829,6 +831,9 @@ archived_at        INTEGER
   会同步该投递绑定的任务。
 - `archived_at` 与 `sessions.archived_at` 在同一事务内写入；重复归档保留第一次
   的时间戳。
+- `branch` 是卡片的 `repo.ref`。`repo.origin` 是规范化后的 git 远端
+  （`host/owner/name`）而不是路径，永远不会被解析成项目；把远端映射到本机检出属于
+  worktree 切片。
 - `workspace_path` 供后续切片给任务独立 worktree（ADR 0329），目前无人写入。
 
 **架构 v32 -> v33。** 这一步存储上是增量的，但因为 SQLite 无法修改
@@ -838,9 +843,14 @@ archived_at        INTEGER
 
 因为删除被引用的表会让 SQLite 执行隐式 `DELETE FROM`，重建必须在关闭外键约束
 的情况下进行（`migrate_v32_to_v33` 在开启事务之前 `PRAGMA foreign_keys = OFF`；
-事务内该 pragma 静默无效），提交前再用 `pragma_foreign_key_check` 校验整个文件；
-若约束仍开着，该步骤拒绝执行而不是冒清空所有以会话为父表的行的风险。既有会话的
-角色保持不变，两个新列为 NULL，`tasks` 为空。
+事务内该 pragma 静默无效）；若约束仍开着，该步骤拒绝执行而不是冒清空所有以会话为
+父表的行的风险。
+
+提交前它证明两件事：复制保住了每一个会话（行数不变），并且重建没有新增悬空引用
+—— 整个文件在重建前后各统计一次 `pragma_foreign_key_check`，只有增加才算失败。
+真实用户库里本来就带着旧版本留下的孤儿行，清理它们需要用户授权，是另一件事；若只要
+存在违例就拒绝，应用在真实库上会直接起不来。既有会话的角色保持不变，两个新列为
+NULL，`tasks` 为空。
 
 ### 4.7 messages — 转录索引
 

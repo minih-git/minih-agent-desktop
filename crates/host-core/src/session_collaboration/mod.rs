@@ -194,6 +194,14 @@ pub(super) struct SpawnRequest<'a> {
     pub model_id: Option<String>,
     /// `None` for a worker: a worker inherits configuration, never an identity.
     pub role: Option<String>,
+    /// The repository the child works in, when the work names one.
+    ///
+    /// Absent means "the source session's project", which is what a worker
+    /// wants. A task passes the project it resolved, because the repository a
+    /// task was given *is* the one its work must run in: the runtime reads the
+    /// workspace from the session row, so leaving the parent's project there
+    /// would make the choice display-only.
+    pub project_path: Option<String>,
 }
 
 /// Create a child of an existing session, and inherit exactly what a child may.
@@ -205,8 +213,9 @@ pub(super) struct SpawnRequest<'a> {
 /// - **inherited**: mode (`agent`), project, thinking level, and the permission
 ///   mode of the source session — a child never starts wider than its parent,
 ///   and never wider than what the source already had to be allowed to do;
-/// - **overridden by the caller**: provider and model, when the request names
-///   them, because the source may not have a model bound at all;
+/// - **overridden by the caller**: provider, model, and the project, when the
+///   request names them — the source may have no model bound at all, and a task
+///   works in the repository it was given rather than in the employee's own;
 /// - **not inherited**: an employee's `role`/`botProfile` and its transcript.
 ///   A child is a session in its own right; copying an identity would make two
 ///   rows claim to be the same employee.
@@ -234,7 +243,7 @@ pub(super) fn spawn_session(
             mode: Some("agent".into()),
             provider_id: request.provider_id,
             model_id: request.model_id,
-            project_path: parent.summary.project_path,
+            project_path: request.project_path.or(parent.summary.project_path),
             thinking_level: Some(parent.summary.thinking_level),
             permission_mode: Some(parent.summary.permission_mode),
             role: request.role,
@@ -293,6 +302,8 @@ fn spawn(db: &Database, input: &Value) -> Result<Value> {
             // A worker is not an employee: it inherits configuration, never a
             // bot identity, so it cannot be addressed as one later.
             role: None,
+            // A worker works where its parent does (ADR 0239 inheritance).
+            project_path: None,
         },
     )?;
     db.conn().execute("INSERT INTO session_collaboration_links(session_id,created_by_session_id,plugin_id,created_at) VALUES(?1,?2,?3,?4)",params![created.id,source,plugin,now_ms()])?;

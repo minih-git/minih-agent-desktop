@@ -198,10 +198,16 @@ pub fn create_in(
     // The repository is what the task works in. A named project wins; otherwise
     // the employee's own project is the default, because that is the repository
     // the employee was hired to read.
-    let project_id = match request.project_path.as_deref() {
-        Some(path) => Some(db.ensure_project(path, false)?),
-        None => employee_project_id(db, request.employee_session_id)?,
+    let project_path = match request.project_path.as_deref() {
+        Some(path) => Some(path.to_owned()),
+        None => match employee_project_id(db, request.employee_session_id)? {
+            Some(id) => db.project_path(id)?,
+            None => None,
+        },
     };
+    // The task's project reaches the session, not only the task row: the runtime
+    // launches the turn in the *session's* workspace, so a project recorded on
+    // the task alone would make the person's choice display-only.
     let task_session = spawn_session(
         db,
         SpawnRequest {
@@ -212,11 +218,20 @@ pub fn create_in(
             provider_id: None,
             model_id: None,
             role: Some("task".into()),
+            project_path,
         },
     )?;
     conn.execute(
         "UPDATE sessions SET owner_session_id=?2 WHERE id=?1",
         params![task_session.id, request.employee_session_id],
+    )?;
+    // Read the project back off the session rather than keeping a second copy:
+    // `tasks.project_id` and `sessions.project_id` are then the same value by
+    // construction, and the task's repository has one source of truth.
+    let project_id: Option<i64> = conn.query_row(
+        "SELECT project_id FROM sessions WHERE id=?1",
+        params![task_session.id],
+        |row| row.get(0),
     )?;
     let id = Uuid::new_v4().to_string();
     conn.execute(
@@ -510,6 +525,81 @@ mod tests {
         assert_eq!(session_owner.as_deref(), Some(owner.as_str()));
     }
 
+    /// The repository a task was given is the one its session runs in.
+    ///
+    /// The runtime launches a turn in the *session's* workspace, so a project
+    /// recorded only on the task row made the person's choice display-only: the
+    /// employee kept working in its own repository (#B2).
+    #[test]
+    fn a_task_session_runs_in_the_project_the_task_was_given() {
+        let (dir, db) = database();
+        let own = dir.path().join("desktop");
+        let other = dir.path().join("router");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let own_path = std::fs::canonicalize(&own)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let other_path = std::fs::canonicalize(&other)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let owner = crate::sessions::create_session_with_options(
+            &db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("后端".into()),
+                mode: Some("agent".into()),
+                project_path: Some(own_path.clone()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({"name": "后端", "permissionMode": "ask", "observe": false}).to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let created = create(
+            &db,
+            &json!({
+                "employeeSessionId": owner,
+                "title": "补 remote_gateway 单测",
+                "origin": "direct",
+                "projectPath": other_path,
+            }),
+        )
+        .unwrap();
+
+        // The session is what the runtime reads, and it is what the person sees.
+        assert_eq!(created["session"]["projectPath"], json!(other_path));
+        assert_eq!(created["task"]["projectPath"], json!(other_path));
+        // The employee keeps its own repository: a task's project is the task's,
+        // not a change to the employee's profile.
+        let employee_project: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT p.path FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
+                 WHERE s.id = ?1",
+                params![owner],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(employee_project.as_deref(), Some(own_path.as_str()));
+        // One source of truth: the two rows cannot disagree.
+        let (task_project, session_project): (Option<i64>, Option<i64>) = db
+            .conn()
+            .query_row(
+                "SELECT t.project_id, s.project_id FROM tasks t
+                 JOIN sessions s ON s.id = t.session_id WHERE t.id = ?1",
+                params![created["task"]["id"].as_str().unwrap()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(task_project.is_some());
+        assert_eq!(task_project, session_project);
+    }
+
     #[test]
     fn a_task_needs_an_employee_and_a_known_origin() {
         let (_dir, db) = database();
@@ -688,10 +778,21 @@ mod tests {
     }
 
     /// The task a confirmed card creates is the delivery's target, so the work
-    /// reaches the task and not the employee's own transcript.
+    /// reaches the task and not the employee's own transcript — and the card's
+    /// `repo.origin`, which is a git remote, never becomes a project row.
     #[test]
     fn a_confirmed_card_dispatches_into_a_new_task_of_that_employee() {
-        let (_dir, db) = database();
+        let (dir, db) = database();
+        let repo = dir.path().join("desktop");
+        std::fs::create_dir_all(&repo).unwrap();
+        let repo_path = std::fs::canonicalize(&repo)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let projects_before: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM projects", [], |row| row.get(0))
+            .unwrap();
         let steward = crate::sessions::create_session_with_options(
             &db,
             crate::sessions::SessionCreateOptions {
@@ -703,7 +804,25 @@ mod tests {
         )
         .unwrap()
         .id;
-        let owner = employee(&db, "小爪");
+        // The employee is bound to one repository, which is the project its work
+        // runs in: a card names a remote, not a folder.
+        let owner = crate::sessions::create_session_with_options(
+            &db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("小爪".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                project_path: Some(repo_path.clone()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({"name": "小爪", "permissionMode": "accept-edits", "observe": false})
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
         let card = json!({
             "goal": "Fix the login timeout",
             "criteria": [{"id": "c1", "text": "A failing repro exists"}],
@@ -742,8 +861,42 @@ mod tests {
         let task = &confirmed["task"];
         assert_eq!(task["origin"], json!("steward"));
         assert_eq!(task["employeeSessionId"], json!(owner));
+        // The card's `repo.ref` is the branch the person confirmed.
         assert_eq!(task["branch"], json!("fix/login"));
         assert_eq!(task["sourceUtterance"], json!("登录超时今天修掉"));
+        // `repo.origin` is `host/owner/name`, so it must not create a project:
+        // before this was fixed it produced a phantom row in the person's list.
+        let projects_after: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM projects", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            projects_after,
+            projects_before + 1,
+            "only the employee's own repository is a project"
+        );
+        let phantom: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM projects WHERE path LIKE 'github.com%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phantom, 0, "a git remote was stored as a project path");
+        // The task works in the employee's project, and its session says so —
+        // the session's project is what the runtime launches the turn in.
+        assert_eq!(task["projectPath"], json!(repo_path));
+        let session_project: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT p.path FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
+                 WHERE s.id = ?1",
+                params![task["sessionId"].as_str().unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(session_project.as_deref(), Some(repo_path.as_str()));
         let delivery = repository::get(&db, confirmed["delivery"]["id"].as_str().unwrap())
             .unwrap()
             .unwrap();

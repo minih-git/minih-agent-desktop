@@ -199,9 +199,41 @@ pub(crate) fn migrate_v32_to_v33_tx(conn: &Connection, tx: &Transaction<'_>) -> 
     Ok(())
 }
 
+/// Rows the foreign key checker reports for the whole file.
+///
+/// A long-lived user database can arrive with violations already in it: orphan
+/// `messages`, `turns` or `artifacts` rows whose session was deleted by an older
+/// build are real and expected (the development database is clean, which is why
+/// this only shows up on a real one). Deleting them is a separate decision that
+/// needs the person's authorization and a backup, so this step never touches
+/// them. What it must prove is the narrower thing: the rebuild *added* none.
+fn foreign_key_violations(tx: &Transaction<'_>) -> Result<i64> {
+    Ok(
+        tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })?,
+    )
+}
+
+fn session_rows(tx: &Transaction<'_>) -> Result<i64> {
+    Ok(tx.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))?)
+}
+
 /// Replace `sessions` with the v33 table, keeping every row and re-pointing
 /// every reference at the new table.
+///
+/// Three things are proved before this transaction may commit:
+///
+/// - the copy kept every session (`sessions` has the same row count afterwards);
+/// - it introduced no new dangling reference. A file that already carries
+///   orphan rows — a real user database does — moves the same violations from
+///   the old table to the new one, so only an *increase* is a rebuild failure;
+/// - nothing else about the file changed, because the only statement that
+///   touches another table is the `ALTER TABLE ... RENAME`, which rewrites the
+///   references' target name in place.
 fn rebuild_sessions(tx: &Transaction<'_>) -> Result<()> {
+    let violations_before = foreign_key_violations(tx)?;
+    let rows_before = session_rows(tx)?;
     tx.execute_batch(SESSIONS_V33_DDL)
         .context("create sessions_v33")?;
     let columns = SESSION_COLUMNS_OLD.join(", ");
@@ -213,13 +245,17 @@ fn rebuild_sessions(tx: &Transaction<'_>) -> Result<()> {
         .context("drop sessions v32")?;
     tx.execute_batch("ALTER TABLE sessions_v33 RENAME TO sessions;")
         .context("rename sessions_v33")?;
-    let violations: i64 =
-        tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
-            row.get(0)
-        })?;
-    if violations > 0 {
+    let rows_after = session_rows(tx)?;
+    if rows_after != rows_before {
         return Err(anyhow!(
-            "the rebuilt sessions table left {violations} dangling references; rolling back to v32"
+            "the rebuild kept {rows_after} of {rows_before} sessions; rolling back to v32"
+        ));
+    }
+    let violations_after = foreign_key_violations(tx)?;
+    if violations_after > violations_before {
+        return Err(anyhow!(
+            "the rebuild increased dangling references from {violations_before} to \
+             {violations_after}; rolling back to v32"
         ));
     }
     Ok(())
@@ -534,5 +570,92 @@ mod tests {
                 [],
             )
             .unwrap();
+    }
+
+    fn violations(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    /// A real database arrives with orphan rows from an older build, so the step
+    /// must prove it *added* no dangling reference rather than that there are
+    /// none.
+    ///
+    /// Before this was fixed, one historical orphan refused the whole upgrade and
+    /// the application could not start (observed on a 525 MB v32 user file with
+    /// 214 781 violations), while every development database — and therefore
+    /// every test — was clean. Repairing those rows is a separate decision that
+    /// needs the person's authorization and a backup, so this step must carry
+    /// them across untouched.
+    #[test]
+    fn a_v32_database_with_historical_orphans_upgrades_and_keeps_them() {
+        let (dir, db) = database();
+        let session = crate::sessions::create_session_with_options(
+            &db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("Existing conversation".into()),
+                mode: Some("agent".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let path = dir.path().join("pi.sqlite");
+        // Rows whose session no longer exists, which is what an older build left
+        // behind when it deleted a session without cascading.
+        db.conn()
+            .pragma_update(None, "foreign_keys", false)
+            .unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO messages (id, session_id, seq, role, text, created_at)
+                 VALUES ('orphan-message', 'gone-session', 1, 'user', 'orphaned', 1);
+                 INSERT INTO turns (id, session_id, status, started_at)
+                 VALUES ('orphan-turn', 'gone-session', 'completed', 1);
+                 INSERT INTO artifacts (session_id, path, op, updated_at)
+                 VALUES ('gone-session', '/tmp/a.txt', 'write', 1);
+                 INSERT INTO session_todo (session_id, position, content, status, updated_at)
+                 VALUES ('gone-session', 0, 'orphaned', 'pending', 1);",
+            )
+            .unwrap();
+        db.conn().pragma_update(None, "foreign_keys", true).unwrap();
+        let before = violations(db.conn());
+        assert_eq!(before, 4, "the fixture must carry four orphan rows");
+        downgrade_to_v32(db.conn());
+        drop(db);
+
+        let db = Database::open(&path).unwrap();
+        assert_eq!(version(db.conn()), SCHEMA_VERSION);
+        assert_eq!(
+            violations(db.conn()),
+            before,
+            "the rebuild added or removed a dangling reference"
+        );
+        // The orphans are exactly what they were, in every table that holds one.
+        for (sql, expected) in [
+            (
+                "SELECT text FROM messages WHERE id = 'orphan-message'",
+                Some("orphaned"),
+            ),
+            (
+                "SELECT status FROM turns WHERE id = 'orphan-turn'",
+                Some("completed"),
+            ),
+            (
+                "SELECT op FROM artifacts WHERE session_id = 'gone-session'",
+                Some("write"),
+            ),
+            (
+                "SELECT content FROM session_todo WHERE session_id = 'gone-session'",
+                Some("orphaned"),
+            ),
+        ] {
+            let kept: Option<String> = db.conn().query_row(sql, [], |row| row.get(0)).unwrap();
+            assert_eq!(kept.as_deref(), expected, "{sql}");
+        }
+        let summaries = crate::sessions::list_sessions(&db).unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].id, session.id);
     }
 }

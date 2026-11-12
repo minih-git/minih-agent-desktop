@@ -410,11 +410,12 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
                 .and_then(Value::as_str)
                 .unwrap_or_default(),
             origin: "steward",
-            project_path: draft
-                .card
-                .pointer("/repo/origin")
-                .and_then(Value::as_str)
-                .map(str::to_owned),
+            // `repo.origin` is a normalized git remote (`host/owner/name`), not a
+            // directory: handing it to the project resolver created a phantom
+            // "project" that then appeared in the person's list. A card therefore
+            // works in the employee's own bound project, and resolving a remote
+            // origin to a local checkout belongs to the workspace slice.
+            project_path: None,
             branch: draft
                 .card
                 .pointer("/repo/ref")
