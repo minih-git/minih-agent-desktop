@@ -29,6 +29,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { SessionHoverCard } from "../features/sessions/SessionHoverCard";
 import { BotSidebarGroup } from "../features/bots/BotSidebarGroup";
+import { isStewardSession } from "../features/bots/bot-status";
 import { useSessionHoverCard } from "../features/sessions/useSessionHoverCard";
 import { isDefaultSessionTitle, useAppStore } from "../stores/app-store";
 import {
@@ -278,6 +279,7 @@ export function Sidebar({
   const settings = useAppStore((s) => s.settings);
   const prefetchSession = useAppStore((s) => s.prefetchSession);
   const selectSession = useAppStore((s) => s.selectSession);
+  const setWorkbenchEmployee = useAppStore((s) => s.setWorkbenchEmployee);
   const newSession = useAppStore((s) => s.newSession);
   const forkSessionAction = useAppStore((s) => s.forkSession);
   const openProject = useAppStore((s) => s.openProject);
@@ -2774,8 +2776,20 @@ export function Sidebar({
             and a bot session never appears in the lists below. */}
         <BotSidebarGroup
           activeSessionId={activeSessionId}
-          onOpen={(sessionId) => {
-            void selectSession(sessionId).catch(reportError);
+          onOpenBot={(bot) => {
+            // The steward is a conversation by definition — it proposes cards
+            // and reports in chat — so it opens as one. Every other employee
+            // opens its workbench: the list of what it is doing, which is what
+            // a person clicking a name is asking for (ADR
+            // bot-sessions-and-steward §7).
+            if (isStewardSession({ role: "bot", botProfile: bot.profile })) {
+              void selectSession(bot.sessionId).catch(reportError);
+              return;
+            }
+            setWorkbenchEmployee?.(bot.sessionId);
+          }}
+          onOpenTask={(task) => {
+            void selectSession(task.sessionId).catch(reportError);
           }}
         />
 

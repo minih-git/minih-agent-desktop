@@ -46,9 +46,13 @@ const { createSessionCollaborationService } = load(
 const { createTaskCardTool } = load("../electron/main/services/task-card-tool.ts", {
   "@minih-agent/shared": shared,
 });
+const tasksChanged = load("../electron/main/services/tasks-changed.ts", {
+  "@minih-agent/shared": shared,
+});
 const { registerBotIpc } = load("../electron/main/ipc/bot-ipc.ts", {
   "@minih-agent/shared": shared,
   "../services/task-cards-changed": taskCardsChanged,
+  "../services/tasks-changed": tasksChanged,
 });
 
 function ledgerRow(overrides = {}) {
@@ -94,6 +98,33 @@ function harness({ startTurnError } = {}) {
             createdAt: row.createdAt, updatedAt: row.updatedAt,
           },
           delivery: { ...row },
+          task: {
+            id: "task-1",
+            employeeSessionId: row.targetSessionId,
+            sessionId: "task-session-1",
+            title: row.content,
+            origin: "steward",
+            stage: "queued",
+            createdAt: row.createdAt,
+            shortId: "task-1",
+          },
+        };
+      }
+      // Reading the open tasks is how Main notices a stage moved on its own.
+      if (method === "task.list") {
+        return {
+          tasks: [
+            {
+              id: "task-1",
+              employeeSessionId: "router-backend",
+              sessionId: "task-session-1",
+              title: row.content,
+              origin: "steward",
+              stage: row.status === "queued" ? "queued" : "working",
+              createdAt: row.createdAt,
+              shortId: "task-1",
+            },
+          ],
         };
       }
       if (method === "session.collaboration.message") return { message: { ...row } };
@@ -127,6 +158,7 @@ function harness({ startTurnError } = {}) {
     hostId: () => "mac-mini",
   });
   const handlers = new Map();
+  const emitted = [];
   registerBotIpc({
     registrar: {
       ipcMain: {},
@@ -135,10 +167,11 @@ function harness({ startTurnError } = {}) {
       assertMainWindowSender: () => undefined,
     },
     getHost: () => host,
-    sendToRenderer: () => undefined,
+    sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
     sessionCollaboration: service,
   });
   return {
+    emitted,
     confirm: handlers.get(shared.IPC.invoke.taskCardConfirm),
     service,
     row: () => row,
@@ -154,10 +187,16 @@ test("clicking start on a card starts a turn and stamps the delivery", async () 
 
   await h.confirm({ draftId: "draft-1", cardHash: "a".repeat(64) });
 
-  assert.equal(h.turnStarts(), 1, "the employee session must actually start");
-  // Leaving `queued` with a turn id is what "the task is running" means.
+  assert.equal(h.turnStarts(), 1, "the work must actually start");
+  // Employee mode 0.5: the confirmed card's work runs in the task's own session,
+  // not in the employee's transcript (ADR bot-sessions-and-steward §7). The
+  // turn is still stamped on the same delivery row.
   assert.equal(h.row().status, "running");
   assert.equal(h.row().turnId, "turn-1");
+  // The host moves the delivery's target to the task session and records the
+  // turn on the same delivery row; the stub keeps the row it was given, so the
+  // identity asserted here is that one delivery, one turn.
+  assert.equal(h.row().id, "delivery-1");
 });
 
 test("a confirmation is never started twice", async () => {
@@ -238,4 +277,80 @@ test("a card the model proposes is announced to the app", async () => {
   // Without this the dock keeps the list it fetched on mount, so a card proposed
   // afterwards stays invisible until the person switches sessions.
   assert.deepEqual(changed, [{ sessionId: "steward-session", draftId: "draft-1" }]);
+});
+
+test("starting a card announces its new task exactly once", async () => {
+  const h = harness();
+
+  await h.confirm({ draftId: "draft-1", cardHash: "a".repeat(64) });
+
+  // One creation per confirmation: the task was created once, so the sidebar is
+  // told once that it exists. A later stage change is a separate, equally
+  // legitimate notice — what must not repeat is the creation.
+  const taskEvents = h.emitted.filter((event) => event.channel === shared.IPC.event.tasksChanged);
+  const created = taskEvents.filter((event) => event.payload.reason === "created");
+  assert.equal(created.length, 1);
+  assert.deepEqual(taskEvents[0].payload, {
+    employeeSessionId: "router-backend",
+    taskId: "task-1",
+    reason: "created",
+  });
+});
+
+test("a task create announces the new task once and opens nothing else", async () => {
+  const calls = [];
+  const emitted = [];
+  const host = {
+    isAvailable: () => true,
+    async call(method, params) {
+      calls.push({ method, params });
+      if (method === "task.create") {
+        return {
+          task: {
+            id: "task-9",
+            employeeSessionId: "router-backend",
+            sessionId: "task-session-9",
+            title: "Fix the login timeout",
+            origin: "direct",
+            stage: "queued",
+            createdAt: "2026-11-12T10:00:00.000Z",
+            shortId: "task-9",
+          },
+          session: { id: "task-session-9" },
+        };
+      }
+      return {};
+    },
+  };
+  const handlers = new Map();
+  registerBotIpc({
+    registrar: {
+      ipcMain: {},
+      handle: (channel, handler) => handlers.set(channel, handler),
+      handleWithEvent: (channel, handler) => handlers.set(channel, handler),
+      assertMainWindowSender: () => undefined,
+    },
+    getHost: () => host,
+    sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
+    sessionCollaboration: {},
+  });
+
+  await handlers.get(shared.IPC.invoke.taskCreate)({
+    employeeSessionId: "router-backend",
+    title: "Fix the login timeout",
+    origin: "direct",
+  });
+
+  assert.deepEqual(
+    calls.map((call) => call.method),
+    ["task.create"],
+    "creating a task is one host call and no ledger write",
+  );
+  const taskEvents = emitted.filter((event) => event.channel === shared.IPC.event.tasksChanged);
+  assert.equal(taskEvents.length, 1);
+  assert.deepEqual(taskEvents[0].payload, {
+    employeeSessionId: "router-backend",
+    taskId: "task-9",
+    reason: "created",
+  });
 });

@@ -313,3 +313,94 @@ ledger entry (through the RPC boundary, not only the repository), report-sequenc
 ordering, and the v30 -> v31 step for a fresh database, a v30 database, a
 re-opened database, and a step that stopped before its version stamp. The steward's tool boundary is proved by a later change that asks a
 steward-scoped delegate for `Write` and gets a denial.
+
+## Tasks under employees (employee mode 0.5, schema v33)
+
+Decision (2026-11-12). Employee mode 0.5 settles the three-layer model the
+prototype `员工模式-0.5-原型` describes: **an employee** is a long-lived person
+(a session with `role = 'bot'` and a profile), **a task** is one thing that
+employee is doing, and **the steward** is the default entry point that dispatches
+work and reports back.
+
+This section fixes the first two and the relation between them. It amends §1 and
+§5 above: an employee session is now a **container and a profile**, and it no
+longer runs turns of its own. Work runs in a task's own session.
+
+### 1. A task is a session owned by an employee
+
+A task is not a new identity for a worker. It is a row in `tasks` plus one
+session (`sessions.role = 'task'`, `sessions.owner_session_id` = the employee),
+so it keeps exactly the properties a session already has: one transcript, one
+project, one permission mode, one workspace, one place in history.
+
+- `tasks.origin` is `steward` (a confirmed task card) or `direct` (the person
+  typing into the employee's workbench). It answers "who started this", never
+  "who may do it".
+- `tasks.delivery_id` names the ledger delivery that carries the authorization,
+  for a steward-dispatched task. A direct task has none: the person's own request
+  is the authorization, and no card has to confirm their own sentence.
+- `tasks.stage` is the §4 stage vocabulary, written by the host only.
+- `tasks.project_id` / `branch` / `source_utterance` record where the task works
+  and what it was asked; `workspace_path` is reserved for the worktree slice and
+  is not written yet.
+- Archived is a timestamp, not a state machine: `tasks.archived_at` and
+  `sessions.archived_at` are written together, in one transaction, so a task
+  never leaves the sidebar while its session still looks active. Archiving twice
+  returns the first stamp instead of failing.
+
+### 2. Inheritance: what a task session takes from its employee
+
+A task session is created through the same helper the plugin's worker `spawn`
+uses (`session_collaboration::spawn_session`), so the rule has one
+implementation:
+
+- **inherited** — `mode` (`agent`), `project_id`, `thinking_level`, and
+  `permission_mode`. A child is never wider than its parent: an employee asking
+  for `ask` produces a task that asks.
+- **defaulted** — `project_id` is the employee's own project when the request
+  names none, because that is the repository the employee was hired to read.
+- **not inherited** — `role`, `bot_profile_json`, and the transcript. A task is
+  `role = 'task'` with no profile: it is addressed by its employee, never by
+  name, and copying an identity would make two rows claim to be one employee.
+- **never re-selected** — the model. A task runs on whatever the employee is
+  bound to at creation time, like any other derived session.
+
+### 3. An employee's dot and count come from its tasks
+
+`bot.list` derives an employee's status point and `openTaskCount` from the tasks it
+holds, not from a delivery aimed at the employee: waiting on the person wins, then
+work in motion, then idle. The employee's own ledger is now empty, so a dot read
+from it would always say idle — a bug this rule makes impossible.
+
+### 4. Surfaces (prototype ②, ③)
+
+- Sidebar: each employee row lists its open tasks (title · repository · stage),
+  shows the open count, and folds archived ones into one "history (N)" row.
+- Clicking an employee name opens its **workbench**: header (duty, model,
+  permission, scope), a direct-dispatch field (repository + text, Enter starts),
+  and tabs for tasks / done / profile / memory.
+- Clicking a task opens its **session**, which shows a header with the task's
+  name, employee @ repository, branch, stage, origin and short id. An archived
+  task's composer is closed and says so.
+- A task session does not appear in "My sessions" or a project group: it is
+  entered from its employee.
+
+### 5. What this section does not do
+
+Worktree creation and cleanup, the steward's dispatch rewrite, a "waiting for
+you" channel, employee memory, and hiring are later slices. `workspace_path`,
+the memory tab's content, and a per-repository model override exist as fields or
+placeholders and carry no behaviour yet.
+
+### Enforcement status after this section
+
+| Rule | Enforced | Where |
+| --- | --- | --- |
+| A task belongs to an employee, not to a conversation | **Yes** — `task.create` refuses a target whose role is not `bot` | `crates/host-core/src/tasks.rs` |
+| A task session inherits its employee's configuration and none of its identity | **Yes** — one `spawn_session`, `role = 'task'`, no profile | `session_collaboration/mod.rs` |
+| A stage moves only when the bound delivery moves | **Yes** — `progress::report` and `settle_turn` write it in their own transaction | `session_collaboration/progress.rs`, `settlement.rs` |
+| A confirmed card's work runs in its task | **Yes** — the confirmation creates the task and re-points the delivery | `session_collaboration/drafts.rs` |
+| Archive is one stamp in two places, repeatable | **Yes** — one transaction, first stamp wins | `tasks::archive` |
+| The model cannot reach the task surface | **Yes** — `task.*` is not in `HOST_PROXY_ALLOWED` | `packages/host-runtime` test |
+| Memory per employee | **No** — the tab states it is empty | later slice |
+| A worktree per task | **No** — `workspace_path` is reserved and unwritten | later slice |

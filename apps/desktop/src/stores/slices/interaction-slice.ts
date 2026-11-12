@@ -38,6 +38,7 @@ export function createInteractionSlice({
 }: InteractionSliceDependencies): Pick<
   AppState,
   | "setPage"
+  | "setWorkbenchEmployee"
   | "openSidebarPluginView"
   | "closeSidebarPluginView"
   | "setSettingsTab"
@@ -70,6 +71,11 @@ export function createInteractionSlice({
       runtime.beginNavigationIntent();
       const record = opts?.record !== false;
       set((state) => {
+        // Leaving the chat route leaves the workbench: it is a view of a
+        // session, and every other page owns the center pane.
+        if (page !== "chat" && state.workbenchEmployeeId) {
+          return { page, workbenchEmployeeId: null };
+        }
         if (!record) return { page };
         const entry = {
           page,
@@ -89,6 +95,12 @@ export function createInteractionSlice({
           navIndex: nextStack.length - 1,
         };
       });
+    },
+
+    setWorkbenchEmployee: (sessionId) => {
+      runtime.beginNavigationIntent();
+      get().setPage("chat");
+      set({ workbenchEmployeeId: sessionId });
     },
 
     openSidebarPluginView: (ref) => {

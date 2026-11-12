@@ -24,9 +24,11 @@ import { UpdateBanner } from "../../components/UpdateBanner";
 import { cx, TooltipButton } from "../../components/ui";
 import { WindowControls } from "../../components/WindowControls";
 import { useCopyTex } from "../../hooks/use-copy-tex";
+import { useAppStore } from "../../stores/app-store";
 import { api } from "../../lib/api";
 import { PortalVisibilityProvider } from "../../lib/portal-visibility";
 import { workPanelLayout } from "../../lib/work-panel-resize";
+import { useBots } from "../bots/use-bots";
 import { PluginViewPage } from "../plugins/PluginViewPage";
 import { LiveVoiceStatusHost } from "../voice/live/LiveVoiceStatusHost";
 import { CollapsedTitlebarActions, RoutePending } from "./chrome";
@@ -48,6 +50,10 @@ const PluginsPage = lazy(() =>
   })),
 );
 const loadChatSurface = () => import("../../components/ChatSurface");
+const loadEmployeeWorkbench = () => import("../bots/EmployeeWorkbench");
+const EmployeeWorkbench = lazy(() =>
+  loadEmployeeWorkbench().then((module) => ({ default: module.EmployeeWorkbench })),
+);
 const ChatSurface = lazy(() =>
   loadChatSurface().then((module) => ({
     default: module.ChatSurface,
@@ -63,6 +69,7 @@ export function AppShell() {
     t,
     ready,
     page,
+    workbenchEmployeeId,
     activeSessionId,
     workPanelOpen,
     searchOpen,
@@ -104,6 +111,13 @@ export function AppShell() {
   } = useAppShellRuntime();
   const [toastAnchor, setToastAnchor] = useState<HTMLElement | null>(null);
   const settingsOpen = page === "settings";
+  // An employee's workbench owns the center pane in place of a conversation
+  // (ADR bot-sessions-and-steward §7). It is looked up in the roster rather than
+  // passed as data, so the pane always shows the employee's current profile.
+  const workbench = useBots();
+  const workbenchEmployee = workbenchEmployeeId
+    ? workbench.bots.find((bot) => bot.sessionId === workbenchEmployeeId)
+    : undefined;
   useCopyTex();
   useEffect(() => {
     void loadChatSurface().catch((error: unknown) => {
@@ -299,6 +313,13 @@ export function AppShell() {
                     <div className="route-surface route-page">
                       <PluginViewPage />
                     </div>
+                  ) : workbenchEmployee ? (
+                    <EmployeeWorkbench
+                      employee={workbenchEmployee}
+                      onOpenTask={(task) => {
+                        void useAppStore.getState().selectSession(task.sessionId);
+                      }}
+                    />
                   ) : (
                     <ChatSurface visible={page === "chat"} />
                   )}

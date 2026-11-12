@@ -9115,6 +9115,35 @@ selection already in place shows it without waiting for another event.
 - **Status**: Draft. Event-persistence and runtime regression coverage is
   expected; this record does not claim it has run.
 
+#### E2E-BOT-task-session-created-under-employee: Work started for an employee runs in a task of its own
+
+- **Preconditions**: Two employees exist and at least one repository is known. A
+  steward session can propose a task card, and the person can open an employee's
+  workbench.
+- **Steps**: 1) Click an employee's name and type a task into the workbench
+  field; press Enter. 2) Observe the sidebar row under that employee and the
+  header of the conversation that opened. 3) Archive that task from the task's
+  own header or the API the workbench uses, then reopen the employee's history
+  row. 4) Repeat step 1 for the steward: propose a card, confirm it, and follow
+  the dispatched work.
+- **Expected**: The typed task creates a task row and its own session, opens it,
+  and sends the typed text as its first user message; no card is shown. The
+  employee row lists the task with its repository and stage, and its open count
+  is 1. The task session's header names the employee @ repository, the stage, the
+  origin (`direct` or `from your steward`) and a short id. The session does not
+  appear in "My sessions" or a project group. Archiving moves the task into
+  history (N) and marks the session's header archived, with its composer closed.
+  A confirmed card's delivery targets the task session it created, not the
+  employee's own transcript.
+- **Specs linked**: `03-runtime/04-data-storage.md` §4.19a, ADR
+  `bot-sessions-and-steward` §7
+- **Acceptance**: C (conversation & stream), F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 1
+- **Status**: Draft. `apps/desktop/test/bot-task-sessions-user-path.test.mjs`
+  drives the renderer path in a real Electron window and
+  `crates/host-core/src/tasks.rs` covers the host side; this record does not
+  claim a full end-to-end run against a live host.
+
 #### E2E-146a: Approved Plan/Goal progress text continues once
 
 - **Preconditions**: A project-bound session has an approved Plan or Goal and a

@@ -29,6 +29,10 @@ import {
   IconSearch,
 } from "./icons";
 import { Button, Input, TooltipButton } from "./ui";
+import { useBots } from "../features/bots/use-bots";
+import { useTasks } from "../features/bots/use-tasks";
+import { taskStageLabelKey, taskStatusTone } from "../features/bots/bot-status";
+import { taskRepoName } from "../features/bots/BotTaskList";
 
 function projectName(path?: string | null, name?: string | null) {
   if (name) return name;
@@ -105,6 +109,20 @@ export function ConversationTopbar({
     : t("nav.search");
 
   const activeSession = sessions.find((session) => session.id === activeSessionId);
+  // A task session's header answers "whose work is this, where, and who is
+  // holding it" (ADR bot-sessions-and-steward §7, prototype ③). The task row is
+  // the authority; the session only says it is one.
+  const isTaskSession = activeSession?.role === "task";
+  // Every task, not one employee's: the header asks "which task is this
+  // session", which a per-employee read cannot answer.
+  const taskState = useTasks(null, { includeArchived: true });
+  const task = isTaskSession
+    ? taskState.tasks.find((row) => row.sessionId === activeSessionId)
+    : undefined;
+  const bots = useBots();
+  const taskEmployee = task
+    ? bots.bots.find((bot) => bot.sessionId === task.employeeSessionId)
+    : undefined;
 
   /*
    * Inline rename. The editor is keyed by the session it belongs to, so a
@@ -322,6 +340,30 @@ export function ConversationTopbar({
             </h1>
           )}
           {remoteSession && <span className="thread-item-source">{t("remote:remote")} · {activeSession?.remoteHostLabel}</span>}
+          {task ? (
+            <div className="ct-task-meta" data-task-header={task.id}>
+              <span className="ct-chip" data-task-origin={task.origin}>
+                {taskEmployee?.profile.name ?? task.employeeSessionId}
+                {taskRepoName(task) ? ` @ ${taskRepoName(task)}` : ""}
+              </span>
+              {task.branch ? <span className="ct-chip">{task.branch}</span> : null}
+              {task.archivedAt ? (
+                <span className="ct-chip archived" data-task-stage="archived">
+                  {t("bots.tasks.archived")}
+                </span>
+              ) : (
+                <span className={`ct-chip ${taskStatusTone(task)}`} data-task-stage={task.stage}>
+                  {t(taskStageLabelKey(task.stage))}
+                </span>
+              )}
+              <span className="ct-chip">
+                {task.origin === "steward"
+                  ? t("bots.workbench.originSteward")
+                  : t("bots.workbench.originDirect")}
+              </span>
+              <span className="ct-chip">#{task.shortId}</span>
+            </div>
+          ) : null}
         </div>
       </div>
 

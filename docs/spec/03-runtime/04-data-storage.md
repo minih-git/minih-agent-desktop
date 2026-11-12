@@ -1106,6 +1106,69 @@ Existing rows keep their exact meaning: every pre-existing session is an
 ordinary conversation, and every pre-existing delivery is a plain delivery with
 no Mandate, no stage, and `report_seq = 0`.
 
+### 4.19a tasks — one piece of work an employee holds (schema v33, ADR bot-sessions-and-steward §7)
+
+An employee session is a container and a profile; the work it does is a task,
+and a task is a session of its own. The row below records what only this task
+knows, so nothing about identity, delivery or permission is duplicated.
+
+```sql
+CREATE TABLE tasks (
+  id                  TEXT PRIMARY KEY,
+  employee_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  session_id          TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+  title               TEXT NOT NULL,
+  origin              TEXT NOT NULL CHECK (origin IN ('steward', 'direct')),
+  project_id          INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+  branch              TEXT,
+  workspace_path      TEXT,          -- reserved for the worktree slice; unwritten
+  stage               TEXT NOT NULL CHECK (stage IN (
+                        'person/answer', 'person/accept', 'blocked', 'failed',
+                        'queued', 'waiting', 'working')),
+  delivery_id         TEXT,          -- the ledger delivery that authorizes it
+  source_utterance    TEXT,
+  created_at          INTEGER NOT NULL,
+  archived_at         INTEGER
+);
+CREATE INDEX idx_tasks_employee ON tasks(employee_session_id, archived_at);
+CREATE INDEX idx_tasks_delivery ON tasks(delivery_id) WHERE delivery_id IS NOT NULL;
+
+-- sessions (v33)
+role               TEXT NOT NULL DEFAULT 'user'
+                   CHECK (role IN ('user', 'bot', 'task')),
+owner_session_id   TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+archived_at        INTEGER
+```
+
+- `session_id` is `UNIQUE`: one session carries exactly one task. That is what
+  makes "the task of this conversation" a lookup rather than a guess.
+- `origin` is `steward` for work a confirmed card dispatched and `direct` for
+  work the person typed into the employee's workbench. It is provenance only.
+- `stage` uses the §4.19 vocabulary and is written by the host alone: the same
+  transaction that accepts a ledger report (`session_collaboration.progress`)
+  and the one that settles a turn (`settlement`) move a task bound to that
+  delivery.
+- `archived_at` is written together with `sessions.archived_at` in one
+  transaction. A second archive keeps the first timestamp.
+- `workspace_path` exists for a later slice that gives a task an isolated
+  worktree (ADR 0329); nothing writes it yet.
+
+**Schema v32 -> v33.** The step is additive in what it stores but forces one
+table rebuild, because SQLite cannot alter `sessions.role`'s `CHECK`. The
+rebuild copies every column of `sessions`, drops and renames the copy, and
+re-points every reference at the new table; the two new columns are then added
+with `ALTER TABLE`, and the `tasks` table is created from one DDL shared with
+the fresh schema.
+
+Because dropping a table other tables reference makes SQLite run an implicit
+`DELETE FROM`, the rebuild runs with constraint enforcement off
+(`migrate_v32_to_v33` sets `PRAGMA foreign_keys = OFF` before its transaction —
+inside one the pragma is a silent no-op) and validates the whole file with
+`pragma_foreign_key_check` before committing. The step refuses to run if
+enforcement is still on, rather than risk emptying every session-owned table.
+A pre-existing session keeps its exact role and its NULL new columns, and
+`tasks` starts empty.
+
 ### 4.7 messages — transcript index
 
 The transcript itself is the per-session JSONL file (§2.1); this table is its
@@ -1992,6 +2055,13 @@ truncating at a guessed position.
   starts using their values still owns their validation. That early exception
   is closed: a later structural change to these tables takes an ordered
   versioned step again (v31 below).
+- **Schema v33 rebuilds `sessions` once.** It widens `sessions.role` to include
+  `task`, adds `sessions.owner_session_id` and `sessions.archived_at`, and adds
+  the `tasks` table (ADR bot-sessions-and-steward §7, §4.19a). SQLite cannot
+  alter a `CHECK`, so the table is rebuilt with its rows copied and its
+  references re-pointed; the step runs with foreign key enforcement off and
+  validates the file before committing, and it stamps `user_version = 33` only
+  after its last statement succeeds.
 - **Schema v31 is additive.** Adds `sessions.role` (default `user`),
   `sessions.bot_profile_json`, and
   `session_collaboration_messages.mandate_json`, `stage`, `report_seq`

@@ -47,6 +47,7 @@ import {
 } from "../features/chat/composer/model";
 import { editorSelectionRange } from "../features/chat/composer/editor";
 import { useComposerAttachments } from "../features/chat/composer/hooks/useComposerAttachments";
+import { useTaskSession } from "../features/bots/use-tasks";
 import { useComposerCompletions } from "../features/chat/composer/hooks/useComposerCompletions";
 import { useFollowUpSuggestion } from "../features/chat/composer/hooks/useFollowUpSuggestion";
 import { useComposerDraft } from "../features/chat/composer/hooks/useComposerDraft";
@@ -251,9 +252,17 @@ export function Composer({
   } = attachments;
   const executionActive = isActivePlanExecution(planCheckpoint);
   const runActive = isRunning || executionActive;
+  // A task session is the employee's own work, so its composer says so: the
+  // person is speaking to that employee directly, not to the steward (ADR
+  // bot-sessions-and-steward §7). An archived task is finished work, and its
+  // composer is closed rather than inviting another message under it.
+  const task = useTaskSession(activeSessionSummary);
+  const archivedTask = Boolean(task?.archivedAt);
   const inputBlocked = approvalPending || pasting || nativeInputBlocked;
   const controlsBlocked = approvalPending || nativeSession || !sessionAllows(capabilitySession, "canConfigureModel");
-  const sendBlocked = approvalPending || pasting || nativeInputBlocked;
+  // A finished task accepts no further work: its session is a record, and the
+  // input is closed with the reason in the placeholder.
+  const sendBlocked = approvalPending || pasting || nativeInputBlocked || archivedTask;
   // Edit returns one queued row to the composer. The row is removed and its
   // captured draft becomes the input, so the input must be empty first: the
   // live read is the only current source (the draft cache is not per keystroke).
@@ -267,7 +276,13 @@ export function Composer({
   const placeholderKeys = PLACEHOLDER_KEYS[variant];
   const placeholderKey =
     placeholderKeys[placeholderIndex % placeholderKeys.length] ?? placeholderKeys[0];
-  const placeholderText = t(placeholderKey);
+  const placeholderText = archivedTask
+    ? t("bots.tasks.archivedPlaceholder")
+    : task
+      ? t("bots.tasks.composerPlaceholder", {
+          name: task.employeeName ?? t("bots.group.title"),
+        })
+      : t(placeholderKey);
 
   const textareaMetricsRef = useRef<{ lineHeight: number; verticalChrome: number } | null>(null);
   const appliedHeightRef = useRef<number | null>(null);

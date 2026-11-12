@@ -37,6 +37,8 @@ window.minihAgent = { platform: "linux", on() { return () => {}; },
     if (channel === IPC.invoke.updatesGetState) return Promise.resolve({ ok: true, data: { status: "idle", currentVersion: "0.20.5" } });
     // The sidebar also lists employees now; this fixture has none.
     if (channel === IPC.invoke.botList) return Promise.resolve({ ok: true, data: { bots: [] } });
+    // The employee group also lists its tasks (ADR bot-sessions-and-steward §7).
+    if (channel === IPC.invoke.taskList) return Promise.resolve({ ok: true, data: { tasks: [] } });
     unexpected.push(channel);
     return Promise.resolve({ ok: false, error: { code: "TEST_UNEXPECTED", message: "Unexpected fixture request" } });
   } };
