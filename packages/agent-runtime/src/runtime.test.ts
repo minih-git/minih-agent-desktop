@@ -8775,6 +8775,12 @@ describe("DesktopAgentRuntime subagents", () => {
     );
   }
 
+  function sendTool(runtime: DesktopAgentRuntime) {
+    return (runtime as any).agent.state.tools.find(
+      (tool: any) => tool.name === "TaskSend",
+    );
+  }
+
   it("offers Task as a core Agent-mode tool that advertises every definition", async () => {
     const runtime = createRuntime({ subagents: [explorer, pinned] });
     const tool = taskTool(runtime);
@@ -9052,6 +9058,115 @@ describe("DesktopAgentRuntime subagents", () => {
       expect(denied.details.error).toContain("not available for delegation");
       expect(subagentRuns.calls).toHaveLength(0);
     } finally { await runtime.dispose(); }
+  });
+
+  it("offers TaskSend only while a delegation is running, and routes it to that delegate", async () => {
+    const runtime = createRuntime({ subagents: [explorer] });
+    const tool = sendTool(runtime);
+
+    // Core, like the rest of the delegation lifecycle: correcting course
+    // should not need a ToolSearch round trip first.
+    expect(tool).toBeDefined();
+    expect((runtime as any).deferredToolNames.has("TaskSend")).toBe(false);
+    expect(tool.description).toContain("instead of calling TaskStop");
+
+    // Unknown id: nothing to deliver to.
+    const unknown = await tool.execute("send-unknown", {
+      delegationId: "no-such-delegation",
+      message: "Change of plan.",
+    });
+    expect(unknown.details.error).toContain('Unknown delegation "no-such-delegation"');
+    expect(unknown.details.error).toContain("TaskList");
+
+    // Empty and oversized messages are refused before anything is queued.
+    const empty = await tool.execute("send-empty", {
+      delegationId: "no-such-delegation",
+      message: "   ",
+    });
+    expect(empty.details.error).toContain("non-empty");
+    const oversized = await tool.execute("send-big", {
+      delegationId: "no-such-delegation",
+      message: "x".repeat(12_001),
+    });
+    expect(oversized.details.error).toContain("the limit is 12000");
+
+    await runtime.dispose();
+  });
+
+  it("reports the resume path when the delegation has already settled", async () => {
+    const runtime = createRuntime({ subagents: [explorer] });
+    subagentRuns.calls.length = 0;
+    subagentRuns.deferred = false;
+    subagentRuns.result = {
+      agentName: "explorer",
+      modelId: "local-model",
+      thinkingLevel: "off",
+      status: "completed",
+      report: "Found it.",
+      turns: 1,
+      toolCalls: 0,
+    };
+    const started = await taskTool(runtime).execute("task-1", {
+      agent: "explorer",
+      task: "Search.",
+    });
+    const delegationId = started.details.delegationId as string;
+    await (runtime as any).delegations.get(delegationId).completion;
+
+    const refused = await sendTool(runtime).execute("send-settled", {
+      delegationId,
+      message: "One more thing.",
+    });
+
+    expect(refused.details.error).toContain("no longer running");
+    expect(refused.details.error).toContain(`Task(resume: "${delegationId}")`);
+    await runtime.dispose();
+  });
+
+  it("declares TaskSend in contract modes and rejects its execution there", async () => {
+    for (const mode of ["plan", "goal"] as const) {
+      const runtime = createRuntime({ mode, subagents: [explorer] });
+      const tool = sendTool(runtime);
+      // Declared for conversation compatibility, refused before it can steer.
+      expect(tool).toBeDefined();
+      await expect(
+        tool.execute("blocked-send", {
+          delegationId: "whatever",
+          message: "Change of plan.",
+        }),
+      ).rejects.toThrow(`not allowed in ${mode}`);
+      await runtime.dispose();
+    }
+  });
+
+  it("passes the message to the running delegate's own queue", async () => {
+    const runtime = createRuntime({ subagents: [explorer] });
+    subagentRuns.calls.length = 0;
+    subagentRuns.deferred = true;
+    const started = await taskTool(runtime).execute("task-live", {
+      agent: "explorer",
+      task: "Search.",
+    });
+    const delegationId = started.details.delegationId as string;
+    const record = (runtime as any).delegations.get(delegationId);
+    const send = vi.fn(() => ({ kind: "queued" }));
+    record.run = { send };
+
+    const queued = await sendTool(runtime).execute("send-live", {
+      delegationId,
+      message: "Use the new dialog.",
+    });
+
+    expect(send).toHaveBeenCalledWith("Use the new dialog.");
+    expect(queued.details).toMatchObject({
+      delegationId,
+      agent: "explorer",
+      status: "queued",
+    });
+    expect(queued.content[0].text).toContain("Instruction queued for explorer");
+
+    subagentRuns.deferred = false;
+    await runtime.dispose();
   });
 
   it("is the only tool allowed to run in parallel", async () => {

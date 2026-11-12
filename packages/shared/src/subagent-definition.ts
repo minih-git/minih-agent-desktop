@@ -106,19 +106,23 @@ export const SUBAGENT_INHERIT_TOKEN = "inherit";
  * has no user. `ToolSearch` and `new_context` mutate the parent runtime's
  * deferred-tool set and compaction flag, so they stay denied even though the
  * child receives the full catalog without searching. `ContextUsage` reports the
- * parent runtime's own budget, which a delegate does not run under. Handing work to another
- * session is the parent's own capability: a delegate has no user to confirm an
- * ambiguous target with, no standing to start another session's turn, and no
- * user who opted into spending the session-creation model, so `SessionList` /
- * `SessionSend` / `SessionResult` / `SessionCreate` stay denied too (ADR
- * builtin-session-messaging §4, ADR session-create-tool,
- * `03-tools-and-permissions.md` §10.2).
+ * parent runtime's own budget, which a delegate does not run under. Steering a
+ * running delegation (`TaskSend`) is the parent's own handle on work it
+ * started; a delegate that could steer another would also be steering work its
+ * own brief never authorized, so it stays denied with the rest of the Task
+ * family. Handing work to another session is the parent's own capability: a
+ * delegate has no user to confirm an ambiguous target with, no standing to
+ * start another session's turn, and no user who opted into spending the
+ * session-creation model, so `SessionList` / `SessionSend` / `SessionResult` /
+ * `SessionCreate` stay denied too (ADR builtin-session-messaging §4, ADR
+ * session-create-tool, `03-tools-and-permissions.md` §10.2).
  */
 export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
   "Task",
   "TaskWait",
   "TaskList",
   "TaskStop",
+  "TaskSend",
   "EnterPlanMode",
   "EnterGoalMode",
   "TodoWrite",

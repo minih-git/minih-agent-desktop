@@ -178,3 +178,37 @@ test("a call with no task argument degrades to an empty prompt", () => {
   const transcript = buildSubagentTranscript(messages, "del-1");
   assert.equal(transcript.turns[0].task, "");
 });
+
+test("an instruction sent to a running delegate is part of its conversation", () => {
+  // ADR parent-steers-running-delegation: the parent's mid-run instruction is a
+  // delegate user row, so the delegate's own tab shows it in place rather than
+  // hiding the correction that changed its course.
+  const messages = [
+    taskCall("call-1", "Find the permission dialog", {
+      toolResult: { delegationId: "del-1" },
+    }),
+    message("instr-1", "Use the new dialog, not the old one.", {
+      role: "user",
+      createdAt: new Date(1).toISOString(),
+      parentToolCallId: "call-1",
+      agentName: "explorer",
+    }),
+    message("reply-1", "Rebuilt the dialog.", {
+      role: "assistant",
+      createdAt: new Date(2).toISOString(),
+      parentToolCallId: "call-1",
+      agentName: "explorer",
+    }),
+  ];
+
+  const transcript = buildSubagentTranscript(messages, "del-1");
+
+  assert.deepEqual(
+    transcript.turns[0].rows.map((row) => row.kind),
+    ["instruction", "answer"],
+  );
+  assert.equal(
+    transcript.turns[0].rows[0].message.content,
+    "Use the new dialog, not the old one.",
+  );
+});

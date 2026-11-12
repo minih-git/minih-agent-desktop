@@ -528,6 +528,21 @@ describe("resolveSubagentToolNames", () => {
     }
   });
 
+  it("never hands a delegate the tool that steers a running delegation", () => {
+    // TaskSend is the parent's own handle on work it started; a delegate that
+    // could steer one could also redirect work its own brief never authorized
+    // (ADR parent-steers-running-delegation).
+    expect(SUBAGENT_INHERIT_DENY_TOOLS).toContain("TaskSend");
+    const resolved = resolveSubagentToolNames(
+      { tools: [], inheritTools: true },
+      [...parent, "TaskSend"],
+    );
+    expect(resolved).not.toContain("TaskSend");
+    expect(resolveSubagentToolNames({ tools: ["TaskSend"] }, parent)).not.toContain(
+      "TaskSend",
+    );
+  });
+
   it("never hands a delegate the parent's background task tools", () => {
     // Background processes belong to the session that started them; a delegate
     // reading or stopping one would act on the user's server, not its own task.

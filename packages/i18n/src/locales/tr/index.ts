@@ -425,6 +425,7 @@ export const tr = {
     followUpSuggestionSend: "Bu öneriyi göndermek için tıklayın",
     sendWhileRunning: "Takip mesajı gönder · {{shortcut}} ile yönlendir",
     steeringUnavailable: "Bu tur artık yönlendirme kabul edemiyor. Taslağınız korundu.",
+    delegateInstruction: "Alt ajana gönderilen talimat",
     sideNote: "Ara not",
     nativeSessionBusy: "Bu yerel Pi oturumu hâlâ yanıtlıyor. Göndermeden önce durdurun veya yanıtın bitmesini bekleyin.",
     stopGenerating: "Oluşturmayı durdur",

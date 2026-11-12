@@ -437,6 +437,7 @@ export const en = {
     followUpSuggestionSend: "Click to send this suggestion",
     sendWhileRunning: "Send follow-up · {{shortcut}} to steer",
     steeringUnavailable: "This turn can no longer accept steering. Your draft was kept.",
+    delegateInstruction: "Instruction to the subagent",
     sideNote: "Side note",
     nativeSessionBusy: "This native Pi session is still replying. Stop it or wait for the reply to finish before sending.",
     stopGenerating: "Stop generating",

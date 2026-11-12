@@ -415,6 +415,7 @@ export const ptBR = {
     followUpSuggestionSend: "Clique para enviar esta sugestão",
     sendWhileRunning: "Enviar acompanhamento · {{shortcut}} para orientar o agente",
     steeringUnavailable: "Não é mais possível orientar esta rodada. Seu rascunho foi mantido.",
+    delegateInstruction: "Instrução ao subagente",
     sideNote: "Nota paralela",
     nativeSessionBusy: "Esta sessão nativa do Pi ainda está respondendo. Interrompa-a ou aguarde a resposta terminar antes de enviar.",
     stopGenerating: "Parar de gerar",

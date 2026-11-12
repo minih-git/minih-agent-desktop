@@ -91,11 +91,27 @@ export const SUBAGENT_LIST_TOOL_NAME = "TaskList";
 /** Stop running delegations (ADR 0089). */
 export const SUBAGENT_STOP_TOOL_NAME = "TaskStop";
 
+/** Hand one more instruction to a running delegation (ADR parent-steers-running-delegation). */
+export const SUBAGENT_SEND_TOOL_NAME = "TaskSend";
 /** The report is the only thing that enters the parent's context; keep it
  * from becoming the context problem delegation was supposed to avoid. */
 export const MAX_SUBAGENT_REPORT_CHARS = 12_000;
 
 export type SubagentRunStatus = SharedSubagentRunStatus;
+/**
+ * Outcome of one parent-to-delegate instruction (ADR
+ * parent-steers-running-delegation). `queued` means the message entered the
+ * delegate's own queue and will reach its next model request; anything else is
+ * a refusal the parent model can act on.
+ */
+export type SubagentSendOutcome =
+  | { kind: "queued" }
+  | { kind: "refused"; code: SubagentSendRefusalCode; message: string };
+export type SubagentSendRefusalCode =
+  /** The run already committed to producing its final result. */
+  | "SUBAGENT_RUN_CLOSING"
+  /** The run was cancelled: user Stop, `TaskStop`, or runtime disposal. */
+  | "SUBAGENT_RUN_ABORTED";
 
 export type SubagentRunResult = {
   agentName: string;
@@ -119,6 +135,12 @@ export type SubagentRunResult = {
   outputTruncated?: boolean;
   /** File path in session scratch where the unclipped report was preserved (ADR 0062). */
   scratchReportPath?: string;
+  /** Parent instructions this run accepted and any it had to discard. */
+  steering?: {
+    delivered: number;
+    /** Queue entries dropped because the run was cancelled by an abort. */
+    discarded: number;
+  };
   error?: {
     code: string;
     message: string;
@@ -217,6 +239,20 @@ export function composeSubagentSystemPrompt(options: {
     .join("\n\n");
 }
 
+/** Text of a user message, whether it arrived as a string or text blocks. */
+function userMessageText(message: AgentMessage): string {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) =>
+      block && typeof block === "object" && typeof (block as { text?: unknown }).text === "string"
+        ? (block as { text: string }).text
+        : "",
+    )
+    .join("");
+}
+
 function boundedReport(value: string): string {
   const text = value.trim();
   if (text.length <= MAX_SUBAGENT_REPORT_CHARS) return text;
@@ -274,6 +310,23 @@ export class SubagentRun {
     claim: (error, phase) => this.claimProviderRetry(error, phase),
   };
   private readonly runAbortController = new AbortController();
+  /** Instructions this run accepted from its parent, delivered or still queued. */
+  private acceptedSteering = 0;
+  /**
+   * The exact message objects queued by `send()`, matched by identity when the
+   * loop replays them. The opening brief is also a user message, and it must
+   * never become a delegate row: resume rebuilds it from the `Task` arguments.
+   */
+  private readonly injectedSteering = new Set<AgentMessage>();
+  /** Accepted instructions the delegate's loop actually picked up. */
+  private deliveredSteering = 0;
+  /** Instructions dropped because the run was cancelled instead of delivered. */
+  private discardedSteering = 0;
+  /** Set once the run has committed to producing its final result: every
+   * later `send()` is refused, so a parent instruction is either delivered or
+   * explicitly rejected — never silently dropped. */
+  private closed = false;
+  private sendRefusal?: string;
 
   constructor(opts: SubagentRunOptions) {
     this.opts = opts;
@@ -365,21 +418,51 @@ export class SubagentRun {
       }
       await this.agent.prompt(this.opts.task);
       await this.agent.waitForIdle();
-      while (!signal?.aborted) {
+      // One loop, so every idle checks both recovery and the steering queue
+      // (ADR parent-steers-running-delegation §3). A queued message means the
+      // delegate is not done, so delivering it before the run commits to a
+      // result is what keeps an accepted instruction from being dropped — and
+      // checking it here, rather than once after `prompt()`, means one that
+      // arrives while the delegate is recovering is delivered too.
+      while (!this.runSignal().aborted) {
+        // Recovery comes first. A failure is repaired against the tail it was
+        // recorded on; delivering an instruction ahead of that would call
+        // `continue()` on a failed assistant row, and pi answers that by
+        // replaying the queue as a fresh prompt over the failure — retry and
+        // fallback both skipped, and the failed row carried into the request.
         if (this.pendingProviderRetry) {
           await this.retryPendingProviderFailure();
-        } else if (this.streamError && this.useNextModel()) {
+          continue;
+        }
+        if (this.streamError && this.useNextModel()) {
           await this.agent.continue();
           await this.agent.waitForIdle();
-        } else {
-          break;
+          continue;
         }
+        // Only a settled, healthy turn boundary takes an instruction.
+        if (this.steerIsResumable()) {
+          const before = this.deliveredSteering;
+          await this.agent.continue();
+          await this.agent.waitForIdle();
+          if (this.deliveredSteering === before) {
+            // The queue itself refused it; stop retrying.
+            this.agent.clearAllQueues?.();
+            break;
+          }
+          continue;
+        }
+        break;
       }
     } catch (error) {
       caughtError = classifyAgentError(error);
     } finally {
       signal?.removeEventListener("abort", onAbort);
       this.finalizeCurrentAssistant();
+      // Past this point the run has committed to its final result: a later
+      // `send()` is refused instead of being queued behind a closed run, and
+      // anything still queued is reported as dropped rather than forgotten.
+      this.closed = true;
+      this.discardUnsentSteering();
     }
 
     if (signal?.aborted) {
@@ -426,6 +509,111 @@ export class SubagentRun {
       });
     }
     return this.result("completed", this.lastReportText);
+  }
+
+  /**
+   * Hand the delegate one more instruction from the agent that started it
+   * (ADR parent-steers-running-delegation).
+   *
+   * The message is queued through pi's steering queue, so it reaches the model
+   * after the current assistant turn and its tool batch, before the next
+   * request — never in the middle of a tool call. `run()` drains that queue
+   * after every idle instead of letting the run end with a message still
+   * waiting, and refuses every send once it has committed to a result. So a
+   * caller sees exactly two outcomes: queued for delivery, or refused.
+   */
+  send(text: string): SubagentSendOutcome {
+    const message = text.trim();
+    if (!message) {
+      return {
+        kind: "refused",
+        code: "SUBAGENT_RUN_CLOSING",
+        message: "An instruction to a running subagent needs a non-empty message.",
+      };
+    }
+    const abortReason = this.sendRefusal;
+    if (abortReason) {
+      return { kind: "refused", code: "SUBAGENT_RUN_ABORTED", message: abortReason };
+    }
+    if (this.closed) {
+      return {
+        kind: "refused",
+        code: "SUBAGENT_RUN_CLOSING",
+        message: "This subagent has already finished its work.",
+      };
+    }
+    const injected: AgentMessage = {
+      role: "user",
+      content: message,
+      timestamp: Date.now(),
+    };
+    this.injectedSteering.add(injected);
+    this.agent.steer(injected);
+    this.acceptedSteering += 1;
+    return { kind: "queued" };
+  }
+
+  /**
+   * Whether `continue()` can still consume a queued instruction.
+   *
+   * pi replays the steering queue from `continue()` only when the transcript
+   * still ends on an assistant row (after a fallback, a retry, or an abort it
+   * ends on something else). Draining first here keeps that condition true, so
+   * a queued message is always consumed instead of being stranded.
+   */
+  private steerIsResumable(): boolean {
+    if (this.runSignal().aborted) return false;
+    const queued = this.agent.peekQueuedMessages?.() ?? [];
+    const hasQueued =
+      queued.length > 0 || this.agent.hasQueuedMessages?.() === true;
+    if (!hasQueued) return false;
+    const last = this.agent.state.messages.at(-1);
+    if (last?.role !== "assistant") return false;
+    // A failed or aborted row is not a boundary an instruction may resume from:
+    // `continue()` would replay the queue as a fresh prompt on top of the
+    // failure instead of letting retry or fallback repair it first.
+    const settled = last as { stopReason?: string; errorMessage?: string };
+    return (
+      settled.stopReason !== "error" &&
+      settled.stopReason !== "aborted" &&
+      !settled.errorMessage
+    );
+  }
+
+  /**
+   * Whatever was accepted and never reached a request is reported as dropped,
+   * whatever stopped it (ADR parent-steers-running-delegation §3).
+   *
+   * This runs once the run has committed to its final result. A cancellation
+   * drops the queue without replaying it into a dead run; a run that ended for
+   * any other reason before a queued message could be replayed drops it too.
+   * Both must reach the parent through `steering.discarded`, because a call
+   * that returned "queued" must never end in silence.
+   */
+  private discardUnsentSteering(): void {
+    const abortReason = this.cancelledReason();
+    if (abortReason) this.sendRefusal = abortReason;
+    this.agent.clearAllQueues?.();
+    // Whatever was still queued will never be emitted: a stray row after the run
+    // has committed to its result would be a row the delegate never acted on.
+    this.injectedSteering.clear();
+    this.discardedSteering = Math.max(
+      0,
+      this.acceptedSteering - this.deliveredSteering,
+    );
+  }
+
+  /** Why the accepted instructions never reached the delegate. */
+  private discardedReason(): string {
+    return this.cancelledReason() ? "the subagent was cancelled" : "it ended first";
+  }
+
+  /** Why this run can no longer accept instructions, or `undefined`. */
+  private cancelledReason(): string | undefined {
+    if (this.opts.signal?.aborted || this.runSignal().aborted || this.turnAborted) {
+      return "This subagent was cancelled (user Stop or TaskStop), so the instruction was not delivered.";
+    }
+    return undefined;
   }
 
   private modelBinding() {
@@ -718,6 +906,13 @@ export class SubagentRun {
           `Model ${failure.model} failed (${failure.code}): ${failure.message}`,
       ),
       ...(degradationNote ? [degradationNote] : []),
+      // Whatever the run accepted and never delivered is reported here; the
+      // parent must not be left assuming its last instruction was heard.
+      ...(this.discardedSteering > 0
+        ? [
+            `${this.discardedSteering} instruction${this.discardedSteering === 1 ? "" : "s"} sent to this subagent did not reach it (${this.discardedReason()}).`,
+          ]
+        : []),
     ];
     const scratchReportPath = this.saveScratchReport(text);
     let finalReport: string;
@@ -736,6 +931,16 @@ export class SubagentRun {
       report: finalReport,
       turns: this.turns,
       toolCalls: this.toolCalls,
+      // What the parent told this delegate and whether it heard it (ADR
+      // parent-steers-running-delegation).
+      ...(this.acceptedSteering > 0
+        ? {
+            steering: {
+              delivered: this.deliveredSteering,
+              discarded: this.discardedSteering,
+            },
+          }
+        : {}),
       ...(this.usage ? { usage: this.usage } : {}),
       ...(this.modelFailures.length ? { modelFailures: [...this.modelFailures] } : {}),
       ...(this.contextCompactions > 0 ? { contextCompactions: this.contextCompactions } : {}),
@@ -782,6 +987,19 @@ export class SubagentRun {
         ? [this.opts.signal, this.runAbortController.signal]
         : [this.runAbortController.signal],
     );
+  }
+
+  /** The transcript row for one injected instruction. */
+  private newUserRow(message: AgentMessage): UiMessage {
+    return {
+      id: randomUUID(),
+      role: "user",
+      content: userMessageText(message),
+      createdAt: nowIso(),
+      status: "complete",
+      parentToolCallId: this.opts.parentToolCallId,
+      agentName: this.opts.definition.name,
+    };
   }
 
   private newAssistantRow(): UiMessage {
@@ -871,6 +1089,20 @@ export class SubagentRun {
         break;
       }
       case "message_end": {
+        // A parent instruction the loop picks up arrives as a user row. Only the
+        // objects this run injected count: the opening brief is a user message
+        // too, and forwarding it would duplicate it on resume (ADR
+        // parent-steers-running-delegation §5). Delivery is the only place that
+        // can tell "delivered" from "queued", so the row is emitted here.
+        if (event.message.role === "user") {
+          if (!this.injectedSteering.delete(event.message as AgentMessage)) break;
+          this.deliveredSteering += 1;
+          this.emit({
+            type: "message_end",
+            message: this.newUserRow(event.message as AgentMessage),
+          });
+          break;
+        }
         if (event.message.role !== "assistant") break;
         const message = event.message as AssistantMessage;
         const content = assistantContent(message.content);

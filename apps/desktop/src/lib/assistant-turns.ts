@@ -27,7 +27,9 @@ export type AssistantActivityItem =
 export type SubagentRunItem =
   | { kind: "thinking"; message: UiMessage }
   | { kind: "tool"; message: UiMessage }
-  | { kind: "answer"; message: UiMessage };
+  | { kind: "answer"; message: UiMessage }
+  /** An instruction the parent injected while the delegate was running. */
+  | { kind: "instruction"; message: UiMessage };
 
 /**
  * Everything one delegate did inside a single `Task` call (ADR 0062).
@@ -101,6 +103,15 @@ function collectSubagentRuns(
     if (message.agentName && !run.agentName) run.agentName = message.agentName;
     if (message.role === "tool") {
       run.items.push({ kind: "tool", message });
+      continue;
+    }
+    // The parent's own words inside a delegation are the instructions it sent
+    // into the running run (ADR parent-steers-running-delegation). Showing them
+    // in place is what makes a corrected course reviewable after the fact.
+    if (message.role === "user") {
+      if ((message.content || "").trim()) {
+        run.items.push({ kind: "instruction", message });
+      }
       continue;
     }
     // A delegate turn can carry reasoning and text at once, and both are worth

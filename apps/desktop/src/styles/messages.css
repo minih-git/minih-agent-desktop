@@ -3302,6 +3302,36 @@
   font-size: var(--text-sm-plus);
 }
 
+/*
+ * An instruction the parent injected into a running delegate. It is not the
+ * delegate's prose and not the turn's own user input, so it keeps a marker line
+ * (like a side note) and the delegate's reading color underneath.
+ */
+.subagent-instruction {
+  margin: 6px 0;
+}
+
+.delegate-instruction-origin {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  margin-bottom: 4px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+
+.delegate-instruction-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: var(--font-weight-medium);
+}
+
+.subagent-instruction .prose-chat {
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm-plus);
+}
+
 /* Collapsed-row outcome badges: exit code, hit counts, truncation. */
 .tool-row-chips {
   display: inline-flex;

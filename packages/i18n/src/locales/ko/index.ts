@@ -425,6 +425,7 @@ export const ko = {
     followUpSuggestionSend: "클릭하여 이 제안을 보냅니다",
     sendWhileRunning: "후속 메시지 보내기 · {{shortcut}}로 방향 수정",
     steeringUnavailable: "현재 턴에 지시를 추가할 수 없습니다. 초안은 유지됩니다.",
+    delegateInstruction: "서브에이전트에 전달한 지시",
     sideNote: "추가 메모",
     nativeSessionBusy: "이 네이티브 Pi 세션이 아직 응답 중입니다. 중지하거나 응답이 끝난 뒤 보내세요.",
     stopGenerating: "생성 중지",

@@ -152,6 +152,15 @@ export function buildSubagentTranscript(
         rows.push({ kind: "tool", message });
         continue;
       }
+      // The instruction the delegate was handed mid-run belongs to this
+      // conversation, not to the person reading the session
+      // (ADR parent-steers-running-delegation).
+      if (message.role === "user") {
+        if ((message.content || "").trim()) {
+          rows.push({ kind: "instruction", message });
+        }
+        continue;
+      }
       // A delegate turn can carry reasoning and text at once, and both are
       // worth showing: the text is the only place its narration and report
       // exist.

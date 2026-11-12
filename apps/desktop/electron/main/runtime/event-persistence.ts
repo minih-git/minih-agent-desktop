@@ -322,6 +322,35 @@ function persistAgentEvent(envelope: AgentEventEnvelope): UiMessage | undefined 
       });
     }
   }
+  if (event.type === "message_end" && event.message.role === "user" && envelope.parentToolCallId) {
+    // A delegate's own user row is an instruction the parent injected with
+    // TaskSend (ADR parent-steers-running-delegation). It is persisted like the
+    // delegate's assistant and tool rows — attributed to the Task call — so the
+    // delegate's transcript shows what it was told, and a later Task(resume)
+    // can rebuild it. It is returned so the row reaches the renderer once,
+    // instead of being echoed to the session stream the parent owns.
+    const row: UiMessage = {
+      ...subagentTagged(event.message, envelope),
+      status: "complete",
+    };
+    void persistenceOutbox
+      .enqueue(
+        {
+          key: `message:${envelope.sessionId}:${row.id}`,
+          sessionId: envelope.sessionId,
+          message: row,
+          turnId: envelope.turnId ?? turnId,
+        },
+        () => runtimeState.host,
+      )
+      .catch((error) =>
+        logger.app("persistence", "warn", "delegate instruction persistence enqueue failed", {
+          sessionId: envelope.sessionId,
+          data: String(error),
+        }),
+      );
+    return row;
+  }
   if (event.type === "message_end" && event.message.role === "assistant") {
     // Checkpoint the finished snapshot before the outbox append (D327).
     // Settling first dropped the last interval of text, and endTurn used to
