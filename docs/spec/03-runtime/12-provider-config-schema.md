@@ -191,6 +191,11 @@ in `/v1`. Model discovery preserves that configured path and requests
 before invoking pi-ai, whose Anthropic SDK adds `/v1` to the messages route.
 Both forms therefore send messages to the configured service's
 `/v1/messages` endpoint rather than a doubled `/v1/v1/messages` path.
+The same rule applies independently to the primary and fallback addresses.
+An already normalized primary root must not cause an unnormalized fallback
+`/v1` prefix to be prepended to the SDK's `/v1/messages` route. Transport and
+`502/503/504` fallback, including subsequent requests during the tunnel cooldown,
+preserve the service path prefix and query without duplicating the API version.
 
 For OpenAI-compatible Chat Completions models, the runtime defaults
 `compat.supportsDeveloperRole` to `false`, so system instructions are sent as
