@@ -60,6 +60,12 @@
   even when the follow flag is stale. Large local projects can find deep files
   with `@` beyond the initial 8000-entry snapshot, while Minih `#` conversation
   completion stays unchanged.
+- Reopening a conversation whose follow was released during a reply (for
+  example by expanding a tool row) returns to its newest turn instead of the
+  prompt the reader was passing, because a reading bookmark now anchors the tail
+  of the reader's own last reading action rather than the tail of a later
+  layout sample. A conversation that did not move on still restores its
+  bookmark.
 - MCP OAuth explains when a server has neither a usable registered client nor
   dynamic client registration, instead of opening an invalid authorization
   page. Background-command row leads now toggle output with click or native

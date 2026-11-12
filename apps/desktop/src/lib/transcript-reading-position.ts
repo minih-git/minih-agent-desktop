@@ -60,6 +60,42 @@ export function transcriptReadingPositionIsStale(
   return position.tailMessageId !== tailMessageId;
 }
 
+/**
+ * The tail anchor a fresh sample records for a bookmark.
+ *
+ * #A100 decides staleness by comparing the bookmark's tail with the session's
+ * live tail, which only means "the session grew after the reader left" when the
+ * anchor is the tail the reader was actually looking at. Re-sampling a bookmark
+ * from layout — a `ResizeObserver` frame, a scroll event no gesture produced, a
+ * follow correction — must therefore keep the anchor it already has. Refreshing
+ * it on every sample made an unpinned bookmark claim the growing session as
+ * current, so a session whose follow was released during a reply (a manual
+ * disclosure or a scroll up) reopened at the row the reader was passing time on
+ * instead of the newest turn, and kept doing so on every later visit.
+ *
+ * A reader's own reading operation re-anchors the bookmark to the tail that was
+ * current when they did it: a real scroll gesture, a manual disclosure toggle, a
+ * settled history page, search or minimap navigation. A pinned bookmark always
+ * records the live tail, because the bottom is the newest turn.
+ */
+export function readingBookmarkTail({
+  pinned,
+  readingTailMessageId,
+  previousTailMessageId,
+  liveTailMessageId,
+}: {
+  pinned: boolean;
+  /** The canonical tail at the reader's last reading operation, if any. */
+  readingTailMessageId: string | undefined;
+  /** The tail the bookmark already records. */
+  previousTailMessageId: string | undefined;
+  /** The canonical tail right now. */
+  liveTailMessageId: string | undefined;
+}): string | undefined {
+  if (pinned) return liveTailMessageId;
+  return readingTailMessageId ?? previousTailMessageId ?? liveTailMessageId;
+}
+
 /** A recorded unpinned bookmark wins over a stale follow flag on pane reveal. */
 export function transcriptRevealOwnership(
   bookmark: TranscriptReadingPosition | undefined,

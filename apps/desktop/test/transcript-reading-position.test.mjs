@@ -5,6 +5,7 @@ register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const {
   captureTranscriptReadingPosition,
   getTranscriptReadingPosition,
+  readingBookmarkTail,
   sessionReadingState,
   transcriptReadingPositionIsStale,
 } = await import("../src/lib/transcript-reading-position.ts");
@@ -126,4 +127,53 @@ test("a hidden or unmetered scroller never replaces a bookmark", () => {
     windowSize: 80,
   };
   assert.equal(getTranscriptReadingPosition("s").messageId, "kept");
+});
+
+test("a layout sample keeps the tail of the reader's own reading operation", () => {
+  // A pinned bookmark always records the live tail: the bottom is the newest turn.
+  assert.equal(readingBookmarkTail({
+    pinned: true, readingTailMessageId: "m-read", previousTailMessageId: "m-older", liveTailMessageId: "m-live",
+  }), "m-live");
+  // The reader's own operation re-anchors the bookmark to the tail it saw.
+  assert.equal(readingBookmarkTail({
+    pinned: false, readingTailMessageId: "m-read", previousTailMessageId: "m-older", liveTailMessageId: "m-live",
+  }), "m-read");
+  // Pure layout re-sampling (a ResizeObserver frame, a gesture-less scroll
+  // event, a follow correction) keeps the anchor the bookmark already has.
+  assert.equal(readingBookmarkTail({
+    pinned: false, readingTailMessageId: undefined, previousTailMessageId: "m-kept", liveTailMessageId: "m-live",
+  }), "m-kept");
+  // The first unpinned sample of a session has no anchor to keep.
+  assert.equal(readingBookmarkTail({
+    pinned: false, readingTailMessageId: undefined, previousTailMessageId: undefined, liveTailMessageId: "m-live",
+  }), "m-live");
+});
+
+test("a released follow stays stale while the reply it was released in keeps growing", () => {
+  // Expanding a tool row mid-reply anchors the bookmark to the tail in view.
+  const released = captureTranscriptReadingPosition(
+    scroller({ scrollTop: 400 }),
+    contentWithRow("m-prompt", 100),
+    false,
+    80,
+    readingBookmarkTail({
+      pinned: false, readingTailMessageId: "m-tool", previousTailMessageId: "m-tool", liveTailMessageId: "m-tool",
+    }),
+  );
+  assert.equal(released.tailMessageId, "m-tool");
+  // The reply finished below the reader. Every later layout sample must keep the
+  // original anchor, or the bookmark claims the finished reply as current and
+  // reopening the session restores the page around the prompt instead.
+  const resampled = {
+    ...released,
+    scrollTop: 400,
+    tailMessageId: readingBookmarkTail({
+      pinned: false, readingTailMessageId: undefined, previousTailMessageId: released.tailMessageId,
+      liveTailMessageId: "m-answer",
+    }),
+  };
+  assert.equal(resampled.tailMessageId, "m-tool");
+  assert.equal(transcriptReadingPositionIsStale(resampled, "m-answer"), true);
+  // A reply that ended before the bookmarked reading still restores.
+  assert.equal(transcriptReadingPositionIsStale(resampled, "m-tool"), false);
 });
