@@ -447,8 +447,10 @@ function withEndpointFallback(
   const apiFallback = api
     ? runtimeBaseUrlForApi(api, rawFallback).replace(/\/+$/, "")
     : rawFallback;
-  const primaryPrefixes = apiPrimary !== rawPrimary ? [rawPrimary, apiPrimary] : [rawPrimary];
-  const fallbackPrefixes = apiPrimary !== rawPrimary ? [rawFallback, apiFallback] : [rawFallback];
+  const primaryPrefixes = apiPrimary !== rawPrimary ? [rawPrimary, apiPrimary] : [apiPrimary];
+  // The model may already have removed Anthropic's /v1 from the primary.
+  // Normalize the fallback independently so that the SDK's /v1 is not doubled.
+  const fallbackPrefixes = apiPrimary !== rawPrimary ? [rawFallback, apiFallback] : [apiFallback];
   const pair = `${rawPrimary}\n${rawFallback}`;
   const probeOrigin = endpointOrigin(rawPrimary);
   /** True while the tunnel address is parked after a recent failure. */
