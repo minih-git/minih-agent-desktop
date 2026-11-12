@@ -502,6 +502,59 @@ async fn a_task_with_no_commits_of_its_own_archives_even_when_the_project_is_beh
     assert_eq!(read(&env, &task_id).await.workspace_status, "none");
 }
 
+/// A count that cannot be read refuses the archive instead of assuming zero.
+///
+/// `rev-list` fails for reasons that have nothing to do with the task — the
+/// project's branch was renamed, the repository is damaged, the command timed
+/// out — and the first version turned every one of them into "0 commits left".
+/// The archive then removed the folder and its branch without a question,
+/// deleting commits that existed only on this machine. The uncommitted-file side
+/// already refused on error; this side has to agree.
+#[tokio::test]
+async fn an_unreadable_commit_count_blocks_the_archive_instead_of_deleting_work() {
+    let env = env(true);
+    let (task_id, session_id) = task(&env, Some(&env.project)).await;
+    prepare(&env.state, &env.git, &task_id).await.unwrap();
+    let root = {
+        let st = env.state.lock().await;
+        let registered = registry::for_owner(&st.db, &session_id, None)
+            .unwrap()
+            .unwrap();
+        PathBuf::from(registered.path)
+    };
+    // The task's own work, which only exists here.
+    fs::write(root.join("f.txt"), "task work\n").unwrap();
+    git_cmd(&root, &["commit", "-q", "-am", "task work"]);
+
+    // Break the comparison the count needs: the project's branch is renamed, so
+    // the delivery target the exclusion list names no longer resolves.
+    git_cmd(&env.project, &["branch", "-m", "main", "renamed"]);
+
+    let error = cleanup_for_archive(&env.state, &env.git, &task_id, false)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, WORKSPACE_UNSAVED_UNKNOWN, "{}", error.message);
+    assert!(
+        error.message.contains("could not be checked"),
+        "the refusal does not say what failed: {}",
+        error.message
+    );
+    // Nothing was removed: the worktree and the task's branch are still there.
+    assert!(
+        root.exists(),
+        "the worktree was removed on an unreadable count"
+    );
+    assert!(root.join("f.txt").is_file());
+    assert_eq!(read(&env, &task_id).await.workspace_status, "ready");
+
+    // The person's explicit discard still ends it.
+    cleanup_for_archive(&env.state, &env.git, &task_id, true)
+        .await
+        .unwrap();
+    assert!(!root.exists());
+    assert_eq!(read(&env, &task_id).await.workspace_status, "none");
+}
+
 /// Uncommitted files stop the archive, and the person's second click removes it.
 #[tokio::test]
 async fn archiving_refuses_uncommitted_work_until_it_is_discarded() {

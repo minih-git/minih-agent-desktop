@@ -199,7 +199,12 @@ What differs, and why:
    up. "Has the work left" counts only the task's own commits: those not on the
    ref the branch started from and not on the delivery target. A task branched
    from `origin/main` while the local branch is behind has made no commits, and
-   counting `main..branch` reported the remote's commit as the task's work.
+   counting `main..branch` reported the remote's commit as the task's work. When
+   that count cannot be read at all — the project's branch was renamed, the
+   repository is damaged, the git command timed out — the archive is refused with
+   `WORKSPACE_UNSAVED_UNKNOWN` instead of guessing zero: "nothing is left" and
+   "nobody could tell" are different answers, and only one of them may delete a
+   folder. The person's `discard` still ends it.
 
 6. **Delivery is decided, not performed.** The host reads the project's remotes
    (normalized the same way a mandate normalizes `repo.origin`) and records

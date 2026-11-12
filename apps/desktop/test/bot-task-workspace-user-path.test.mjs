@@ -49,6 +49,11 @@ const listeners = new Map();
 const sentPrompts = [];
 const confirmMessages = [];
 let confirmAnswer = true;
+// What the stubbed host answers when the archive asks whether the workspace is
+// empty; the probe switches it to the "could not be checked" refusal.
+let refusalCode = "WORKSPACE_HAS_UNSAVED_WORK";
+let refusalMessage =
+  "the task's workspace still holds 2 uncommitted file(s) and 1 unpushed commit(s)";
 let selected = null;
 let releaseCreate = null;
 let created = null;
@@ -124,13 +129,7 @@ window.minihAgent = {
       // The host refuses until the folder is empty, and discard is the only
       // thing that changes its mind.
       if (!input?.discard) {
-        return {
-          ok: false,
-          error: {
-            message: "the task's workspace still holds 2 uncommitted file(s) and 1 unpushed commit(s)",
-            code: "WORKSPACE_HAS_UNSAVED_WORK",
-          },
-        };
+        return { ok: false, error: { message: refusalMessage, code: refusalCode } };
       }
       return { ok: true, data: { task: { ...tasks[0], archivedAt: "2026-11-12T10:00:00.000Z" }, archivedAt: "2026-11-12T10:00:00.000Z" } };
     }
@@ -303,6 +302,27 @@ window.workspaceProbe = async () => {
   );
   report.archiveCallsAfterCancel = callsTo(IPC.invoke.taskArchive).length;
 
+  // 6. And the same question when the host cannot tell what the folder holds:
+  //    a failed commit count is not a permission to delete commits.
+  refusalCode = "WORKSPACE_UNSAVED_UNKNOWN";
+  refusalMessage = "the workspace's unsaved work could not be checked: git rev-list failed";
+  confirmMessages.length = 0;
+  confirmAnswer = true;
+  const beforeUnknown = callsTo(IPC.invoke.taskArchive).length;
+  mount(topbar());
+  await until(() => document.querySelector("[data-task-archive]"), "the archive control once more");
+  flushSync(() => document.querySelector("[data-task-archive]").click());
+  await until(() => confirmMessages.length === 1, "the unreadable-count confirmation");
+  check(
+    /could not be checked/.test(confirmMessages[0]),
+    "the confirmation does not say the count is unknown: " + confirmMessages[0],
+  );
+  await until(
+    () => callsTo(IPC.invoke.taskArchive).length === beforeUnknown + 2,
+    "the discarded archive after an unreadable count",
+  );
+  report.unknownArchiveCalls = callsTo(IPC.invoke.taskArchive).length - beforeUnknown;
+
   flushSync(() => rootNode.unmount());
   report.passed = true;
   return report;
@@ -398,5 +418,7 @@ test(
     // discard.
     assert.equal(report.archiveCalls, 2);
     assert.equal(report.archiveCallsAfterCancel, 3);
+    // An unreadable count asks the same question, and still needs the discard.
+    assert.equal(report.unknownArchiveCalls, 2);
   },
 );

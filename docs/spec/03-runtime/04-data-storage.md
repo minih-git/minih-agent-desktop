@@ -1217,7 +1217,10 @@ workspace_branch  TEXT             -- the branch the worktree was created on
   `failed` (the pending cleanup `cleanup_orphans` finishes). "Nothing left" counts
   only the task's own commits — not on `base_ref`, not on the delivery target —
   so a task branched from a remote that its local branch has not caught up with
-  is not asked to discard the remote's commit.
+  is not asked to discard the remote's commit. A count that cannot be read (the
+  project's branch was renamed, the repository is damaged, git timed out) refuses
+  the archive with `WORKSPACE_UNSAVED_UNKNOWN`; it is never read as zero, because
+  that would delete commits that exist only on this machine.
 
 **Schema v33 -> v34.** A pure `ALTER TABLE ... ADD COLUMN` step: no table is
 rebuilt and no row is rewritten, so a long-lived file that carries historical

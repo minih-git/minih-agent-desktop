@@ -1,4 +1,8 @@
-import type { TaskView } from "@minih-agent/shared";
+import {
+  TASK_WORKSPACE_UNSAVED,
+  TASK_WORKSPACE_UNSAVED_UNKNOWN,
+  type TaskView,
+} from "@minih-agent/shared";
 
 /**
  * What a task's workspace adds to the person's screen (employee mode 0.5,
@@ -62,4 +66,16 @@ export function baseRefLabel(
 /** The branch the task actually works on, falling back to the one it asked for. */
 export function taskBranch(task: Pick<TaskView, "workspaceBranch" | "branch">): string | null {
   return task.workspaceBranch?.trim() || task.branch?.trim() || null;
+}
+
+/**
+ * Whether the host's archive refusal means "ask me before discarding".
+ *
+ * Two answers ask: "the workspace still holds work" and "the workspace could not
+ * be checked". The second one is not a pass — a commit count that could not be
+ * read says nothing about what the folder holds, and archiving anyway would
+ * delete commits that exist only on this machine.
+ */
+export function asksBeforeDiscarding(code: string | undefined): boolean {
+  return code === TASK_WORKSPACE_UNSAVED || code === TASK_WORKSPACE_UNSAVED_UNKNOWN;
 }

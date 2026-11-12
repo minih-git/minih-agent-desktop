@@ -90,6 +90,13 @@ export type TaskDeliveryMode = (typeof TASK_DELIVERY_MODES)[number];
 
 /** The refusal `task.archive` returns while the workspace still holds work. */
 export const TASK_WORKSPACE_UNSAVED = "WORKSPACE_HAS_UNSAVED_WORK";
+/**
+ * The refusal for "nobody could tell": a git failure while counting commits (the
+ * project's branch was renamed, the repository is damaged, the command timed
+ * out). It asks the same question as {@link TASK_WORKSPACE_UNSAVED}, because
+ * archiving on an unknown answer would delete work.
+ */
+export const TASK_WORKSPACE_UNSAVED_UNKNOWN = "WORKSPACE_UNSAVED_UNKNOWN";
 
 export type TaskList = { tasks: TaskView[] };
 

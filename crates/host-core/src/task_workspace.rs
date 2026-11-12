@@ -35,6 +35,13 @@ use crate::tasks;
 
 /// The refusal `task.archive` returns when the workspace still holds work.
 pub const WORKSPACE_UNSAVED: &str = "WORKSPACE_HAS_UNSAVED_WORK";
+/// The refusal when the workspace could not be inspected at all.
+///
+/// "Nothing is left" and "nobody could tell" are different answers, and only one
+/// of them may remove a folder. A git failure while counting commits — the
+/// project's branch was renamed, the repository is damaged, the command timed
+/// out — must not read as zero.
+pub const WORKSPACE_UNSAVED_UNKNOWN: &str = "WORKSPACE_UNSAVED_UNKNOWN";
 /// How much of a failed setup command's output is kept on the task.
 const ERROR_LIMIT: usize = 1_200;
 /// A folder name stays short enough to read in a path.
@@ -476,7 +483,7 @@ pub async fn unsaved_work(
                 .filter(|line| !line.trim().is_empty())
                 .count() as u64;
         }
-        work.unpushed_commits += commits_left_on_machine(git, &row, mode, base_ref).await;
+        work.unpushed_commits += commits_left_on_machine(git, &row, mode, base_ref).await?;
     }
     Ok(work)
 }
@@ -486,16 +493,18 @@ pub async fn unsaved_work(
 /// branch for `local`.
 ///
 /// Read from the repository, so a vanished folder whose branch still holds
-/// commits is still reported.
+/// commits is still reported. A missing repository means there is nothing left to
+/// lose; a git failure means nobody can tell, which is why this returns the error
+/// instead of a zero the caller would read as "safe to delete".
 async fn commits_left_on_machine(
     git: &GitRunner,
     row: &WorktreeRow,
     mode: DeliveryMode,
     base_ref: Option<&str>,
-) -> u64 {
+) -> Result<u64, WorktreeError> {
     let common_dir = Path::new(&row.common_dir);
     if !common_dir.is_dir() {
-        return 0;
+        return Ok(0);
     }
     let branch = merge::head_ref(&row.branch);
     // `--not` applies to every revision after it, so the base and the delivery
@@ -520,11 +529,21 @@ async fn commits_left_on_machine(
         _ => args.push(merge::head_ref(&row.owner_branch)),
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    git.run_git_dir(common_dir, &refs)
-        .await
-        .ok()
-        .and_then(|count| count.trim().parse().ok())
-        .unwrap_or(0)
+    let count = git.run_git_dir(common_dir, &refs).await.map_err(|error| {
+        WorktreeError::new(
+            WORKSPACE_UNSAVED_UNKNOWN,
+            format!("the workspace's unsaved work could not be checked: {error}"),
+        )
+    })?;
+    count.trim().parse().map_err(|_| {
+        WorktreeError::new(
+            WORKSPACE_UNSAVED_UNKNOWN,
+            format!(
+                "the workspace's unsaved work could not be checked: unexpected rev-list output: {}",
+                count.trim()
+            ),
+        )
+    })
 }
 
 /// `task.archive`: remove the workspace and its branch when nothing would be

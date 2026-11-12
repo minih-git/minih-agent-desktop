@@ -447,7 +447,11 @@ removal) with the placement and start-point differences recorded in ADR 0329's
   commits). Only the task's own commits count: those neither on the ref the
   branch started from nor on the delivery target, so a task that branched from
   `origin/main` while the local branch was behind is not asked to discard the
-  remote's commit. The person's second click (`discard`) removes them anyway. A
+  remote's commit. A count that cannot be read (the project's branch was renamed,
+  the repository is damaged, git timed out) refuses the archive with
+  `WORKSPACE_UNSAVED_UNKNOWN` rather than treating the failure as zero — an
+  unknown answer must not delete commits that exist only on this machine. The
+  person's second click (`discard`) removes them anyway. A
   successful removal leaves `workspace_status = 'none'`; one that fails does not
   roll the archive back — the task records the pending cleanup and ADR 0329's
   orphan pass finishes it.

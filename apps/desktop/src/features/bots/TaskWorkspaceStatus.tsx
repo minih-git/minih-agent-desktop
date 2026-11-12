@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { TASK_WORKSPACE_UNSAVED, type TaskView } from "@minih-agent/shared";
+import type { TaskView } from "@minih-agent/shared";
 import { Button } from "../../components/ui";
 import { api } from "../../lib/api";
-import { baseRefLabel, deliveryModeKey, taskBranch, workspaceStatusKey } from "./task-workspace";
+import {
+  asksBeforeDiscarding,
+  baseRefLabel,
+  deliveryModeKey,
+  taskBranch,
+  workspaceStatusKey,
+} from "./task-workspace";
 
 /**
  * A task's workspace, on the surface that has to show it: its workbench row and
@@ -61,8 +67,10 @@ export function TaskWorkspaceStatus({
       try {
         await api.archiveTask(row.id);
       } catch (cause) {
+        // "It still holds work" and "it could not be checked" both ask before
+        // discarding; anything else is a real failure the person should see.
         const code = (cause as { code?: string } | null)?.code;
-        if (code !== TASK_WORKSPACE_UNSAVED) throw cause;
+        if (!asksBeforeDiscarding(code)) throw cause;
         const detail = cause instanceof Error ? cause.message : String(cause);
         if (!window.confirm(t("bots.tasks.archiveDiscardConfirm", { detail }))) return;
         await api.archiveTask(row.id, true);

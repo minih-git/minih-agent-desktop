@@ -12,9 +12,8 @@ import test from "node:test";
  */
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
-const { baseRefLabel, deliveryModeKey, taskBranch, workspaceStatusKey } = await import(
-  "../src/features/bots/task-workspace.ts"
-);
+const { asksBeforeDiscarding, baseRefLabel, deliveryModeKey, taskBranch, workspaceStatusKey } =
+  await import("../src/features/bots/task-workspace.ts");
 const { MAIN_WORKSPACE_DEPENDENCY_TEMPLATE, setupTemplateAvailable } = await import(
   "../src/features/worktree/worktree-setup-template.ts"
 );
@@ -77,4 +76,14 @@ test("the template is offered only where it can run as written", () => {
   assert.equal(setupTemplateAvailable("darwin"), true);
   assert.equal(setupTemplateAvailable("linux"), true);
   assert.equal(setupTemplateAvailable("win32"), false);
+});
+test("both archive refusals ask before discarding", () => {
+  // "It still holds work" and "it could not be checked" are the two answers that
+  // need a second click; neither may be read as "nothing to lose".
+  assert.equal(asksBeforeDiscarding("WORKSPACE_HAS_UNSAVED_WORK"), true);
+  assert.equal(asksBeforeDiscarding("WORKSPACE_UNSAVED_UNKNOWN"), true);
+  // Everything else is a real failure to show, not a question to ask.
+  assert.equal(asksBeforeDiscarding("WORKTREE_BUSY"), false);
+  assert.equal(asksBeforeDiscarding("INTERNAL"), false);
+  assert.equal(asksBeforeDiscarding(undefined), false);
 });
