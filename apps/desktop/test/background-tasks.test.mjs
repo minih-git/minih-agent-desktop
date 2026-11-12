@@ -51,8 +51,13 @@ const i18nEn = await readFile(
 test("the Bash schema advertises runInBackground and the tool description explains when to use it", () => {
   assert.match(runtime, /runInBackground: Type\.Optional\(\s*Type\.Boolean/);
   assert.match(runtime, /runInBackground: true for long-lived processes/);
-  // A foreground `sleep` poll holds a global shell slot for its whole length.
-  assert.match(runtime, /Do not hold a foreground call in a sleep loop/);
+  // A foreground `sleep` poll holds a shell slot for its whole length, while a
+  // short command whose output this turn needs stays in the foreground.
+  assert.match(runtime, /never wait for external state in a foreground sleep loop/);
+  assert.doesNotMatch(
+    runtime,
+    /do not set it for commands whose output the current turn depends on/,
+  );
 });
 
 test("the runtime forwards runInBackground on a Bash tools.execute call", () => {

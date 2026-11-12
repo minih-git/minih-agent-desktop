@@ -128,7 +128,7 @@ async function main() {
         assertToolSuccess(outcome.result, `admission-shell-${index}`);
       }
       const idleBudget = (await host.call("app.health")).toolBudget;
-      assert(["active", "queued", "shell", "reads", "mutations", "plugins"].every((key) => idleBudget[key] === 0),
+      assert(["active", "queued", "shell", "reads", "mutations", "plugins", "backgroundTasks"].every((key) => idleBudget[key] === 0),
         "tool capacity did not drain: " + shortJson(idleBudget));
       console.log(`PASS E2E-097-admission: ${activeShells} active + ${queuedShells} queued shells leave independent Read/Write capacity and drain cleanly`);
     }, binary, tempRoot, PROTOCOL_VERSION);

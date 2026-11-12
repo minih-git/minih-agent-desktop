@@ -1,6 +1,6 @@
 use super::{
-    AdmissionError, ToolBudget, ToolClass, ToolPermit, MAX_IN_FLIGHT_PLUGINS, MAX_IN_FLIGHT_SHELL,
-    MAX_QUEUED_TOOLS,
+    AdmissionError, ToolBudget, ToolClass, ToolPermit, MAX_IN_FLIGHT_BACKGROUND_TASK_TOOLS,
+    MAX_IN_FLIGHT_PLUGINS, MAX_IN_FLIGHT_SHELL, MAX_QUEUED_TOOLS,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -524,18 +524,22 @@ async fn an_abandoned_hold_releases_waiting_calls() {
 /// The names must match `crate::rpc::background_task_tools`' constants; that
 /// module is private to `rpc`, so this repeats them as the budget sees them.
 #[test]
-fn background_task_tools_share_the_read_class() {
+fn background_task_tools_have_their_own_class() {
     for name in [
         "BackgroundTaskList",
         "BackgroundTaskOutput",
         "BackgroundTaskStop",
     ] {
-        assert_eq!(ToolClass::from_name(name), ToolClass::Read, "{name}");
+        assert_eq!(
+            ToolClass::from_name(name),
+            ToolClass::BackgroundTask,
+            "{name}"
+        );
     }
 }
 
 #[tokio::test]
-async fn a_saturated_shell_class_still_admits_a_background_task_read() {
+async fn a_saturated_shell_class_still_admits_a_background_task_call() {
     let budget = ToolBudget::new();
     let mut shells = Vec::new();
     for index in 0..MAX_IN_FLIGHT_SHELL {
@@ -552,13 +556,13 @@ async fn a_saturated_shell_class_still_admits_a_background_task_read() {
     // long foreground poll holds one for its whole lifetime.
     let output = admitted(Box::pin(budget.acquire("shell-0", "BackgroundTaskOutput")).as_mut());
     assert_eq!(budget.snapshot().shell, MAX_IN_FLIGHT_SHELL);
-    assert_eq!(budget.snapshot().reads, 1);
+    assert_eq!(budget.snapshot().background_tasks, 1);
     drop((output, shells));
     assert_eq!(budget.snapshot().active, 0);
 }
 
 #[tokio::test]
-async fn a_saturated_plugin_class_still_admits_a_background_task_read() {
+async fn a_saturated_plugin_class_still_admits_a_background_task_call() {
     let budget = ToolBudget::new();
     let mut plugins = Vec::new();
     for _ in 0..MAX_IN_FLIGHT_PLUGINS {
@@ -574,7 +578,43 @@ async fn a_saturated_plugin_class_still_admits_a_background_task_read() {
 
     let output = admitted(Box::pin(budget.acquire("waiting", "BackgroundTaskOutput")).as_mut());
     assert_eq!(budget.snapshot().plugins, MAX_IN_FLIGHT_PLUGINS);
-    assert_eq!(budget.snapshot().reads, 1);
+    assert_eq!(budget.snapshot().background_tasks, 1);
     drop((output, waiting, plugins));
     assert_eq!(budget.snapshot().active, 0);
+}
+
+/// `waitSeconds` blocks for up to a minute while holding its permit, so the
+/// class carries its own quota: sessions waiting on CI must not take the read
+/// slots `Read`/`Glob`/`Grep` live in.
+#[tokio::test]
+async fn a_saturated_background_task_class_leaves_read_capacity() {
+    let budget = ToolBudget::new();
+    let mut waiting_tasks = Vec::new();
+    for index in 0..MAX_IN_FLIGHT_BACKGROUND_TASK_TOOLS {
+        waiting_tasks.push(
+            budget
+                .acquire(&format!("waiter-{}", index % 2), "BackgroundTaskOutput")
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(
+        budget.snapshot().background_tasks,
+        MAX_IN_FLIGHT_BACKGROUND_TASK_TOOLS
+    );
+
+    let read = admitted(Box::pin(budget.acquire("interactive", "Read")).as_mut());
+    let grep = admitted(Box::pin(budget.acquire("interactive", "Grep")).as_mut());
+    assert_eq!(budget.snapshot().reads, 2);
+
+    // The quota is the class's own, so one more wait queues instead of
+    // borrowing read capacity.
+    let mut next = Box::pin(budget.acquire("interactive", "BackgroundTaskOutput"));
+    assert!(poll_once(next.as_mut()).is_pending());
+    assert_eq!(budget.snapshot().queued, 1);
+
+    drop((read, grep, waiting_tasks));
+    drop(admitted(next.as_mut()));
+    assert_eq!(budget.snapshot().active, 0);
+    assert_eq!(budget.snapshot().queued, 0);
 }
