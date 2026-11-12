@@ -5,10 +5,20 @@ use std::time::Duration;
 use tokio::sync::Notify;
 
 pub const MAX_IN_FLIGHT_TOOLS: usize = 16;
-pub const MAX_IN_FLIGHT_SHELL: usize = 4;
+/// A foreground `Bash` call holds its slot from spawn to exit, so one session
+/// polling an external state (`sleep 600; curl ...`) can occupy a slot for
+/// minutes. Size this above `MAX_IN_FLIGHT_PER_SESSION` so several sessions can
+/// wait at once without starving everyone else; waiting belongs in a background
+/// task anyway.
+pub const MAX_IN_FLIGHT_SHELL: usize = 8;
 pub const MAX_IN_FLIGHT_READS: usize = 8;
 pub const MAX_IN_FLIGHT_MUTATIONS: usize = 2;
 pub const MAX_IN_FLIGHT_MUTATIONS_PER_SESSION: usize = 1;
+/// Background-task tools hold their slot for a whole `waitSeconds` wait (up to
+/// 60s), so sharing the read quota would let a few sessions waiting on CI starve
+/// `Read`/`Glob`/`Grep`, the busiest class. Their own quota keeps waiting cheap
+/// without changing the total.
+pub const MAX_IN_FLIGHT_BACKGROUND_TASK_TOOLS: usize = 8;
 pub const MAX_IN_FLIGHT_PLUGINS: usize = 4;
 pub const MAX_IN_FLIGHT_PER_SESSION: usize = 4;
 pub const MAX_QUEUED_TOOLS: usize = 64;
@@ -25,6 +35,7 @@ enum ToolClass {
     Mutation,
     Shell,
     Plugin,
+    BackgroundTask,
 }
 
 impl ToolClass {
@@ -33,6 +44,16 @@ impl ToolClass {
             "Read" | "Glob" | "Grep" => Self::Read,
             "Write" | "Edit" => Self::Mutation,
             "Bash" => Self::Shell,
+            // Background-task tools start no process: they read or stop a task
+            // this session already registered, and `BackgroundTaskOutput` only
+            // waits on that task. They still hold their slot for the whole wait,
+            // so they neither share the read quota (starving the busiest class)
+            // nor the plugin quota (moving shell congestion there). Names repeat
+            // `crate::rpc::background_task_tools`' constants, which that private
+            // module cannot lend this lower-level budget.
+            "BackgroundTaskList" | "BackgroundTaskOutput" | "BackgroundTaskStop" => {
+                Self::BackgroundTask
+            }
             _ => Self::Plugin,
         }
     }
@@ -137,6 +158,7 @@ pub struct ToolBudgetSnapshot {
     pub reads: usize,
     pub mutations: usize,
     pub plugins: usize,
+    pub background_tasks: usize,
 }
 
 #[derive(Clone)]
@@ -166,7 +188,7 @@ struct WaitingRequest {
 #[derive(Default)]
 struct BudgetState {
     active: usize,
-    classes: [usize; 4],
+    classes: [usize; 5],
     sessions: HashMap<String, SessionUsage>,
     waiting: VecDeque<WaitingRequest>,
     queued: usize,
@@ -185,6 +207,7 @@ impl ToolClass {
             Self::Mutation => MAX_IN_FLIGHT_MUTATIONS,
             Self::Shell => MAX_IN_FLIGHT_SHELL,
             Self::Plugin => MAX_IN_FLIGHT_PLUGINS,
+            Self::BackgroundTask => MAX_IN_FLIGHT_BACKGROUND_TASK_TOOLS,
         }
     }
 }
@@ -450,6 +473,7 @@ impl ToolBudget {
             reads: state.classes[ToolClass::Read as usize],
             mutations: state.classes[ToolClass::Mutation as usize],
             plugins: state.classes[ToolClass::Plugin as usize],
+            background_tasks: state.classes[ToolClass::BackgroundTask as usize],
         }
     }
 }

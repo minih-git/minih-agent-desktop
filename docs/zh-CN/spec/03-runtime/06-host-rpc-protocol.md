@@ -55,8 +55,12 @@ RPC 调度程序将活动请求上限限制为 32。然后，`tools.execute` 输
 有界执行预算：
 
 - 总共 16 次工具执行
-- 全局 4 个并发 `Bash` 进程，每个会话 2 个
-- 全球 8 个 read/search 工具
+- 全局 8 个并发 `Bash` 进程；若再设每会话上限，共用会话 id 的子代理也会被一起限制，
+  因此每个会话只受每会话工具总数限制
+- 全局 8 个 read/search 工具
+- 全局 8 个后台任务工具；`BackgroundTaskList`、`BackgroundTaskOutput` 和
+  `BackgroundTaskStop` 不启动进程，但 `waitSeconds` 等待会持有名额最长一分钟，
+  因此它们占用独立额度，不动 read 或插件额度
 - 2 个全局变异工具，每个会话 1 个
 - 全球4个插件工具
 - 每个会话执行 4 次工具
@@ -191,6 +195,7 @@ type ToolBudgetHealth = {
   reads: number
   mutations: number
   plugins: number
+  backgroundTasks: number
 }
 ```
 
