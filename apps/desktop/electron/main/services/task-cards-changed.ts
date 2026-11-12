@@ -10,7 +10,7 @@ import { IPC, type TaskCardsChangedEvent } from "@minih-agent/shared";
  * fetched once, before the card existed.
  *
  * Every direction therefore ends here, and the dock stays a pure listener. The
- * same is true of a task's stage: `tasks-changed.ts` is the only writer of the
+ * same is true of a task's stage: `task-changes.ts` is the only writer of the
  * task channel, and this module never writes it.
  */
 export type TaskCardsChangedNotifier = (change: { sessionId: string; draftId: string }) => void;
