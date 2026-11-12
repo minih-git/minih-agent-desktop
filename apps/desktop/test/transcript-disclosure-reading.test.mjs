@@ -108,9 +108,11 @@ test("holding a disclosure leaves follow without a delayed grab-back", () => {
     /const leaveFollow = useCallback\(\(\) => \{\s*cancelReadingPosition\(\);\s*cancelFollowScroll\(\);\s*pinnedRef\.current = false;\s*setShowJump\(true\);/,
   );
   assert.match(transcript, /const releaseFollow = useCallback\(\(\) => \{\s*latestNavigation\.cancel\(\);\s*stopSmoothScroll\(scrollRef\.current\);\s*leaveFollow\(\);/);
+  // The bookmark anchors the tail of the reader's own toggle before follow is
+  // released, so a reply that keeps growing stays recognisably newer (#A100).
   assert.match(
     transcript,
-    /const enterDisclosureReading = useCallback\(\(\) => \{\s*releaseFollow\(\);/,
+    /const enterDisclosureReading = useCallback\(\(\) => \{\s*noteReadingAction\(\);\s*releaseFollow\(\);/,
   );
   assert.match(
     transcript,

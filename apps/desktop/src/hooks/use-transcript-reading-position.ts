@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "
 import {
   captureTranscriptReadingPosition,
   getTranscriptReadingPosition,
+  readingBookmarkTail,
   restoreTranscriptReadingPosition,
   sessionReadingState,
   transcriptReadingPositionIsStale,
@@ -72,13 +73,29 @@ export function useTranscriptReadingPosition({
     pendingRef.current = undefined;
     requestRef.current?.abort();
   }, []);
+  // The canonical tail at the reader's last own reading operation. Re-sampling
+  // from layout keeps it, so a bookmark taken before the session grew stays
+  // recognisably stale (#A100) instead of following every reply down.
+  const tailRef = useRef(tailMessageId);
+  tailRef.current = tailMessageId;
+  const readingTailRef = useRef<string | undefined>(undefined);
+  const noteReadingAction = useCallback(() => {
+    readingTailRef.current = tailRef.current;
+  }, []);
   const remember = useCallback(() => {
     const scroller = scrollRef.current;
     const content = contentRef.current;
     if (!sessionId || !visible || !scroller || !content || pendingRef.current) return;
-    const position = captureTranscriptReadingPosition(scroller, content, pinnedRef.current, windowSize, tailMessageId);
+    const pinned = pinnedRef.current;
+    const tail = readingBookmarkTail({
+      pinned,
+      readingTailMessageId: readingTailRef.current,
+      previousTailMessageId: sessionReadingState(sessionId).position?.tailMessageId,
+      liveTailMessageId: tailRef.current,
+    });
+    const position = captureTranscriptReadingPosition(scroller, content, pinned, windowSize, tail);
     if (position) sessionReadingState(sessionId).position = position;
-  }, [contentRef, pinnedRef, scrollRef, sessionId, tailMessageId, visible, windowSize]);
+  }, [contentRef, pinnedRef, scrollRef, sessionId, visible, windowSize]);
   const callbacks = useRef({ remember, onMissing });
   callbacks.current = { remember, onMissing };
 
@@ -164,5 +181,5 @@ export function useTranscriptReadingPosition({
     return () => observer?.disconnect();
   }, [contentRef, remember, visible]);
 
-  return { initialPosition, pendingRef, remember, cancel };
+  return { initialPosition, pendingRef, remember, cancel, noteReadingAction };
 }

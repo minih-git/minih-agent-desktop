@@ -10850,3 +10850,21 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **验收标准**：C — 会话与流式；品质（不静默丢失指令、不委派纠偏权限）。
 - **里程碑**：维护。
 - **状态**：运行时与投影层已自动化；经真实 sidecar 的 Electron 端到端通过仍待完成。合并后必需的测试套件：`test:e2e`、`test:e2e:subagents`。
+
+## E2E-SESSION-return-after-released-follow-opens-latest
+
+- **前置条件**：会话有较长转录且停在最新回合；另有至少一个可切换的会话。
+  使用夹具 IPC，不接 provider、Host sidecar 或用户配置。
+- **步骤**：1）发送提示，回复开始。2）回复流式输出期间展开某个工具行的标题，
+  视口交给展开锚点并释放跟随（#324）。3）让回复在读者下方继续生长直至结束。
+  4）切换到另一个会话再切回。
+- **预期**：会话在最新回合处重新打开：滚动容器位于底部，不出现「回到最新」，
+  也不打开恢复的阅读页（`transcriptViews[id].restored`），因为书签锚定的仍是
+  读者自己那次展开时的尾部，而不是之后某次布局采样的尾部。上翻时回复已经结束
+  的会话仍按书签的行与偏移恢复（E2E-071g、#A100）。
+- **自动化**：`node scripts/e2e-transcript-reading-position.mjs`。
+- **关联规格**：`04-ux/09-interaction-patterns.md` §5、
+  `04-ux/08-component-spec.md` §1.6、ADR 0137。
+- **验收标准**：C — 会话与流式；品质。
+- **里程碑**：维护。
+- **状态**：已自动化（隔离的 React/Electron，夹具 IPC）；真实 UI 场景待补。

@@ -160,6 +160,8 @@ export function useTranscriptScroll({
     pendingRef: readingPositionPendingRef,
     remember: rememberReadingPosition,
     cancel: cancelReadingPosition,
+    /** Marks the reader's own reading operation for the bookmark's tail anchor. */
+    noteReadingAction,
   } = useTranscriptReadingPosition({
     sessionId, scrollRef, contentRef, pinnedRef, visible: paneVisible,
     windowSize, contentVersion: messages, tailMessageId, onPosition: recordScrollPosition,
@@ -189,9 +191,14 @@ export function useTranscriptScroll({
   // changes. Follow mode is left first — re-bottoming the expansion is exactly
   // what dragged the clicked title out of view — and the held position is
   // restored from the observer below for every frame of the height transition.
+  //
+  // The toggle is still a reading operation: the bookmark anchors the tail the
+  // session had here, so a reply that keeps growing while the reader holds the
+  // title is recognisably new content when the session is reopened (#A100).
   const enterDisclosureReading = useCallback(() => {
+    noteReadingAction();
     releaseFollow();
-  }, [releaseFollow]);
+  }, [noteReadingAction, releaseFollow]);
   const {
     notifier: notifyDisclosureAnchor,
     restore: restoreDisclosureAnchor,
@@ -202,6 +209,12 @@ export function useTranscriptScroll({
     enterDisclosureReading,
     recordScrollPosition,
   );
+  // A settled history page is the reader's own reading: the bookmark anchors
+  // the tail the session had at that point, not one a later layout sample saw.
+  const settleHistoryReading = useCallback(() => {
+    noteReadingAction();
+    rememberReadingPosition();
+  }, [noteReadingAction, rememberReadingPosition]);
   const startHistoryReading = useCallback(() => {
     releaseDisclosureAnchor();
     leaveFollow();
@@ -212,7 +225,7 @@ export function useTranscriptScroll({
     track: trackHistoryPosition, cancel: cancelHistoryPaging, readLatency: historyReadLatency,
   } = useTranscriptHistoryPaging({
     scrollRef, contentRef, visible: paneVisible, sourceHead: messages[0]?.id, tailMessageId,
-    onStart: startHistoryReading, onPosition: recordScrollPosition, onSettled: rememberReadingPosition,
+    onStart: startHistoryReading, onPosition: recordScrollPosition, onSettled: settleHistoryReading,
     canRetain: (paging) => paneVisible && !pinnedRef.current && (paging || (readingInputRef.current && !latestNavigation.isActive() &&
       !readingPositionPendingRef.current && !isDisclosureAnchorHeld() && !searchTarget)),
   });
@@ -230,8 +243,11 @@ export function useTranscriptScroll({
     if (!navigationLoading || !latestNavigation.isActive()) return;
     latestNavigation.cancel();
     leaveFollow();
+    // Minimap navigation reached its destination: the reader is now reading the
+    // session as it stands, so the bookmark anchors this tail.
+    noteReadingAction();
     rememberReadingPosition();
-  }, [latestNavigation, leaveFollow, navigationLoading, rememberReadingPosition]);
+  }, [latestNavigation, leaveFollow, navigationLoading, noteReadingAction, rememberReadingPosition]);
 
   // A user scroll-up gesture always emits input before its scroll events;
   // programmatic follow scrolling and layout clamps (composer collapse on
@@ -250,6 +266,9 @@ export function useTranscriptScroll({
         contentRef.current,
       );
       if (!isScrollGestureInput(event.type as ScrollInputType, input)) return;
+      // A recognised input is the reader reading: the bookmark anchors the tail
+      // the session has right now, and later layout samples keep that anchor.
+      noteReadingAction();
       if (latestNavigation.isActive()) {
         latestNavigation.cancel(); leaveFollow(); rememberReadingPosition();
       }
@@ -264,7 +283,7 @@ export function useTranscriptScroll({
       // Real input takes the viewport back from a held disclosure position.
       releaseDisclosureAnchor();
     },
-    [cancelReadingPosition, latestNavigation, leaveFollow, releaseDisclosureAnchor, rememberReadingPosition, retryHistoryPaging],
+    [cancelReadingPosition, latestNavigation, leaveFollow, noteReadingAction, releaseDisclosureAnchor, rememberReadingPosition, retryHistoryPaging],
   );
 
   useEffect(() => {
@@ -678,7 +697,10 @@ export function useTranscriptScroll({
     cancelFollowScroll();
     pinnedRef.current = false;
     setShowJump(true);
-  }, [cancelFollowScroll, cancelHistoryPaging, cancelReadingPosition, latestNavigation, releaseDisclosureAnchor]);
+    // Search navigation is the reader choosing a row: the bookmark now anchors
+    // the tail the session had when they navigated, not a later layout sample.
+    noteReadingAction();
+  }, [cancelFollowScroll, cancelHistoryPaging, cancelReadingPosition, latestNavigation, noteReadingAction, releaseDisclosureAnchor]);
   useTranscriptSearchFocus({
     target: searchTarget,
     suspended: latestNavigation.isActive(),
@@ -769,6 +791,7 @@ export function useTranscriptScroll({
     }
     releaseDisclosureAnchor();
     releaseFollow();
+    noteReadingAction();
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -776,7 +799,7 @@ export function useTranscriptScroll({
       top: 0,
       behavior: reduceMotion ? "auto" : "smooth",
     });
-  }, [reachTop, releaseDisclosureAnchor, releaseFollow]);
+  }, [noteReadingAction, reachTop, releaseDisclosureAnchor, releaseFollow]);
 
   const jumpToLatest = useCallback((arrive?: () => void) => {
     lastScrollGestureAtRef.current = -Infinity;

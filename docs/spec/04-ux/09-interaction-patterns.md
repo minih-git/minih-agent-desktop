@@ -364,6 +364,13 @@ may be retained while exactly one workspace supplies the visible shell context.
   restoration; obsolete reads cannot reclaim the viewport. A missing anchor
   falls back to latest, an unusable offset or layout-less pane reports failure
   rather than guessing, and read failures use the existing error notification.
+  The bookmark's tail anchor is the newest row at the reader's last own reading
+  operation — a real scroll gesture, a manual disclosure toggle, a settled
+  history page, search or minimap navigation — never the row a later layout
+  sample happened to see. A reply that keeps growing after the reader released
+  follow therefore stays recognisably newer, and reopening that session follows
+  its newest turn instead of restoring the page they were passing through
+  (#A100). A session that has not moved on still restores its bookmark.
 - New Task is not a cold switch. Creating a session reveals the empty home on
   the first frame (the previous conversation and retained panes clear before
   `session.create`). Reusing the group's latest empty session commits that empty
