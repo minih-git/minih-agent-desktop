@@ -421,6 +421,15 @@ async fn archiving_a_clean_workspace_removes_it() {
         .await
         .unwrap();
     assert!(!root.exists());
+    // The task no longer has a workspace: a `ready` here would offer a retry for
+    // a folder that was just deleted.
+    let after = read(&env, &task_id).await;
+    assert_eq!(after.workspace_status, "none");
+    assert!(
+        after.workspace_error.is_none(),
+        "{:?}",
+        after.workspace_error
+    );
     let st = env.state.lock().await;
     assert!(registry::for_session(&st.db, &session_id)
         .unwrap()
@@ -431,6 +440,66 @@ async fn archiving_a_clean_workspace_removes_it() {
             crate::session_worktrees::lifecycle::short_id(&session_id)
         ))
     );
+}
+
+/// A task that made no commits can be archived even while the project's own
+/// branch is behind the remote it started from.
+///
+/// Counting `main..branch` reported the *remote's* commit as the task's work, so
+/// a task that had done nothing asked the person to confirm discarding a commit
+/// they never wrote. The start point is excluded from the count.
+#[tokio::test]
+async fn a_task_with_no_commits_of_its_own_archives_even_when_the_project_is_behind() {
+    let env = env(true);
+    let bare = env._dir.path().join("remote.git");
+    fs::create_dir_all(&bare).unwrap();
+    git_cmd(&bare, &["init", "--bare", "-q", "-b", "main"]);
+    git_cmd(
+        &env.project,
+        &["remote", "add", "origin", &bare.to_string_lossy()],
+    );
+    git_cmd(&env.project, &["push", "-q", "origin", "main"]);
+
+    // Another clone moves the remote forward; this checkout stays where it was.
+    let other = env._dir.path().join("other");
+    fs::create_dir_all(&other).unwrap();
+    git_cmd(&other, &["clone", "-q", &bare.to_string_lossy(), "."]);
+    git_cmd(&other, &["config", "user.name", "PI Test"]);
+    git_cmd(&other, &["config", "user.email", "pi-test@example.invalid"]);
+    fs::write(other.join("remote-only.txt"), "from remote\n").unwrap();
+    git_cmd(&other, &["add", "."]);
+    git_cmd(&other, &["commit", "-q", "-m", "remote work"]);
+    git_cmd(&other, &["push", "-q", "origin", "main"]);
+
+    let (task_id, session_id) = task(&env, Some(&env.project)).await;
+    prepare(&env.state, &env.git, &task_id).await.unwrap();
+    let row = read(&env, &task_id).await;
+    assert_eq!(row.workspace_status, "ready", "{:?}", row.workspace_error);
+    assert_eq!(row.base_ref.as_deref(), Some("refs/remotes/origin/main"));
+    assert!(row.base_remote);
+    // The local branch really is behind the ref the task started from: the old
+    // count would have reported exactly that one commit.
+    assert_eq!(
+        git_cmd(&env.project, &["rev-list", "--count", "main..origin/main"]).trim(),
+        "1"
+    );
+
+    let work = unsaved_work(
+        &env.state,
+        &env.git,
+        &session_id,
+        DeliveryMode::Local,
+        row.base_ref.as_deref(),
+    )
+    .await
+    .unwrap();
+    assert!(work.is_empty(), "the task's own work is empty: {work:?}");
+
+    // So the archive goes straight through, with no discard confirmation.
+    cleanup_for_archive(&env.state, &env.git, &task_id, false)
+        .await
+        .unwrap();
+    assert_eq!(read(&env, &task_id).await.workspace_status, "none");
 }
 
 /// Uncommitted files stop the archive, and the person's second click removes it.

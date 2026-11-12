@@ -19,8 +19,11 @@ import {
   COMPACTION_SUMMARY_MAX_RETRIES,
   COMPACTION_SUMMARY_RETRY_BUDGET_MS,
   STREAM_IDLE_TIMEOUT_MS,
+  TASK_WORKSPACE_RPC_TIMEOUT_MS,
   TOOL_QUEUE_WAIT_MS,
   WORKTREE_DELEGATE_RPC_TIMEOUT_MS,
+  WORKTREE_GIT_COMMAND_TIMEOUT_MS,
+  WORKTREE_SETUP_TIMEOUT_MS,
   rpcTimeoutMs,
   type PlanExecution,
   type PlanArtifact,
@@ -272,6 +275,25 @@ describe("Plan protocol contracts", () => {
     }
     expect(WORKTREE_DELEGATE_RPC_TIMEOUT_MS).toBeGreaterThan(5_000 + TOOL_QUEUE_WAIT_MS + 3 * 120_000);
     expect(rpcTimeoutMs("worktree.merge", {})).toBe(130_000);
+  });
+
+  it("lets a task's workspace preparation finish before the transport gives up", () => {
+    // These three calls wait for a git fetch and the project's setup command
+    // inside the host. Under the flat default the renderer gave up while the
+    // host was still preparing: the first message was never sent, and a
+    // confirmed card was never dispatched.
+    for (const method of ["task.create", "task.workspace.retry", "taskCard.confirm"]) {
+      expect(rpcTimeoutMs(method, {})).toBe(TASK_WORKSPACE_RPC_TIMEOUT_MS);
+    }
+    // The setup command alone is bounded by `WORKTREE_SETUP_TIMEOUT_MS`, so a
+    // deadline at or below it reproduces the bug by construction.
+    expect(TASK_WORKSPACE_RPC_TIMEOUT_MS).toBeGreaterThan(WORKTREE_SETUP_TIMEOUT_MS);
+    expect(TASK_WORKSPACE_RPC_TIMEOUT_MS).toBeGreaterThanOrEqual(
+      WORKTREE_SETUP_TIMEOUT_MS + WORKTREE_GIT_COMMAND_TIMEOUT_MS,
+    );
+    // Reading a task is still an ordinary interactive call.
+    expect(rpcTimeoutMs("task.get", {})).toBe(130_000);
+    expect(rpcTimeoutMs("task.archive", {})).toBe(130_000);
   });
 
   it("outlasts the whole model request a manual compaction spends (#795)", () => {

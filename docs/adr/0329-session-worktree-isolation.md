@@ -184,9 +184,24 @@ What differs, and why:
    project's setup command runs synchronously for a task — a task may not start
    in a half-prepared folder — while an ordinary isolated session keeps running
    it in the background. A delegate worktree of a task session is created next to
-   it, so it lands in the same `.worktree` directory.
+   it, so it lands in the same `.worktree` directory. Because the call waits for
+   the command, the desktop gives `task.create`, `task.workspace.retry`, and
+   `taskCard.confirm` a deadline that outlasts it
+   (`TASK_WORKSPACE_RPC_TIMEOUT_MS`, mirrored from this ADR's setup bound and
+   `git.rs`'s per-command timeout) instead of the flat 130 s default; with the
+   default, a slow install made the client give up while the host was still
+   preparing, and the first message or the dispatch never happened.
 
-5. **Delivery is decided, not performed.** The host reads the project's remotes
+5. **Archiving is what ends the workspace.** A workspace whose work has left
+   the machine is removed with the task (folder and branch), and the task's
+   `workspace_status` returns to `none`; a failed removal keeps the folder and
+   marks the task `failed`, which is the "pending cleanup" the orphan pass picks
+   up. "Has the work left" counts only the task's own commits: those not on the
+   ref the branch started from and not on the delivery target. A task branched
+   from `origin/main` while the local branch is behind has made no commits, and
+   counting `main..branch` reported the remote's commit as the task's work.
+
+6. **Delivery is decided, not performed.** The host reads the project's remotes
    (normalized the same way a mandate normalizes `repo.origin`) and records
    `delivery_mode`: `pr` when a GitHub remote exists, `local` otherwise, `none`
    without a project. Acting on it belongs to the completion card.

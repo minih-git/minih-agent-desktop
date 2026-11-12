@@ -444,9 +444,13 @@ removal) with the placement and start-point differences recorded in ADR 0329's
 - **Archiving is what ends the workspace.** `task.archive` removes the worktree
   and its branch when nothing is left in them, and otherwise refuses with
   `WORKSPACE_HAS_UNSAVED_WORK` and the counts (uncommitted files, unpushed
-  commits). The person's second click (`discard`) removes them anyway. A removal
-  that fails does not roll the archive back: the task records the pending cleanup
-  and ADR 0329's orphan pass finishes it.
+  commits). Only the task's own commits count: those neither on the ref the
+  branch started from nor on the delivery target, so a task that branched from
+  `origin/main` while the local branch was behind is not asked to discard the
+  remote's commit. The person's second click (`discard`) removes them anyway. A
+  successful removal leaves `workspace_status = 'none'`; one that fails does not
+  roll the archive back — the task records the pending cleanup and ADR 0329's
+  orphan pass finishes it.
 
 ### 5. What this section does not do
 

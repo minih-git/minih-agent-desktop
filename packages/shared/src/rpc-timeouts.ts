@@ -65,6 +65,41 @@ export const AGENT_COMPACT_RPC_TIMEOUT_MS =
 export const WORKTREE_DELEGATE_RPC_TIMEOUT_MS = 10 * 60_000;
 
 /**
+ * The project's worktree setup command, as host-core bounds it. Mirrors
+ * `SETUP_TIMEOUT_MS` in
+ * `crates/host-core/src/session_worktrees/lifecycle/create.rs`: dependency
+ * installs are slow, and a task's preparation waits for the command rather than
+ * starting in a half-built folder.
+ */
+export const WORKTREE_SETUP_TIMEOUT_MS = 30 * 60_000;
+
+/**
+ * One git command host-core runs for a worktree. Mirrors `DEFAULT_TIMEOUT` in
+ * `crates/host-core/src/session_worktrees/git.rs`.
+ */
+export const WORKTREE_GIT_COMMAND_TIMEOUT_MS = 120_000;
+
+/**
+ * `task.create`, `task.workspace.retry`, and `taskCard.confirm` prepare a task's
+ * workspace before they answer: a fetch, `worktree add`, the lock, the
+ * `.worktreeinclude` copy, and the project's setup command, which alone may take
+ * `WORKTREE_SETUP_TIMEOUT_MS`. Under the flat 130s default the transport gave up
+ * while the host was still preparing, and the failure was worse than a slow
+ * task — the renderer never sent the first message, and a confirmed card was
+ * never dispatched (`dispatchConfirmed` never ran), leaving work that looked
+ * started and was not.
+ *
+ * Deliberately per-method: these three are the only calls that wait for a
+ * setup command, so a wider global default would hide a genuinely lost reply
+ * everywhere else.
+ */
+export const TASK_WORKSPACE_RPC_TIMEOUT_MS =
+  WORKTREE_SETUP_TIMEOUT_MS +
+  // The fetch, `worktree add`, `worktree lock`, and the include copy.
+  4 * WORKTREE_GIT_COMMAND_TIMEOUT_MS +
+  COMMAND_RPC_BUFFER_MS;
+
+/**
  * `configSync.syncNow` is a Host-owned multi-step operation. It has no
  * whole-request deadline: individual S3 requests retain their own bounds, and
  * navigating away from Settings only detaches the renderer from the request.
@@ -96,6 +131,15 @@ export function rpcTimeoutMs(
   if (method === "agent.compact") return AGENT_COMPACT_RPC_TIMEOUT_MS;
   if (method === "worktree.delegate.create" || method === "worktree.delegate.settle") {
     return WORKTREE_DELEGATE_RPC_TIMEOUT_MS;
+  }
+  // Preparing a task's workspace waits for a git fetch and the project's setup
+  // command, which is slower than every other interactive call.
+  if (
+    method === "task.create" ||
+    method === "task.workspace.retry" ||
+    method === "taskCard.confirm"
+  ) {
+    return TASK_WORKSPACE_RPC_TIMEOUT_MS;
   }
   if (method === "configSync.syncNow") return undefined;
   // Install/update own bounded transfers and cancellation. A batch may contain

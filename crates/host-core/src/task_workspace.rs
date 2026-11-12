@@ -448,11 +448,19 @@ impl UnsavedWork {
 
 /// Uncommitted files and commits that have not left the machine, across every
 /// worktree of the task (its own and any subagent's).
+///
+/// `base_ref` is the ref the task's branch was created from. It is excluded from
+/// the commit count for a reason that showed up in a real repository: a task
+/// branched from `origin/main` while the local `main` is behind has made no
+/// commits of its own, and counting `main..branch` reported the *remote's*
+/// commit as the task's work — a task that did nothing asked the person to
+/// confirm discarding something they never wrote.
 pub async fn unsaved_work(
     state: &SharedState,
     git: &GitRunner,
     session_id: &str,
     mode: DeliveryMode,
+    base_ref: Option<&str>,
 ) -> Result<UnsavedWork, WorktreeError> {
     let rows = {
         let st = state.lock().await;
@@ -468,31 +476,49 @@ pub async fn unsaved_work(
                 .filter(|line| !line.trim().is_empty())
                 .count() as u64;
         }
-        work.unpushed_commits += commits_left_on_machine(git, &row, mode).await;
+        work.unpushed_commits += commits_left_on_machine(git, &row, mode, base_ref).await;
     }
     Ok(work)
 }
 
-/// Commits that exist only here: not on any remote for `pr` delivery, not on the
-/// project's branch for `local` delivery. Read from the repository, so a vanished
-/// folder whose branch still holds commits is still reported.
-async fn commits_left_on_machine(git: &GitRunner, row: &WorktreeRow, mode: DeliveryMode) -> u64 {
+/// Commits this task made that exist only here: not on the ref it started from,
+/// and not where its work is delivered — any remote for `pr`, the project's own
+/// branch for `local`.
+///
+/// Read from the repository, so a vanished folder whose branch still holds
+/// commits is still reported.
+async fn commits_left_on_machine(
+    git: &GitRunner,
+    row: &WorktreeRow,
+    mode: DeliveryMode,
+    base_ref: Option<&str>,
+) -> u64 {
     let common_dir = Path::new(&row.common_dir);
     if !common_dir.is_dir() {
         return 0;
     }
     let branch = merge::head_ref(&row.branch);
-    let args: Vec<String> = match mode {
-        DeliveryMode::Pr => ["rev-list", "--count", &branch, "--not", "--remotes"]
-            .iter()
-            .map(|arg| (*arg).to_string())
-            .collect(),
-        _ => vec![
-            "rev-list".to_string(),
-            "--count".to_string(),
-            format!("{}..{}", merge::head_ref(&row.owner_branch), branch),
-        ],
-    };
+    // `--not` applies to every revision after it, so the base and the delivery
+    // target are excluded by one list.
+    let mut args: Vec<String> = vec![
+        "rev-list".to_string(),
+        "--count".to_string(),
+        branch,
+        "--not".to_string(),
+    ];
+    if let Some(base) = base_ref.filter(|base| base.starts_with("refs/")) {
+        if git
+            .run_git_dir(common_dir, &["show-ref", "--verify", "--quiet", base])
+            .await
+            .is_ok()
+        {
+            args.push(base.to_string());
+        }
+    }
+    match mode {
+        DeliveryMode::Pr => args.push("--remotes".to_string()),
+        _ => args.push(merge::head_ref(&row.owner_branch)),
+    }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     git.run_git_dir(common_dir, &refs)
         .await
@@ -533,7 +559,8 @@ pub async fn cleanup_for_archive(
         .and_then(DeliveryMode::parse)
         .unwrap_or(DeliveryMode::Local);
     if !discard {
-        let work = unsaved_work(state, git, &task.session_id, mode).await?;
+        let work =
+            unsaved_work(state, git, &task.session_id, mode, task.base_ref.as_deref()).await?;
         if !work.is_empty() {
             return Err(WorktreeError::new(
                 WORKSPACE_UNSAVED,
@@ -546,6 +573,8 @@ pub async fn cleanup_for_archive(
     }
     if let Err(error) = lifecycle::remove_session_worktrees(state, git, &task.session_id).await {
         tracing::warn!(%error, task = task_id, "could not remove a task workspace on archive");
+        // The folder is still there: the task says so, and ADR 0329's orphan pass
+        // (or a later archive attempt) finishes the job.
         set_workspace(
             state,
             task_id,
@@ -556,6 +585,11 @@ pub async fn cleanup_for_archive(
             )),
         )
         .await?;
+    } else {
+        // Nothing is left to prepare or retry: the task no longer has a
+        // workspace, and a stale `ready` would offer a retry for a folder that
+        // does not exist.
+        set_workspace(state, task_id, WorkspaceStatus::None, None).await?;
     }
     Ok(())
 }

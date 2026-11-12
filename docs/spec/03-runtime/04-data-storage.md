@@ -1212,6 +1212,12 @@ workspace_branch  TEXT             -- the branch the worktree was created on
 - `delivery_mode` is `pr` for a project with a GitHub remote, `local` otherwise
   (ADR 0329's "merge into project"), and `none` without a project. Deciding is
   this schema; delivering is the completion card's job.
+- Archiving removes the workspace when nothing is left in it and returns
+  `workspace_status` to `none`; a removal that fails keeps the folder and leaves
+  `failed` (the pending cleanup `cleanup_orphans` finishes). "Nothing left" counts
+  only the task's own commits — not on `base_ref`, not on the delivery target —
+  so a task branched from a remote that its local branch has not caught up with
+  is not asked to discard the remote's commit.
 
 **Schema v33 -> v34.** A pure `ALTER TABLE ... ADD COLUMN` step: no table is
 rebuilt and no row is rewritten, so a long-lived file that carries historical
