@@ -100,6 +100,21 @@ pub(super) fn callback(db: &Database, message: &Message) -> Result<Option<Messag
     Ok(Some(receipt))
 }
 
+/// The task stage a settled delivery leaves behind.
+///
+/// Only the machine's own outcome is inferred here; anything a worker reports
+/// still arrives through `progress::report`, which wins because it is written
+/// by a sequence the settlement does not touch.
+fn task_stage_for(outcome: &str) -> &'static str {
+    match outcome {
+        "failed" => "failed",
+        // Cancelled work is not the person's turn either: nothing is running.
+        "cancelled" => "queued",
+        // Finished: the person still has to accept it.
+        _ => "person/accept",
+    }
+}
+
 /// Must be called after the transcript outbox and durable turn have settled.
 /// Repeated terminal notifications return the same receipt, never a new one.
 pub fn settle_turn(db: &Database, turn_id: &str) -> Result<Option<Message>> {
@@ -132,6 +147,10 @@ pub fn settle_turn(db: &Database, turn_id: &str) -> Result<Option<Message>> {
     let tx = db.conn().unchecked_transaction()?;
     db.conn().execute("UPDATE session_collaboration_messages SET status=?2,result=?3,error=?4,updated_at=?5 WHERE id=?1",
         params![message.id,outcome,report,error,now_ms()])?;
+    // A settled turn is the host's own evidence about the task's stage: a failed
+    // or cancelled delivery is the machine's outcome, and a completed one is
+    // finished work waiting for the person to accept it.
+    crate::tasks::sync_stage(&tx, &message.id, task_stage_for(outcome))?;
     let updated =
         repository::get(db, &message.id)?.ok_or_else(|| anyhow!("NOT_FOUND: settled message"))?;
     let receipt = callback(db, &updated)?;

@@ -29,6 +29,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { SessionHoverCard } from "../features/sessions/SessionHoverCard";
 import { BotSidebarGroup } from "../features/bots/BotSidebarGroup";
+import { useBotSidebarHandlers } from "../features/bots/use-task-composer";
 import { useSessionHoverCard } from "../features/sessions/useSessionHoverCard";
 import { isDefaultSessionTitle, useAppStore } from "../stores/app-store";
 import {
@@ -1216,6 +1217,9 @@ export function Sidebar({
     },
     [showToast, t],
   );
+
+  // What a click on an employee or a task does lives with the employee feature.
+  const botHandlers = useBotSidebarHandlers(reportError);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => {
@@ -2772,12 +2776,7 @@ export function Sidebar({
 
         {/* Employees sit above the projects: they are who the person talks to,
             and a bot session never appears in the lists below. */}
-        <BotSidebarGroup
-          activeSessionId={activeSessionId}
-          onOpen={(sessionId) => {
-            void selectSession(sessionId).catch(reportError);
-          }}
-        />
+        <BotSidebarGroup activeSessionId={activeSessionId} {...botHandlers} />
 
         <div
           className="sidebar-list-toolbar"

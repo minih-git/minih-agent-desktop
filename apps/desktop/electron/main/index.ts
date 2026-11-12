@@ -91,6 +91,7 @@ import { createDesktopServices } from "./services/desktop-services";
 import { createPluginServices } from "./services/plugin-services";
 import { wirePluginThemeRuntimeServices } from "./plugin-theme-services";
 import { createSessionCollaborationService } from "./services/session-collaboration";
+import { createTaskChangeAnnouncer } from "./services/task-changes";
 import {
   createApplicationLifecycle,
 } from "./bootstrap/app-lifecycle";
@@ -728,6 +729,15 @@ const planUiProbe = createPlanUiProbe({
 
 let emitAgentEvent: (envelope: AgentEventEnvelope) => void = () => undefined;
 
+// The one writer of the task channel (ADR bot-sessions-and-steward §7): the
+// employee IPC handlers announce what they create or archive, and the delivery
+// service announces the stages a settle, failure or cancellation moved.
+const taskChanges = createTaskChangeAnnouncer({
+  sendToRenderer,
+  getHost,
+  log: (message, data) => logger.app("runtime", "warn", message, { data }),
+});
+
 const sessionCollaboration = createSessionCollaborationService({
   getHost,
   getSidecar,
@@ -740,6 +750,7 @@ const sessionCollaboration = createSessionCollaborationService({
   isPluginLoaded: (pluginId) => plugins.listLoaded().some((plugin) => plugin.manifest.id === pluginId),
   isQuitting: () => mainState.quitting,
   onChanged: () => sendToRenderer(IPC.event.sessionsChanged, { reason: "session.collaboration" }),
+  onTaskChanged: () => taskChanges.reconcileStages(),
   log: (message, data) => logger.app("runtime", "warn", message, { data }),
 });
 
@@ -1030,6 +1041,7 @@ const liveCallService = createLiveCallService({
 function registerIpc() {
   return registerIpcHandlers({
     sessionCollaboration,
+    taskChanges,
     generateSessionTitle: sessionTitleGenerator.run,
     generateFollowUpSuggestion,
     announceSessionTitleChanged: (sessionId) => void sessionChangeNotifier.titleChanged(sessionId),

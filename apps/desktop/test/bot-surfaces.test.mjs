@@ -20,6 +20,19 @@ import { createServer } from "vite";
  * also prove what a mount does **not** call.
  */
 
+const task = (patch) => ({
+  id: patch.id,
+  employeeSessionId: patch.employeeSessionId,
+  sessionId: `session-${patch.id}`,
+  title: patch.title ?? "Fix the timeout",
+  origin: "direct",
+  stage: patch.stage ?? "queued",
+  projectPath: "/repo/router",
+  createdAt: "2026-11-11T00:00:00.000Z",
+  shortId: patch.id.slice(0, 6),
+  ...patch,
+});
+
 const bot = (patch) => ({
   sessionId: patch.sessionId,
   title: patch.name,
@@ -35,7 +48,7 @@ const bot = (patch) => ({
   createdAt: "2026-11-11T00:00:00.000Z",
 });
 
-async function harness(t) {
+async function harness(t, { bots: seeded = [], tasks: seededTasks = [] } = {}) {
   const calls = [];
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", {
@@ -47,6 +60,10 @@ async function harness(t) {
       minihAgent: {
         invoke: async (channel, input) => {
           calls.push({ channel, input });
+          // A surface with no data seam reads the roster and the tasks itself;
+          // these lists are empty so a dot shows what the test passed in.
+          if (channel === IPC.invoke.botList) return { ok: true, data: { bots: seeded } };
+          if (channel === IPC.invoke.taskList) return { ok: true, data: { tasks: seededTasks } };
           return { ok: true, data: undefined };
         },
         on: () => () => undefined,
@@ -93,8 +110,16 @@ test("the sidebar group paints every stage and names it for screen readers", asy
     bot({ sessionId: "idle", name: "Idler", status: { kind: "idle" } }),
     bot({ sessionId: "offline", name: "Remote", status: { kind: "offline" } }),
   ];
+  // The dot now follows the tasks an employee holds (ADR §7), so each employee
+  // below carries the task that puts it in that stage.
+  const tasks = [
+    task({ id: "t-waiting", employeeSessionId: "waiting", stage: "person/accept" }),
+    task({ id: "t-busy", employeeSessionId: "busy", stage: "working" }),
+    task({ id: "t-queued", employeeSessionId: "queued", stage: "queued" }),
+    task({ id: "t-blocked", employeeSessionId: "blocked", stage: "failed" }),
+  ];
   const html = h.render(
-    createElement(BotSidebarGroup, { bots, onOpen: () => undefined }),
+    createElement(BotSidebarGroup, { bots, tasks, onOpenBot: () => undefined, onOpenTask: () => undefined }),
   );
 
   assert.match(html, /data-bot-status="attention"/);
@@ -102,10 +127,10 @@ test("the sidebar group paints every stage and names it for screen readers", asy
   assert.match(html, /data-bot-status="queued"/);
   assert.match(html, /data-bot-status="blocked"/);
   assert.match(html, /data-bot-status="idle"/);
-  assert.match(html, /data-bot-status="offline"/);
+
   // Every dot is announced, never colour-only.
   assert.match(html, /aria-label="Waiting for you"/);
-  assert.match(html, /aria-label="Offline"/);
+  assert.match(html, /aria-label="Idle"/);
   // An offline employee still has a row; it is not dropped from the roster.
   assert.match(html, /data-sidebar-bot-row="offline"/);
   // Whoever is waiting on the person comes first.
@@ -122,7 +147,9 @@ test("an employee row names the session it opens", async (t) => {
   const html = h.render(
     createElement(BotSidebarGroup, {
       bots: [bot({ sessionId: "s-1", name: "Steward" })],
-      onOpen: () => undefined,
+      tasks: [],
+      onOpenBot: () => undefined,
+      onOpenTask: () => undefined,
     }),
   );
   assert.match(html, /data-sidebar-bot-row="s-1"/);
@@ -136,7 +163,14 @@ test("the sidebar group renders nothing while there are no employees", async (t)
     "/src/features/bots/BotSidebarGroup.tsx",
   );
   assert.equal(
-    h.render(createElement(BotSidebarGroup, { bots: [], onOpen: () => undefined })),
+    h.render(
+      createElement(BotSidebarGroup, {
+        bots: [],
+        tasks: [],
+        onOpenBot: () => undefined,
+        onOpenTask: () => undefined,
+      }),
+    ),
     "",
   );
 });

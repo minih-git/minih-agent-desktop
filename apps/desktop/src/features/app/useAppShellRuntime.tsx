@@ -53,6 +53,10 @@ export function useAppShellRuntime() {
   const bootstrap = useAppStore((s) => s.bootstrap);
   const ready = useAppStore((s) => s.ready);
   const page = useAppStore((s) => s.page);
+  // The employee whose workbench is on screen, if any (ADR
+  // bot-sessions-and-steward §7). It is a view of one session, not a page of
+  // its own: opening a conversation or a settings page clears it.
+  const workbenchEmployeeId = useAppStore((s) => s.workbenchEmployeeId);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const acknowledgeSessionOutcome = useAppStore(
     (s) => s.acknowledgeSessionOutcome,
@@ -1016,6 +1020,7 @@ export function useAppShellRuntime() {
     t,
     ready,
     page,
+    workbenchEmployeeId,
     activeSessionId,
     workPanelOpen,
     searchOpen,

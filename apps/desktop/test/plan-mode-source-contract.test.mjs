@@ -248,7 +248,13 @@ test("pending approval keeps the draft while gating every composer control", () 
     composerSource,
     /const controlsBlocked = approvalPending \|\| nativeSession \|\| !sessionAllows\(capabilitySession, "canConfigureModel"\);/,
   );
-  assert.match(composerSource, /const sendBlocked = approvalPending \|\| pasting \|\| nativeInputBlocked;/);
+  // A pending approval gates sending; an archived task closes the input for a
+  // different reason and does not relax this one (ADR bot-sessions-and-steward
+  // §7).
+  assert.match(
+    composerSource,
+    /const sendBlocked = approvalPending \|\| pasting \|\| nativeInputBlocked \|\| taskComposer\.archived;/,
+  );
   assert.match(storeSource, /if \(get\(\)\.pendingPlans\[sessionId\]\?\.status === "pending"\) return/);
 });
 

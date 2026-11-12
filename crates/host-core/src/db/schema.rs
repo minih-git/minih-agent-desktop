@@ -107,8 +107,16 @@ CREATE TABLE sessions (
   -- Bot session identity (ADR bot-sessions-and-steward): a bot is a session,
   -- so its role and profile live on the row that owns the conversation.
   role        TEXT NOT NULL DEFAULT 'user'
-              CHECK (role IN ('user', 'bot')),
+              CHECK (role IN ('user', 'bot', 'task')),
   bot_profile_json TEXT,
+  -- A task session belongs to an employee (ADR bot-sessions-and-steward §7).
+  -- Declared here, and added by `ALTER TABLE` in the v32 -> v33 step, so the
+  -- fresh path and the migration produce one identical table. Both are
+  -- self-references, which is why the rebuild never happens on a file whose
+  -- tables already point at `sessions`.
+  owner_session_id TEXT,
+  -- Archived with its task, in the same transaction (schema v33).
+  archived_at INTEGER,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );

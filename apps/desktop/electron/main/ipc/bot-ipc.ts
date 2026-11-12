@@ -2,14 +2,17 @@ import {
   IPC,
   type BotsChangedEvent,
   type SessionCollaborationMessage,
+  type TaskArchiveResult,
   type TaskCardConfirmResult,
   type TaskCardDraftView,
+  type TaskCreateResult,
+  type TaskView,
 } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
 import type { SessionCollaborationService } from "../services/session-collaboration";
 import type { IpcRegistrar } from "./types";
 import { taskCardsChangedSender } from "../services/task-cards-changed";
-
+import type { TaskChangeAnnouncer } from "../services/task-changes";
 /**
  * The employee surface (ADR bot-sessions-and-steward §5).
  *
@@ -27,6 +30,7 @@ export function registerBotIpc({
   getHost,
   sendToRenderer,
   sessionCollaboration,
+  tasks,
 }: {
   registrar: IpcRegistrar;
   getHost: () => HostProcess | null;
@@ -37,9 +41,16 @@ export function registerBotIpc({
    * ordinary send uses, never a second starter.
    */
   sessionCollaboration: SessionCollaborationService;
+  /**
+   * The one writer of the task channel. Every direction a task can change —
+   * this module's own calls, and the delivery settlements `session.collaboration`
+   * performs — goes through this same object.
+   */
+  tasks: TaskChangeAnnouncer;
 }): void {
   const { handle } = registrar;
   const notifyTaskCardsChanged = taskCardsChangedSender(sendToRenderer);
+  const { announce: announceTask, reconcileStages: reconcileTaskStages } = tasks;
   const host = (): HostProcess => {
     const current = getHost();
     if (!current?.isAvailable()) throw new Error("host unavailable");
@@ -101,6 +112,7 @@ export function registerBotIpc({
     })) as {
       draft?: TaskCardDraftView;
       delivery?: SessionCollaborationMessage;
+      task?: TaskView;
     };
     // Confirming writes the delivery and stops there. Starting it is the same
     // step an ordinary send takes, so it goes through the same dispatch; without
@@ -116,6 +128,13 @@ export function registerBotIpc({
         startError = error instanceof Error ? error.message : String(error);
       }
     }
+    // The confirmed card created a task under its employee (the host does that
+    // in the confirmation's own transaction), so the work now lives in that
+    // task's session. Announced once, before anything else can report it.
+    if (result.task) announceTask(result.task, "created");
+    // A dispatch moves the task's stage from `queued` to `working`; the
+    // reconcile reads it back rather than guessing, and emits once.
+    await reconcileTaskStages();
     // The person's click is one of three ways a card changes; the emitter keeps
     // every direction on one channel, so the dock has a single thing to listen to.
     notifyTaskCardsChanged({
@@ -129,6 +148,31 @@ export function registerBotIpc({
       deliveryId: result.delivery?.id ?? "",
       ...(startError ? { startError } : {}),
     } satisfies TaskCardConfirmResult;
+  });
+
+  // Tasks under an employee (ADR bot-sessions-and-steward §7). Creating one also
+  // makes its session, so the renderer opens the session the host returned; the
+  // first user message is sent afterwards through the normal send path.
+  handle(IPC.invoke.taskCreate, async (request) => {
+    const result = (await host().call("task.create", (request ?? {}) as Record<string, unknown>)) as
+      TaskCreateResult;
+    announceTask(result.task, "created");
+    return result;
+  });
+
+  handle(IPC.invoke.taskList, async (request) =>
+    host().call("task.list", (request ?? {}) as Record<string, unknown>),
+  );
+
+  handle(IPC.invoke.taskGet, async (request) =>
+    host().call("task.get", (request ?? {}) as Record<string, unknown>),
+  );
+
+  handle(IPC.invoke.taskArchive, async (request) => {
+    const result = (await host().call("task.archive", (request ?? {}) as Record<string, unknown>)) as
+      TaskArchiveResult;
+    announceTask(result.task, "archived");
+    return result;
   });
 
   handle(IPC.invoke.taskCardDrop, async (request) => {

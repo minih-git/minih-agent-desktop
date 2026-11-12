@@ -210,6 +210,17 @@ export type AppState = {
   unreadNotificationCount: number;
   page: "chat" | "scheduled" | "plugins" | "pluginView" | "settings";
   /**
+   * The employee whose workbench is on screen (ADR bot-sessions-and-steward §7),
+   * or null when the center pane shows an ordinary conversation.
+   *
+   * A workbench is a view of one employee session, not a page of its own: it has
+   * no address outside the session, so opening any conversation clears it rather
+   * than being a second thing to track in the nav stack.
+   */
+  workbenchEmployeeId: string | null;
+  /** Show one employee's workbench, or leave it with `null`. */
+  setWorkbenchEmployee: (sessionId: string | null) => void;
+  /**
    * `<pluginId>/<viewId>` of the contributed view the `pluginView` page shows.
    * Kept beside `page` so a nav entry can restore both, and null on every other
    * page: only a `placement: sidebar` view can own the center pane.

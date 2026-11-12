@@ -191,6 +191,13 @@ import type {
   RemoteGatewayDeviceNotice,
   RemoteGatewayDeviceRequest,
   RacpModelSummary,
+  TaskArchiveResult,
+  TaskCreateRequest,
+  TaskCreateResult,
+  TaskList,
+  TaskListRequest,
+  TaskView,
+  TasksChangedEvent,
 } from "@minih-agent/shared";
 import {
   defaultCommandShellForPlatform,
@@ -1624,6 +1631,23 @@ export const api = {
     invoke<TaskCardConfirmResult>(IPC.invoke.taskCardConfirm, request),
   dropTaskCard: (draftId: string) =>
     invoke<{ draft: TaskCardDraftView }>(IPC.invoke.taskCardDrop, { draftId }),
+  // --- Tasks under an employee (ADR bot-sessions-and-steward §7) -----------
+  /**
+   * Start one task. The host creates the task and its session in one
+   * transaction, so the returned `session` is the conversation to open.
+   */
+  createTask: (request: TaskCreateRequest) =>
+    invoke<TaskCreateResult>(IPC.invoke.taskCreate, request),
+  listTasks: (request: TaskListRequest = {}) => invoke<TaskList>(IPC.invoke.taskList, request),
+  getTask: (taskId: string) => invoke<{ task: TaskView }>(IPC.invoke.taskGet, { taskId }),
+  /** Ends the task and its session together; a repeat returns the first stamp. */
+  archiveTask: (taskId: string) => invoke<TaskArchiveResult>(IPC.invoke.taskArchive, { taskId }),
+  onTasksChanged: (listener: (event: TasksChangedEvent) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.tasksChanged, (payload) =>
+      listener((payload ?? { employeeSessionId: "", reason: "stage" }) as TasksChangedEvent),
+    );
+  },
   onBotsChanged: (listener: (event: BotsChangedEvent) => void) => {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.botsChanged, (payload) =>

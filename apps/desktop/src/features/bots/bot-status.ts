@@ -1,4 +1,5 @@
-import type { BotListItem, BotStatusPoint, TaskStage } from "@minih-agent/shared";
+import type { BotListItem, BotStatusPoint, TaskStage, TaskTone, TaskView } from "@minih-agent/shared";
+import { taskTone } from "@minih-agent/shared";
 
 /**
  * The sidebar's status dot for one employee (ADR bot-sessions-and-steward §4).
@@ -104,4 +105,37 @@ export function botInitials(name: string): string {
   if (!trimmed) return "?";
   const first = Array.from(trimmed)[0] ?? "?";
   return first.toLocaleUpperCase();
+}
+
+/**
+ * The stage word a task row shows, e.g. "Waiting for you" or "Working".
+ *
+ * A task is a stage plus a colour; the word comes from the same catalog the
+ * employee dot uses, so one stage never reads two ways in one sidebar.
+ */
+export function taskStageLabelKey(stage: TaskStage): string {
+  return botStatusView({ kind: "stage", stage }).labelKey;
+}
+
+/** Where a task sits in a list, as one of three tones (ADR §7). */
+export function taskStatusTone(task: Pick<TaskView, "stage">): TaskTone {
+  return taskTone(task.stage);
+}
+
+/**
+ * One employee's status dot, from the tasks it holds (ADR
+ * bot-sessions-and-steward §7).
+ *
+ * An employee no longer runs turns of its own: what it is doing is what its
+ * open tasks are doing. Waiting on the person wins over being busy, being busy
+ * wins over everything else, and no open task means idle.
+ */
+export function botStatusFromTasks(tasks: readonly Pick<TaskView, "stage">[]): BotStatusPoint {
+  const first = (wanted: readonly TaskStage[]) =>
+    tasks.find((task) => wanted.includes(task.stage))?.stage;
+  const waiting = first(["person/answer", "person/accept"]);
+  if (waiting) return { kind: "stage", stage: waiting };
+  const busy = first(["working", "queued", "waiting", "blocked", "failed"]);
+  if (busy) return { kind: "stage", stage: busy };
+  return { kind: "idle" };
 }

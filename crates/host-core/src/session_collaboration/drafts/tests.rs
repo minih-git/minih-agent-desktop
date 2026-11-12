@@ -195,7 +195,16 @@ fn confirming_freezes_the_card_and_dispatches_it() {
     let message = crate::session_collaboration::get(&db, &delivery_id)
         .unwrap()
         .unwrap();
-    assert_eq!(message.target_session_id, worker);
+    // Employee mode 0.5: the work landed in the task created for it, not in the
+    // employee's own transcript, and the task names this delivery.
+    let task = crate::tasks::get_task(&db, confirmed["task"]["id"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(task.employee_session_id, worker);
+    assert_eq!(task.origin, "steward");
+    assert_eq!(task.delivery_id.as_deref(), Some(delivery_id.as_str()));
+    assert_eq!(task.stage, "queued");
+    assert_eq!(message.target_session_id, task.session_id);
     assert_eq!(message.permission_ceiling, "accept-edits");
     assert!(message
         .mandate_json
@@ -405,8 +414,17 @@ fn the_employee_surface_lists_status_and_keeps_the_conversation_on_dismiss() {
         .iter()
         .find(|bot| bot["sessionId"] == json!(worker))
         .unwrap();
-    // No report yet, so the dot reports the queued delivery, not a stage.
+    // Employee mode 0.5: the dot is derived from the tasks the employee holds,
+    // so a confirmed card that has not started yet reads as queued — the same
+    // reading the sidebar and the workbench take from the same rows.
     assert_eq!(row["status"], json!({"kind": "stage", "stage": "queued"}));
+    assert_eq!(row["openTaskCount"], json!(1));
+    let tasks = crate::tasks::list(&db, &json!({ "employeeSessionId": worker })).unwrap();
+    assert_eq!(
+        tasks["tasks"][0]["stage"],
+        json!("queued"),
+        "the employee's work is the task, and it is queued"
+    );
 
     // Dismissing flips the role back and keeps the session.
     crate::session_collaboration::bots::dismiss(&db, &json!({"sessionId": worker})).unwrap();
@@ -448,9 +466,17 @@ fn a_confirmed_card_is_pending_dispatch_until_a_turn_claims_it() {
         "the confirmed delivery waits for a turn"
     );
 
-    // A claim writes the turn id and leaves `queued`.
-    crate::session_collaboration::settlement::begin_turn(&db, &worker, &delivery_id, None, None)
-        .unwrap();
+    // A claim writes the turn id and leaves `queued`. The turn is claimed by the
+    // session the delivery now targets, which is the task's own session.
+    let task_session = confirmed["task"]["sessionId"].as_str().unwrap().to_string();
+    crate::session_collaboration::settlement::begin_turn(
+        &db,
+        &task_session,
+        &delivery_id,
+        None,
+        None,
+    )
+    .unwrap();
     let after = crate::session_collaboration::repository::pending_dispatch(&db).unwrap();
     assert!(
         after.iter().all(|row| row.id != delivery_id),

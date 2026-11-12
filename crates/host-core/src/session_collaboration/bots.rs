@@ -10,7 +10,7 @@ use super::drafts;
 use crate::db::{now_ms, Database};
 use crate::sessions;
 use anyhow::{anyhow, Result};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde_json::{json, Value};
 
 /// The crew a person gets when they explicitly ask for defaults. The steward is
@@ -39,39 +39,6 @@ fn string(input: &Value, key: &str, limit: usize) -> Result<String> {
     super::string(input, key, limit).map(str::to_owned)
 }
 
-/// Where an employee stands, from its latest delivery.
-///
-/// Only `person/*` stages are worth a person's attention, so the dot reports the
-/// stage verbatim and the renderer decides emphasis. A bot with no delivery at
-/// all is `idle`, which is not the same as "working".
-fn status_point(db: &Database, session_id: &str) -> Result<(Value, Option<String>)> {
-    let latest: Option<(String, Option<String>, String)> = db
-        .conn()
-        .query_row(
-            "SELECT id, stage, status FROM session_collaboration_messages
-             WHERE target_session_id=?1
-             ORDER BY created_at DESC, rowid DESC LIMIT 1",
-            params![session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()?;
-    let Some((delivery_id, stage, status)) = latest else {
-        return Ok((json!({"kind": "idle"}), None));
-    };
-    match stage {
-        Some(stage) => Ok((json!({"kind": "stage", "stage": stage}), Some(delivery_id))),
-        // Never reported. A queued delivery is waiting on the machine; anything
-        // settled has nothing left to show.
-        None => {
-            let point = match status.as_str() {
-                "queued" | "running" => json!({"kind": "stage", "stage": "queued"}),
-                _ => json!({"kind": "idle"}),
-            };
-            Ok((point, None))
-        }
-    }
-}
-
 fn bot_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, String)> {
     Ok((row.get(0)?, row.get(1)?))
 }
@@ -96,7 +63,10 @@ pub fn list(db: &Database) -> Result<Value> {
             // than invented: guessing would show an employee nobody configured.
             continue;
         };
-        let (status, delivery) = status_point(db, &id)?;
+        // Work lives in tasks now (ADR bot-sessions-and-steward §7): the count
+        // is how many are open, and the dot is derived from their stages.
+        let open_tasks = crate::tasks::employee_tasks(db, &id)?;
+        let status = crate::tasks::task_status_point(&open_tasks);
         let mut item = json!({
             "sessionId": id,
             "title": title,
@@ -105,8 +75,8 @@ pub fn list(db: &Database) -> Result<Value> {
             "updatedAt": summary.updated_at,
             "createdAt": summary.created_at,
         });
-        if let Some(delivery) = delivery {
-            item["currentDeliveryId"] = json!(delivery);
+        if !open_tasks.is_empty() {
+            item["openTaskCount"] = json!(open_tasks.len());
         }
         if let Some(path) = summary.project_path {
             item["projectPath"] = json!(path);

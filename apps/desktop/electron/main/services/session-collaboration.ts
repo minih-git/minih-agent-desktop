@@ -49,6 +49,16 @@ export type SessionCollaborationDependencies = {
   isPluginLoaded: (pluginId: string) => boolean;
   isQuitting: () => boolean;
   onChanged: () => void;
+  /**
+   * Announce the task stages a delivery move produced.
+   *
+   * A task's stage lives on its own row and moves inside the host transaction
+   * that settles, fails or cancels a delivery — so a terminal path here is the
+   * only signal Main ever gets. Without it the sidebar kept showing "working"
+   * after the work had finished (#B4). Optional so a test double need not wire
+   * it, and it never rejects: the announcer logs its own failures.
+   */
+  onTaskChanged?: () => Promise<void>;
   log: (message: string, data: Record<string, unknown>) => void;
   /**
    * This machine's stable identity, stamped into a task card's `requestedBy`.
@@ -354,9 +364,11 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           await host.call("session.collaboration.fail", {
             messageId: message.id,
             error: persisted.slice(0, 2000),
-          }).catch((persistenceError: unknown) => deps.log("Session delivery failure could not be saved", {
-            messageId: message.id, error: String(persistenceError),
-          }));
+          })
+            .then(() => deps.onTaskChanged?.())
+            .catch((persistenceError: unknown) => deps.log("Session delivery failure could not be saved", {
+              messageId: message.id, error: String(persistenceError),
+            }));
         }
         throw error;
       }
@@ -383,6 +395,9 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
       }
     }
     deps.onChanged();
+    // Cancelled work is not the person's turn and nothing is running, so the
+    // task's stage moved with the delivery: announce it through the one exit.
+    await deps.onTaskChanged?.();
     return { sessionId: result.sessionId, cancelled: true, sessionRetained: true };
   }
 
@@ -406,13 +421,19 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           const host = requireHost();
           if (settlements.size && await deps.flushTranscript()) {
             checkCurrent(host);
+            let settled = 0;
             for (const turnId of settlements) {
               // Settling is idempotent host-side, so entries recorded against a
               // previous host are replayed rather than dropped. A failing call
               // keeps its entry for a later drain.
               await host.call("session.collaboration.settle", { turnId });
               settlements.delete(turnId);
+              settled += 1;
             }
+            // A settled turn is a stage change: finished work now waits for the
+            // person, a failure is the machine's. One reconcile per pass, after
+            // the loop, so several settlements in one pass cost one host read.
+            if (settled > 0) await deps.onTaskChanged?.();
           }
           // Everything that still needs a turn: a completion callback, or a
           // confirmed card nobody started (a start that failed, or an app that

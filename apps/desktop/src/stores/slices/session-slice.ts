@@ -400,7 +400,7 @@ export function createSessionSlice({
           stateAtStart.sessionHistory[stateAtStart.activeSessionId],
         );
       }
-      set({ selectingSessionId: id, page: "chat" });
+      set({ selectingSessionId: id, page: "chat", workbenchEmployeeId: null });
       const outcomeAcknowledgement = get().acknowledgeSessionOutcome(id);
 
       const commitSelection = (
@@ -421,6 +421,8 @@ export function createSessionSlice({
           messages,
           sessionHistory: { ...state.sessionHistory, [id]: historyWindow },
           page: "chat" as const,
+          // A conversation replaces whatever the workbench was showing.
+          workbenchEmployeeId: null,
           isRunning: state.runningSessions[id] ?? false,
         });
         if (!record) {

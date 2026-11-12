@@ -71,7 +71,13 @@ test("only the latest navigation may commit a loaded transcript", () => {
   const selection = sessionSlice.match(
     /selectSession: async[\s\S]*?\n    newSession: async/,
   )?.[0] ?? "";
-  assert.match(selection, /set\(\{ selectingSessionId: id, page: "chat" \}\)/);
+  // Selecting a session also leaves whatever workbench the center pane showed:
+  // a workbench is a view of one session, not a page of its own (ADR
+  // bot-sessions-and-steward §7).
+  assert.match(
+    selection,
+    /set\(\{ selectingSessionId: id, page: "chat", workbenchEmployeeId: null \}\)/,
+  );
   assert.match(selection, /navigationIntentIsCurrent\(intent\)/);
   assert.match(
     selection,
