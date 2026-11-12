@@ -405,10 +405,14 @@ from it would always say idle — a bug this rule makes impossible.
 A card's `repo.origin` is a normalized git remote (`host/owner/name`, see
 `normalizeRepoOrigin`), never a filesystem path. Treating it as one created a
 phantom project row — visible in the person's project list — the first time a
-card was confirmed. It now never reaches the project resolver: a steward task
-works in the employee's own bound project, and resolving a remote origin to a
-local checkout belongs to the worktree slice, which is where a task gets its own
-workspace. `repo.ref` still becomes the task's branch.
+card was confirmed. It now never reaches the project resolver. Confirming a card
+resolves the origin against the remotes of the projects this computer already
+knows (`git remote -v`, compared after the same normalization) and passes the
+matching checkout; when nothing matches, the employee's own bound project is the
+fallback, and when neither exists the confirmation fails with
+`REPO_NOT_ON_THIS_COMPUTER` instead of working somewhere else. `repo.ref` still
+becomes the branch the task asked for, and the branch it actually got is recorded
+separately (`workspace_branch`).
 
 ### 4b. A task's stage reaches the interface from one place
 
@@ -418,12 +422,39 @@ Every one of them announces through the task-channel writer, which compares the
 stage it last announced with the one the host now holds: one move, one event,
 no polling, and a settle that changed nothing is silent.
 
+### 4c. A task works in its own folder inside the repository
+
+A task that touches a repository does its work in its own git worktree at
+`<top level>/.worktree/<short id>-<slug>`, built by ADR 0329's own machinery
+(registry, `.worktreeinclude`, setup command, behind / sync / merge, link-safe
+removal) with the placement and start-point differences recorded in ADR 0329's
+2026-11 amendment. Three consequences belong to this ADR:
+
+- **Preparation is a step of its own.** `tasks.workspace_status`
+  (`none | preparing | ready | failed`) is written by the host: the task row is
+  created first, the worktree is prepared outside that transaction (a git command
+  cannot be rolled back), and the first turn is only sent once the workspace is
+  `ready`. A failure records `workspace_error` — git's message, the setup
+  command's own output, a missing repository — and the task can retry in place.
+  A task without a repository is `none` and works in its session's own folder.
+- **Delivery is decided here, performed later.** `tasks.delivery_mode` is `pr`
+  when the project has a GitHub remote, `local` when it has another remote or
+  none (ADR 0329's "merge into project"), and `none` without a project. The
+  completion card and "accept and merge" belong to slice 4.
+- **Archiving is what ends the workspace.** `task.archive` removes the worktree
+  and its branch when nothing is left in them, and otherwise refuses with
+  `WORKSPACE_HAS_UNSAVED_WORK` and the counts (uncommitted files, unpushed
+  commits). The person's second click (`discard`) removes them anyway. A removal
+  that fails does not roll the archive back: the task records the pending cleanup
+  and ADR 0329's orphan pass finishes it.
+
 ### 5. What this section does not do
 
 Worktree creation and cleanup, the steward's dispatch rewrite, a "waiting for
-you" channel, employee memory, and hiring are later slices. `workspace_path`,
-the memory tab's content, and a per-repository model override exist as fields or
-placeholders and carry no behaviour yet.
+you" channel, employee memory, and hiring are later slices. The completion card
+and "accept and merge" (slice 4), the secretary (slice 3), multi-post handoff
+(slice 7), the memory tab's content, and a per-repository model override carry no
+behaviour yet.
 
 ### Enforcement status after this section
 

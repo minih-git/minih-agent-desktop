@@ -9,6 +9,7 @@ import { BotFormCard } from "./BotFormCard";
 import { draftFromBot } from "./bot-draft";
 import { taskStageLabelKey, taskStatusTone } from "./bot-status";
 import { taskRepoName } from "./BotTaskList";
+import { TaskWorkspaceStatus } from "./TaskWorkspaceStatus";
 import { useTasks } from "./use-tasks";
 
 /**
@@ -209,7 +210,11 @@ function TaskGroup({
                   <span className="employee-task-title">
                     {task.title}
                     {repo ? <span className="employee-task-repo"> · {repo}</span> : null}
-                    {task.branch ? <span className="employee-task-branch"> · {task.branch}</span> : null}
+                    {/* The branch, its start point, the delivery route and the
+                        workspace state come from one component, so this row and
+                        the task header cannot describe the same folder
+                        differently. */}
+                    <TaskWorkspaceStatus task={task} />
                   </span>
                   {task.latestProgress ? (
                     <span className="employee-task-progress">{task.latestProgress}</span>
@@ -245,6 +250,10 @@ function NewTaskField({ employee }: { employee: BotListItem }) {
   const [text, setText] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [busy, setBusy] = useState(false);
+  // True while the host prepares the new task's workspace: the task exists, but
+  // no turn may start until the folder is ready, so the field says what it is
+  // waiting for instead of looking stuck.
+  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const projects = useProjects();
   const selectSession = useAppStore((state) => state.selectSession);
@@ -263,6 +272,7 @@ function NewTaskField({ employee }: { employee: BotListItem }) {
     if (!utterance || busy) return;
     setBusy(true);
     setError(null);
+    setPreparing(Boolean(projectPath));
     try {
       const created = await api.createTask({
         employeeSessionId: employee.sessionId,
@@ -271,6 +281,7 @@ function NewTaskField({ employee }: { employee: BotListItem }) {
         projectPath: projectPath || null,
         sourceUtterance: utterance,
       });
+      setPreparing(false);
       setText("");
       // Opening first is what makes the first message land in this task rather
       // than wherever the person was before.
@@ -282,6 +293,7 @@ function NewTaskField({ employee }: { employee: BotListItem }) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      setPreparing(false);
       setBusy(false);
     }
   }, [busy, employee.sessionId, projectPath, selectSession, sendPrompt, t, text]);
@@ -327,6 +339,11 @@ function NewTaskField({ employee }: { employee: BotListItem }) {
           {t("bots.workbench.start")}
         </Button>
       </div>
+      {preparing ? (
+        <div className="employee-workbench-preparing" data-workbench-preparing="">
+          {t("bots.tasks.workspacePreparing")}
+        </div>
+      ) : null}
       <div className="employee-workbench-new-hint">
         {error ?? t("bots.workbench.newTaskHint")}
       </div>

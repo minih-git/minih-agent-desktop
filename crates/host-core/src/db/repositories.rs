@@ -153,10 +153,11 @@ impl Database {
                 tx.execute_batch(CONVERSATION_ARCHIVE_DDL)?;
                 tx.execute_batch(TASK_CARD_DRAFT_DDL)?;
                 // Tasks under an employee (schema v33): the same DDL the
-                // v32 -> v33 step applies.
+                // v32 -> v33 step applies, plus the workspace columns the
+                // v33 -> v34 step adds, so a new file ends up exactly where
+                // the migration chain does.
                 tx.execute_batch(TASKS_DDL)?;
-                // Tasks under an employee (schema v33): the same DDL the
-                // v32 -> v33 step applies.
+                tx.execute_batch(&task_workspace_ddl())?;
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -317,6 +318,10 @@ impl Database {
         }
         if migrated_version == 32 {
             super::task_migration::migrate(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version == 33 {
+            super::task_workspace_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

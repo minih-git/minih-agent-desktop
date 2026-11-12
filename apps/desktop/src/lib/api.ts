@@ -197,6 +197,7 @@ import type {
   TaskList,
   TaskListRequest,
   TaskView,
+  TaskWorkspaceRetryResult,
   TasksChangedEvent,
 } from "@minih-agent/shared";
 import {
@@ -1640,8 +1641,17 @@ export const api = {
     invoke<TaskCreateResult>(IPC.invoke.taskCreate, request),
   listTasks: (request: TaskListRequest = {}) => invoke<TaskList>(IPC.invoke.taskList, request),
   getTask: (taskId: string) => invoke<{ task: TaskView }>(IPC.invoke.taskGet, { taskId }),
-  /** Ends the task and its session together; a repeat returns the first stamp. */
-  archiveTask: (taskId: string) => invoke<TaskArchiveResult>(IPC.invoke.taskArchive, { taskId }),
+  /**
+   * Ends the task and its session together; a repeat returns the first stamp.
+   *
+   * `discard` is the person's second click after the host refused because the
+   * workspace still holds uncommitted files or unpushed commits.
+   */
+  archiveTask: (taskId: string, discard = false) =>
+    invoke<TaskArchiveResult>(IPC.invoke.taskArchive, { taskId, ...(discard ? { discard: true } : {}) }),
+  /** Re-run a failed workspace preparation in the same folder. */
+  retryTaskWorkspace: (taskId: string) =>
+    invoke<TaskWorkspaceRetryResult>(IPC.invoke.taskWorkspaceRetry, { taskId }),
   onTasksChanged: (listener: (event: TasksChangedEvent) => void) => {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.tasksChanged, (payload) =>

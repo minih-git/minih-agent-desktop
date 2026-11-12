@@ -175,6 +175,17 @@ export function registerBotIpc({
     return result;
   });
 
+  // A failed workspace preparation is retried from the task's own header; the
+  // host prepares again in the same folder and answers with the row.
+  handle(IPC.invoke.taskWorkspaceRetry, async (request) => {
+    const result = (await host().call("task.workspace.retry", (request ?? {}) as Record<
+      string,
+      unknown
+    >)) as { task?: TaskView };
+    if (result?.task) announceTask(result.task, "stage");
+    return result;
+  });
+
   handle(IPC.invoke.taskCardDrop, async (request) => {
     const { draftId } = (request ?? {}) as { draftId?: string };
     if (!draftId) throw new Error("draftId is required");

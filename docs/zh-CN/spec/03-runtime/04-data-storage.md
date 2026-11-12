@@ -852,6 +852,40 @@ archived_at        INTEGER
 存在违例就拒绝，应用在真实库上会直接起不来。既有会话的角色保持不变，两个新列为
 NULL，`tasks` 为空。
 
+### 4.19b tasks —— 任务干活的工作区（架构 v34，ADR 0329 2026-11 修订）
+
+涉及仓库的任务在仓库内自己的 git worktree 里干活
+（`<仓库顶层>/.worktree/<短号>-<slug>`）。目录、分支、端口段与准备日志仍保存在
+ADR 0329 的 `worktrees` 表；下面是只有任务自己知道的东西。
+
+```sql
+-- tasks（v34，用 ALTER TABLE 添加）
+workspace_status  TEXT NOT NULL DEFAULT 'none'
+                  CHECK (workspace_status IN ('none', 'preparing', 'ready', 'failed')),
+workspace_error   TEXT,            -- 准备失败的原因
+base_ref          TEXT,            -- 'refs/remotes/origin/main' 或 'refs/heads/main'
+base_remote       INTEGER NOT NULL DEFAULT 0,   -- 1 表示 base_ref 来自一次 fetch
+delivery_mode     TEXT CHECK (delivery_mode IN ('pr', 'local', 'none')),
+workspace_branch  TEXT             -- worktree 实际创建出的分支
+```
+
+- `workspace_status` 由宿主写入：`none`（没有仓库，任务在会话自己的目录里干活）、
+  `preparing`、`ready`、`failed`。任务的第一条消息只在其为 `ready` 时发出；失败会
+  记下 `workspace_error`，并可在同一目录里重试。
+- `workspace_path`（v33）与 `workspace_branch` 在变为 `ready` 时写入。`branch` 保持
+  v33 的语义——任务期望的分支（卡片的 `repo.ref`）——因此"期望的"和"实际创建的"
+  两者都可见。
+- `base_ref` 与 `base_remote` 记录分支真正的起点：项目 fetch 到的远端分支；没有远端
+  或 fetch 失败时则是本地分支位置。
+- `delivery_mode`：项目有 GitHub 远端时为 `pr`，否则为 `local`（ADR 0329 的"合并回
+  项目"），没有项目时为 `none`。本切片只判定并记录，真正执行交付在完成卡。
+
+**架构 v33 -> v34。** 纯 `ALTER TABLE ... ADD COLUMN`：不重建表、不重写行，因此带着
+历史外键违例的长期真实库与干净库一样能升级。每一列只在缺失时添加，所以在写入版本号
+之前中断的步骤会被补完而不是第二次失败；全新建库走同一份列表
+（`task_workspace_ddl`），保证新库与迁移后的库结构一致。所有既有任务读出来都是
+`workspace_status = 'none'`，起点与交付字段为 NULL。
+
 ### 4.7 messages — 转录索引
 
 脚本本身是每个会话的 JSONL 文件（第 2.1 节）；这张表是它的

@@ -55,10 +55,15 @@ async fn isolated(env: &Env) -> (String, CreatedWorktree, PathBuf) {
 
 async fn isolated_in(env: &Env, project: &Path) -> (String, CreatedWorktree, PathBuf) {
     let session = new_session(env, project).await;
-    let created =
-        create_session_worktree(&env.state, &env.git, &session, &project.to_string_lossy())
-            .await
-            .unwrap();
+    let created = create_session_worktree(
+        &env.state,
+        &env.git,
+        &session,
+        &project.to_string_lossy(),
+        Placement::DataDir,
+    )
+    .await
+    .unwrap();
     let root = tool_root(&env.state.lock().await.db, &session)
         .unwrap()
         .unwrap();
@@ -380,9 +385,15 @@ async fn projects_that_cannot_host_a_worktree_leave_nothing_behind() {
     let plain = env._dir.path().join("plain");
     fs::create_dir_all(&plain).unwrap();
     let session = new_session(&env, &plain).await;
-    let error = create_session_worktree(&env.state, &env.git, &session, &plain.to_string_lossy())
-        .await
-        .unwrap_err();
+    let error = create_session_worktree(
+        &env.state,
+        &env.git,
+        &session,
+        &plain.to_string_lossy(),
+        Placement::DataDir,
+    )
+    .await
+    .unwrap_err();
     assert_eq!(error.code, "WORKTREE_NOT_GIT");
     assert!(registry::for_session(&env.state.lock().await.db, &session)
         .unwrap()
@@ -433,6 +444,7 @@ async fn an_existing_branch_blocks_creation_without_being_deleted() {
         &env.git,
         &session,
         &env.project.to_string_lossy(),
+        Placement::DataDir,
     )
     .await
     .unwrap_err();

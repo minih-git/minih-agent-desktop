@@ -44,7 +44,10 @@ export type TaskView = {
   title: string;
   origin: TaskOrigin;
   projectPath?: string;
+  /** The branch the task asked for (`repo.ref` on a card), when it asked. */
   branch?: string;
+  /** The branch its worktree was created on, once the workspace is ready. */
+  workspaceBranch?: string;
   stage: TaskStage;
   /** The ledger delivery the steward's card dispatched, when there was one. */
   deliveryId?: string;
@@ -55,7 +58,38 @@ export type TaskView = {
   latestProgress?: string;
   /** Short identifier shown in the task session's header, e.g. `#37`. */
   shortId: string;
+  /** Where the task is in preparing the folder it works in. */
+  workspaceStatus: TaskWorkspaceStatus;
+  /** Why the preparation failed, in words the person can act on. */
+  workspaceError?: string;
+  /** The ref its branch was created from, e.g. `refs/remotes/origin/main`. */
+  baseRef?: string;
+  /** True when `baseRef` was fetched from the project's remote. */
+  baseRemote?: boolean;
+  /** How its work will reach the project. Decided by the host, not the client. */
+  deliveryMode?: TaskDeliveryMode;
 };
+
+/**
+ * A task's workspace, as the host prepares it (employee mode 0.5 slice 2).
+ *
+ * `none` is not a failure: a task without a repository works in its session's
+ * own folder. `preparing` is the only state in which no turn may start.
+ */
+export const TASK_WORKSPACE_STATUSES = ["none", "preparing", "ready", "failed"] as const;
+export type TaskWorkspaceStatus = (typeof TASK_WORKSPACE_STATUSES)[number];
+
+/**
+ * How a task's work reaches the project. `pr` needs a GitHub remote, `local`
+ * merges back into the project (ADR 0329), and `none` means there is no
+ * repository to deliver to. This slice records the decision; delivering is the
+ * completion card's job.
+ */
+export const TASK_DELIVERY_MODES = ["pr", "local", "none"] as const;
+export type TaskDeliveryMode = (typeof TASK_DELIVERY_MODES)[number];
+
+/** The refusal `task.archive` returns while the workspace still holds work. */
+export const TASK_WORKSPACE_UNSAVED = "WORKSPACE_HAS_UNSAVED_WORK";
 
 export type TaskList = { tasks: TaskView[] };
 
@@ -133,8 +167,18 @@ export type TaskListRequest = {
 };
 
 export type TaskGetRequest = { taskId: string };
-export type TaskArchiveRequest = { taskId: string };
+export type TaskArchiveRequest = {
+  taskId: string;
+  /**
+   * The person's second click after [`TASK_WORKSPACE_UNSAVED`]: discard the
+   * uncommitted files and unpushed commits and archive anyway.
+   */
+  discard?: boolean;
+};
 export type TaskArchiveResult = { task: TaskView; archivedAt: string };
+/** Re-run a failed workspace preparation; the host answers with the row. */
+export type TaskWorkspaceRetryRequest = { taskId: string };
+export type TaskWorkspaceRetryResult = { task: TaskView };
 
 /** Exactly what changed, and for whom: every surface refetches on this alone. */
 export type TasksChangedEvent = {

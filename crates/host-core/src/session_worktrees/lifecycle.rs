@@ -25,11 +25,12 @@ use crate::db::Database;
 use crate::sessions;
 use crate::state::AppState;
 
-pub type SharedState = Arc<Mutex<AppState>>;
+mod create;
+// Creation, the setup command, and where a repo-local worktree goes: one
+// responsibility, kept in its own module so this one stays the lifecycle.
+pub use create::*;
 
-/// Bound for the per-project setup command (dependency installs can be slow).
-pub const SETUP_TIMEOUT_MS: u64 = 30 * 60 * 1000;
-const SETUP_LOG_LIMIT: usize = 16 * 1024;
+pub type SharedState = Arc<Mutex<AppState>>;
 
 /// What the renderer needs to badge a session row; no filesystem paths.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
@@ -47,6 +48,9 @@ pub struct CreatedWorktree {
     pub included: IncludeReport,
     /// The main checkout had uncommitted changes that were not carried over.
     pub project_had_uncommitted_changes: bool,
+    /// Where a repo-local task worktree started from; `None` for the ADR's
+    /// data-directory placement, which branches from the project's tip.
+    pub base: Option<BasePoint>,
 }
 
 /// Unmerged work that deleting the session would lose (delete confirmation).
@@ -86,7 +90,7 @@ fn project_key(toplevel: &Path) -> String {
     )
 }
 
-pub(super) fn short_id(id: &str) -> String {
+pub(crate) fn short_id(id: &str) -> String {
     id.chars()
         .filter(char::is_ascii_alphanumeric)
         .take(12)
@@ -281,206 +285,6 @@ pub(super) async fn discard_failed_creation(
             tracing::warn!(%error, path = %row.path, "could not clean up a failed worktree creation")
         }
     }
-}
-
-/// Create the session's own worktree from the project's current branch tip,
-/// copy `.worktreeinclude` files, and start the optional setup command in the
-/// background. On failure nothing is left behind.
-pub async fn create_session_worktree(
-    state: &SharedState,
-    git: &GitRunner,
-    session_id: &str,
-    project_path: &str,
-) -> Result<CreatedWorktree, WorktreeError> {
-    let project = Path::new(project_path);
-    let repo = probe(git, project).await?;
-    let project_had_uncommitted_changes = !merge::worktree_status(git, project).await?.is_empty();
-    let _guard = repo_lock::lock(&repo.common_dir).await;
-
-    let data_dir = state.lock().await.data_dir.clone();
-    let parent = worktrees_dir(&data_dir).join(project_key(&repo.toplevel));
-    std::fs::create_dir_all(&parent)?;
-    let parent = crate::workspace::simple_canonicalize(&parent)?;
-    let name = short_id(session_id);
-    let root = parent.join(&name);
-    if root.exists() {
-        return Err(WorktreeError::new(
-            "WORKTREE_PATH_EXISTS",
-            format!("{} already exists", root.display()),
-        ));
-    }
-    let branch = format!("{BRANCH_NAMESPACE}/{name}");
-    ensure_branch_free(git, project, &branch).await?;
-    let root_text = root.to_string_lossy().into_owned();
-    let common_dir = repo.common_dir.to_string_lossy().into_owned();
-
-    let row = {
-        let st = state.lock().await;
-        let port = registry::next_port_base(&st.db, port_is_free)?;
-        registry::insert(
-            &st.db,
-            &NewWorktree {
-                session_id,
-                delegation_id: None,
-                path: &root_text,
-                common_dir: &common_dir,
-                prefix: &repo.prefix,
-                branch: &branch,
-                owner_branch: &repo.branch,
-                port_base: port,
-            },
-        )?
-    };
-
-    let created: Result<IncludeReport, WorktreeError> = async {
-        git.run(
-            project,
-            &[
-                "worktree",
-                "add",
-                "-q",
-                "-b",
-                &branch,
-                &root_text,
-                &merge::head_ref(&repo.branch),
-            ],
-        )
-        .await?;
-        git.run(
-            &root,
-            &[
-                "worktree",
-                "lock",
-                "--reason",
-                &format!("Minih-Agent-Desktop session {session_id}"),
-                &root_text,
-            ],
-        )
-        .await?;
-        copy_included(git, &repo.toplevel, &root).await
-    }
-    .await;
-
-    let included = match created {
-        Ok(included) => included,
-        Err(error) => {
-            discard_failed_creation(state, git, &row).await;
-            return Err(error);
-        }
-    };
-
-    let (row, command) = {
-        let st = state.lock().await;
-        registry::set_status(&st.db, &row.id, WorktreeStatus::Active)?;
-        let command = setup_command(&st.db, project_path)?;
-        let status = if command.is_some() {
-            SetupStatus::Running
-        } else {
-            SetupStatus::None
-        };
-        registry::set_setup_status(&st.db, &row.id, status, None)?;
-        let row = registry::get(&st.db, &row.id)?.unwrap_or(row);
-        (row, command)
-    };
-    if let Some(command) = command {
-        tokio::spawn(run_setup(
-            state.clone(),
-            row.clone(),
-            project_path.to_string(),
-            command,
-        ));
-    }
-    Ok(CreatedWorktree {
-        worktree: summary_of(&row),
-        included,
-        project_had_uncommitted_changes,
-    })
-}
-
-pub(super) async fn run_setup(
-    state: SharedState,
-    row: WorktreeRow,
-    project_path: String,
-    command: String,
-) {
-    let shell_id = {
-        let st = state.lock().await;
-        let configured = st
-            .db
-            .get_setting("app")
-            .ok()
-            .flatten()
-            .and_then(|settings| {
-                settings
-                    .get("defaultCommandShell")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_string)
-            });
-        crate::tools::shell::catalog(configured.as_deref())
-            .effective
-            .map(|option| option.id)
-            .unwrap_or_else(|| crate::tools::shell::default_shell_id().to_string())
-    };
-    let root = row.workspace_root();
-    let result = crate::tools::execute_tool_with_path_access(
-        Some(&root),
-        None,
-        "Bash",
-        &json!({ "command": command }),
-        crate::tools::ToolExecutionOptions {
-            timeout_ms: Some(SETUP_TIMEOUT_MS),
-            bash_options: Some(crate::tools::BashExecutionOptions {
-                session_id: row.session_id.clone().unwrap_or_default(),
-                tool_call_id: format!("worktree-setup-{}", row.id),
-                command_shell_id: shell_id,
-                timeout_ms: Some(SETUP_TIMEOUT_MS),
-                cancellation: None,
-                output_tx: None,
-                extra_env: env_for(&row, Some(&project_path)),
-                run_in_background: false,
-                app_state: None,
-            }),
-            allow_external_paths: false,
-            hashline: None,
-        },
-    )
-    .await;
-    let log = setup_log(&result.content);
-    let status = if result.ok {
-        SetupStatus::Ok
-    } else {
-        SetupStatus::Failed
-    };
-    let st = state.lock().await;
-    if let Err(error) = registry::set_setup_status(&st.db, &row.id, status, Some(&log)) {
-        tracing::warn!(%error, "could not record the worktree setup result");
-    }
-}
-
-fn setup_log(content: &serde_json::Value) -> String {
-    let text = match content {
-        serde_json::Value::String(text) => text.clone(),
-        value => {
-            let stdout = value.get("stdout").and_then(|v| v.as_str()).unwrap_or("");
-            let stderr = value.get("stderr").and_then(|v| v.as_str()).unwrap_or("");
-            let exit = value
-                .get("exitCode")
-                .map(|code| code.to_string())
-                .unwrap_or_default();
-            format!(
-                "{stdout}{}{stderr}\n[exit {exit}]",
-                if stderr.is_empty() { "" } else { "\n" }
-            )
-        }
-    };
-    if text.len() <= SETUP_LOG_LIMIT {
-        return text;
-    }
-    let mut start = text.len() - SETUP_LOG_LIMIT;
-    while !text.is_char_boundary(start) {
-        start += 1;
-    }
-    format!("[earlier output omitted]\n{}", &text[start..])
 }
 
 // ---- merge ------------------------------------------------------------------
@@ -924,3 +728,8 @@ pub async fn reconcile(state: SharedState, git: GitRunner) {
 
 #[cfg(test)]
 mod tests;
+
+/// Repo-local placement for task sessions (amendment 2026-11), in their own
+/// file so the ADR's own tests stay readable.
+#[cfg(test)]
+mod repo_local_tests;

@@ -9,6 +9,7 @@ mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
 mod side_notes_rpc;
+mod task_rpc;
 mod todos;
 mod window_corner_rpc;
 mod worktree_rpc;
@@ -1979,16 +1980,19 @@ async fn handle_request(
                 || method.starts_with("bot.")
                 || method.starts_with("taskCard.") =>
         {
+            if method == "taskCard.confirm" {
+                // Confirming resolves the card's repository to a checkout on
+                // this machine and prepares the task's workspace, both of which
+                // need git — so they cannot run inside the database call below.
+                return task_rpc::confirm_card(&state, params).await;
+            }
             let st = state.lock().await;
             crate::session_collaboration::handle(&st.db, method, &params)
                 .map_err(session_collaboration_rpc_err)
         }
-        // Tasks under an employee (ADR bot-sessions-and-steward §7).
-        method if method.starts_with("task.") => {
-            let st = state.lock().await;
-            crate::session_collaboration::handle_task(&st.db, method, &params)
-                .map_err(session_collaboration_rpc_err)
-        }
+        // Tasks under an employee (ADR bot-sessions-and-steward §7): creating
+        // and archiving one also prepares or removes its workspace.
+        method if method.starts_with("task.") => task_rpc::handle(&state, method, params).await,
         "app.handshake" => {
             let client_version = params
                 .get("protocolVersion")
@@ -6256,8 +6260,13 @@ mod tests {
     /// Every `task.*` method the desktop calls, spelled exactly as it sends it.
     ///
     /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts`.
-    const DESKTOP_TASK_METHODS: [&str; 4] =
-        ["task.create", "task.list", "task.get", "task.archive"];
+    const DESKTOP_TASK_METHODS: [&str; 5] = [
+        "task.create",
+        "task.list",
+        "task.get",
+        "task.archive",
+        "task.workspace.retry",
+    ];
 
     /// Tasks answer on the real RPC route, with real arguments.
     ///

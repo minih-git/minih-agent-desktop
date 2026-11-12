@@ -165,6 +165,8 @@ export const IPC = {
     taskList: "minih-agent-desktop/task/list",
     taskGet: "minih-agent-desktop/task/get",
     taskArchive: "minih-agent-desktop/task/archive",
+    // Re-run a failed workspace preparation before the first turn (slice 2).
+    taskWorkspaceRetry: "minih-agent-desktop/task/workspaceRetry",
     sessionCreate: "minih-agent-desktop/session/create",
     sessionFork: "minih-agent-desktop/session/fork",
     sessionMoveProject: "minih-agent-desktop/session/moveProject",

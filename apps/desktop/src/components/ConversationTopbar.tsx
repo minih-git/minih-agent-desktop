@@ -33,6 +33,7 @@ import { useBots } from "../features/bots/use-bots";
 import { useTasks } from "../features/bots/use-tasks";
 import { taskStageLabelKey, taskStatusTone } from "../features/bots/bot-status";
 import { taskRepoName } from "../features/bots/BotTaskList";
+import { TaskWorkspaceStatus } from "../features/bots/TaskWorkspaceStatus";
 
 function projectName(path?: string | null, name?: string | null) {
   if (name) return name;
@@ -346,7 +347,10 @@ export function ConversationTopbar({
                 {taskEmployee?.profile.name ?? task.employeeSessionId}
                 {taskRepoName(task) ? ` @ ${taskRepoName(task)}` : ""}
               </span>
-              {task.branch ? <span className="ct-chip">{task.branch}</span> : null}
+              {/* Where it works, which branch it got, which commit it started
+                  from and how its work will be delivered; a failed
+                  preparation retries from here. */}
+              <TaskWorkspaceStatus task={task} withRetry withArchive />
               {task.archivedAt ? (
                 <span className="ct-chip archived" data-task-stage="archived">
                   {t("bots.tasks.archived")}

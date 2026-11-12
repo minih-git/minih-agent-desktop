@@ -137,3 +137,76 @@ inside a junction. On Windows, RPC user-path tests also create and delete a
 session with a path beyond 260 characters and show that a delete blocked by a
 locked file fails with `WORKTREE_IO`, keeps the session, and succeeds on
 retry; the renderer-level live-model run of the scenario is still manual.
+
+## Amendment (2026-11): repo-local placement for task sessions
+
+Employee mode 0.5 makes an employee a container and each task one session. A task
+that touches a repository now works in its own worktree **inside that
+repository** (`<top level>/.worktree/<short id>-<slug>`) instead of under the
+data directory. Everything else about isolation is this ADR's own machinery,
+reused without a second implementation: creation, the `worktrees` registry,
+`.worktreeinclude`, the per-project setup command, behind / sync / merge,
+link-safe removal, and orphan cleanup all read the registered row, so only the
+path and the start point change.
+
+What differs, and why:
+
+1. **Placement is a parameter.** `Placement::DataDir` is the address decision 1
+   chose and stays the default for ordinary isolated sessions.
+   `Placement::RepoLocal(name)` builds the folder inside the repository. The
+   folder name is one path segment (`[a-z0-9-_]`, 40 characters of slug taken
+   from the task title); the branch name is unchanged
+   (`minih-agent/<short session id>`), so cleanup, subagent worktrees, and the
+   "unmerged commits" fallback keep reading the convention they already read.
+
+2. **The project must not see the folder.** "Worktrees inside the project" was
+   rejected above because `tsc`, watchers, and `git clean -ffdx` see copies. That
+   objection is answered by ignoring the directory, not by accepting a dirty
+   checkout: `.worktree/` is checked with `git check-ignore`, and when it is not
+   already ignored the pattern is appended to `<common dir>/info/exclude` — once,
+   idempotently, local to the checkout, never committed. The person's
+   `.gitignore` keeps meaning what they wrote.
+
+3. **The start point is the remote's own branch.** A repo-local worktree fetches
+   the project's default remote first (the current branch's remote, else
+   `origin`, else the only one it has) and branches from
+   `refs/remotes/<remote>/<branch>`. A missing remote or a failed fetch is not a
+   failure: the branch starts from the project's local tip, and the task records
+   which ref it really used (`base_ref`, `base_remote`), so the interface can say
+   `origin/main` or `local main` instead of guessing.
+
+4. **Preparation is a state before the first turn.** For a task the worktree is
+   created *before* the first message rather than at session creation: the task
+   row exists first (schema v34 adds `workspace_status`, `workspace_error`,
+   `base_ref`, `base_remote`, `delivery_mode`, `workspace_branch`), the workspace
+   is prepared as a separate step outside that transaction, and a failure is
+   recorded on the task with its reason and can be retried in place. The
+   project's setup command runs synchronously for a task — a task may not start
+   in a half-prepared folder — while an ordinary isolated session keeps running
+   it in the background. A delegate worktree of a task session is created next to
+   it, so it lands in the same `.worktree` directory.
+
+5. **Delivery is decided, not performed.** The host reads the project's remotes
+   (normalized the same way a mandate normalizes `repo.origin`) and records
+   `delivery_mode`: `pr` when a GitHub remote exists, `local` otherwise, `none`
+   without a project. Acting on it belongs to the completion card.
+
+Ordinary isolated sessions are unaffected: same directory, same creation, same
+background setup, same delete.
+
+### Validation of the amendment
+
+`crates/host-core/src/session_worktrees/lifecycle/repo_local_tests.rs` creates
+repo-local worktrees against real temporary repositories and a local bare remote:
+the folder is inside the repository, the project's `git status` stays empty, the
+exclude entry is written once and `.gitignore` is untouched, the branch starts
+from the fetched remote branch (and from the local tip with no remote), the
+registry row and tool root point at the folder, behind / sync / merge / removal
+work on it, a folder name that is not one segment is refused, and a subagent's
+worktree is created beside it and merged back.
+`crates/host-core/src/task_workspace/tests.rs` covers preparation, the recorded
+start point and delivery mode, retrying a failed setup command in the same
+folder, the remote-origin to local-project mapping, and archiving with and
+without unsaved work (including the `WORKSPACE_HAS_UNSAVED_WORK` refusal and the
+discard path). `apps/desktop/test/bot-task-workspace-user-path.test.mjs` drives
+the renderer path in a real Electron window.

@@ -9169,6 +9169,44 @@ selection already in place shows it without waiting for another event.
   `crates/host-core/src/tasks.rs` covers the host side; this record does not
   claim a full end-to-end run against a live host.
 
+#### E2E-BOT-task-works-in-repo-local-worktree: An employee's task works in its own folder inside the repository
+
+- **Preconditions**: An employee has a repository bound, that repository is a
+  git checkout (a remote is optional), and its worktree setup command is empty.
+  The person can open the employee's workbench.
+- **Steps**: 1) Type a task into the workbench field and press Enter; watch the
+  field before and after the host answers. 2) Open the task from the sidebar and
+  read its header. 3) Set the project's worktree setup command to one that
+  fails, start another task, then open it and use "retry preparing" with a
+  command that succeeds. 4) In the task's folder, leave an uncommitted file and
+  archive the task; answer the confirmation twice (once cancel, once discard).
+- **Expected**: Step 1 shows "Preparing workspace" while the host is building the
+  folder and sends the typed text only after the row comes back ready; nothing is
+  sent when the preparation fails. Step 2 shows the workspace state, the branch
+  the host created (`minih-agent/...`), where it started (`origin/main` when a
+  fetch succeeded, `local <branch>` when it fell back) and how the work will be
+  delivered (`Pull request` for a GitHub remote, `Merges into the project`
+  otherwise). The folder is `<repository>/.worktree/<short id>-<slug>`; the
+  repository's `git status` stays clean and `.gitignore` is unchanged (the
+  pattern goes to `.git/info/exclude`). The session's tool root, which is what the
+  runtime launches the turn in, is that folder. Step 3 reports the failure with
+  the command's own output, starts no turn, and turns ready after the retry,
+  reusing the same folder and branch. Step 4 refuses with
+  `WORKSPACE_HAS_UNSAVED_WORK` and the counts; cancelling archives nothing, and
+  discarding removes the folder and the branch.
+- **Expected, delivery and archive**: `tasks.delivery_mode` is `pr`, `local`, or
+  `none` (no repository) and matches the header. Archiving a clean, pushed (or
+  merged-back) workspace removes the worktree and its branch without a question.
+- **Specs linked**: `03-runtime/04-data-storage.md` §4.19b, ADR 0329 (amendment
+  2026-11), ADR `bot-sessions-and-steward` §7
+- **Acceptance**: C (conversation & stream), F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 2
+- **Status**: Partial. `apps/desktop/test/bot-task-workspace-user-path.test.mjs`
+  drives the renderer path in a real Electron window against a stubbed host, and
+  `crates/host-core/src/task_workspace/tests.rs` with
+  `session_worktrees/lifecycle/repo_local_tests.rs` cover the host side against
+  real temporary repositories; a full run against a live host is not claimed.
+
 #### E2E-146a: Approved Plan/Goal progress text continues once
 
 - **Preconditions**: A project-bound session has an approved Plan or Goal and a

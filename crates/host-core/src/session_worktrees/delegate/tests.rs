@@ -47,9 +47,15 @@ async fn env() -> Env {
         .unwrap()
         .id
     };
-    create_session_worktree(&state, &git, &session, &project.to_string_lossy())
-        .await
-        .unwrap();
+    create_session_worktree(
+        &state,
+        &git,
+        &session,
+        &project.to_string_lossy(),
+        lifecycle::Placement::DataDir,
+    )
+    .await
+    .unwrap();
     let session_root = lifecycle::tool_root(&state.lock().await.db, &session)
         .unwrap()
         .unwrap();

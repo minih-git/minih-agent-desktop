@@ -5,6 +5,10 @@ import { Button, Field, Textarea } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
 import { WorktreeDialogFrame } from "./WorktreeDialogFrame";
+import {
+  MAIN_WORKSPACE_DEPENDENCY_TEMPLATE,
+  setupTemplateAvailable,
+} from "./worktree-setup-template";
 
 /** Per-project command run in every new isolated worktree (PRD R2a). */
 export function WorktreeSetupCommandDialog({
@@ -87,6 +91,28 @@ export function WorktreeSetupCommandDialog({
           onChange={(event) => setCommand(event.target.value)}
         />
       </Field>
+      {/* Filling the field is the whole action: the person reviews and edits the
+          snippet, and nothing runs until they save. */}
+      {setupTemplateAvailable(window.minihAgent?.platform) ? (
+        <div className="worktree-setup-template">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={command === null || busy}
+            data-action="worktree-setup-template"
+            onClick={() => setCommand(MAIN_WORKSPACE_DEPENDENCY_TEMPLATE)}
+          >
+            {t("worktree.setupCommand.template")}
+          </Button>
+          <span className="worktree-setup-template-hint">
+            {t("worktree.setupCommand.templateHint")}
+          </span>
+        </div>
+      ) : (
+        <p className="worktree-setup-template-hint">
+          {t("worktree.setupCommand.templateUnavailable")}
+        </p>
+      )}
     </WorktreeDialogFrame>
   );
 }

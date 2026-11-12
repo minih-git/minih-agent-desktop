@@ -219,8 +219,15 @@ pub(super) async fn isolate_new_session(
     session_id: &str,
     project_path: &str,
 ) -> Result<lifecycle::CreatedWorktree, JsonRpcError> {
-    match lifecycle::create_session_worktree(state, &GitRunner::default(), session_id, project_path)
-        .await
+    match lifecycle::create_session_worktree(
+        state,
+        &GitRunner::default(),
+        session_id,
+        project_path,
+        // Ordinary isolated sessions keep the ADR 0329 placement.
+        lifecycle::Placement::DataDir,
+    )
+    .await
     {
         Ok(created) => Ok(created),
         Err(error) => {

@@ -318,6 +318,11 @@ pub struct ConfirmRequest<'a> {
     pub policy_version: &'a str,
     pub notify_on_completion: bool,
     pub idempotency_key: &'a str,
+    /// The local checkout of the repository the card names, resolved by the
+    /// caller from the card's normalized origin. `None` means "the employee's
+    /// own project" — and is refused when the card named a repository and the
+    /// employee has none.
+    pub project_path: Option<&'a str>,
 }
 
 /// Freeze one draft and dispatch it, atomically.
@@ -338,6 +343,32 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
     }
     if draft.status == "dropped" {
         return Err(anyhow!("CONFLICT: this card was dropped"));
+    }
+    // The card names a repository by its normalized remote. The caller resolves
+    // that to a checkout on this machine; when it could not, the employee's own
+    // project is the only honest fallback, and a card whose repository this
+    // computer does not have is refused instead of quietly working elsewhere.
+    // Only a registered project is accepted: a caller-supplied path would create
+    // a phantom project row, which is the bug this resolution replaced.
+    let project_path = match request.project_path {
+        Some(path) => db
+            .conn()
+            .query_row(
+                "SELECT path FROM projects WHERE path = ?1",
+                params![path],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?,
+        None => None,
+    };
+    if project_path.is_none() {
+        if let Some(origin) = draft.card.pointer("/repo/origin").and_then(Value::as_str) {
+            if super::tasks::employee_project_id(db, &draft.target_session_id)?.is_none() {
+                return Err(anyhow!(
+                    "REPO_NOT_ON_THIS_COMPUTER: this computer has no checkout of {origin}"
+                ));
+            }
+        }
     }
     // The click targets the card the person read. A revise between render and
     // click changes the hash, and that click must not approve new text.
@@ -412,10 +443,11 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
             origin: "steward",
             // `repo.origin` is a normalized git remote (`host/owner/name`), not a
             // directory: handing it to the project resolver created a phantom
-            // "project" that then appeared in the person's list. A card therefore
-            // works in the employee's own bound project, and resolving a remote
-            // origin to a local checkout belongs to the workspace slice.
-            project_path: None,
+            // "project" that then appeared in the person's list. The caller
+            // resolves it to a real checkout (`task_workspace::project_for_origin`)
+            // and passes that here; the employee's own project remains the
+            // fallback, and the refusal above covers "neither exists".
+            project_path,
             branch: draft
                 .card
                 .pointer("/repo/ref")

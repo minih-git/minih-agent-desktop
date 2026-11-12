@@ -421,6 +421,10 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
                     .and_then(Value::as_bool)
                     .unwrap_or(true),
                 idempotency_key: string(input, "idempotencyKey", 256)?,
+                // Resolved from the card's remote origin by the RPC layer,
+                // which is the only place that can run git; the host accepts it
+                // only when it names a registered project.
+                project_path: input.get("projectPath").and_then(Value::as_str),
             },
         ),
         // Task progress (ADR bot-sessions-and-steward): attach the frozen card,

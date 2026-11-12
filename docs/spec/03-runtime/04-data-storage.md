@@ -1181,6 +1181,47 @@ authorization; a step that refused on any of them left the application unable
 to start at all. A pre-existing session keeps its exact role and its NULL new
 columns, and `tasks` starts empty.
 
+### 4.19b tasks — the workspace a task works in (schema v34, ADR 0329 amendment 2026-11)
+
+A task that touches a repository works in its own git worktree inside it
+(`<top level>/.worktree/<short id>-<slug>`). The folder, branch, port block and
+setup log stay in the `worktrees` table of ADR 0329; these columns hold what only
+the task knows.
+
+```sql
+-- tasks (v34, added with ALTER TABLE)
+workspace_status  TEXT NOT NULL DEFAULT 'none'
+                  CHECK (workspace_status IN ('none', 'preparing', 'ready', 'failed')),
+workspace_error   TEXT,            -- why the preparation failed, in words
+base_ref          TEXT,            -- 'refs/remotes/origin/main' or 'refs/heads/main'
+base_remote       INTEGER NOT NULL DEFAULT 0,   -- 1 when base_ref came from a fetch
+delivery_mode     TEXT CHECK (delivery_mode IN ('pr', 'local', 'none')),
+workspace_branch  TEXT             -- the branch the worktree was created on
+```
+
+- `workspace_status` is the host's: `none` (no repository, the task works in its
+  session's own folder), `preparing`, `ready`, or `failed`. The first turn of a
+  task is only sent when it is `ready`; a failure records `workspace_error` and
+  can be retried in the same folder.
+- `workspace_path` (v33) and `workspace_branch` are written when the workspace
+  becomes `ready`. `branch` keeps its v33 meaning — the branch the task asked for
+  (`repo.ref` on a card) — so the mismatch between asked and created is visible.
+- `base_ref` and `base_remote` record where the branch really started: the
+  project's fetched remote branch, or its local tip when there is no remote or the
+  fetch failed.
+- `delivery_mode` is `pr` for a project with a GitHub remote, `local` otherwise
+  (ADR 0329's "merge into project"), and `none` without a project. Deciding is
+  this schema; delivering is the completion card's job.
+
+**Schema v33 -> v34.** A pure `ALTER TABLE ... ADD COLUMN` step: no table is
+rebuilt and no row is rewritten, so a long-lived file that carries historical
+foreign-key violations upgrades exactly like a clean one. Each column is added
+only when absent, which completes a step that stopped before its stamp instead of
+failing on the second attempt; the fresh schema applies the same list
+(`task_workspace_ddl`) so a new file and a migrated one have one shape. Every
+pre-existing task reads as `workspace_status = 'none'` with NULL base and
+delivery fields.
+
 ### 4.7 messages — transcript index
 
 The transcript itself is the per-session JSONL file (§2.1); this table is its

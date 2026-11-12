@@ -64,8 +64,13 @@ pub struct Task {
     pub origin: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_path: Option<String>,
+    /// The branch the task asked for (`repo.ref` on a card); `workspace_branch`
+    /// is the one it actually got. The header shows the real one once it exists.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// The branch the task's worktree was created on, once it is ready.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_branch: Option<String>,
     pub stage: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_id: Option<String>,
@@ -78,15 +83,29 @@ pub struct Task {
     pub latest_progress: Option<String>,
     /// The short identifier a task header shows: the first block of its id.
     pub short_id: String,
+    /// `none`, `preparing`, `ready`, or `failed` (employee mode 0.5 slice 2).
+    pub workspace_status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_error: Option<String>,
+    /// The ref the workspace branch was created from, e.g.
+    /// `refs/remotes/origin/main`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+    /// True when `base_ref` was fetched from the project's remote.
+    pub base_remote: bool,
+    /// `pr`, `local`, or `none`: how this task's work will be delivered.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_mode: Option<String>,
 }
 
 const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title, t.origin,
-    p.path, t.branch, t.stage, t.delivery_id, t.source_utterance, t.created_at,
-    t.archived_at,
+    p.path, t.branch, t.workspace_branch, t.stage, t.delivery_id, t.source_utterance,
+    t.created_at, t.archived_at,
     (SELECT substr(m.text, 1, 200) FROM messages m
       WHERE m.session_id = t.session_id AND m.role = 'assistant'
         AND m.text IS NOT NULL AND trim(m.text) != ''
-      ORDER BY m.seq DESC LIMIT 1)
+      ORDER BY m.seq DESC LIMIT 1),
+    t.workspace_status, t.workspace_error, t.base_ref, t.base_remote, t.delivery_mode
  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
@@ -100,12 +119,18 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         origin: row.get(4)?,
         project_path: row.get(5)?,
         branch: row.get(6)?,
-        stage: row.get(7)?,
-        delivery_id: row.get(8)?,
-        source_utterance: row.get(9)?,
-        created_at: ms_to_ts(row.get(10)?),
-        archived_at: row.get::<_, Option<i64>>(11)?.map(ms_to_ts),
-        latest_progress: row.get(12)?,
+        workspace_branch: row.get(7)?,
+        stage: row.get(8)?,
+        delivery_id: row.get(9)?,
+        source_utterance: row.get(10)?,
+        created_at: ms_to_ts(row.get(11)?),
+        archived_at: row.get::<_, Option<i64>>(12)?.map(ms_to_ts),
+        latest_progress: row.get(13)?,
+        workspace_status: row.get(14)?,
+        workspace_error: row.get(15)?,
+        base_ref: row.get(16)?,
+        base_remote: row.get::<_, i64>(17)? != 0,
+        delivery_mode: row.get(18)?,
     })
 }
 
@@ -257,7 +282,7 @@ pub fn create_in(
         .ok_or_else(|| anyhow!("NOT_STORED: the task was written but cannot be read back"))
 }
 
-fn employee_project_id(db: &Database, employee_session_id: &str) -> Result<Option<i64>> {
+pub(crate) fn employee_project_id(db: &Database, employee_session_id: &str) -> Result<Option<i64>> {
     Ok(db
         .conn()
         .prepare_cached("SELECT project_id FROM sessions WHERE id=?1")?
@@ -855,6 +880,7 @@ mod tests {
                 policy_version: "steward-1",
                 notify_on_completion: true,
                 idempotency_key: "confirm-1",
+                project_path: None,
             },
         )
         .unwrap();

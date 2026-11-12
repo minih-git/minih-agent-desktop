@@ -59,6 +59,7 @@ fn confirm_request<'a>(draft: &'a Draft, key: &'a str) -> ConfirmRequest<'a> {
         policy_version: "steward-1",
         notify_on_completion: false,
         idempotency_key: key,
+        project_path: None,
     }
 }
 
