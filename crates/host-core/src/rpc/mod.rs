@@ -2046,7 +2046,8 @@ async fn handle_request(
                     "shell": budget.shell,
                     "reads": budget.reads,
                     "mutations": budget.mutations,
-                    "plugins": budget.plugins
+                    "plugins": budget.plugins,
+                    "backgroundTasks": budget.background_tasks
                 }
             }))
         }

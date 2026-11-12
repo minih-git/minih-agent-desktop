@@ -42,8 +42,12 @@ async function main() {
   const tempRoot = await mkdtemp(join(tmpdir(), "pi-tool-admission-e2e-"));
   try {
     await withScenario("E2E-097-admission", async ({ host, workspace }) => {
+      // A foreground Bash call holds its shell slot from spawn to exit, so the
+      // burst keeps MAX_IN_FLIGHT_SHELL calls running and queues the rest.
+      const activeShells = 8;
+      const queuedShells = 8;
       const shellSessions = [];
-      for (let index = 0; index < 16; index += 1) {
+      for (let index = 0; index < activeShells + queuedShells; index += 1) {
         const session = await createSession(host, workspace, `Shell admission fixture ${index}`);
         await configureSession(host, session, "agent", "auto");
         shellSessions.push(session);
@@ -78,15 +82,15 @@ async function main() {
       };
 
       try {
-        for (let index = 0; index < 4; index += 1) dispatch(index);
-        await waitFor(() => markers.every((marker) => existsSync(marker)), 5_000, "four active shell markers");
-        for (let index = 4; index < 16; index += 1) dispatch(index);
+        for (let index = 0; index < activeShells; index += 1) dispatch(index);
+        await waitFor(() => markers.every((marker) => existsSync(marker)), 5_000, `${activeShells} active shell markers`);
+        for (let index = activeShells; index < activeShells + queuedShells; index += 1) dispatch(index);
         let saturatedBudget;
         await waitFor(async () => {
           saturatedBudget = (await host.call("app.health", {}, 1_000)).toolBudget;
-          return saturatedBudget?.queued === 12;
-        }, 5_000, "twelve queued shells");
-        assert(saturatedBudget.active === 4 && saturatedBudget.shell === 4,
+          return saturatedBudget?.queued === queuedShells;
+        }, 5_000, `${queuedShells} queued shells`);
+        assert(saturatedBudget.active === activeShells && saturatedBudget.shell === activeShells,
           "queued shells reserved execution capacity: " + shortJson(saturatedBudget));
 
         const read = await host.call("tools.execute", {
@@ -110,7 +114,7 @@ async function main() {
         assert(await readFile(join(workspace, "written-fixture.txt"), "utf8") === "independent write fixture\n",
           "Write did not persist the independent fixture");
         const afterIndependent = (await host.call("app.health")).toolBudget;
-        assert(afterIndependent.active === 4 && afterIndependent.queued === 12,
+        assert(afterIndependent.active === activeShells && afterIndependent.queued === queuedShells,
           "independent work did not release its capacity: " + shortJson(afterIndependent));
       } finally {
         // Release both active and subsequently admitted commands before the
@@ -124,9 +128,9 @@ async function main() {
         assertToolSuccess(outcome.result, `admission-shell-${index}`);
       }
       const idleBudget = (await host.call("app.health")).toolBudget;
-      assert(["active", "queued", "shell", "reads", "mutations", "plugins"].every((key) => idleBudget[key] === 0),
+      assert(["active", "queued", "shell", "reads", "mutations", "plugins", "backgroundTasks"].every((key) => idleBudget[key] === 0),
         "tool capacity did not drain: " + shortJson(idleBudget));
-      console.log("PASS E2E-097-admission: 4 active + 12 queued shells leave independent Read/Write capacity and drain cleanly");
+      console.log(`PASS E2E-097-admission: ${activeShells} active + ${queuedShells} queued shells leave independent Read/Write capacity and drain cleanly`);
     }, binary, tempRoot, PROTOCOL_VERSION);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
