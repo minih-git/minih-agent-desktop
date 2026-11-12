@@ -416,6 +416,7 @@ export const es = {
     "followUpSuggestionSend": "Haz clic para enviar esta sugerencia",
     sendWhileRunning: "Enviar seguimiento · {{shortcut}} para orientar",
     steeringUnavailable: "Este turno ya no acepta indicaciones. Se conservó el borrador.",
+    "delegateInstruction": "Instrucción al subagente",
     "sideNote": "Nota al margen",
     nativeSessionBusy: "Esta sesión nativa de Pi sigue respondiendo. Detenla o espera a que termine antes de enviar.",
     "stopGenerating": "Dejar de generar",

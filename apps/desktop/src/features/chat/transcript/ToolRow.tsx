@@ -1,6 +1,7 @@
 import { useChatSessionCapability } from "../../../hooks/use-chat-session-capability";
 import { SubagentStopButton } from "./SubagentStopButton";
 import { PlanHistoryCard } from "./PlanHistoryCard";
+import { DelegateInstructionOrigin } from "./DelegateInstructionOrigin";
 import { MemoryRememberReceipt } from "./MemoryRememberReceipt";
 import { planSubmission } from "../../../lib/plan-history";
 import {
@@ -781,6 +782,17 @@ function SubagentRunFollow({
                     autoOpen={openDetails}
                   />
                 )
+              ) : item.kind === "instruction" ? (
+                <div
+                  className="subagent-instruction"
+                  data-message-id={item.message.id}
+                  key={`instruction-${item.message.id}`}
+                >
+                  <DelegateInstructionOrigin />
+                  <div className="prose-chat">
+                    <Markdown source={item.message.content} />
+                  </div>
+                </div>
               ) : item.kind === "thinking" ? (
                 <ThinkingRow
                   key={`thinking-${item.message.id}`}

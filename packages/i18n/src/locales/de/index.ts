@@ -416,6 +416,7 @@ export const de = {
     "followUpSuggestionSend": "Klicken, um diesen Vorschlag zu senden",
     sendWhileRunning: "Folgenachricht senden · {{shortcut}} zum Lenken",
     steeringUnavailable: "Diese Runde nimmt keine weiteren Eingaben an. Dein Entwurf wurde behalten.",
+    "delegateInstruction": "Anweisung an den Subagenten",
     "sideNote": "Nebennotiz",
     nativeSessionBusy: "Diese native Pi-Sitzung antwortet noch. Stoppe sie oder warte auf die Antwort, bevor du sendest.",
     "stopGenerating": "Generieren stoppen",

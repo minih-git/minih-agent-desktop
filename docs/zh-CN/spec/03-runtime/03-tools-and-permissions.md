@@ -607,9 +607,10 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 
 ### 10. 2 委派和子代理工具范围（D201、ADR 0062）
 
-`Task` 仅在 Agent 模式下可用，并且仅当会话至少有
-一个子代理定义。 Plan 和 Goal 是只读合同协商，因此
-具有 `Bash`、`Edit` 或 `Write` 的代表将直接穿过它们。
+`Task` 与其余委派生命周期（`TaskWait`、`TaskList`、`TaskStop`、`TaskSend`）仅在
+Agent 模式下可用，并且仅当会话至少有一个子代理定义。它们的声明在切到 Plan 或
+Goal 时保留，执行则在任何委派被启动或被纠偏之前就被拒绝。Plan 和 Goal 是只读
+合同协商，因此具有 `Bash`、`Edit` 或 `Write` 的代表将直接穿过它们。
 
 定义声明其委托可以调用的工具。默认名称仅来自七个工作工具 `Read`、
 `Glob`、`Grep`、`BrowserPreview`、`Bash`、`Edit` 和 `Write`。未声明
@@ -619,7 +620,7 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 文档可以用 `tools: inherit` 或 `tools: [inherit, Bash]` 选择继承父会话的
 实时工具目录（ADR 0246 / D415）。`Task` 启动时运行时把 `toolCatalog`
 （含延迟的插件/MCP 工具）与可分配的额外工具取并集，再去掉 `Task` /
-`TaskWait` / `TaskList` / `TaskStop`、`EnterPlanMode` / `EnterGoalMode`、
+`TaskWait` / `TaskList` / `TaskStop` / `TaskSend`、`EnterPlanMode` / `EnterGoalMode`、
 `TodoWrite`、`asktool`、`new_context`、`ContextUsage`、`ToolSearch`、学习记忆工具
 `SessionHistorySearch` / `MemorySearch` / `MemoryRemember`，会话消息工具
 `SessionList` / `SessionSend` / `SessionResult` / `SessionCreate`，以及后台任务工具

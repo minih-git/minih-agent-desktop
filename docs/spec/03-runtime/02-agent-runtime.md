@@ -1109,8 +1109,8 @@ not override the parent session by default: they follow `auto` completely
 their normal approval behavior. An explicit builtin or user scope remains an
 intentional override.
 
-**Tools (ADR 0089).** Delegation is a four-tool lifecycle, built only in Agent
-mode and only when the catalog is non-empty, and all four belong to the Agent
+**Tools (ADR 0089).** Delegation is a five-tool lifecycle, built only in Agent
+mode and only when the catalog is non-empty, and all five belong to the Agent
 core set rather than the on-demand catalog of §7.1:
 
 - `Task(agent, task, description?, model?, resume?)` — validates its arguments (an
@@ -1172,6 +1172,43 @@ core set rather than the on-demand catalog of §7.1:
 - `TaskStop(delegationIds?)` — stops running delegations (defaults to all);
   waits for each abort to settle, then persists `status: "stopped"` with
   `completedAt` on `details.stopped[]`. Stopped delegations read as `stopped`.
+- `TaskSend(delegationId, message)` — queues one more instruction for a
+  delegation that is **still running** and returns immediately. The message
+  enters the delegate's own pi steering queue, so it reaches the delegate after
+  the current assistant turn and tool batch, before its next model request —
+  never mid-tool-call. `message` is bounded by `MAX_TASK_SEND_CHARS` (12000).
+  A settled delegation is refused with a `Task(resume: "<id>")` hint, an
+  unknown id with the running ids (or `TaskList`), and an empty or oversized
+  message before anything is queued. See the steering contract below.
+
+**Steering a running delegation (ADR parent-steers-running-delegation).**
+`TaskSend` amends ADR 0062's write-once brief: the parent may add to a
+delegate's instructions while it works, instead of `TaskStop` and a cold
+restart. The Edge stays parent → its own running delegate; sibling and
+cross-session addressing remain withdrawn (ADR 0165).
+
+The load-bearing invariant is that an instruction is never silently dropped.
+Every `TaskSend` call ends in exactly one of two observable states: delivered
+(the message reached a delegate model request) or refused (a tool error naming
+why). `SubagentRun` guarantees it in three ways: after `prompt()` and after
+every retry or fallback `continue()`, `run()` drains the steering queue while
+the transcript still ends on an assistant row, so an accepted message is always
+replayed; once the run commits to producing its final result a `closed` flag
+makes `send()` refuse with `SUBAGENT_RUN_CLOSING`; and at that same point every
+accepted-but-unsent instruction is counted as discarded — the queue is cleared
+and the result reports `steering: { delivered, discarded }` plus a line in the
+report naming the cause (cancelled, or ended before the queued turn could be
+replayed). A cancellation additionally refuses further sends with
+`SUBAGENT_RUN_ABORTED`, so a Stop never reads like a delivered instruction.
+
+A delivered instruction arrives in the delegate's stream as a user
+`message_end`, is persisted with the same `parentToolCallId` / `agentName`
+attribution as its other rows, renders inside the delegation's transcript, and
+is therefore part of the history `Task(resume)` replays (ADR 0279). It is not a
+parent turn-stream row: it never came from the user. `TaskSend` is in
+`SUBAGENT_INHERIT_DENY_TOOLS`, so no delegate can hold it. There is no
+interrupt: the instruction waits for the next request, and `TaskStop` remains
+the way to end a turn that must not finish.
 
 **Explicit desktop cancellation.** A running delegate can be stopped from its
 card or detail panel. The subagent group header also offers session-wide stop-all.
@@ -1470,8 +1507,11 @@ ADR 0164) are withdrawn.
 
 Coordination stays on the existing delegation contract: the parent writes
 independent briefs, starts `Task`s, and collects self-contained reports through
-`TaskWait` / `TaskList` / `TaskStop`. A later round of work, if needed, is a
-new `Task` whose brief includes earlier reports. `A2A` and `Peer` are not
+`TaskWait` / `TaskList` / `TaskStop`. A parent may add to the instruction of a
+delegation it started while it still runs (`TaskSend`, ADR
+parent-steers-running-delegation); it can never address another delegate or
+another conversation. A later round of work, if needed, is a new `Task` whose
+brief includes earlier reports. `A2A` and `Peer` are not
 assignable tools; a definition that names either is treated as an unknown
 tool name and dropped with a parse warning.
 

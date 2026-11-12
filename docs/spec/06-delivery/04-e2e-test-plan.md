@@ -11175,6 +11175,8 @@ selection already in place shows it without waiting for another event.
 | Quality (model fallback isolation) | E2E-SUBAGENT-ordered-model-fallback-preserves-work |
 | C — Conversation & stream (legacy subagent turn limit) | E2E-SUBAGENT-legacy-turn-limit-frontmatter-is-ignored |
 | Quality (legacy subagent turn limit) | E2E-SUBAGENT-legacy-turn-limit-frontmatter-is-ignored |
+| C — Conversation & stream (steering a running delegation) | E2E-SUBAGENT-parent-steers-a-running-delegation |
+| Quality (steering a running delegation) | E2E-SUBAGENT-parent-steers-a-running-delegation |
 | M6+ (disclosure reading position) | E2E-CHAT-disclosure-toggle-keeps-reading-position |
 | M6+ (capability level move) | E2E-CAPABILITY-move-across-levels |
 | E — Tools & permissions (builtin subagent defaults) | E2E-SUBAGENT-settings-lists-builtin-defaults |
@@ -21000,3 +21002,48 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Acceptance**: Release metadata integrity; no installer mutation.
 - **Milestone**: Maintenance.
 - **Status**: Automated with local filesystem fixtures and the production merge step.
+
+### E2E-SUBAGENT-parent-steers-a-running-delegation
+
+- **Preconditions**: A configured provider with a deterministic local transport
+  and at least one subagent definition whose delegate makes more than one model
+  request (for example an `explorer` that reads a file before reporting).
+- **Steps**: 1) `Task` the delegate and, while it is still running, call
+  `TaskSend` with one corrective instruction. 2) Inspect the delegate's next
+  request. 3) Let the delegate finish and read the result. 4) Call `TaskSend`
+  on the settled `delegationId`. 5) `Task(resume: "<id>")` that chain and
+  inspect the seeded history. 6) Repeat step 1 against a delegate, then Stop it
+  before the next request. 7) Send with an unknown id, an empty message, and a
+  message above the 12000-character bound. 8) Switch the session to Plan mode
+  with a delegate's `TaskSend` schema retained and call it.
+- **Expected**: Step 1 returns immediately with a queued acknowledgement and
+  never blocks on the delegate. Step 2 shows the instruction as a user message
+  in the delegate's own request, after the assistant turn and tool batch that
+  preceded it — never inside a tool call. Step 3 shows
+  `steering: { delivered: 1, discarded: 0 }`, and the delegate's conversation
+  (topology panel and subagent tab) renders the instruction in place with its
+  marker while the parent's turn stream shows only the `TaskSend` row. Step 4
+  returns a tool error saying the delegation is no longer running and naming
+  `Task(resume: "<id>")`. Step 5 seeds the resumed delegate's history with the
+  instruction as a user turn. Step 6 reports the instruction as discarded
+  (`steering.discarded` plus a report line) instead of pretending it was
+  delivered (it names the cause for either loss case), and later sends are
+  refused. Step 7 rejects each call before
+  anything is queued, naming the id problem and the bound. Step 8 declares the
+  schema but rejects the call with the contract-mode denial and steers nothing.
+- **Automation**: `packages/agent-runtime/src/subagent-send.test.ts` drives the
+  real pi loop for delivery, the closing refusal, the end-of-run race, the
+  abort accounting, and the resume projection; `runtime.test.ts` covers the
+  `TaskSend` tool surface, the resume hint, contract-mode rejection, and the
+  queue hand-off; `packages/shared/src/subagent-definition.test.ts` and
+  `apps/desktop/test/subagent-transcript-turns.test.mjs` cover the deny list and
+  the transcript projection.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` §5f,
+  `03-runtime/03-tools-and-permissions.md` §10.2,
+  ADR parent-steers-running-delegation, ADR 0062 §5/§6, ADR 0279.
+- **Acceptance criterion**: C — Conversation & stream; Quality (no silently
+  dropped instruction, no delegation of steering authority).
+- **Milestone**: Maintenance.
+- **Status**: Automated at the runtime and projection level; an Electron
+  end-to-end pass through a live sidecar remains outstanding. Required
+  post-integration suites: `test:e2e`, `test:e2e:subagents`.

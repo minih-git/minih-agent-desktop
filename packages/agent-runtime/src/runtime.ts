@@ -271,12 +271,18 @@ import {
   MAX_SUBAGENT_REPORT_CHARS,
   SubagentRun,
   SUBAGENT_LIST_TOOL_NAME,
+  SUBAGENT_SEND_TOOL_NAME,
   SUBAGENT_STOP_TOOL_NAME,
   SUBAGENT_TOOL_NAME,
   SUBAGENT_WAIT_TOOL_NAME,
   type SubagentRunResult,
   type SubagentToolOutcome,
 } from "./subagent.js";
+import {
+  parseTaskSendArgs,
+  TASK_SEND_DESCRIPTION,
+  taskSendParameters,
+} from "./subagent-send-tool.js";
 import {
   composeModeSystemPrompt,
   DEFAULT_RUNTIME_SYSTEM_PROMPT,
@@ -649,6 +655,10 @@ export type DelegationRecord = {
   /** `toolCallId`s of this run's calls that have not ended yet: dropped when the
    * run settles, so an aborted call cannot pin its captured arguments. */
   pendingToolCallIds?: Set<string>;
+  /** The live delegate, so `TaskSend` can reach its steering queue. Cleared
+   * when the run settles or the record is pruned (ADR
+   * parent-steers-running-delegation). */
+  run?: SubagentRun;
 };
 
 
@@ -737,6 +747,14 @@ function formatDelegationHeartbeat(record: DelegationRecord): string {
 
 const DELEGATION_RESUME_PROMPT =
   "The following subagents have finished. Integrate their reports and continue the user's original task. Call TaskStop only if you have decided a still-running delegate should not continue.";
+
+/**
+ * A settled delegation keeps its chain when the run can still be continued
+ * (ADR 0279 §5), so `TaskSend`'s refusal can name the right next step.
+ */
+function resumableRefusal(status: DelegationStatus): boolean {
+  return status === "completed" || status === "failed" || status === "timed_out";
+}
 
 /** Join delegation results into one bounded text block for the model. */
 function formatDelegationResults(
@@ -4531,6 +4549,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             this.buildSubagentWaitTool(),
             this.buildSubagentListTool(),
             this.buildSubagentStopTool(),
+            this.buildSubagentSendTool(),
           ]
         : [];
     // ContextUsage stays when compaction is off: the safe limit still applies.
@@ -4695,6 +4714,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       name === SUBAGENT_WAIT_TOOL_NAME ||
       name === SUBAGENT_LIST_TOOL_NAME ||
       name === SUBAGENT_STOP_TOOL_NAME ||
+      name === SUBAGENT_SEND_TOOL_NAME ||
       (this.mode === "agent"
         ? AGENT_CORE_TOOL_NAMES.has(name)
         : proposalKindForMode(this.mode)
@@ -5248,8 +5268,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           : [
               `No delegation model overrides are configured. ${DELEGATION_DEFAULT_MODEL_GUIDANCE} ${DELEGATION_MODEL_OPT_IN_GUIDANCE}`,
             ]),
-        "`task` is the delegate's only instruction. It cannot see this conversation, and you cannot correct it while it runs, so state the goal, the paths and facts it cannot infer, and exactly what to report back.",
-        "To run delegates concurrently, emit several Task calls in one assistant message. A message that mixes Task with any other tool runs one call at a time. You may keep working or talk to the user while they run; the runtime delivers their reports when they finish. Call TaskStop only to cancel.",
+        "`task` is the delegate's brief. It cannot see this conversation, so state the goal, the paths and facts it cannot infer, and exactly what to report back. A running delegate can be corrected with TaskSend, but the brief is what it plans from: a vague brief costs more than a correction.",
+        "To run delegates concurrently, emit several Task calls in one assistant message. A message that mixes Task with any other tool runs one call at a time. You may keep working or talk to the user while they run; the runtime delivers their reports when they finish. Call TaskStop only to cancel. When a running delegate is heading the wrong way, TaskSend corrects it in place — do not stop and restart it just to re-aim it.",
         "To continue a previous subagent, pass its `resume` id (the `delegationId` returned by Task). Saying \"reuse\" in prose is not enough. Do not pass `model` when resuming; start a new delegation to change models.",
         `Available subagents:\n${catalog}`,
       ].join("\n\n"),
@@ -5582,6 +5602,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           );
         }
 
+        // `TaskSend` reaches the delegate through this handle; it is dropped
+        // the moment the run settles below.
+        record.run = subagentRun;
         let runPromise: Promise<SubagentRunResult>;
         try {
           runPromise = subagentRun.run();
@@ -5747,6 +5770,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         this.delegateMutationTerminations.delete(toolCallId);
       }
       record.pendingToolCallIds = undefined;
+      // A settled run takes no further instructions; keep the reason accurate.
+      record.run = undefined;
       this.publishDelegationSettlement(record);
     } catch {
       process.stderr.write(
@@ -5886,6 +5911,15 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       return;
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
+      this.appendDelegationRow(record, envelope, event.message);
+    }
+    // An instruction the parent sent with `TaskSend` arrives in the delegate's
+    // own stream as a user row. It is history the delegate acted on, so it is
+    // attributed and kept like every other delegate row, which is what lets a
+    // later `Task(resume)` replay it (ADR parent-steers-running-delegation).
+    // The row keeps the id `SubagentRun` minted: Electron persists the same
+    // message object, so the transcript holds one row, not two.
+    if (event.type === "message_end" && event.message.role === "user") {
       this.appendDelegationRow(record, envelope, event.message);
     }
     if (
@@ -6388,6 +6422,87 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             ? params.delegationIds.map(String)
             : [];
         return this.stopSubagents(ids);
+      },
+    };
+  }
+  /**
+   * `TaskSend`: hand one more instruction to a running delegation (ADR
+   * parent-steers-running-delegation).
+   *
+   * The delegate decides when to act on it; this call only proves it was
+   * queued or explains why it was not. Nothing here waits on the delegate, so
+   * a parent correcting course does not block its own turn.
+   */
+  private buildSubagentSendTool(): AgentTool {
+    return {
+      name: SUBAGENT_SEND_TOOL_NAME,
+      label: "Task Send",
+      description: TASK_SEND_DESCRIPTION,
+      parameters: taskSendParameters,
+      executionMode: "sequential",
+      execute: async (toolCallId, params) => {
+        const args = parseTaskSendArgs(params);
+        if (args.kind === "invalid") {
+          return this.subagentToolError(toolCallId, args.error);
+        }
+        const record = this.delegations.get(args.delegationId);
+        if (!record) {
+          const running = this.runningDelegations()
+            .map((candidate) => candidate.delegationId)
+            .join(", ");
+          return this.subagentToolError(
+            toolCallId,
+            `Unknown delegation "${args.delegationId}".${
+              running
+                ? ` Running delegations: ${running}.`
+                : " Call TaskList to see this session's delegations."
+            }`,
+          );
+        }
+        if (record.status !== "running") {
+          return this.subagentToolError(
+            toolCallId,
+            `Delegation ${args.delegationId} is no longer running (status: ${record.status}), so nothing was delivered. ${
+              resumableRefusal(record.status)
+                ? `Continue it with Task(resume: "${args.delegationId}") to give it this instruction.`
+                : "Start a new Task instead."
+            }`,
+          );
+        }
+        const outcome = record.run?.send(args.message);
+        if (!outcome) {
+          return this.subagentToolError(
+            toolCallId,
+            `Delegation ${args.delegationId} is finishing and cannot accept instructions. Wait for its report with TaskWait, then continue it with Task(resume: "${args.delegationId}").`,
+          );
+        }
+        if (outcome.kind === "refused") {
+          return this.subagentToolError(
+            toolCallId,
+            `Delegation ${args.delegationId} did not accept the instruction: ${outcome.message} ${
+              outcome.code === "SUBAGENT_RUN_ABORTED"
+                ? "Its report says what it finished before the cancel."
+                : `Wait for its report with TaskWait, then continue it with Task(resume: "${args.delegationId}").`
+            }`,
+          );
+        }
+        // The parent's model context is the only place this instruction is
+        // remembered; the row itself is persisted by the delegate's own
+        // transcript stream, tagged with its `parentToolCallId`.
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Instruction queued for ${record.agentName} (${record.delegationId}). It reaches the subagent after its current turn and tool batch, before its next model request; it is not visible to you until the delegate answers. Converge with TaskWait.`,
+            },
+          ],
+          details: {
+            delegationId: record.delegationId,
+            agent: record.agentName,
+            status: "queued",
+            queuedAt: Date.now(),
+          },
+        };
       },
     };
   }
