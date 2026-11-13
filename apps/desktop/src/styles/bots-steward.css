@@ -391,7 +391,7 @@
   min-width: 0;
   color: var(--ds-text-primary);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   line-height: var(--leading-snug);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -464,7 +464,7 @@
 
 .task-completion-mark {
   flex: none;
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
 }
 
 .task-completion-criterion {
@@ -503,7 +503,7 @@
   color: var(--ds-text-muted);
   font-size: var(--text-2xs);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-wide);
 }
 
 .task-completion-count {
@@ -622,7 +622,7 @@
   min-width: 0;
   color: var(--ds-text-primary);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .task-batch-hint {
