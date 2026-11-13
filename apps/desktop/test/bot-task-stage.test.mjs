@@ -18,6 +18,7 @@ register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const { taskStageLabelKey, TASK_INTERRUPTED_KEY } = await import(
   "../src/features/bots/bot-task-stage.ts"
 );
+const { taskStatusTone } = await import("../src/features/bots/bot-status.ts");
 const { botStatusView } = await import("../src/features/bots/bot-status.ts");
 const { catalogs, flattenCatalog } = await import("../../../packages/i18n/src/index.ts");
 
@@ -85,4 +86,15 @@ test("an interrupted task says so, in the same family, in every locale", () => {
     assert.ok(word.trim().length > 0, `${locale} has an empty ${TASK_INTERRUPTED_KEY}`);
     assert.notEqual(word, TASK_INTERRUPTED_KEY, `${locale} did not translate it`);
   }
+});
+
+test("a stuck task is painted as the person's attention, not as busy", () => {
+  // The chip in the task header, the sidebar's task row and the waiting list all
+  // take their tone from here, so a blocked task reads the same colour as the
+  // employee dot that already says 「等你处理」 (slice 4a).
+  assert.equal(taskStatusTone({ stage: "blocked" }), "attention");
+  assert.equal(taskStatusTone({ stage: "failed" }), "attention");
+  assert.equal(taskStatusTone({ stage: "person/answer" }), "attention");
+  assert.equal(taskStatusTone({ stage: "working" }), "busy");
+  assert.equal(taskStatusTone({ stage: "queued" }), "busy");
 });

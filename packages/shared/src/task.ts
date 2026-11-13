@@ -203,13 +203,16 @@ const ACTIVE_STAGES: ReadonlySet<TaskStage> = new Set<TaskStage>([
   "working",
   "queued",
   "waiting",
-  "blocked",
-  "failed",
 ]);
 
 export function taskTone(stage: TaskStage | null | undefined): TaskTone {
   if (!stage) return "idle";
   if (PERSON_STAGES.has(stage)) return "attention";
+  // A stuck task is the person's problem, not the employee's quiet business
+  // (employee mode 0.5 slice 4a): it reads as attention here so the sidebar row,
+  // the task header's chip and the waiting list say the same thing the employee's
+  // dot already says.
+  if (stage === "blocked" || stage === "failed") return "attention";
   if (ACTIVE_STAGES.has(stage)) return "busy";
   return "idle";
 }
