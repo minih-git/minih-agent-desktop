@@ -4,10 +4,12 @@ import test from "node:test";
 import ts from "typescript";
 
 // Same loader as session-collaboration-service.test.mjs: transpile the
-// Electron-main module to CommonJS. Only `node:crypto` is a value import; every
-// other import is type-only, so the require shim must never see one.
+// Electron-main module to CommonJS. Only the dependencies passed in are value
+// imports; every other import is type-only, so the require shim must never see
+// one — a module that quietly starts demanding a host at import time fails here.
 const crypto = await import("node:crypto");
-function load(relative) {
+const shared = await import("@minih-agent/shared");
+function load(relative, imports = {}) {
   const file = new URL(relative, import.meta.url);
   const { outputText } = ts.transpileModule(fs.readFileSync(file, "utf8"), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
@@ -16,17 +18,29 @@ function load(relative) {
   const module = { exports: {} };
   new Function("require", "exports", "module", outputText)((id) => {
     if (id === "node:crypto") return crypto;
+    if (Object.hasOwn(imports, id)) return imports[id];
     assert.fail(`unexpected value import in the session tools module: ${id}`);
   }, module.exports, module);
   return module.exports;
 }
 
+// The steward's task board (employee mode 0.5 slice 3) is a value import now:
+// `TaskStatus` and the `Roster`/`SessionSend` outputs read it. It is pure, so it
+// loads with the shared package and nothing else.
+const taskStatus = load("../electron/main/services/task-status.ts", {
+  "@minih-agent/shared": shared,
+});
+
 const {
+  createRosterTool,
   createSessionCreateTool,
   createSessionListTool,
   createSessionResultTool,
   createSessionSendTool,
-} = load("../electron/main/services/session-messaging-tools.ts");
+  createTaskStatusTool,
+} = load("../electron/main/services/session-messaging-tools.ts", {
+  "./task-status": taskStatus,
+});
 
 function listing(...sessions) {
   return { sessions };
@@ -372,4 +386,136 @@ test("a create refusal keeps the host's error code", async () => {
   assert.equal(result.isError, true);
   assert.equal(result.errorCode, "MODEL_NOT_CONFIGURED");
   assert.match(result.content, /MODEL_NOT_CONFIGURED/);
+});
+
+// ---- Employee mode 0.5 slice 3: roster, task status, follow-up by task ----
+
+test("the roster names every employee with the facts a choice needs", async () => {
+  const fake = service(() => ({
+    employees: [
+      {
+        sessionId: "bot-1",
+        name: "Desktop 前端",
+        duty: "renderer and shell",
+        permissionMode: "accept-edits",
+        modelKey: "minih-router/gemini-3.8-flash",
+        projectPath: "/repo/minih-agent-desktop",
+        repos: [],
+        openTaskCount: 2,
+        waitingCount: 1,
+        idle: false,
+        status: { kind: "stage", stage: "person/answer" },
+      },
+      {
+        sessionId: "bot-2",
+        name: "Router 后端",
+        duty: "gateway and billing",
+        permissionMode: "ask",
+        repos: [],
+        openTaskCount: 0,
+        waitingCount: 0,
+        idle: true,
+        status: { kind: "idle" },
+      },
+    ],
+  }));
+  const result = await createRosterTool(fake)({
+    sessionId: "steward-1",
+    toolCallId: "call-roster",
+    turnId: "turn-1",
+    args: {},
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(result.content, /2 employee\(s\) you may dispatch to:/);
+  assert.match(result.content, /Desktop 前端 — renderer and shell; model=minih-router\/gemini-3.8-flash/);
+  assert.match(result.content, /permission=accept-edits; repo=\/repo\/minih-agent-desktop/);
+  assert.match(result.content, /open=2 \(1 waiting on the person\); busy; sessionId=bot-1/);
+  assert.match(result.content, /Router 后端 — gateway and billing; no model bound; permission=ask; no repository; open=0; idle; sessionId=bot-2/);
+  // The caller is the host's to exclude; the tool never asks for itself.
+  assert.equal(fake.calls[0].operation, "roster");
+  assert.equal(fake.calls[0].sessionId, "steward-1");
+});
+
+test("an empty roster says nobody is hired instead of inventing someone", async () => {
+  const fake = service(() => ({ employees: [] }));
+  const result = await createRosterTool(fake)({
+    sessionId: "steward-1",
+    toolCallId: "call-roster-2",
+    turnId: "turn-1",
+    args: {},
+    signal: new AbortController().signal,
+  });
+  assert.equal(result.ok, true);
+  assert.match(result.content, /No employee is available to dispatch to\./);
+});
+
+test("task status groups the board and includes the tasks the person dispatched", async () => {
+  const fake = service(() => ({
+    tasks: [
+      {
+        id: "task-direct", employeeSessionId: "bot-1", sessionId: "s-1", title: "自己派活",
+        origin: "direct", stage: "person/answer", shortId: "task-d", workspaceStatus: "none",
+        createdAt: "2026-11-12T09:00:00.000Z", deliveryUpdatedAt: "2026-11-12T09:30:00.000Z",
+      },
+      {
+        id: "task-interrupted", employeeSessionId: "bot-2", sessionId: "s-2", title: "补单测",
+        origin: "steward", stage: "working", shortId: "task-i", workspaceStatus: "ready",
+        deliveryStatus: "interrupted", deliveryUpdatedAt: "2026-11-12T09:31:00.000Z",
+        createdAt: "2026-11-12T09:00:00.000Z",
+      },
+    ],
+    employees: [
+      { sessionId: "bot-1", title: "Desktop 前端", profile: { name: "Desktop 前端" } },
+      { sessionId: "bot-2", title: "Router 后端", profile: { name: "Router 后端" } },
+    ],
+  }));
+  const result = await createTaskStatusTool(fake)({
+    sessionId: "steward-1",
+    toolCallId: "call-status",
+    turnId: "turn-1",
+    args: {},
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(result.content, /2 open tasks across 2 employees: 1 waiting on you, 0 in progress, 0 just finished \(24h\), 1 failed or interrupted\./);
+  assert.match(result.content, /waiting on you:\n- Desktop 前端 · 自己派活 · no repository · person\/answer · direct · taskId=task-direct/);
+  // The interruption is the ledger's, not the stage's, so the row says so.
+  assert.match(result.content, /failed or interrupted:\n- Router 后端 · 补单测 · no repository · interrupted · steward · taskId=task-interrupted/);
+  assert.equal(fake.calls[0].operation, "taskStatus");
+});
+
+test("a follow-up is addressed by taskId and needs no session id", async () => {
+  const fake = service(() => message({ status: "queued" }));
+  const result = await createSessionSendTool(fake)({
+    sessionId: "steward-1",
+    toolCallId: "call-send",
+    turnId: "turn-1",
+    args: { taskId: "task-1", message: "也把重试补上" },
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(fake.calls[0].operation, "send");
+  assert.equal(fake.calls[0].args.taskId, "task-1");
+  assert.equal(fake.calls[0].args.content, "也把重试补上");
+  // No session id: the host resolves the task's own session, and a guessed one
+  // is exactly what this shape removes.
+  assert.equal(fake.calls[0].args.sessionId, undefined);
+});
+
+test("a send with neither a task nor a session is refused before the host", async () => {
+  const fake = service(() => message());
+  const result = await createSessionSendTool(fake)({
+    sessionId: "steward-1",
+    toolCallId: "call-send-2",
+    turnId: "turn-1",
+    args: { message: "go" },
+    signal: new AbortController().signal,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, "INVALID_ARGUMENT");
+  assert.equal(fake.calls.length, 0);
 });
