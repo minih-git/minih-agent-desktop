@@ -198,7 +198,7 @@
 
 .task-waiting-error {
   margin: 0;
-  color: var(--ds-danger);
+  color: var(--ds-error);
   font-size: var(--text-2xs);
 }
 
@@ -207,10 +207,10 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in oklab, var(--ds-danger) 40%, transparent);
-  border-left: 3px solid var(--ds-danger);
+  border: 1px solid color-mix(in oklab, var(--ds-error) 40%, transparent);
+  border-left: 3px solid var(--ds-error);
   border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--ds-danger) 6%, var(--ds-bg-secondary));
+  background: color-mix(in oklab, var(--ds-error) 6%, var(--ds-bg-secondary));
 }
 
 .task-blocked-header {
@@ -268,7 +268,7 @@
 
 .task-blocked-error {
   margin: 0;
-  color: var(--ds-danger);
+  color: var(--ds-error);
   font-size: var(--text-2xs);
 }
 

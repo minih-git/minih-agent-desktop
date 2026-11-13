@@ -84,8 +84,11 @@ test("a task's stage is written from its own turns, not only from a delivery", a
   const sessions = await read("crates/host-core/src/sessions.rs");
   assert.match(sessions, /crate::tasks::turn_began\(db, db\.conn\(\), session_id\)\?/);
   assert.match(sessions, /crate::tasks::turn_ended\(db, db\.conn\(\), session_id, status, error_code\)\?/);
-  const tasks = await read("crates/host-core/src/tasks.rs");
-  // One writer: every stage path goes through it.
-  assert.match(tasks, /fn move_stage\(/);
-  assert.match(tasks, /stage_seq=\?3/);
+  // One writer: every stage path goes through it. It lives beside `tasks.rs`
+  // rather than inside it, because the module budget is 1000 lines and the task
+  // row's own CRUD took it close.
+  const stage = await read("crates/host-core/src/task_stage.rs");
+  assert.match(stage, /fn move_stage\(/);
+  assert.match(stage, /stage_seq=\?3/);
+  assert.match(stage, /pub fn turn_ended\(/);
 });

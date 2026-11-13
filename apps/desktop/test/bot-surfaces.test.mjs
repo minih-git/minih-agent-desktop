@@ -125,7 +125,10 @@ test("the sidebar group paints every stage and names it for screen readers", asy
   assert.match(html, /data-bot-status="attention"/);
   assert.match(html, /data-bot-status="busy"/);
   assert.match(html, /data-bot-status="queued"/);
-  assert.match(html, /data-bot-status="blocked"/);
+  // A failed task is something the person has to act on (slice 4a), so that row
+  // reads as attention too instead of as the employee's own quieter business:
+  // two rows are loud — whoever waits for a click, and whoever got stuck.
+  assert.equal((html.match(/data-bot-status="attention"/g) ?? []).length, 2);
   assert.match(html, /data-bot-status="idle"/);
 
   // Every dot is announced, never colour-only.
