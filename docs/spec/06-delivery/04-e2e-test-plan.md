@@ -9293,7 +9293,36 @@ selection already in place shows it without waiting for another event.
   "Interrupted" row and the button's IPC call in a real Electron window. The
   combination (restart, then click, then a live turn) is not claimed as a full
   end-to-end run.
+#### E2E-BOT-steward-rename-updates-every-label: Renaming the steward renames every label about it
 
+- **Preconditions**: The default crew exists, so the steward is called
+  `Super Agent`. A task the steward dispatched is open under one employee.
+- **Steps**: 1) Read the sidebar row, the task card's heading and the workbench
+  row's origin. 2) In Settings → Employees, open the steward, change its name to
+  阿福 and save. 3) Without reloading, read the same three labels. 4) Rename it
+  back to `Super Agent`.
+- **Expected**: Step 1 shows `Super Agent` in all three places, because those
+  labels interpolate the employee's name instead of writing one down. Step 2
+  writes one `bot.update` carrying the new name; the host stores it in
+  `bot_profile_json.name` and in `sessions.title`. Step 3 shows 阿福 in the
+  sidebar, on the card's heading and in the origin chip, driven by the existing
+  `botsChanged` event — no reload, no poll, no second source of truth. Step 4
+  returns to `Super Agent`. A row that has never been renamed is migrated from
+  the previous default (「管家」) by schema v35 → v36; a name the person chose is
+  never rewritten.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("The name is the employee's
+  own"), `03-runtime/06-host-rpc-protocol.md` (`bot.update`),
+  `03-runtime/04-data-storage.md` §4.19
+- **Acceptance**: C (conversation & stream), F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 3
+- **Status**: Partial. `apps/desktop/test/bot-steward-slice3-user-path.test.mjs`
+  renames the steward through the product's own settings form in a real Electron
+  window and asserts the sidebar, the card heading and the workbench origin
+  afterwards, in zh-CN and en; `crates/host-core/src/db/steward_name_migration.rs`
+  covers the three migration cases and
+  `crates/host-core/src/session_collaboration/drafts/tests.rs` covers the title
+  staying in step with the profile name. A full run against a live host is not
+  claimed.
 #### E2E-BOT-workbench-surfaces-carry-their-layout: The workbench, its sidebar rows and the task header are laid out, not bare
 
 - **Preconditions**: An employee holds one task waiting on the person, one in

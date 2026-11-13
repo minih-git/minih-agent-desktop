@@ -763,7 +763,10 @@ or general MCP operations:
   Each edits a session's `role` and `bot_profile_json`; `bot.list` also answers
   the status point, derived from the session's latest delivery stage. Dismissing
   sets the role back to `user` and keeps the conversation. Seeding creates the
-  default crew and is called only from an explicit user action.
+  default crew — the steward's default name is `Super Agent` — and is called
+  only from an explicit user action. `bot.update` writes the profile and the
+  session title together, so a rename is one fact, and the renderer learns about
+  it from `botsChanged` rather than from a poll.
 - `bot.roster` — the steward's view of the crew (slice 3): every employee except
   the caller and every other `steward`, with the facts a choice needs — name,
   duty, model, permission mode, bound repository, open tasks, how many of those

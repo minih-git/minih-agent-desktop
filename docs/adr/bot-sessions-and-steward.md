@@ -108,6 +108,16 @@ ADR 0239 requires.
   "dismissed" through bot settings with a second confirmation, and its memory
   retention is a separate choice. Rename, model, project, and permission-mode
   changes remain ordinary session operations.
+- **The name is the employee's own.** `botProfile.name` is what every surface
+  shows, and `bot.update` keeps `sessions.title` equal to it, so one rename
+  reaches the sidebar, the workbench rows, the task card's heading and the task's
+  origin chip through the existing `botsChanged` event. No surface writes the
+  role's name into copy: those labels interpolate it, and fall back to the
+  default only when no steward exists yet. The steward's default name is
+  `Super Agent` — the internal definition id stays `steward`, and so do the
+  permission, tool and prompt rules — and schema v35 → v36 renames rows that
+  still carry the previous default in both places, never a name the person
+  chose.
 - `homeHostId` is display and routing intent only. It is never proof of
   locality and never an authorization. Nothing in this ADR resolves a bot to a
   host; that is a later, cross-host decision.
