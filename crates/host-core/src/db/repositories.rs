@@ -162,6 +162,10 @@ impl Database {
                 // stage moved (schema v37): the same DDL the v36 -> v37 step
                 // applies, so a new file ends up where the chain does.
                 tx.execute_batch(&task_waiting_ddl())?;
+                // A task's acceptance, the employee's own completion report and
+                // the delivery steps the host ran (schema v38): the same DDL
+                // the v37 -> v38 step applies.
+                tx.execute_batch(&task_delivery_ddl())?;
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -344,6 +348,12 @@ impl Database {
             // The waiting channel, the blocked card's own words, and the stage
             // counter the notices are keyed by (employee mode 0.5 slice 4a).
             super::task_waiting_migration::migrate(&conn, path)?;
+        }
+        if migrated_version <= 37 {
+            // Acceptance, the completion report, and the fixed delivery steps
+            // the host executes (employee mode 0.5 slice 4b). Additive, and the
+            // step is idempotent, so a v36 file takes both in one open.
+            super::task_delivery_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

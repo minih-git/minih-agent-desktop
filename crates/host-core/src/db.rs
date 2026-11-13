@@ -7,7 +7,7 @@ pub(crate) use serde_json::Value;
 pub(crate) use std::path::{Path, PathBuf};
 
 /// Current SQLite schema version.
-pub const SCHEMA_VERSION: i64 = 37;
+pub const SCHEMA_VERSION: i64 = 38;
 
 /// Absolute approval deadline for a newly submitted Plan or Goal proposal.
 pub const PLAN_APPROVAL_TIMEOUT_MS: i64 = 30 * 60 * 1000;
@@ -32,6 +32,7 @@ mod session_collaboration_migration;
 mod session_title_source_migration;
 mod steward_name_migration;
 mod task_card_draft_migration;
+mod task_delivery_migration;
 mod task_migration;
 mod task_waiting_migration;
 mod task_workspace_migration;
@@ -66,6 +67,9 @@ pub(crate) use task_card_draft_migration::TASK_CARD_DRAFT_DDL;
 pub(crate) use task_migration::{migrate_v32_to_v33_tx, TASKS_DDL};
 pub(crate) use task_waiting_migration::{
     migrate_v36_to_v37_tx, task_waiting_ddl, TASK_WAITING_COLUMNS,
+};
+pub(crate) use task_delivery_migration::{
+    migrate_v37_to_v38_tx, task_delivery_ddl, TASK_CARD_BATCH_COLUMNS, TASK_DELIVERY_COLUMNS,
 };
 pub(crate) use task_workspace_migration::{
     migrate_v33_to_v34_tx, task_workspace_ddl, TASK_WORKSPACE_COLUMNS,
