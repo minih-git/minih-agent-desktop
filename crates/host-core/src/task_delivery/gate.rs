@@ -274,10 +274,18 @@ pub fn gate_for(facts: Option<&PrFacts>) -> Gate {
     if checks.pending > 0 {
         return Gate::refuse("ci-running", Some(checks.pending.to_string()));
     }
-    match facts.mergeable.as_deref().unwrap_or("") {
-        "CONFLICTING" => return Gate::refuse("conflict", None),
-        "UNKNOWN" => return Gate::refuse("mergeable-unknown", None),
-        _ => {}
+    // **Only `MERGEABLE` passes.** An absent value, `UNKNOWN`, and any value
+    // GitHub adds later all mean "nobody can say whether this merges", and a
+    // merge that turns out to conflict is not something a retry undoes.
+    match facts.mergeable.as_deref() {
+        Some("MERGEABLE") => {}
+        Some("CONFLICTING") => return Gate::refuse("conflict", None),
+        other => {
+            return Gate::refuse(
+                "mergeable-unknown",
+                Some(other.unwrap_or("missing").to_string()),
+            )
+        }
     }
     match facts.review_decision.as_deref().unwrap_or("") {
         "REVIEW_REQUIRED" => return Gate::refuse("review-required", None),
@@ -410,6 +418,25 @@ mod tests {
                 .as_deref(),
             Some("review-required")
         );
+    }
+
+    /// **Only `MERGEABLE` is a pass.** A value GitHub has not taught us, and a
+    /// missing one, are refusals — a merge that turns out to conflict is not
+    /// something a retry undoes.
+    #[test]
+    fn a_mergeable_value_other_than_mergeable_is_refused_with_the_value() {
+        for value in [Some("MERGEABLE_DIRTY"), Some("BLOCKED"), None] {
+            let mut facts = facts("MERGEABLE", "APPROVED", green());
+            facts.mergeable = value.map(str::to_owned);
+            let gate = gate_for(Some(&facts));
+            assert!(!gate.can_merge, "`{value:?}` passed the gate");
+            assert_eq!(gate.reason.as_deref(), Some("mergeable-unknown"));
+            assert_eq!(
+                gate.reason_detail.as_deref(),
+                Some(value.unwrap_or("missing")),
+                "the refusal does not carry the value it saw"
+            );
+        }
     }
 
     /// The two answers that are *not* refusals: an empty review decision and an
