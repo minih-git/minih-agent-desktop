@@ -74,8 +74,16 @@ test("the steward is told to relay a question and never to answer it", async () 
 test("TaskReport is declared only for a task session's Agent turn", async () => {
   const runtime = await read("packages/agent-runtime/src/runtime.ts");
   assert.match(runtime, /if \(declaresTaskReport\(this\.mode, this\.taskReporter\)\)/);
-  // The schema the model sees, next to the declaration that uses it.
-  assert.match(runtime, /TaskReport: \{\n\s+status: Type\.Literal\("blocked"\)/);
+  // The schema the model sees, next to the declaration that uses it: two
+  // statuses in one object, because a top-level union is refused by some
+  // providers, and the host — not the schema — enforces which fields each
+  // status needs.
+  assert.match(
+    runtime,
+    /TaskReport: \{\n\s+status: Type\.Union\(\[Type\.Literal\("blocked"\), Type\.Literal\("ready"\)\]\)/,
+  );
+  assert.match(runtime, /acceptance: Type\.Optional\(/);
+  assert.match(runtime, /where: Type\.Optional\(/);
   // And the host is the one that refills the session id.
   const tool = await read("crates/host-core/src/rpc/task_tools.rs");
   assert.match(tool, /map\.insert\("sessionId"\.into\(\), json!\(p\.session_id\)\)/);

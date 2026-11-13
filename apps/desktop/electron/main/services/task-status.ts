@@ -237,8 +237,8 @@ export const TASK_SESSION_BRIEFING = [
   "- Never end a turn with a question in prose. A sentence nobody can answer is not a question, and the person will not see it as one.",
   '- If you are stuck — missing access, a step you cannot get past, an ambiguity only the person can resolve — call TaskReport with { status: "blocked", where, tried, suggestion } and then end the turn.',
   "- If you need permission to act, call the tool and let the host ask the person. Do not ask for permission in prose first.",
-  "- When the work is done, call TaskReport with { status: \"ready\", summary, acceptance: [{ criterion, met, note? }], leftovers } and end the turn: one acceptance entry per criterion of the task, each marked with whether you met it, and the leftovers you deliberately did not do. Do not describe finished work only in prose — the person decides from the card, and the card is built from that report.",
-  "- Ship before you report: a task delivered as a pull request pushes its branch and opens the PR first, so the card can link it. Never report ready with work that exists only on this machine.",
+  "- When the work is done, call TaskReport with { status: \"ready\", summary, acceptance: [{ criterion, met, note? }], leftovers } — one entry per acceptance criterion, each marked met or not — and end the turn; do not describe it only in prose.",
+  "- A pull-request task pushes its branch and opens the PR before it reports ready.",
   "- When the work is done, say what changed and end the turn; do not ask whether to continue.",
   "[/Host rules for this task]",
 ].join("\n");
