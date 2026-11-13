@@ -199,6 +199,8 @@ import type {
   TaskList,
   TaskListRequest,
   TaskRestartResult,
+  TaskReassignRequest,
+  TaskReassignResult,
   TaskView,
   TaskWorkspaceRetryResult,
   TasksChangedEvent,
@@ -1664,6 +1666,15 @@ export const api = {
    */
   restartTask: (taskId: string) =>
     invoke<TaskRestartResult & { startError?: string }>(IPC.invoke.taskRestart, { taskId }),
+  /**
+   * Hand a stuck task's work to somebody else (employee mode 0.5 slice 4a).
+   *
+   * The host proposes a **new** card on the steward's conversation, carrying the
+   * original goal with nobody assigned; the person picks the employee and starts
+   * it, exactly like a first dispatch. The original task is left as it was.
+   */
+  reassignTask: (request: TaskReassignRequest) =>
+    invoke<TaskReassignResult>(IPC.invoke.taskReassign, request),
   /**
    * Move a proposed card to another employee (employee mode 0.5 slice 3).
    *

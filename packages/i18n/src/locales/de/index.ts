@@ -818,6 +818,38 @@ export const de = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   "bots": {
+    // Waiting channel and blocked card (employee mode 0.5 slice 4a).
+    "waiting": {
+      title: "{{count}} warten auf Sie",
+      rowLabel: "{{name}} wartet auf Sie",
+      openTask: "In der Aufgabe antworten",
+      goToTask: "Zu Aufgabe #{{shortId}}",
+      answered: "Beantwortet",
+      allow: "Einmal erlauben",
+      deny: "Ablehnen",
+      cards: "{{count}} Aufgabenkarten warten auf den Start",
+    },
+    "blocked": {
+      title: "{{name}} steckt fest",
+      where: "Wo es hängt",
+      tried: "Bereits versucht",
+      suggestion: "Vorschlag",
+      interrupted: "Die App wurde neu gestartet, während diese Aufgabe lief; jetzt läuft nichts.",
+      failed: "Der letzte Durchlauf ist fehlgeschlagen.",
+      failedWithCode: "Der letzte Durchlauf ist fehlgeschlagen ({{code}}).",
+      stopped: "Sie haben diese Aufgabe gestoppt.",
+      retry: "Erneut versuchen",
+      retryMessage: "Bitte erneut versuchen.",
+      retryBusy: "Diese Aufgabe ist beschäftigt; stoppen Sie zuerst den laufenden Durchlauf.",
+      reassign: "Übergeben an…",
+      reassignReason: "Weitergegeben von Aufgabe #{{shortId}}",
+      reassigned: "Eine neue Karte wartet im Gespräch des Assistenten.",
+      drop: "Aufgeben",
+      dropConfirm: "Diese Aufgabe aufgeben?",
+      dropYes: "Aufgeben",
+      dropCancel: "Behalten",
+      saySomething: "Etwas sagen",
+    },
     "taskStage": {
       "queued": "In der Warteschlange",
       "working": "In Arbeit",

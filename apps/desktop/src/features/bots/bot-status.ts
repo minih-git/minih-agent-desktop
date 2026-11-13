@@ -33,16 +33,20 @@ export type BotStatusView = {
  * Stage → sidebar tone.
  *
  * `person/answer` and `person/accept` both hold the work until the person
- * clicks, so both read as one state ("等你"). `blocked` and `failed` are the
- * worker's own problems and share one quieter tone, because the person's next
- * action is the same: look at it. `waiting` is a trigger the person configured
- * earlier, so it reads as queued rather than as a demand now.
+ * clicks, so both read as one state ("等你"). `blocked` and `failed` joined them
+ * in slice 4a: a stuck task is exactly as much something the person has to act on
+ * as a question is, and calling it the employee's own quieter business is why a
+ * blocked task could sit there unnoticed. Only `person/*` used to disturb the
+ * person; the ADR's rule now says a stuck task does too.
+ *
+ * `waiting` is a trigger the person configured earlier, so it still reads as
+ * queued rather than as a demand now.
  */
 const STAGE_TONES: Record<TaskStage, BotStatusTone> = {
   "person/answer": "attention",
   "person/accept": "attention",
-  blocked: "blocked",
-  failed: "blocked",
+  blocked: "attention",
+  failed: "attention",
   queued: "queued",
   waiting: "queued",
   working: "busy",
@@ -123,9 +127,12 @@ export function taskStatusTone(task: Pick<TaskView, "stage">): TaskTone {
 export function botStatusFromTasks(tasks: readonly Pick<TaskView, "stage">[]): BotStatusPoint {
   const first = (wanted: readonly TaskStage[]) =>
     tasks.find((task) => wanted.includes(task.stage))?.stage;
-  const waiting = first(["person/answer", "person/accept"]);
+  // The same order the host's `task_status_point` uses, and for the same reason:
+  // whatever the person has to act on comes first, however it stopped. A blocked
+  // or failed task joined this group in slice 4a.
+  const waiting = first(["person/answer", "person/accept", "blocked", "failed"]);
   if (waiting) return { kind: "stage", stage: waiting };
-  const busy = first(["working", "queued", "waiting", "blocked", "failed"]);
+  const busy = first(["working", "queued", "waiting"]);
   if (busy) return { kind: "stage", stage: busy };
   return { kind: "idle" };
 }

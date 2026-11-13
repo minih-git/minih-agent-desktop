@@ -827,6 +827,38 @@ export const tr = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // Waiting channel and blocked card (employee mode 0.5 slice 4a).
+    waiting: {
+      title: "Sizi bekleyen {{count}} iş",
+      rowLabel: "{{name}} sizi bekliyor",
+      openTask: "Görevde yanıtla",
+      goToTask: "#{{shortId}} görevine git",
+      answered: "Yanıtlandı",
+      allow: "Bir kez izin ver",
+      deny: "Reddet",
+      cards: "Başlamayı bekleyen {{count}} görev kartı",
+    },
+    blocked: {
+      title: "{{name}} takıldı",
+      where: "Nerede durdu",
+      tried: "Şimdiye kadar denenen",
+      suggestion: "Öneri",
+      interrupted: "Uygulama yeniden başlarken bu görev çalışıyordu, artık hiçbir şey çalışmıyor.",
+      failed: "Son tur başarısız oldu.",
+      failedWithCode: "Son tur başarısız oldu ({{code}}).",
+      stopped: "Bu görevi siz durdurdunuz.",
+      retry: "Yeniden dene",
+      retryMessage: "Lütfen yeniden dene.",
+      retryBusy: "Bu görev meşgul; önce geçerli turu durdurun.",
+      reassign: "Devret…",
+      reassignReason: "#{{shortId}} görevinden devredildi",
+      reassigned: "Yeni kart sekreterin konuşmasında onayınızı bekliyor.",
+      drop: "Vazgeç",
+      dropConfirm: "Bu görevden vazgeçilsin mi?",
+      dropYes: "Vazgeç",
+      dropCancel: "Koru",
+      saySomething: "Bir şey söyle",
+    },
     taskStage: {
       queued: "Kuyrukta",
       working: "Sürüyor",

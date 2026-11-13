@@ -818,6 +818,38 @@ export const es = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   "bots": {
+    // Waiting channel and blocked card (employee mode 0.5 slice 4a).
+    "waiting": {
+      title: "{{count}} esperándote",
+      rowLabel: "{{name}} te está esperando",
+      openTask: "Responder en la tarea",
+      goToTask: "Ir a la tarea #{{shortId}}",
+      answered: "Respondido",
+      allow: "Permitir una vez",
+      deny: "Denegar",
+      cards: "{{count}} tarjetas de tarea esperando para empezar",
+    },
+    "blocked": {
+      title: "{{name}} está atascado",
+      where: "Dónde se detuvo",
+      tried: "Ya intentado",
+      suggestion: "Sugerencia",
+      interrupted: "La aplicación se reinició mientras esta tarea se ejecutaba, así que ahora no hay nada en marcha.",
+      failed: "El último turno falló.",
+      failedWithCode: "El último turno falló ({{code}}).",
+      stopped: "Has detenido esta tarea.",
+      retry: "Reintentar",
+      retryMessage: "Inténtalo de nuevo, por favor.",
+      retryBusy: "Esta tarea está ocupada; detén primero el turno actual.",
+      reassign: "Asignar a…",
+      reassignReason: "Reasignada desde la tarea #{{shortId}}",
+      reassigned: "Hay una tarjeta nueva esperando en la conversación del asistente.",
+      drop: "Abandonar",
+      dropConfirm: "¿Abandonar esta tarea?",
+      dropYes: "Abandonar",
+      dropCancel: "Conservar",
+      saySomething: "Decir algo",
+    },
     "taskStage": {
       "queued": "En cola",
       "working": "En curso",

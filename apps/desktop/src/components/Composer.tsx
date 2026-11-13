@@ -34,6 +34,7 @@ import { PlanApprovalBar } from "./PlanApprovalBar";
 import { TaskDock } from "./TaskDock";
 import { isStewardSession } from "../features/bots/bot-status";
 import { TaskCardDock } from "../features/bots/TaskCardDock";
+import { StewardTaskDock, TaskBlockedCardForSession } from "../features/bots/TaskWaitingDock";
 import {
   COMPOSER_MAX_VISIBLE_ROWS,
   COMPOSER_MIN_HEIGHT_PX,
@@ -570,6 +571,11 @@ export function Composer({
       data-composer-dock={variant}
     >
       <div className="composer-stack">
+        {/* A task that got stuck says so in its own conversation, above the
+            composer (employee mode 0.5 slice 4a): one card with retry, reassign,
+            drop and 「我来说两句」. It renders nothing unless this session *is* a
+            task that stopped. */}
+        {activeSessionId ? <TaskBlockedCardForSession sessionId={activeSessionId} /> : null}
         {/* One container for todo and background tasks: the tabs live in the
             header, so the gate now covers both the way it already covered the
             todo dock. */}
@@ -577,6 +583,11 @@ export function Composer({
         {/* The steward's cards dock beside the plan bar: both are things the
             person must act on, and both belong above the composer rather than
             inside the transcript (ADR bot-sessions-and-steward §3). */}
+        {/* The steward's questions and stuck tasks, *before* her cards: a question
+            is what stops the work, a card is what starts it (slice 4a). */}
+        {activeSessionId && isStewardSession(activeSessionSummary) ? (
+          <StewardTaskDock sessionId={activeSessionId} />
+        ) : null}
         {activeSessionId && isStewardSession(activeSessionSummary) ? (
           <TaskCardDock sessionId={activeSessionId} />
         ) : null}

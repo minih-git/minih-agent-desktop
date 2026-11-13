@@ -817,6 +817,38 @@ export const ptBR = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // Waiting channel and blocked card (employee mode 0.5 slice 4a).
+    waiting: {
+      title: "{{count}} esperando por você",
+      rowLabel: "{{name}} está esperando por você",
+      openTask: "Responder na tarefa",
+      goToTask: "Ir para a tarefa #{{shortId}}",
+      answered: "Respondido",
+      allow: "Permitir uma vez",
+      deny: "Negar",
+      cards: "{{count}} cartões de tarefa aguardando para começar",
+    },
+    blocked: {
+      title: "{{name}} travou",
+      where: "Onde parou",
+      tried: "Já tentado",
+      suggestion: "Sugestão",
+      interrupted: "O aplicativo reiniciou enquanto esta tarefa rodava, então nada está em execução agora.",
+      failed: "O último turno falhou.",
+      failedWithCode: "O último turno falhou ({{code}}).",
+      stopped: "Você parou esta tarefa.",
+      retry: "Tentar de novo",
+      retryMessage: "Tente de novo, por favor.",
+      retryBusy: "Esta tarefa está ocupada; pare o turno atual primeiro.",
+      reassign: "Passar para…",
+      reassignReason: "Reatribuída da tarefa #{{shortId}}",
+      reassigned: "Um novo cartão está esperando na conversa do assistente.",
+      drop: "Desistir",
+      dropConfirm: "Desistir desta tarefa?",
+      dropYes: "Desistir",
+      dropCancel: "Manter",
+      saySomething: "Dizer algo",
+    },
     taskStage: {
       queued: "Na fila",
       working: "Em andamento",

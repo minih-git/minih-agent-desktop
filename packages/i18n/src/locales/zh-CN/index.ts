@@ -831,6 +831,38 @@ export const zhCN = {
   },
   // 员工：侧栏分组、设置页，以及管家的任务卡（ADR bot-sessions-and-steward §5）。
   bots: {
+    // Waiting channel and blocked card (employee mode 0.5 slice 4a).
+    waiting: {
+      title: "等你 {{count}} 件",
+      rowLabel: "{{name}} 在等你",
+      openTask: "去任务里回答",
+      goToTask: "打开任务 #{{shortId}}",
+      answered: "已回复",
+      allow: "允许一次",
+      deny: "拒绝",
+      cards: "{{count}} 张开工卡待确认",
+    },
+    blocked: {
+      title: "{{name}} 卡住了",
+      where: "卡在哪",
+      tried: "已经试过",
+      suggestion: "建议怎么做",
+      interrupted: "应用重启时这个任务正在跑，现在没有东西在运行。",
+      failed: "上一回合失败了。",
+      failedWithCode: "上一回合失败了（{{code}}）。",
+      stopped: "你手动停了这个任务。",
+      retry: "重试",
+      retryMessage: "再试一次。",
+      retryBusy: "这个任务正忙，先停掉当前回合。",
+      reassign: "改派给…",
+      reassignReason: "从任务 #{{shortId}} 改派",
+      reassigned: "新卡片已经在秘书的对话里等你确认。",
+      drop: "放弃",
+      dropConfirm: "确定放弃这个任务？",
+      dropYes: "放弃",
+      dropCancel: "保留",
+      saySomething: "我来说两句",
+    },
     taskStage: {
       queued: "排队中",
       working: "进行中",

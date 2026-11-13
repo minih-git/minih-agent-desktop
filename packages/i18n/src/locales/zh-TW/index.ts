@@ -823,6 +823,38 @@ export const zhTW = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // Waiting channel and blocked card (employee mode 0.5 slice 4a).
+    waiting: {
+      title: "等你 {{count}} 件",
+      rowLabel: "{{name}} 在等你",
+      openTask: "去任務裡回答",
+      goToTask: "開啟任務 #{{shortId}}",
+      answered: "已回覆",
+      allow: "允許一次",
+      deny: "拒絕",
+      cards: "{{count}} 張開工卡待確認",
+    },
+    blocked: {
+      title: "{{name}} 卡住了",
+      where: "卡在哪",
+      tried: "已經試過",
+      suggestion: "建議怎麼做",
+      interrupted: "應用程式重新啟動時這個任務正在跑，現在沒有東西在執行。",
+      failed: "上一回合失敗了。",
+      failedWithCode: "上一回合失敗了（{{code}}）。",
+      stopped: "你手動停了這個任務。",
+      retry: "重試",
+      retryMessage: "再試一次。",
+      retryBusy: "這個任務正忙，先停掉目前回合。",
+      reassign: "改派給…",
+      reassignReason: "從任務 #{{shortId}} 改派",
+      reassigned: "新卡片已經在秘書的對話裡等你確認。",
+      drop: "放棄",
+      dropConfirm: "確定放棄這個任務？",
+      dropYes: "放棄",
+      dropCancel: "保留",
+      saySomething: "我來說兩句",
+    },
     taskStage: {
       queued: "排隊中",
       working: "進行中",

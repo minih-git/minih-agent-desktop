@@ -27,3 +27,18 @@ export function stewardNameOf(bots: readonly BotListItem[] | undefined | null): 
   const name = steward?.profile?.name?.trim();
   return name || DEFAULT_STEWARD_NAME;
 }
+
+/**
+ * The steward conversation a card is proposed on, when the caller has the roster.
+ *
+ * Reassigning a stuck task needs it: the new card is the steward's, so the click
+ * has to name her conversation — and `null` means "no steward is installed", which
+ * the host answers with its own refusal rather than a card nobody will see.
+ */
+export function stewardSessionIdOf(
+  bots: readonly BotListItem[] | undefined | null,
+): string | null {
+  const steward = bots?.find((bot) => isStewardSession({ role: "bot", botProfile: bot.profile }));
+  const id = steward?.sessionId?.trim();
+  return id ? id : null;
+}

@@ -840,6 +840,38 @@ export const en = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // Waiting channel and blocked card (employee mode 0.5 slice 4a).
+    waiting: {
+      title: "{{count}} waiting for you",
+      rowLabel: "{{name}} is waiting on you",
+      openTask: "Answer in the task",
+      goToTask: "Go to task #{{shortId}}",
+      answered: "Answered",
+      allow: "Allow once",
+      deny: "Deny",
+      cards: "{{count}} task cards waiting to start",
+    },
+    blocked: {
+      title: "{{name}} is stuck",
+      where: "Where it stopped",
+      tried: "Already tried",
+      suggestion: "Suggested",
+      interrupted: "The app restarted while this task was running, so nothing is running now.",
+      failed: "The last turn failed.",
+      failedWithCode: "The last turn failed ({{code}}).",
+      stopped: "You stopped this task.",
+      retry: "Try again",
+      retryMessage: "Try again, please.",
+      retryBusy: "This task is busy; stop the current turn first.",
+      reassign: "Hand to…",
+      reassignReason: "Reassigned from task #{{shortId}}",
+      reassigned: "A new card is waiting in the steward's conversation.",
+      drop: "Drop it",
+      dropConfirm: "Drop this task?",
+      dropYes: "Drop",
+      dropCancel: "Keep",
+      saySomething: "Say something",
+    },
     taskStage: {
       queued: "Queued",
       working: "In progress",

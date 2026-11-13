@@ -827,6 +827,38 @@ export const ko = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // Waiting channel and blocked card (employee mode 0.5 slice 4a).
+    waiting: {
+      title: "확인 대기 {{count}}건",
+      rowLabel: "{{name}} 님이 기다리고 있습니다",
+      openTask: "작업에서 답하기",
+      goToTask: "작업 #{{shortId}} 열기",
+      answered: "답변함",
+      allow: "한 번 허용",
+      deny: "거부",
+      cards: "시작을 기다리는 작업 카드 {{count}}장",
+    },
+    blocked: {
+      title: "{{name}} 작업이 막혔습니다",
+      where: "막힌 지점",
+      tried: "이미 시도한 것",
+      suggestion: "제안",
+      interrupted: "앱이 다시 시작되는 동안 이 작업이 실행 중이었고, 지금은 아무것도 실행되지 않습니다.",
+      failed: "마지막 턴이 실패했습니다.",
+      failedWithCode: "마지막 턴이 실패했습니다({{code}}).",
+      stopped: "이 작업을 직접 중지했습니다.",
+      retry: "다시 시도",
+      retryMessage: "다시 시도해 주세요.",
+      retryBusy: "이 작업이 사용 중입니다. 현재 턴을 먼저 중지하세요.",
+      reassign: "다른 사람에게…",
+      reassignReason: "작업 #{{shortId}}에서 재배정됨",
+      reassigned: "새 카드가 비서 대화에서 확인을 기다리고 있습니다.",
+      drop: "포기",
+      dropConfirm: "이 작업을 포기할까요?",
+      dropYes: "포기",
+      dropCancel: "유지",
+      saySomething: "한마디 하기",
+    },
     taskStage: {
       queued: "대기 중",
       working: "진행 중",

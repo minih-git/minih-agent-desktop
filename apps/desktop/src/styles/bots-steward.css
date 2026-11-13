@@ -121,3 +121,226 @@
   font-size: var(--text-2xs);
   line-height: var(--leading-compact);
 }
+/* --- The waiting channel and the blocked card (slice 4a) ------------------- */
+
+/* One record, four surfaces: the task's own card, this dock, the sidebar count
+   and the system notification. The two states below are the whole vocabulary:
+   `task-waiting-row` is a question (orange, because the work is stopped on the
+   person), `task-blocked-card` is a task that stopped (red-leaning, because
+   something went wrong rather than merely waiting). */
+
+.task-waiting-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-waiting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--ds-warning) 45%, transparent);
+  border-left: 3px solid var(--ds-warning);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--ds-warning) 8%, var(--ds-bg-secondary));
+}
+
+.task-waiting-row.answered {
+  border-color: var(--ds-border-subtle);
+  border-left-color: var(--ds-border-strong);
+  background: var(--ds-bg-secondary);
+}
+
+.task-waiting-meta {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-compact);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-waiting-question {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.task-waiting-answered {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+}
+
+.task-waiting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-waiting-goto {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.task-waiting-goto:hover {
+  color: var(--ds-text-primary);
+}
+
+.task-waiting-error {
+  margin: 0;
+  color: var(--ds-danger);
+  font-size: var(--text-2xs);
+}
+
+.task-blocked-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in oklab, var(--ds-danger) 40%, transparent);
+  border-left: 3px solid var(--ds-danger);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--ds-danger) 6%, var(--ds-bg-secondary));
+}
+
+.task-blocked-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-blocked-title {
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.task-blocked-task {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-blocked-goal {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.task-blocked-note {
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+.task-blocked-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+.task-blocked-fields dt {
+  color: var(--ds-text-muted);
+}
+
+.task-blocked-fields dd {
+  margin: 0;
+  color: var(--ds-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.task-blocked-error {
+  margin: 0;
+  color: var(--ds-danger);
+  font-size: var(--text-2xs);
+}
+
+.task-blocked-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-blocked-confirm {
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+}
+
+/* The sidebar's 「等你 N 件」: one number for every source, and the list it
+   opens in place. */
+.sidebar-waiting-count {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in oklab, var(--ds-warning) 50%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--ds-warning) 14%, transparent);
+  color: var(--ds-warning);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.sidebar-waiting-count:hover {
+  background: color-mix(in oklab, var(--ds-warning) 22%, transparent);
+}
+
+.sidebar-waiting-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 8px 8px;
+  padding: 6px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-secondary);
+}
+
+.sidebar-waiting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ds-text-primary);
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-waiting-row:hover {
+  background: var(--ds-bg-hover);
+}
+
+.sidebar-waiting-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-waiting-row-stage {
+  flex: 0 0 auto;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+}
