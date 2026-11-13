@@ -178,7 +178,10 @@ mod tests {
         downgrade_to_v36(db.conn());
         assert!(!column(db.conn(), "tasks", "waiting_json"));
         assert_eq!(version(db.conn()), 36);
-        seed_task(db.conn(), "old-task", "working");
+        // `queued`, not `working`: a `working` row is a claim about a live turn,
+        // and the startup fence that runs on open rightly stops it. This test is
+        // about the columns, not about the fence.
+        seed_task(db.conn(), "old-task", "queued");
         drop(db);
 
         let db = Database::open(&path).unwrap();
@@ -195,7 +198,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(title, "Fix");
-        assert_eq!(stage, "working");
+        assert_eq!(stage, "queued");
         assert_eq!(seq, 0);
     }
 

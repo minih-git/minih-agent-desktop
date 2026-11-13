@@ -989,6 +989,6 @@ mod tests {
 // The waiting channel moved to its own module when this file passed the module
 // budget; the names stay here so a caller reads `tasks::turn_ended`.
 pub use crate::task_stage::{
-    clear_waiting, reassign, report_blocked, sync_stage, turn_began, turn_ended, waiting_close,
-    waiting_open, TaskWaiting,
+    clear_waiting, reassign, recover_interrupted, report_blocked, sync_stage, turn_began,
+    turn_ended, waiting_close, waiting_open, TaskWaiting,
 };

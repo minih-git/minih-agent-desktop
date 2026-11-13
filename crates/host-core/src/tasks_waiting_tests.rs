@@ -488,3 +488,74 @@ fn a_conversation_is_not_a_task() {
     sessions::end_turn(&db, &turn, "completed", None, None, false).unwrap();
     assert!(tasks::get_task(&db, &chat).unwrap().is_none());
 }
+
+/// A restart leaves no task claiming that work is happening.
+///
+/// The startup fence aborts every `running` turn with plain SQL and marks the
+/// delivery `interrupted`; neither goes through `end_turn_settling`, so before
+/// this fix a task that was `person/answer` (or `working`) kept that stage after
+/// the restart: the sidebar counted a question nobody could answer, and the
+/// steward's dock showed both a waiting row and a blocked card for one task.
+#[test]
+fn a_restart_leaves_every_open_task_stuck_rather_than_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pi.sqlite");
+    let (waiting_task, steward_task_id, steward_task_session) = {
+        let db = Database::open(&path).unwrap();
+        let steward = employee(&db, "Super Agent", Some("steward"));
+        let owner = employee(&db, "Router 后端", None);
+        // A directly dispatched task waiting on an answer.
+        let waiting_task = direct_task(&db, &owner, "修一下登录超时");
+        sessions::begin_turn(&db, &waiting_task.session_id, None, None).unwrap();
+        tasks::waiting_open(
+            &db,
+            &json!({
+                "sessionId": waiting_task.session_id,
+                "requestId": "ask-1",
+                "kind": "ask",
+                "question": "要保留旧的登录接口吗？",
+            }),
+        )
+        .unwrap();
+        // A steward's task in the middle of a turn.
+        let steward_task = steward_task(&db, &steward, &owner, "补 remote_gateway 单测");
+        sessions::begin_turn(&db, &steward_task.session_id, None, None).unwrap();
+        assert_eq!(stage_of(&db, &steward_task), "working");
+        (
+            waiting_task,
+            steward_task.id.clone(),
+            steward_task.session_id.clone(),
+        )
+    };
+    // Reopen the same file: the boot fence aborts the running turns, and the
+    // recovery that follows must stop the tasks that were mid-flight.
+    let db = Database::open(&path).unwrap();
+
+    let waiting = tasks::get_task(&db, &waiting_task.id).unwrap().unwrap();
+    assert_eq!(waiting.stage, "blocked");
+    assert_eq!(waiting.blocker.unwrap()["reason"], json!("interrupted"));
+    assert!(waiting.waiting.is_empty(), "a restart holds no requests");
+
+    let steward_row = tasks::get_task(&db, &steward_task_id).unwrap().unwrap();
+    assert_eq!(steward_row.stage, "blocked");
+    assert_eq!(steward_row.blocker.unwrap()["reason"], json!("interrupted"));
+    // One interruption, one announcement: the delivery's own notice already went
+    // out, and the stage recovery is silent.
+    assert_eq!(stage_notices(&db, &steward_task_id).len(), 1);
+    assert!(stage_notices(&db, &waiting_task.id).is_empty());
+    assert!(!steward_task_session.is_empty());
+}
+
+/// A task whose turn is genuinely running is left alone by the recovery.
+#[test]
+fn the_recovery_leaves_a_running_task_alone() {
+    let (_dir, db) = database();
+    let owner = employee(&db, "Router 后端", None);
+    let task = direct_task(&db, &owner, "修一下登录超时");
+    sessions::begin_turn(&db, &task.session_id, None, None).unwrap();
+    // The recovery is what `Database::open` runs; called by hand it must not
+    // touch a task that still owns a running turn.
+    let moved = tasks::recover_interrupted(&db, db.conn()).unwrap();
+    assert_eq!(moved, 0);
+    assert_eq!(stage_of(&db, &task), "working");
+}

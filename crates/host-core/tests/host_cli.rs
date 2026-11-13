@@ -140,6 +140,14 @@ impl Host {
         }
     }
 
+    /// Kill the process the way an operating-system crash does: no shutdown
+    /// hook, no settling, nothing flushed by us.
+    fn kill(mut self) {
+        self.stdin.take();
+        self.child.kill().expect("kill host");
+        self.child.wait().expect("reap host");
+    }
+
     fn data_dir(&self) -> &Path {
         &self.data_dir
     }
@@ -583,4 +591,87 @@ fn an_interrupted_task_is_visible_and_restarts_when_the_host_restarts() {
         2,
         "one notice per interruption, and there were two"
     );
+}
+
+/// The second half of the startup fence, on a real process death.
+///
+/// The first half aborts every `running` turn with plain SQL and marks its
+/// delivery `interrupted`; neither goes through `end_turn_settling`, so before
+/// this test's fix a task that was `working` or waiting for an answer kept that
+/// stage after a restart and looked alive on every surface. This kills the real
+/// host binary and starts it again on the same data directory.
+#[test]
+fn a_task_restarting_claims_nothing_and_announces_one_interruption() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let data_dir = root.path().join("data");
+    std::fs::create_dir_all(&data_dir).expect("data dir");
+    {
+        let mut first = Host::start(&data_dir);
+        first.handshake();
+        first.shutdown();
+    }
+    // The application's own shape before the crash: a steward's task waiting on
+    // an answer, a directly dispatched task in the middle of a turn, and one
+    // running turn each.
+    seed_running_task(&data_dir);
+    {
+        let conn = open_db(&data_dir);
+        conn.execute_batch(
+            "UPDATE tasks SET stage='person/answer',
+                waiting_json='[{\"requestId\":\"ask-1\",\"kind\":\"ask\",\"question\":\"要保留旧的登录接口吗？\",\"openedAt\":\"2026-11-13T01:00:00.000Z\"}]'
+              WHERE id='task-1';
+             INSERT INTO turns (id, session_id, status, started_at)
+               VALUES ('turn-1', 'task-session-1', 'running', 1);
+             INSERT INTO sessions (id, title, role, owner_session_id, permission_mode, created_at, updated_at)
+               VALUES ('direct-session', '直接派的活', 'task', 'employee-1', 'accept-edits', 1, 1);
+             INSERT INTO tasks (id, employee_session_id, session_id, title, origin, stage, created_at)
+               VALUES ('task-direct', 'employee-1', 'direct-session', '直接派的活', 'direct', 'working', 1);
+             INSERT INTO turns (id, session_id, status, started_at)
+               VALUES ('turn-direct', 'direct-session', 'running', 1);",
+        )
+        .expect("seed the interrupted shapes");
+        drop(conn);
+    }
+
+    let mut first = Host::start(&data_dir);
+    first.handshake();
+    first.kill();
+
+    let mut second = Host::start(&data_dir);
+    second.handshake();
+    for (task_id, expected_notices) in [("task-1", 1_i64), ("task-direct", 0_i64)] {
+        let row = second.call("task.get", serde_json::json!({ "taskId": task_id }));
+        let task = &row["result"]["task"];
+        assert_eq!(task["stage"], serde_json::json!("blocked"), "{row}");
+        assert_eq!(
+            task["blocker"]["reason"],
+            serde_json::json!("interrupted"),
+            "{row}"
+        );
+        assert_eq!(task["waiting"], serde_json::json!([]), "{row}");
+        // The person can still act on it: a blocked card, not a dead row.
+        assert_eq!(task["archivedAt"], serde_json::Value::Null, "{row}");
+        let notices = count_rows(
+            &data_dir,
+            "SELECT COUNT(*) FROM session_collaboration_messages
+              WHERE kind='stage' AND content LIKE '%\"taskId\":\"' || ?1 || '\"%'",
+            task_id,
+        );
+        assert_eq!(
+            notices, expected_notices,
+            "{task_id} announced the interruption {notices} time(s)"
+        );
+    }
+    // The steward's task is announced once, about the interruption, and never a
+    // second time when the stage recovery moves it.
+    let stage: Option<String> = open_db(&data_dir)
+        .query_row(
+            "SELECT json_extract(content, '$.stage') FROM session_collaboration_messages
+              WHERE kind='stage' AND content LIKE '%\"taskId\":\"task-1\"%'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read the one interruption notice");
+    assert_eq!(stage.as_deref(), Some("interrupted"));
+    second.shutdown();
 }

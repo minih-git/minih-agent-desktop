@@ -337,6 +337,59 @@ pub fn clear_waiting(conn: &rusqlite::Connection) -> Result<usize> {
     )?)
 }
 
+/// The blocker a restart leaves behind: nothing is running, and nothing will.
+const INTERRUPTED_BLOCKER: &str = r#"{"reason":"interrupted"}"#;
+
+/// The startup fence's second half: a task whose turn is gone is stuck.
+///
+/// The first half aborts every `running` turn row and marks the deliveries
+/// `interrupted`; neither of those goes through `end_turn_settling`, so a task
+/// that was `working` or waiting for an answer kept that stage and looked alive
+/// on every surface after a restart. It is not: the sidecar that held the turn is
+/// gone, and so is every request the task was waiting on.
+///
+/// So: every open task whose stage says "in flight" and whose own session has no
+/// running turn becomes `blocked` with `reason: "interrupted"`. Three rules:
+///
+/// - **Silent.** A task a steward dispatched was already announced once by
+///   `delivery_interrupted`, and a directly dispatched task wakes nobody ever;
+///   announcing here would be a second message about one interruption.
+/// - **Only stages that claim work is happening.** `person/accept`, `failed` and
+///   an already `blocked` task are not claims about a live turn.
+/// - **Only tasks with no running turn.** A task whose turn really is running is
+///   left alone, so a database opened by a second process cannot freeze live work.
+///
+/// Returns how many tasks moved.
+pub fn recover_interrupted(db: &Database, conn: &rusqlite::Connection) -> Result<usize> {
+    let stuck: Vec<String> = {
+        let mut statement = conn.prepare(
+            "SELECT t.id FROM tasks t
+              WHERE t.archived_at IS NULL
+                AND t.stage IN ('working', 'person/answer')
+                AND NOT EXISTS (SELECT 1 FROM turns u
+                                 WHERE u.session_id = t.session_id AND u.status = 'running')",
+        )?;
+        let mapped = statement.query_map([], |row| row.get::<_, String>(0))?;
+        mapped.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let mut moved = 0;
+    for task_id in stuck {
+        let changed = move_stage(
+            db,
+            conn,
+            &task_id,
+            Some("blocked"),
+            Column::Set(INTERRUPTED_BLOCKER),
+            Column::Clear,
+            true,
+        )?;
+        if changed.is_some() {
+            moved += 1;
+        }
+    }
+    Ok(moved)
+}
+
 /// Move the stage of the task bound to a delivery, if there is one.
 ///
 /// Called from the same transaction that accepts a report or settles a turn, so

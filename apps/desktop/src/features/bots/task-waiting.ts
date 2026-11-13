@@ -123,6 +123,9 @@ export type BlockedFields = {
 export function blockedFields(task: TaskView): BlockedFields {
   if (task.deliveryStatus === "interrupted") return { source: "interrupted" };
   const blocker = task.blocker;
+  // A restart leaves no delivery on a directly dispatched task, so the reason is
+  // what says the app died rather than the employee giving up.
+  if (blocker?.reason === "interrupted") return { source: "interrupted" };
   if (blocker?.reason === "error") {
     return { source: "failed", ...(blocker.code ? { code: blocker.code } : {}) };
   }

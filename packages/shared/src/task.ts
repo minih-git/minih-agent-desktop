@@ -70,8 +70,12 @@ export type TaskWaiting = {
  */
 export type TaskBlocker = {
   status?: "blocked";
-  /** `stopped` is the person's own stop; `error` is a turn that failed. */
-  reason?: "stopped" | "error";
+  /**
+   * `stopped` is the person's own stop, `error` a turn that failed, and
+   * `interrupted` the startup fence: the app died while this task's turn was
+   * running, so nothing is running now and nothing will resume by itself.
+   */
+  reason?: "stopped" | "error" | "interrupted";
   /** The error code of a failed turn, as the runtime settled it. */
   code?: string;
   /** Where it got stuck, in the employee's words. */

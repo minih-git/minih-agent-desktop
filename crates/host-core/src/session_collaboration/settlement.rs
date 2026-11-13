@@ -228,8 +228,14 @@ pub fn recover(db: &Database) -> Result<()> {
     let tx = db.conn().unchecked_transaction()?;
     // The sidecar restarted, so no request it was holding can still be answered:
     // a question that survived the restart would send the person to a card that
-    // no longer exists. The stage is left to the fence below.
+    // no longer exists.
     crate::tasks::clear_waiting(&tx)?;
+    // The fence below aborts every running turn and marks its delivery
+    // `interrupted`, but neither goes through `end_turn_settling`, so a task that
+    // was mid-flight would keep claiming work is happening. It is not: it becomes
+    // `blocked{interrupted}`, silently, because a steward's task was already
+    // announced by `delivery_interrupted` and a direct one wakes nobody.
+    crate::tasks::recover_interrupted(db, &tx)?;
     let interrupted: Vec<(String, i64)> = {
         let mut statement = tx.prepare(
             "SELECT id, report_seq FROM session_collaboration_messages
