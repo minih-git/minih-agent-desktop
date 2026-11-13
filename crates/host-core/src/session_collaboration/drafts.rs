@@ -166,6 +166,27 @@ fn granted_mode(db: &Database, target: &str, requested: &str) -> Result<String> 
     ))
 }
 
+/// The card's claim about itself, checked in the host as well as in Main.
+///
+/// A card may only be marked read-only when it also asks before acting: `auto`
+/// runs Write/Edit and Bash unattended, so "auto" must never be read as "safe".
+/// The host repeats the check because a rule that lives only in the renderer is
+/// a rule an older or differently-built client does not have (review S1).
+fn validate_card_authority(card: &Value) -> Result<()> {
+    match card.get("readOnly") {
+        None | Some(Value::Bool(false)) => Ok(()),
+        Some(Value::Bool(true)) => {
+            if card.get("permissionMode").and_then(Value::as_str) != Some("ask") {
+                return Err(anyhow!(
+                    "INVALID_ARGUMENT: a read-only card must ask before acting (permissionMode=ask)"
+                ));
+            }
+            Ok(())
+        }
+        Some(_) => Err(anyhow!("INVALID_ARGUMENT: readOnly must be a boolean")),
+    }
+}
+
 fn evict_oldest(conn: &rusqlite::Connection, session_id: &str) -> Result<()> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM task_card_drafts WHERE session_id=?1",
@@ -210,6 +231,7 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
         .get("card")
         .ok_or_else(|| anyhow!("INVALID_ARGUMENT: card required"))?
         .clone();
+    validate_card_authority(&card)?;
     if !target.is_empty() {
         // A steward cannot dispatch to itself, and the target has to be a bot: a
         // card exists to hand work to an employee, not to a casual conversation.
@@ -279,6 +301,7 @@ pub fn revise(db: &Database, input: &Value) -> Result<Value> {
         .get("card")
         .ok_or_else(|| anyhow!("INVALID_ARGUMENT: card required"))?
         .clone();
+    validate_card_authority(&card)?;
     // A revise keeps the employee the card already names, so the narrowed mode
     // is recomputed against that same employee (review S2).
     if let Some(requested) = card.get("permissionMode").and_then(Value::as_str) {
@@ -387,20 +410,24 @@ pub fn drop(db: &Database, input: &Value) -> Result<Value> {
 ///   employee and nobody else;
 /// - that employee has `observe` switched off, because `observe` is the
 ///   person's consent and a proposal alone never expresses it;
-/// - the card is **read-only**: `auto` is the mode the steward asks for
-///   research, reading and review, and it is the only mode that does not change
-///   the workspace. A card that changes files (`accept-edits`) or that asks for
-///   everything (`ask`) waits for a click, because a person starting it is the
-///   only thing that makes it reviewed;
+/// - the card is **read-only**, and says so: `readOnly: true` (with the `ask`
+///   mode it requires) is the person's stated rule — "read-only work starts,
+///   anything that changes something waits for me". The mode alone never
+///   decides this. `auto` is the *widest* mode the product has — it runs
+///   Write/Edit and Bash without asking — so treating it as "read-only" let a
+///   model label a task "research" and have files written with nobody
+///   watching (review S1). An `accept-edits` or `ask` card without the flag
+///   waits for a click, because a person starting it is the only thing that
+///   makes it reviewed;
 /// - the card asks for no gate beyond `deploy` / `delete` / `spend`.
 ///
 /// That last rule needs its construction explained, because the merged card
 /// *always* carries `deploy`, `delete` and `spend`: `unionMustAsk` adds them to
 /// every card so nobody can switch them off. A literal "mustAsk contains none of
 /// the three" test therefore never fires, and a rule that never fires is not a
-/// rule. What this checks is the part a steward can vary: an `auto` card that
-/// also asked for `push`, `merge` or `criteria-change` is not read-only, and it
-/// waits for the person like the rest.
+/// rule. What this checks is the part a steward can vary: a read-only card that
+/// also asked for `push`, `merge` or `criteria-change` waits for the person like
+/// the rest.
 ///
 /// Returns the reason when it must not auto-start, so the caller can record it
 /// rather than silently leaving the card open.
@@ -421,12 +448,8 @@ pub fn auto_start_refusal(
     if observe {
         return Ok(Some("employee-observing"));
     }
-    let mode = card
-        .get("permissionMode")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if mode != "auto" {
-        return Ok(Some("card-changes-files"));
+    if card.get("readOnly").and_then(Value::as_bool) != Some(true) {
+        return Ok(Some("card-not-read-only"));
     }
     let asked = card
         .get("mustAsk")
@@ -526,6 +549,7 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
             "CONFLICT: the card changed since it was shown; re-render it before confirming"
         ));
     }
+    validate_card_authority(&draft.card)?;
     super::progress::validate_mandate(&serde_json::to_string(&draft.card)?)?;
     // What this task actually runs at. A person's click authorizes the card
     // narrowed to what the employee may do; a policy confirmation — nobody
@@ -583,6 +607,9 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
         }),
         &draft.target_session_id,
         "task",
+        // The task this transaction creates runs at exactly this mode, so the
+        // delivery's ceiling is the mode itself rather than a second derivation.
+        Some(granted.as_str()),
     )?;
     tx.execute(
         "UPDATE task_card_drafts

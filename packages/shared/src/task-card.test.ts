@@ -82,6 +82,28 @@ describe("a card never carries authority nobody chose", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("permission-mode");
   });
+  it("only lets a card call itself read-only when it asks before acting", () => {
+    // `auto` is the widest mode the product has, not a safe one: the label and
+    // the mode cannot disagree (review S1).
+    const wide = normalizeTaskCard(draft({ permissionMode: "auto", readOnly: true }));
+    expect(wide.ok).toBe(false);
+    if (!wide.ok) expect(wide.error).toBe("read-only");
+    const edits = normalizeTaskCard(draft({ permissionMode: "accept-edits", readOnly: true }));
+    expect(edits.ok).toBe(false);
+    // The one combination that is read-only, and it is stated rather than
+    // inferred: a card that never mentions the field is not read-only.
+    const readOnly = normalizeTaskCard(draft({ permissionMode: "ask", readOnly: true }));
+    expect(readOnly.ok).toBe(true);
+    if (readOnly.ok) expect(readOnly.card.readOnly).toBe(true);
+    expect(normalizeTaskCard(draft({ permissionMode: "ask" })).ok).toBe(true);
+    const silent = normalizeTaskCard(draft({ permissionMode: "ask" }));
+    if (silent.ok) expect(silent.card.readOnly).toBe(false);
+    // A non-boolean is refused, not coerced.
+    const malformed = normalizeTaskCard(draft({ readOnly: "yes" as never }));
+    expect(malformed.ok).toBe(false);
+    if (!malformed.ok) expect(malformed.error).toBe("read-only");
+  });
+
 
   it("refuses an unknown permission mode and an unknown ask action", () => {
     expect(normalizeTaskCard(draft({ permissionMode: "root" as never })).ok).toBe(false);

@@ -82,6 +82,19 @@
   margin-right: 6px;
   color: var(--ds-text-faint);
 }
+/* A card that only reads says so beside its permission: it is the one card the
+   host may start without the person, and a mode alone must never imply that.
+   The badge is a chip, quieter than the meta text, because it qualifies the line
+   next to it rather than asking for anything. */
+.task-card-readonly {
+  padding: 0 5px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-2xs);
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+  white-space: nowrap;
+}
 
 /* "Interrupted" is not a stage — the fence stopped the work and nothing resumes
    it — so it borrows the warning tone instead of a stage colour, in both places

@@ -389,6 +389,15 @@ function TaskCard({
         <span>
           {t("bots.card.permission")}: {t(permissionKey(card.permissionMode))}
         </span>
+        {/* The one card the host may start without a person, said where the
+            person checks its permission rather than left to be inferred from a
+            mode. `auto` is not read-only, so the badge is the claim, not the
+            mode (review S1). */}
+        {card.readOnly ? (
+          <span className="task-card-readonly" data-card-readonly="">
+            {t("bots.card.readOnly")}
+          </span>
+        ) : null}
         {card.mustAsk.length > 0 ? <span>{t("bots.card.mustAsk")}</span> : null}
         <span className={hasTarget && project ? undefined : "task-card-warning"}>
           {t("bots.card.project")}:{" "}

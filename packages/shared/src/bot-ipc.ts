@@ -130,6 +130,12 @@ export type TaskCardDraftView = {
     boundaries: string[];
     repo?: { origin: string; ref?: string };
     permissionMode: "auto" | "accept-edits" | "ask";
+    /**
+     * The steward's claim that this work only reads, which is also the only
+     * thing that lets the host start the card without a person. Optional because
+     * rows written before the field existed do not carry it (review S1).
+     */
+    readOnly?: boolean;
     mustAsk: BotMustAsk[];
     risk: "low" | "medium" | "high";
     /** Why the steward named this employee; shown on the card, never frozen. */

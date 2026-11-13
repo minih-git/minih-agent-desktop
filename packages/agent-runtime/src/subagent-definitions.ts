@@ -288,6 +288,20 @@ There is exactly one way to give an employee a **new** task: \`TaskCard\` with
 \`action: propose\`, then the person clicks "开工" on the card — or the host
 starts it itself when the card is read-only and the employee is not observing.
 
+Say which kind of work it is, in the card itself:
+
+- research, reading, reviewing, comparing options: \`readOnly: true\` and
+  \`permissionMode: ask\`. Nothing in the repository changes, so this is the one
+  kind of card the host may start without the person.
+- changing code: \`permissionMode: accept-edits\`. The person clicks 开工.
+- shipping, operating, deleting or touching data: \`permissionMode: ask\`, with
+  anything else that must come back to them in \`mustAsk\`.
+
+Never label a card read-only to get it started. \`auto\` is the widest mode this
+product has — it writes files and runs commands without asking — and a read-only
+card must ask before acting, so the label and the mode can never disagree. A card
+whose mode is wider than read-only waits for the click, and that is the point.
+
 You cannot confirm a card, and \`SessionSend\` cannot hand out new work: it
 carries a follow-up to a task that is already running, addressed by its
 \`taskId\`, and it is refused without one. That refusal is not an obstacle to

@@ -270,10 +270,13 @@ fn a_confirmation_is_atomic_when_the_delivery_cannot_be_written() {
     let steward = session(&db, "Steward", None, "auto");
     let worker = session(&db, "小爪", Some("bot"), "accept-edits");
     let draft = propose_card(&db, &steward, &worker, "accept-edits");
-    // The worker's mode is raised past the card, so the delivery is refused.
+    // The employee stops being an Agent session while the card waits, so the
+    // delivery is refused on the way in. Its *mode* can no longer cause this: a
+    // card is now narrowed to the employee, so a wider employee only narrows
+    // what the card grants (review S2).
     db.conn()
         .execute(
-            "UPDATE sessions SET permission_mode='auto' WHERE id=?1",
+            "UPDATE sessions SET mode='chat' WHERE id=?1",
             params![worker],
         )
         .unwrap();
@@ -379,28 +382,42 @@ fn bot(db: &Database, title: &str, mode: &str, observe: bool) -> String {
 
 /// The auto-start rule is the host's decision from stored facts, so every
 /// condition is exercised on both sides.
+///
+/// The `auto` mode is the *widest* the product has — it runs Write/Edit and Bash
+/// without asking — so a mode is never evidence that a card only reads: the
+/// card has to say `readOnly: true`, and that label itself requires `ask`
+/// (employee mode 0.5 slice 3, review S1).
 #[test]
-fn auto_start_needs_an_observing_off_employee_and_a_narrow_card() {
+fn auto_start_needs_an_observing_off_employee_and_a_card_that_says_read_only() {
     let db = database();
     let wide = bot(&db, "Wide", "accept-edits", false);
     let observing = bot(&db, "Observing", "accept-edits", true);
     let plain = session(&db, "Just a chat", None, "auto");
 
-    // A read-only card for an employee that is not observing starts by itself
-    // (slice 3: the person's rule is "read-only starts, changing waits"). Every
-    // card carries the three nobody can switch off and nothing else.
-    let mut read_only = card("auto");
+    // A card that says it only reads starts by itself (the person's rule is
+    // "read-only starts, changing waits"). Every card carries the three nobody
+    // can switch off and nothing else.
+    let mut read_only = card("ask");
+    read_only["readOnly"] = json!(true);
     read_only["mustAsk"] = json!(["deploy", "delete", "spend"]);
     assert_eq!(auto_start_refusal(&db, &wide, &read_only).unwrap(), None);
 
-    // A card that changes files waits for a click.
+    // The mode alone is not a claim: `auto` may write files, so a card without
+    // the flag waits for a click.
+    let mut undeclared = card("auto");
+    undeclared["mustAsk"] = json!(["deploy", "delete", "spend"]);
+    assert_eq!(
+        auto_start_refusal(&db, &wide, &undeclared).unwrap(),
+        Some("card-not-read-only")
+    );
+    // A card that changes files waits for a click, whatever it asks for.
     assert_eq!(
         auto_start_refusal(&db, &wide, &card("accept-edits")).unwrap(),
-        Some("card-changes-files")
+        Some("card-not-read-only")
     );
     assert_eq!(
         auto_start_refusal(&db, &wide, &card("ask")).unwrap(),
-        Some("card-changes-files")
+        Some("card-not-read-only")
     );
     // An observing employee never auto-starts.
     assert_eq!(
@@ -413,9 +430,11 @@ fn auto_start_needs_an_observing_off_employee_and_a_narrow_card() {
         Some("target-not-an-employee")
     );
     // A read-only card that also asked for a gate beyond the three nobody can
-    // switch off is not read-only: it waits like the rest.
+    // switch off waits like the rest.
+    let mut gated = read_only.clone();
+    gated["mustAsk"] = json!(["push", "deploy", "delete", "spend"]);
     assert_eq!(
-        auto_start_refusal(&db, &wide, &card("auto")).unwrap(),
+        auto_start_refusal(&db, &wide, &gated).unwrap(),
         Some("card-asks-before-acting")
     );
 }
@@ -673,4 +692,145 @@ fn reassigning_a_card_narrows_it_to_the_new_employees_mode() {
         Some("ask")
     );
     assert_eq!(confirmed["delivery"]["permissionCeiling"], json!("ask"));
+}
+
+/// A card that says it only reads may be started by the host — at `ask`, which
+/// is the only mode the label allows (review S1).
+#[test]
+fn a_read_only_card_starts_at_ask() {
+    let db = database();
+    let steward = session(&db, "Steward", None, "auto");
+    let employee = bot(&db, "Router 后端", "accept-edits", false);
+    let mut card = card("ask");
+    card["readOnly"] = json!(true);
+    card["mustAsk"] = json!(["deploy", "delete", "spend"]);
+    let proposed = super::propose(
+        &db,
+        &json!({
+            "sessionId": steward,
+            "targetSessionId": employee,
+            "sourceUtterance": "调研 Router 网关的超时配置",
+            "card": card,
+        }),
+    )
+    .unwrap();
+    let draft: Draft = serde_json::from_value(proposed["draft"].clone()).unwrap();
+    // The host's own policy allows this one, and only because it says so.
+    assert_eq!(
+        auto_start_refusal(&db, &employee, &draft.card).unwrap(),
+        None
+    );
+    let confirmed = super::confirm(
+        &db,
+        ConfirmRequest {
+            confirmed_by: CONFIRMED_BY_POLICY,
+            ..confirm_request(&draft, "policy-read-only")
+        },
+    )
+    .unwrap();
+    let task_session = confirmed["task"]["sessionId"].as_str().unwrap();
+    assert_eq!(
+        sessions::session_permission_mode(&db, task_session)
+            .unwrap()
+            .as_deref(),
+        Some("ask"),
+        "a task nobody looked at asks before it acts"
+    );
+    assert_eq!(confirmed["delivery"]["permissionCeiling"], json!("ask"));
+    assert_eq!(
+        confirmed["delivery"]["mandate"]["permissionMode"],
+        json!("ask")
+    );
+}
+
+/// The backstop: even if a caller reaches `confirm` with `confirmedBy: policy`
+/// for a card the auto-start rule would refuse, the task is clamped to `ask`.
+/// This is what stops a wrong rule — now or later — from becoming authority
+/// nobody granted (review S1).
+#[test]
+fn a_policy_confirmation_never_runs_wider_than_ask() {
+    let db = database();
+    let steward = session(&db, "Steward", None, "auto");
+    let employee = bot(&db, "界面", "accept-edits", false);
+    let draft = propose_card(&db, &steward, &employee, "auto");
+    // The rule refuses this card, so nothing would normally confirm it.
+    assert_eq!(
+        auto_start_refusal(&db, &employee, &draft.card).unwrap(),
+        Some("card-not-read-only")
+    );
+    let confirmed = super::confirm(
+        &db,
+        ConfirmRequest {
+            confirmed_by: CONFIRMED_BY_POLICY,
+            ..confirm_request(&draft, "policy-wide")
+        },
+    )
+    .unwrap();
+    let task_session = confirmed["task"]["sessionId"].as_str().unwrap();
+    assert_eq!(
+        sessions::session_permission_mode(&db, task_session)
+            .unwrap()
+            .as_deref(),
+        Some("ask"),
+        "the clamp is on the task session, whatever the card said"
+    );
+    assert_eq!(
+        confirmed["delivery"]["mandate"]["permissionMode"],
+        json!("ask"),
+        "the ledger records the mode that runs"
+    );
+    assert_eq!(confirmed["delivery"]["permissionCeiling"], json!("ask"));
+}
+
+/// The label and the mode cannot disagree: read-only work asks before acting,
+/// and the host refuses the combination rather than reinterpreting it.
+#[test]
+fn a_read_only_card_must_ask_before_acting() {
+    let db = database();
+    let steward = session(&db, "Steward", None, "auto");
+    let employee = bot(&db, "界面", "accept-edits", false);
+    let mut impossible = card("auto");
+    impossible["readOnly"] = json!(true);
+    let refused = super::propose(
+        &db,
+        &json!({
+            "sessionId": steward,
+            "targetSessionId": employee,
+            "sourceUtterance": "调研一下",
+            "card": impossible,
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        refused.to_string().contains("INVALID_ARGUMENT"),
+        "{refused}"
+    );
+    // The same rule on the revise path: a proposed card cannot be edited into it
+    // either.
+    let draft = propose_card(&db, &steward, &employee, "accept-edits");
+    let mut impossible = card("auto");
+    impossible["readOnly"] = json!(true);
+    let refused =
+        super::revise(&db, &json!({"draftId": draft.id, "card": impossible})).unwrap_err();
+    assert!(
+        refused.to_string().contains("INVALID_ARGUMENT"),
+        "{refused}"
+    );
+    // And a `readOnly` that is not a boolean is refused, not coerced.
+    let mut malformed = card("ask");
+    malformed["readOnly"] = json!("yes");
+    let refused = super::propose(
+        &db,
+        &json!({
+            "sessionId": steward,
+            "targetSessionId": employee,
+            "sourceUtterance": "调研一下",
+            "card": malformed,
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        refused.to_string().contains("INVALID_ARGUMENT"),
+        "{refused}"
+    );
 }

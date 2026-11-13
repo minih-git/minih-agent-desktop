@@ -118,6 +118,12 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
             Type.Literal("accept-edits"),
             Type.Literal("ask"),
           ]),
+          readOnly: Type.Optional(
+            Type.Boolean({
+              description:
+                "True when the work only reads: research, reading, review. It is the only thing that lets the host start the card without the person, and it requires permissionMode \"ask\". `auto` is not read-only.",
+            }),
+          ),
           mustAsk: Type.Optional(Type.Array(Type.String({ maxLength: 32 }))),
           risk: Type.Optional(
             Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),

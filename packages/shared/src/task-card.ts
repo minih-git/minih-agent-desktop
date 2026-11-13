@@ -52,6 +52,19 @@ export type TaskCardDraft = {
   boundaries?: string[];
   repo?: { origin: string; ref?: string };
   permissionMode?: MandatePermissionMode;
+  /**
+   * Whether this work may only read.
+   *
+   * The steward's claim about its own card, and the only thing that lets the
+   * host start it without a person: research, reading and review change nothing
+   * in the workspace, so nobody has to be asked first. A card that says
+   * `readOnly: true` must ask before acting (`permissionMode: "ask"`), because a
+   * mode that runs tools on its own is not read-only. `permissionMode: "auto"`
+   * on its own never means read-only — `auto` is the widest mode the product has,
+   * and reading it as "safe" is the mistake this field replaces (employee mode
+   * 0.5 slice 3, review S1).
+   */
+  readOnly?: boolean;
   mustAsk?: BotMustAsk[];
   risk?: MandateRisk;
   /**
@@ -73,6 +86,7 @@ export type TaskCardError =
   | "criteria"
   | "boundaries"
   | "permission-mode"
+  | "read-only"
   | "must-ask"
   | "risk"
   | "repo"
@@ -89,6 +103,8 @@ export type TaskCardFields = {
   boundaries: string[];
   repo?: { origin: string; ref?: string };
   permissionMode: MandatePermissionMode;
+  /** True when the steward declared this work may only read. */
+  readOnly: boolean;
   mustAsk: BotMustAsk[];
   risk: MandateRisk;
   /** Why this employee; shown on the card, never part of the Mandate. */
@@ -141,6 +157,24 @@ export function normalizeTaskCard(draft: TaskCardDraft): TaskCardResult {
       ok: false,
       error: "permission-mode",
       message: `\`${String(draft.permissionMode)}\` is not a permission a card can ask for.`,
+    };
+  }
+  if (draft.readOnly !== undefined && typeof draft.readOnly !== "boolean") {
+    return {
+      ok: false,
+      error: "read-only",
+      message: "`readOnly` must be true or false; it is a claim about the work, not a label.",
+    };
+  }
+  // The rule that makes the field mean something: only a card that asks before
+  // acting may call itself read-only. `auto` runs Write/Edit and Bash without
+  // asking — it is the *widest* mode, not a safe one (review S1).
+  if (draft.readOnly === true && draft.permissionMode !== "ask") {
+    return {
+      ok: false,
+      error: "read-only",
+      message:
+        "A read-only card must ask before acting: set `permissionMode: \"ask\"`. `auto` runs tools on its own and is not read-only.",
     };
   }
   const rawCriteria = Array.isArray(draft.criteria) ? draft.criteria : [];
@@ -231,6 +265,9 @@ export function normalizeTaskCard(draft: TaskCardDraft): TaskCardResult {
     criteria,
     boundaries,
     permissionMode: draft.permissionMode,
+    // Stated, never inferred: only a card that says so may be started without a
+    // person, and only `permissionMode: "ask"` may accompany it.
+    readOnly: draft.readOnly === true,
     // Nobody can switch these off, so they are merged in before a person ever
     // reads the card — the card states what will happen, not what was asked.
     mustAsk: unionMustAsk(rawMustAsk),
@@ -353,7 +390,7 @@ export function describeTaskCard(card: TaskCardFields): string {
     ...(card.boundaries.length > 0
       ? [`boundaries: ${card.boundaries.join("; ")}`]
       : []),
-    `permission: ${card.permissionMode}`,
+    `permission: ${card.permissionMode}${card.readOnly ? " (read-only)" : ""}`,
     `must ask: ${card.mustAsk.join(", ") || "—"}${ALWAYS_MUST_ASK.every((item) => card.mustAsk.includes(item)) ? "" : " (unexpected)"}`,
     `risk: ${card.risk}`,
     // The reason the steward gave for naming this employee, so the model sees

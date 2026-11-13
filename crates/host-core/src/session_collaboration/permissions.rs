@@ -45,16 +45,26 @@ pub(super) fn narrower(left: &str, right: &str) -> String {
     }
 }
 
-pub(super) fn check_target(db: &Database, session_id: &str, ceiling: &str) -> Result<()> {
-    if rank(&effective_mode(db, session_id)?) > rank(ceiling) {
-        return Err(anyhow!(
-            "PERMISSION_DENIED: target permission mode exceeds the sending session's authorization"
-        ));
-    }
+/// Session communication is Agent-only; this is the half of [`check_target`]
+/// that applies to every delivery.
+///
+/// It is separate because the rank half is about *who may grant what*, and a
+/// delivery whose ceiling was derived from the target itself has nothing left to
+/// compare: the target would be checked against its own mode.
+pub(super) fn require_agent_mode(db: &Database, session_id: &str) -> Result<()> {
     if sessions::session_mode(db, session_id)?.as_deref() != Some("agent") {
         return Err(anyhow!(
             "PERMISSION_DENIED: session communication requires Agent mode"
         ));
     }
     Ok(())
+}
+
+pub(super) fn check_target(db: &Database, session_id: &str, ceiling: &str) -> Result<()> {
+    if rank(&effective_mode(db, session_id)?) > rank(ceiling) {
+        return Err(anyhow!(
+            "PERMISSION_DENIED: target permission mode exceeds the sending session's authorization"
+        ));
+    }
+    require_agent_mode(db, session_id)
 }

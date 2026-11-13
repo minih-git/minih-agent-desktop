@@ -40,7 +40,7 @@ pub(super) fn string<'a>(input: &'a Value, key: &str, limit: usize) -> Result<&'
 }
 
 fn send_record(db: &Database, input: &Value, target: &str, kind: &str) -> Result<Message> {
-    send_record_on(db, db.conn(), input, target, kind)
+    send_record_on(db, db.conn(), input, target, kind, None)
 }
 
 /// The one delivery write, reachable from a sibling module's tests without
@@ -60,12 +60,19 @@ pub(crate) fn dispatch_send_for_test(
 /// A confirmation writes the delivery and the draft's own state in one
 /// transaction (ADR bot-sessions-and-steward §3), so this takes the connection
 /// the caller already opened instead of starting a second one.
+///
+/// `granted` is the one case where the caller *knows* the mode the work will run
+/// at, because the same transaction creates that session: a confirmed card's
+/// task. Then the ceiling is that mode and the rank guard is not consulted — it
+/// would compare a session that does not exist yet with the employee it was
+/// narrowed from. Every other caller passes `None` and keeps the guard.
 fn send_record_on(
     db: &Database,
     conn: &rusqlite::Connection,
     input: &Value,
     target: &str,
     kind: &str,
+    granted: Option<&str>,
 ) -> Result<Message> {
     let source = string(input, "sourceSessionId", 256)?;
     let plugin = string(input, "pluginId", 256)?;
@@ -121,22 +128,43 @@ fn send_record_on(
     // `ask` by design, and while she was part of the minimum, every employee the
     // person had opened up to `accept-edits` could never receive the work she
     // was told to hand out (employee mode 0.5 slice 3, review S2).
+    // The rank guard stays wherever the ceiling comes from a *sender* — a plain
+    // send, a follow-up, a mandate attached to an existing employee session —
+    // because there the target could run wider than what was authorized. A
+    // confirmed card is the exception: its task session is created at the
+    // ceiling in the same transaction, so the guard would compare a session that
+    // does not exist yet with the employee it was narrowed from (review S1's
+    // clamp would otherwise be refused as "too wide").
     let sender_ceiling = permissions::effective_mode(db, source)?;
-    let permission_ceiling = match mandate_json.as_deref() {
-        Some(encoded) => permissions::narrower(
-            &progress::mandate_permission_mode(encoded)?,
-            &permissions::effective_mode(db, target)?,
-        ),
-        // A follow-up grants nothing new: the task was authorized when it was
-        // started, so the ceiling is that task session's own mode. Comparing it
-        // with the sender's would refuse exactly the follow-up the person asked
-        // the steward to write.
-        None if input.get("taskId").and_then(Value::as_str).is_some() => {
-            permissions::effective_mode(db, target)?
+    let permission_ceiling = match granted {
+        Some(granted) => {
+            permissions::require_agent_mode(db, target)?;
+            granted.to_string()
         }
-        None => sender_ceiling,
+        None => match mandate_json.as_deref() {
+            Some(encoded) => {
+                let ceiling = permissions::narrower(
+                    &progress::mandate_permission_mode(encoded)?,
+                    &permissions::effective_mode(db, target)?,
+                );
+                permissions::check_target(db, target, &ceiling)?;
+                ceiling
+            }
+            // A follow-up grants nothing new: the task was authorized when it
+            // was started, so the ceiling is that task session's own mode.
+            // Comparing it with the sender's would refuse exactly the follow-up
+            // the person asked the steward to write.
+            None if input.get("taskId").and_then(Value::as_str).is_some() => {
+                let ceiling = permissions::effective_mode(db, target)?;
+                permissions::check_target(db, target, &ceiling)?;
+                ceiling
+            }
+            None => {
+                permissions::check_target(db, target, &sender_ceiling)?;
+                sender_ceiling
+            }
+        },
     };
-    permissions::check_target(db, target, &permission_ceiling)?;
     // Work delivered to an employee needs an authorization (ADR
     // bot-sessions-and-steward §3): either the confirmed card travelling with
     // this delivery, or a follow-up that names a task already dispatched to
