@@ -74,6 +74,9 @@ export function startTaskWaitingRuntime({
   showToast: (message: string, options: Record<string, unknown>) => void;
   notifyNative: typeof api.showNativeNotification;
 }): () => void {
+  // Nothing here exists without a window: the store is imported by SSR tests and
+  // docs, where there is neither a host nor a notification channel.
+  if (typeof window === "undefined") return () => undefined;
   let cancelled = false;
 
   const refresh = async () => {

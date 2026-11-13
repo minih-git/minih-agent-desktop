@@ -22,10 +22,14 @@ describe("task origins", () => {
 });
 
 describe("task tone", () => {
-  it("makes only a person-owned stage loud", () => {
-    expect(taskTone("person/answer")).toBe("attention");
-    expect(taskTone("person/accept")).toBe("attention");
-    for (const stage of ["working", "queued", "waiting", "blocked", "failed"] as const) {
+  it("makes every stage the person has to act on loud", () => {
+    // `person/*` was the whole list until employee mode 0.5 slice 4a: a blocked or
+    // failed task was painted as work in motion, which is why it could sit in the
+    // sidebar unnoticed.
+    for (const stage of ["person/answer", "person/accept", "blocked", "failed"] as const) {
+      expect(taskTone(stage)).toBe("attention");
+    }
+    for (const stage of ["working", "queued", "waiting"] as const) {
       expect(taskTone(stage)).not.toBe("attention");
     }
     expect(taskTone(null)).toBe("idle");
