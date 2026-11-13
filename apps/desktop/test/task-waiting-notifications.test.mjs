@@ -118,6 +118,16 @@ function apiStub(tasks, employees = [EMPLOYEE]) {
   };
 }
 
+/**
+ * A renderer, as far as this module is concerned: the runtime refuses to run where
+ * there is no preload bridge, which is what keeps it out of SSR. The bridge itself
+ * is stubbed by `apiStub`; only its presence is real.
+ */
+function inRenderer() {
+  globalThis.window ??= {};
+  globalThis.window.minihAgent ??= { on: () => () => undefined };
+}
+
 function runtimeFor(api) {
   return load("../src/stores/runtime/task-waiting-runtime.ts", { "../../lib/api": api });
 }
@@ -125,18 +135,26 @@ function runtimeFor(api) {
 const toasts = [];
 const showToast = (message, options) => toasts.push({ message, options });
 
+/** One announcement, the way Main sends it, then the read it triggers. */
+async function announce(api, event = { reason: "stage" }) {
+  for (const listener of api.listeners.tasks) listener(event);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 test("a task session's question is announced as the employee and the task", async () => {
+  inRenderer();
   const api = apiStub([
     task({ stage: "person/answer", stageSeq: 3, waiting: [{ requestId: "req-1" }] }),
   ]);
   const runtime = runtimeFor(api.module);
+  runtime.resetTaskWaitingRuntimeForTest();
   runtime.startTaskWaitingRuntime({
     translate,
     showToast,
     notifyNative: api.module.api.showNativeNotification,
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
-
+  // Nothing is read at boot; the first announcement is what fills the labels.
+  await announce(api);
   const notification = load("../src/stores/runtime/notification-runtime.ts", {
     i18next: i18nextModule,
     "./task-waiting-runtime": runtime,
@@ -180,7 +198,7 @@ test("a stuck task is announced once per stage, with where it stopped", async ()
     showToast,
     notifyNative: api.module.api.showNativeNotification,
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await announce(api);
 
   assert.equal(toasts.length, 1);
   assert.equal(toasts[0].message, "Router 后端 卡住了: 迁移脚本要先在测试库上跑一遍");
@@ -192,8 +210,7 @@ test("a stuck task is announced once per stage, with where it stopped", async ()
   assert.equal(api.native[0].body, "迁移脚本要先在测试库上跑一遍");
 
   // The same stage arriving again (a re-read, a second event) says nothing.
-  for (const listener of api.listeners.tasks) listener({ reason: "stage" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await announce(api);
   assert.equal(toasts.length, 1);
   assert.equal(api.native.length, 1);
 });
@@ -209,15 +226,16 @@ test("a task the person stopped is not announced, and a new stage is", async () 
     showToast,
     notifyNative: api.module.api.showNativeNotification,
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await announce(api);
   assert.equal(toasts.length, 0, "stopping is the person's own act, not news");
 
   // The next real stage is its own announcement.
   api.module.api.listTasks = async () => ({
-    tasks: [task({ stage: "failed", stageSeq: 5, blocker: { reason: "error", code: "PROVIDER_AUTH" } })],
+    tasks: [
+      task({ stage: "failed", stageSeq: 5, blocker: { reason: "error", code: "PROVIDER_AUTH" } }),
+    ],
   });
-  for (const listener of api.listeners.tasks) listener({ reason: "stage" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await announce(api);
   assert.equal(toasts.length, 1);
   assert.match(toasts[0].message, /Router 后端 卡住了: .*PROVIDER_AUTH/);
 });

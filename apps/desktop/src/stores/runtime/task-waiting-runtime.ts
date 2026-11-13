@@ -74,9 +74,9 @@ export function startTaskWaitingRuntime({
   showToast: (message: string, options: Record<string, unknown>) => void;
   notifyNative: typeof api.showNativeNotification;
 }): () => void {
-  // Nothing here exists without a window: the store is imported by SSR tests and
-  // docs, where there is neither a host nor a notification channel.
-  if (typeof window === "undefined") return () => undefined;
+  // The store module is imported by SSR too (extension E2E, docs), where there is
+  // no preload bridge: nothing can be listened to and nothing can be announced.
+  if (typeof window === "undefined" || !window.minihAgent?.on) return () => undefined;
   let cancelled = false;
 
   const refresh = async () => {
@@ -99,8 +99,11 @@ export function startTaskWaitingRuntime({
       // no notification at all.
     }
   };
-
-  void refresh();
+  // No read at boot: the store is created before the window shows anything, and a
+  // boot-time host call is a cost every surface pays. Every path that creates,
+  // moves or archives a task announces it (`services/task-changes.ts`), and every
+  // task that can be waiting has been created first, so the first announcement
+  // fills the directory before any question can need a name.
   const stopTasks = api.onTasksChanged(() => void refresh());
   const stopBots = api.onBotsChanged(() => void refresh());
   return () => {
