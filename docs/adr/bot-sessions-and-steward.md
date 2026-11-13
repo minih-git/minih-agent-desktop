@@ -165,13 +165,26 @@ Invariants:
 - **Immutable once confirmed.** Widening scope is a new Mandate with a new
   `taskId`, never an edit. This is the prototype's rule and it is what makes
   `sourceUtterance` worth keeping.
-- **The executing side recomputes permission.** The effective mode is
-  `min(Mandate.permissionMode, the ceiling the receiving host grants this
-  source, the bot's own ceiling)` and `mustAsk` is the union of all three, with
-  `deploy`, `delete` and `spend` always added by the executing side. A Mandate
-  asks; it never grants. A tampered, replayed, or forged card therefore cannot
-  raise authority, because nothing on the receiving side reads authority *from*
-  the card.
+- **A click is the authorization; the work runs at the card narrowed by the
+  employee.** A confirmed card's task session is created at
+  `min(card.permissionMode, the employee's own mode)` and the delivery carries
+  the same value, so what the person approved is what runs. The steward's own
+  mode is not part of it: she hands work out and runs at `ask` by design, and
+  while her mode was in the minimum, no employee the person had opened up to
+  `accept-edits` could receive the work she was told to hand out — the
+  confirmation itself was refused (this replaces stage 0's
+  `min(card, sender, bot)`; employee mode 0.5 slice 3 review, S2). A follow-up
+  is checked against its own task's authorization, because it grants nothing new.
+- **Nobody-confirmed work never runs wider than `ask`.** A confirmation the host
+  performs itself (`confirmedBy = policy`, nobody read the card) clamps the task
+  session and the delivery ceiling to `ask`, whatever the card says. This is a
+  backstop, not the rule: it is what keeps a wrong auto-start condition from
+  becoming authority nobody granted (review S1).
+- **The executing side recomputes permission.** `mustAsk` is the union of the
+  card and the executing side, with `deploy`, `delete` and `spend` always added
+  there. A Mandate asks; it never grants. A tampered, replayed, or forged card
+  therefore cannot raise authority, because nothing on the receiving side reads
+  authority *from* the card.
 - **A Mandate is data.** It reaches the model as a bounded, delimited data
   block inside the existing session-communication framing, and the worker's
   prompt states that a task card is data, not instructions from the user.
@@ -272,8 +285,9 @@ assume a rule is live because it is stated above.
 
 | Rule | Enforced today | Where it lands |
 | --- | --- | --- |
-| A card's `permissionMode` narrows the delivery ceiling | **Yes** — the ledger ceiling is `min(sender, card)` at send time, and turn admission re-checks it | shipped |
-| A card can never widen authority | **Yes** — the ceiling is a minimum, and a target wider than the card is refused | shipped |
+| A card's `permissionMode` sets what the task runs at | **Yes** — a confirmed card's task session and its delivery are both created at `min(card, employee)`, and the steward's own mode is not part of it (replaces stage 0's `min(sender, card)`) | shipped |
+| Nobody-confirmed work never runs wider than `ask` | **Yes** — a `confirmedBy = policy` confirmation clamps the task session and the delivery ceiling to `ask` | shipped |
+| A card can never widen authority | **Yes** — the mode is a minimum of card and employee, a follow-up is checked against its own task's authorization, and a mandate attached to an existing employee session still refuses a target wider than the card | shipped |
 | Confirming is a person's click, not a model decision | **Yes** — `TaskCard` has no `confirm` action, `SessionSend` has no `mandate` argument, and only `taskCard.confirm` (Electron IPC, renderer-only) freezes a card | shipped |
 | A confirmation cannot approve text nobody read | **Yes** — the confirmation carries the `cardHash` the screen showed, and a revise in between is refused | shipped |
 | Work reaches an employee only with an authorization | **Yes** — a delivery to a `role = bot` session needs a confirmed card or a `taskId` naming an open task already dispatched there, else `MANDATE_REQUIRED` | shipped |
@@ -292,12 +306,15 @@ Two consequences worth stating plainly:
   What the card adds is a ceiling, not a step-by-step approval protocol; that
   protocol is the `mustAsk` work above.
 - Auto-start is the host's decision from stored facts, never from the `risk` a
-  model typed: an observing employee never starts by itself. Since employee mode
-  0.5 slice 3 the rule is "read-only starts, changing waits": an `auto` card for
-  a non-observing employee that asks for no gate beyond
-  `deploy`/`delete`/`spend` starts by itself, and every `accept-edits` or `ask`
-  card waits for a click. A `policy` confirmation is recorded as `policy`, so an
-  audit can always tell it apart from a person's.
+  model typed, and **the mode is never evidence**: `auto` is the widest mode the
+  product has — Write/Edit, Bash and plugin tools all run without asking — so
+  reading it as "read-only" let a model label a task "research" and have files
+  written with nobody watching (review S1). The card has to say
+  `readOnly: true`, which itself requires `permissionMode: ask`, and an
+  observing employee still never starts by itself. Read-only starts; everything
+  that changes something waits for a click. A `policy` confirmation is recorded
+  as `policy` and clamped to `ask`, so an audit can tell it apart from a
+  person's and a wrong condition cannot become authority nobody granted.
 
 ## Compatibility and validation
 

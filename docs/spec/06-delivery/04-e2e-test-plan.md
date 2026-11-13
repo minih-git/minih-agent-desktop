@@ -9237,6 +9237,37 @@ selection already in place shows it without waiting for another event.
   stage notices and their idempotency on the host side. A full run against a live
   host and a live model is not claimed.
 
+#### E2E-BOT-steward-read-only-starts-and-changing-what-waits: Only a card that says it reads starts by itself
+
+- **Preconditions**: One employee with `observe` off, a steward at its default
+  `ask` mode, and both allowed to run tools.
+- **Steps**: 1) The steward proposes a research card with `readOnly: true` and
+  `permissionMode: ask`. 2) The steward proposes a second card for the same
+  employee with `permissionMode: auto` and no `readOnly`. 3) The person clicks
+  「开工」 on the second card. 4) The steward sends a follow-up to the first
+  card's task by `taskId`.
+- **Expected**: Step 1 is dispatched by the host itself
+  (`confirmedBy = policy`) and the task it creates runs at `ask`; the card shows
+  「只读」 and, once started, collapses to 「只读开工 · 改动前会问你」. Step 2
+  stays proposed: `auto` is the widest mode the product has, so a mode never
+  proves a card only reads. Step 3 creates the task at the narrower of the card
+  and the employee and the delivery carries the same ceiling, so it starts
+  instead of being refused as "too wide" for the steward's `ask`. Step 4 is
+  delivered, because a follow-up is checked against the task's own
+  authorization, not against the steward's.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("A click is the
+  authorization", "Nobody-confirmed work never runs wider than `ask`"),
+  `03-runtime/06-host-rpc-protocol.md`
+- **Acceptance**: C (conversation & stream), F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 3
+- **Status**: Partial. Host rules are covered by
+  `crates/host-core/src/session_collaboration/drafts/tests.rs` (the read-only
+  card, the refusal of `readOnly` with a wider mode, the `policy` clamp) and
+  `crates/host-core/src/session_collaboration/tests.rs` (the follow-up);
+  `apps/desktop/test/bot-steward-slice3-user-path.test.mjs` covers the badge and
+  the collapsed row in a real Electron window against a stubbed host. A full run
+  against a live host and a live model is not claimed.
+
 #### E2E-BOT-interrupted-task-restarts-on-click: A restart is visible, and one click starts the work again
 
 - **Preconditions**: A steward-dispatched task is running when the application is
