@@ -4229,7 +4229,22 @@ pub fn begin_turn(
     // mode 0.5 slice 4a). It is written here, at the one place every turn of
     // every session goes through, so a task follows its turns whether or not a
     // steward dispatched it and whether or not a delivery exists.
-    crate::tasks::turn_began(db, db.conn(), session_id)?;
+    //
+    // A failure to write it is logged, not raised: the turn row above is the
+    // caller's answer to "may this turn run", and refusing to start work because
+    // a display column could not be updated would turn a degraded task list into
+    // a broken conversation. (The write is *not* folded into the turn's own
+    // statement instead because `session_collaboration::begin_turn` calls this
+    // inside its own transaction, and a task that does not exist yet is the
+    // ordinary case there.)
+    if let Err(error) = crate::tasks::turn_began(db, db.conn(), session_id) {
+        tracing::warn!(
+            session_id = %session_id,
+            turn_id = %id,
+            error = %error,
+            "the task stage could not follow a starting turn"
+        );
+    }
     Ok(id)
 }
 
@@ -4346,8 +4361,20 @@ pub fn end_turn_settling(
     // commit, because the durable turn is what the stage is derived from, and the
     // write is idempotent: a settlement reaching the same task afterwards writes
     // the same stage and moves nothing.
+    // Logged, never raised: the durable turn is already settled above, so failing
+    // here would report a failed RPC for a turn that did finish — and the person's
+    // next action is the same either way.
     if let Some(session_id) = session_id.as_deref() {
-        crate::tasks::turn_ended(db, db.conn(), session_id, status, error_code)?;
+        if let Err(error) = crate::tasks::turn_ended(db, db.conn(), session_id, status, error_code)
+        {
+            tracing::warn!(
+                session_id = %session_id,
+                turn_id = %turn_id,
+                status,
+                error = %error,
+                "the task stage could not follow a settled turn"
+            );
+        }
     }
     // Settle the in-flight checkpoint (D299, D327). A caller that knows the
     // reply can never finish (sidecar gone) asks for recovery. A completed or

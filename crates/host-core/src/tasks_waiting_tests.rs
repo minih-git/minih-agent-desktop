@@ -559,3 +559,28 @@ fn the_recovery_leaves_a_running_task_alone() {
     assert_eq!(moved, 0);
     assert_eq!(stage_of(&db, &task), "working");
 }
+
+/// A stage that cannot be written costs the stage, not the turn (B8).
+///
+/// The write sits in the turn's own path, so an unguarded error meant a settled
+/// turn could report a failed RPC — the conversation says it failed while the
+/// transcript has the reply. Renaming the table is the crudest possible failure
+/// and the one a corrupted file would produce.
+#[test]
+fn a_stage_that_cannot_be_written_does_not_fail_the_turn() {
+    let (_dir, db) = database();
+    let owner = employee(&db, "Router 后端", None);
+    let task = direct_task(&db, &owner, "修一下登录超时");
+    db.conn()
+        .execute_batch("ALTER TABLE tasks RENAME TO tasks_hidden")
+        .unwrap();
+
+    let turn = sessions::begin_turn(&db, &task.session_id, None, None)
+        .expect("a starting turn must not depend on the task list being writable");
+    sessions::end_turn(&db, &turn, "completed", None, None, false)
+        .expect("a settled turn must not depend on the task list being writable");
+    db.conn()
+        .execute_batch("ALTER TABLE tasks_hidden RENAME TO tasks")
+        .unwrap();
+    assert_eq!(stage_of(&db, &task), "queued");
+}
