@@ -14,6 +14,7 @@ import type { AgentSidecar } from "../agent-sidecar";
 import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import type { PersistenceOutbox } from "../persistence-outbox";
+import { buildStewardBriefing } from "../services/task-status";
 import type { ComposerCommandService } from "./composer-ipc";
 import type { IpcRegistrar } from "./types";
 
@@ -551,6 +552,19 @@ export function registerAgentIpc({
       Boolean(sessionMessage.origin.messageId.trim() && sessionMessage.origin.replyToMessageId?.trim());
     // This provenance comes only from the Host ledger, never from prompt text.
     if (isTrustedCompletionNotice) completionNoticeTurns.add(durableTurnId);
+    // The secretary's standing brief (employee mode 0.5 slice 3): generated for
+    // this turn from the ledger and sent with this request only. It is not part
+    // of the persisted transcript and no compaction ever sees it, so it cannot
+    // accumulate, cannot go stale, and cannot be mistaken for history. It is
+    // built here because `task.*` / `bot.*` are deliberately outside the
+    // sidecar's proxy allowlist — Main is the only process allowed to read them.
+    // `host` is captured once: the closure below must not observe a later
+    // reconnect (or a null) between the check and the read.
+    const briefingHost = host;
+    const turnBriefing =
+      briefingHost && session.role === "bot" && session.botProfile?.definition?.trim() === "steward"
+        ? await buildStewardBriefing((method, params) => briefingHost.call(method, params))
+        : undefined;
     try {
       result = await sidecar.call<{ accepted: boolean; turnId: string }>(
         "agent.prompt",
@@ -562,6 +576,9 @@ export function registerAgentIpc({
           content: modelContent,
           ...(mcpExpansion ? { mcpServerIds: mcpExpansion.mcpServerIds, mcpToolNames: mcpExpansion.mcpToolNames } : {}),
           ...(sessionMessage ? { sessionMessage: sessionMessage.origin } : {}),
+          // Per-turn context that is never written down: the runtime injects it
+          // into this turn's model request and nothing else sees it.
+          ...(turnBriefing ? { turnBriefing } : {}),
           attachments: [
             ...preparedAttachments
               .filter((attachment) => attachment.inlineData)

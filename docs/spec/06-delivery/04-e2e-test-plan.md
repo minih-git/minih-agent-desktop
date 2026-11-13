@@ -9207,6 +9207,62 @@ selection already in place shows it without waiting for another event.
   `session_worktrees/lifecycle/repo_local_tests.rs` cover the host side against
   real temporary repositories; a full run against a live host is not claimed.
 
+#### E2E-BOT-steward-picks-by-roster-and-reports-on-stage-change: The secretary chooses from the roster and speaks only when a stage changes
+
+- **Preconditions**: Two employees exist, one bound to a repository, and the
+  steward session is open. The person has not dispatched anything themselves.
+- **Steps**: 1) Ask the steward for work in that repository and read the card it
+  proposes. 2) Change the employee in the card's dropdown, then click "Start".
+  3) Ask the steward a plain question ("why is CI slow?"). 4) Let the dispatched
+  task reach a failure, then a waiting-on-you state; send one more follow-up
+  message to the running task with `SessionSend { taskId, message }`.
+- **Expected**: Step 1 shows one card whose `reason` line names the employee and
+  says why ("the task is pages and interaction; you mentioned Desktop; it is
+  idle"), with the assignee as a dropdown filled from the roster — the secretary
+  herself never appears in it. Step 2 sends `taskCard.reassign`, the card comes
+  back narrowed to the new employee's ceiling with a new hash and is still
+  waiting for a click; the click then starts it under the new employee. Step 3
+  produces an answer and no card. Step 4 wakes the steward exactly once per
+  stage change with one short message, and the follow-up reaches the task's own
+  session; a task the person dispatched directly never wakes her.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Steward roster, briefing and
+  wake-ups"), `03-runtime/06-host-rpc-protocol.md`,
+  `03-runtime/04-data-storage.md` §4.19
+- **Acceptance**: C (conversation & stream), F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 3
+- **Status**: Partial. `apps/desktop/test/bot-steward-slice3-user-path.test.mjs`
+  drives the card, the picker and the collapsed auto-started row in a real
+  Electron window against a stubbed host;
+  `crates/host-core/src/session_collaboration/tests.rs` covers the roster, the
+  stage notices and their idempotency on the host side. A full run against a live
+  host and a live model is not claimed.
+
+#### E2E-BOT-interrupted-task-restarts-on-click: A restart is visible, and one click starts the work again
+
+- **Preconditions**: A steward-dispatched task is running when the application is
+  closed (a turn in flight, or a confirmed card that has not started).
+- **Steps**: 1) Start the application again on the same data directory, without
+  touching the task. 2) Read the task's sidebar row and its session header.
+  3) Click 「重新开工」 and watch the task and its session.
+- **Expected**: Step 2 shows "Interrupted" on the sidebar row and in the header,
+  and the steward has one message saying the work was cut off — one per stage
+  change, never once per restart of the fence. Nothing resumes by itself: no turn
+  is started for the task. Step 3 writes exactly one new delivery from the same
+  mandate (a second click is the same restart), the task returns to `queued`, and
+  its session starts a turn. A task the person dispatched directly is shown the
+  same way and restarts the same way, but wakes no steward.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Steward roster, briefing and
+  wake-ups"), ADR `session-collaboration-messages` (startup fence),
+  `03-runtime/06-host-rpc-protocol.md`
+- **Acceptance**: F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 3
+- **Status**: Partial. `crates/host-core/tests/host_cli.rs` restarts the real host
+  binary twice on one data directory and asserts the fence, the notice and the
+  restart; `apps/desktop/test/bot-steward-slice3-user-path.test.mjs` covers the
+  "Interrupted" row and the button's IPC call in a real Electron window. The
+  combination (restart, then click, then a live turn) is not claimed as a full
+  end-to-end run.
+
 #### E2E-146a: Approved Plan/Goal progress text continues once
 
 - **Preconditions**: A project-bound session has an approved Plan or Goal and a

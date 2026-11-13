@@ -24,6 +24,8 @@ import type {
   TaskCardConfirmRequest,
   TaskCardConfirmResult,
   TaskCardDraftView,
+  TaskCardReassignRequest,
+  TaskCardReassignResult,
   TaskCardList,
   TaskCardsChangedEvent,
   ScheduledTaskRun,
@@ -196,6 +198,7 @@ import type {
   TaskCreateResult,
   TaskList,
   TaskListRequest,
+  TaskRestartResult,
   TaskView,
   TaskWorkspaceRetryResult,
   TasksChangedEvent,
@@ -1652,6 +1655,24 @@ export const api = {
   /** Re-run a failed workspace preparation in the same folder. */
   retryTaskWorkspace: (taskId: string) =>
     invoke<TaskWorkspaceRetryResult>(IPC.invoke.taskWorkspaceRetry, { taskId }),
+  /**
+   * Start an interrupted task again (employee mode 0.5 slice 3).
+   *
+   * The startup fence never replays work, so this is the person's own decision:
+   * the host writes one new delivery from the same mandate, and Main starts it.
+   * `startError` says the task was restarted but did not start.
+   */
+  restartTask: (taskId: string) =>
+    invoke<TaskRestartResult & { startError?: string }>(IPC.invoke.taskRestart, { taskId }),
+  /**
+   * Move a proposed card to another employee (employee mode 0.5 slice 3).
+   *
+   * The host narrows the card to what the new employee may do and answers with
+   * the hash the dock must send back, so the person still confirms exactly what
+   * they are looking at.
+   */
+  reassignTaskCard: (request: TaskCardReassignRequest) =>
+    invoke<TaskCardReassignResult>(IPC.invoke.taskCardReassign, request),
   onTasksChanged: (listener: (event: TasksChangedEvent) => void) => {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.tasksChanged, (payload) =>

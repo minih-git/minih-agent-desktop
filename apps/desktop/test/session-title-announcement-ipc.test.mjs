@@ -41,11 +41,17 @@ const shared = {
   isImageGenerationModel,
 };
 
+// The steward's task board (employee mode 0.5 slice 3): pure derivations over
+// `task.list` + `bot.list`, so it loads with no host at all.
+const taskStatus = load("../electron/main/services/task-status.ts", {
+  "@minih-agent/shared": shared,
+});
 const collaboration = load("../electron/main/services/session-collaboration.ts", {
   "node:crypto": crypto,
   "@minih-agent/shared": shared,
   "../agent-host-bridge": {},
   "../plugin-agent-complete": {},
+  "./task-status": taskStatus,
 });
 const { registerSessionIpc } = load("../electron/main/ipc/session-ipc.ts", {
   electron: { shell: {} },

@@ -10,6 +10,7 @@ import { sideNotesWorkPanelTab } from "../lib/work-panel-tabs";
 import {
   KEYBOARD_SHORTCUTS,
   MAX_SESSION_TITLE_LENGTH,
+  isTaskInterrupted,
   keybindingDisplayParts,
   resolveKeybinding,
   type ShortcutPlatform,
@@ -33,6 +34,7 @@ import { useBots } from "../features/bots/use-bots";
 import { useTasks } from "../features/bots/use-tasks";
 import { taskStageLabelKey, taskStatusTone } from "../features/bots/bot-status";
 import { taskRepoName } from "../features/bots/BotTaskList";
+import { TaskRestartButton } from "../features/bots/TaskRestartButton";
 import { TaskWorkspaceStatus } from "../features/bots/TaskWorkspaceStatus";
 
 function projectName(path?: string | null, name?: string | null) {
@@ -355,11 +357,19 @@ export function ConversationTopbar({
                 <span className="ct-chip archived" data-task-stage="archived">
                   {t("bots.tasks.archived")}
                 </span>
+              ) : isTaskInterrupted(task) ? (
+                // The startup fence stopped this work and nothing will resume
+                // it; the stage vocabulary has no word for that, so it gets its
+                // own chip rather than a stage the host does not hold.
+                <span className="ct-chip interrupted" data-task-stage="interrupted">
+                  {t("bots.tasks.interrupted")}
+                </span>
               ) : (
                 <span className={`ct-chip ${taskStatusTone(task)}`} data-task-stage={task.stage}>
                   {t(taskStageLabelKey(task.stage))}
                 </span>
               )}
+              <TaskRestartButton task={task} onRestarted={() => void taskState.reload()} />
               <span className="ct-chip">
                 {task.origin === "steward"
                   ? t("bots.workbench.originSteward")

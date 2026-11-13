@@ -2287,6 +2287,8 @@ describe("DesktopAgentRuntime employee persona", () => {
     name: "steward",
     description: "Dispatches work and never changes the workspace.",
     tools: ["Read", "Glob", "Grep", "SessionList", "SessionSend", "TaskCard"],
+    // `SessionList` stays declared on purpose: the runtime must drop it for a
+    // delegate (employee mode 0.5 slice 3), which the test below asserts.
     source: "builtin",
     prompt: "You dispatch work. You never edit files.",
   };
@@ -2307,12 +2309,79 @@ describe("DesktopAgentRuntime employee persona", () => {
     const runtime = createRuntime({ botPersona: { definition: steward } });
     const deferred = (runtime as any).deferredToolNames as Set<string>;
 
-    for (const name of ["TaskCard", "SessionSend", "SessionList"]) {
+    for (const name of ["TaskCard", "SessionSend"]) {
       expect(catalogNames(runtime)).toContain(name);
       expect(deferred.has(name)).toBe(false);
     }
+    // The session list is not a delegate's tool any more: the steward picks
+    // people from `Roster`, so a definition that still names it gets nothing.
+    expect(catalogNames(runtime)).not.toContain("SessionList");
     // Still capped: nothing outside the definition and the core reads appears.
     expect(catalogNames(runtime)).not.toContain("Write");
+    await runtime.dispose();
+  });
+
+  /**
+   * The host's per-turn brief (employee mode 0.5 slice 3).
+   *
+   * It must reach the model on the turn it was generated for, and it must not
+   * become transcript history: not persisted, not summarized, not carried into
+   * the next turn. `persona=steward` is the only session that gets one, and the
+   * runtime treats it as request-scoped context either way.
+   */
+  it("carries the host's brief on the request and never into the transcript", async () => {
+    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const requests: AgentMessage[][] = [];
+    const internals = runtime as unknown as {
+      models: {
+        streamSimple: (
+          model: unknown,
+          context: { messages: AgentMessage[] },
+        ) => ReturnType<typeof createAssistantMessageEventStream>;
+      };
+    };
+    internals.models = {
+      streamSimple: (_model, context) => {
+        requests.push([...context.messages]);
+        const message = assistantMessage({
+          content: [{ type: "text", text: "Two are waiting on you." }],
+          stopReason: "stop",
+        }) as unknown as AssistantMessage;
+        const stream = createAssistantMessageEventStream();
+        queueMicrotask(() => {
+          stream.push({ type: "start", partial: message });
+          stream.push({ type: "done", reason: "stop", message });
+          stream.end(message);
+        });
+        return stream;
+      },
+    };
+
+    const brief = [
+      "[Host briefing · generated for this turn, not a message from the person]",
+      "Open tasks: 2 (2 waiting on you).",
+      "[/Host briefing]",
+    ].join("\n");
+    await runtime.prompt({ text: "How is it going?", turnBriefing: brief }, "user-1", "turn-1");
+    await vi.waitFor(() => expect(requests.length).toBe(1));
+    const firstRequest = requests[0].map((message) => JSON.stringify(message)).join("\n");
+    expect(firstRequest).toContain("Open tasks: 2 (2 waiting on you).");
+    // It sits beside the newest message, not behind the whole history.
+    expect(JSON.stringify(requests[0][requests[0].length - 2])).toContain("Host briefing");
+    expect(JSON.stringify(requests[0][requests[0].length - 1])).toContain("How is it going?");
+    // ...and the transcript the person and the compactor read has no trace of it.
+    const transcript = (internals as unknown as { agent: { state: { messages: AgentMessage[] } } })
+      .agent.state.messages;
+    expect(transcript.map((message) => JSON.stringify(message)).join("\n")).not.toContain(
+      "Host briefing",
+    );
+
+    // A turn without a brief does not inherit the previous one.
+    await runtime.prompt("And now?", "user-2", "turn-2");
+    await vi.waitFor(() => expect(requests.length).toBe(2));
+    expect(requests[1].map((message) => JSON.stringify(message)).join("\n")).not.toContain(
+      "Host briefing",
+    );
     await runtime.dispose();
   });
 

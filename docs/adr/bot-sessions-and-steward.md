@@ -115,10 +115,13 @@ ADR 0239 requires.
 ### 2. The steward is a bot with no side-effecting tools
 
 The steward is a built-in bot, defined like any other subagent definition, and
-it owns exactly one capability set: `SessionList`, `SessionSend`,
-`SessionResult`, `SessionCreate`, and the task-card tool. It has no `Write`,
-`Edit`, `Bash`, network-write, browser, plugin, or MCP tool, and it does not
-receive inherited tools.
+it owns exactly one capability set. As shipped in employee mode 0.5 slice 3
+(§"Steward roster, briefing and wake-ups") that set is `Roster`, `TaskCard`,
+`SessionSend`, `SessionResult` and `TaskStatus`; the `SessionList` and
+`SessionCreate` it started with were removed, because picking a person by session
+title is what made it dispatch to the wrong one. It has no `Write`, `Edit`,
+`Bash`, network-write, browser, plugin, or MCP tool, and it does not receive
+inherited tools.
 
 The boundary is structural, not declarative: the tool allow-list is enforced by
 the same delegate-scope check that already keeps a read-only subagent
@@ -289,9 +292,12 @@ Two consequences worth stating plainly:
   What the card adds is a ceiling, not a step-by-step approval protocol; that
   protocol is the `mustAsk` work above.
 - Auto-start is the host's decision from stored facts, never from the `risk` a
-  model typed: an observing employee never starts by itself, and an `auto` card
-  always waits for a click. A `policy` confirmation is recorded as `policy`, so
-  an audit can always tell it apart from a person's.
+  model typed: an observing employee never starts by itself. Since employee mode
+  0.5 slice 3 the rule is "read-only starts, changing waits": an `auto` card for
+  a non-observing employee that asks for no gate beyond
+  `deploy`/`delete`/`spend` starts by itself, and every `accept-edits` or `ask`
+  card waits for a click. A `policy` confirmation is recorded as `policy`, so an
+  audit can always tell it apart from a person's.
 
 ## Compatibility and validation
 
@@ -479,3 +485,121 @@ behaviour yet.
 | The model cannot reach the task surface | **Yes** — `task.*` is not in `HOST_PROXY_ALLOWED` | `packages/host-runtime` test |
 | Memory per employee | **No** — the tab states it is empty | later slice |
 | A worktree per task | **No** — `workspace_path` is reserved and unwritten | later slice |
+
+## Steward roster, briefing and wake-ups (employee mode 0.5, schema v35)
+
+Decision (2026-11-13). Slice 3 gives the steward three things she was missing —
+a crew she can read, a ledger she does not have to remember, and a reason to
+speak — and fixes the sixth defect (an interrupted task that nobody could see and
+nobody could restart). It amends §2's tool list and §4's auto-start rule.
+
+### 1. She picks from a roster, not from session titles
+
+`bot.roster` answers with every employee except the caller and every other
+`steward`: name, duty, model, permission mode, bound repository, open tasks, how
+many of those wait on the person, and whether it is idle. `repos` is a reserved
+array — one employee reads one repository today, and a field that pretended
+otherwise would be a promise the host cannot keep.
+
+The steward's five tools are `Roster`, `TaskCard`, `SessionSend`,
+`SessionResult`, `TaskStatus`. `SessionList` and `SessionCreate` are gone: a
+title is not an identity, and guessing one is how work reached the wrong person.
+Both stay denied to every delegate, so a steward definition that still names them
+receives nothing.
+
+`SessionSend` takes `{ taskId, message }`: she addresses the work, the host
+resolves the task's own session, and an archived or unknown task is refused with
+an error she can act on. The older `{ sessionId, content }` shape stays for
+callers that address a session directly.
+
+### 2. A card says why it names that employee
+
+`TaskCard` requires a `reason` — one bounded sentence ("the task is pages and
+interaction; you mentioned Desktop; it is idle"). It lives on the card and never
+in the frozen Mandate: it explains a choice, it does not authorize one. The person
+reads it beside the goal, and the Dock renders it as a muted note under the goal.
+
+A card may also name **no** employee. A steward that cannot attribute the work
+leaves the slot empty rather than guessing, the Dock shows a picker, and
+`taskCard.confirm` refuses an empty target until the person chooses. Choosing is
+`taskCard.reassign`: the host narrows the card to `min(card, sender, new
+employee)`, recomputes `cardHash`, and leaves it `proposed` — starting it is still
+a separate click, so a reassignment can never become an unread approval.
+
+### 3. The brief is per turn, and it is not history
+
+Every steward turn is preceded by a short brief that Main builds from `task.list`
+and `bot.list`: the counts, then only the rows she may have to act on (waiting on
+the person, stopped, just finished within 24 hours). It is injected into that
+turn's model request only — never into the runtime's message state — so it is not
+persisted, never enters a compaction summary, and cannot go stale or accumulate.
+It is built in Main because `task.*` and `bot.*` are deliberately outside the
+sidecar's proxy allowlist: the process that runs the model cannot read the ledger
+by itself.
+
+A failed read is reported as a gap ("the task list could not be read right now"),
+never as an empty board: "no tasks" and "cannot tell" lead to opposite advice.
+
+### 4. Only a stage change wakes her
+
+The completion receipt of §4 already told her when work finished. A task that
+stops making progress on its own — `failed`, `blocked`, waiting for an answer, or
+interrupted by the startup fence — now writes one `kind = stage` delivery to the
+steward, in the same transaction that moved the stage, under an idempotency key
+of (task, delivery, stage, report sequence). One stage change, one message; a
+repeated write of the same stage adds nothing.
+
+Only `origin = steward` tasks produce one. Work the person dispatched from the
+employee's own workbench is theirs: she knows about it from the ledger and the
+brief, and does not interfere.
+
+### 5. An interruption is visible, and the way back is one click
+
+ADR 0239's fence is unchanged: nothing is replayed because the application
+restarted. What was missing is that the interruption was invisible. Now the fence
+also announces it (§4), and a task reads as interrupted through
+`tasks.delivery_status` — the status the fence writes on the delivery the task is
+bound to.
+
+**No new stage value.** `tasks.stage` carries a `CHECK` constraint, so widening it
+would rebuild that table — and a real user database arrives with hundreds of
+thousands of historical foreign-key violations, which is the hazard that once
+stopped the application from starting. Reading the bound delivery instead costs
+one correlated subquery and cannot go stale: a restart writes a *new* delivery,
+and the task points at it.
+
+「重新开工」 is `task.restart`: one new delivery from the same sender with the same
+Mandate, re-pointed, `queued`, idempotent per interrupted delivery. The person's
+click is the authorization that it resumes.
+
+`session_collaboration::pending_dispatch`'s `task` arm is documented for what it
+is: it lets a confirmed card start within the run that confirmed it, and it is
+*not* a restart recovery, because the fence marks every queued row without a turn
+as interrupted at startup.
+
+### 6. Schema v35, and what it may not do
+
+One vocabulary grew: the ledger's `kind` accepts `stage`. SQLite cannot alter a
+`CHECK`, so `migrate_v34_to_v35_tx` rebuilds `session_collaboration_messages`
+once, copying every column, comparing the row count before and after, and failing
+only when the file's dangling-reference count *increased*. Historical orphans are
+carried across untouched. The step is idempotent: a file that already accepts
+`stage` is completed, not restarted, and nothing else in the file changes because
+no other table references this one.
+
+### Enforcement status after this section
+
+| Rule | Enforced | Where |
+| --- | --- | --- |
+| The steward sees a roster, never herself | **Yes** — `bot.roster` filters the caller and every `steward` | `session_collaboration/bots.rs` |
+| The steward cannot acquire `SessionList` / `SessionCreate` | **Yes** — neither is steward-only any more, and both stay in the inherit deny list | `packages/shared/src/subagent-definition.ts` |
+| A card says why it names this employee | **Yes** — `normalizeTaskCard` refuses a card without `reason` | `packages/shared/src/task-card.ts` |
+| A card may wait for the person to pick an employee | **Yes** — `propose` accepts an empty target, `confirm` refuses it | `session_collaboration/drafts.rs` |
+| Reassignment only narrows, and still waits for a click | **Yes** — `min(card, sender, new employee)`, new hash, status unchanged | `session_collaboration/drafts.rs` |
+| Read-only cards start by themselves; changing ones do not | **Yes** — `auto` + non-observing + no extra `mustAsk` | `session_collaboration/drafts.rs` |
+| The brief is per turn and never persisted | **Yes** — injected into the request only | `packages/agent-runtime/src/runtime.ts` |
+| Only a stage change wakes the steward, exactly once | **Yes** — `kind = stage`, keyed by task + delivery + stage + seq | `session_collaboration/notices.rs` |
+| A directly dispatched task never wakes the steward | **Yes** — `origin = steward` only | `session_collaboration/notices.rs` |
+| An interrupted task is visible and restartable | **Yes** — `delivery_status`, fence notice, `task.restart` | `session_collaboration/restart.rs`, `settlement.rs` |
+| `SessionSend` addresses a task, not a session title | **Yes** — `taskId` resolved by the host; archived or missing refused | `services/session-collaboration.ts` |
+| The model cannot reach `bot.*` / `task.*` | **Yes** — not in `HOST_PROXY_ALLOWED`; Main's tools call them | `packages/host-runtime` test |

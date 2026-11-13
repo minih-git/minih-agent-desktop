@@ -502,16 +502,16 @@ fn an_interrupted_task_is_visible_and_restarts_when_the_host_restarts() {
     // Second run: the startup fence, on the same directory, with the lock free.
     let mut host = Host::start(&data_dir);
     host.handshake();
-    let task = host.call(
-        "task.get",
-        serde_json::json!({ "taskId": "task-1" }),
-    );
+    let task = host.call("task.get", serde_json::json!({ "taskId": "task-1" }));
     assert_eq!(
         task["result"]["task"]["deliveryStatus"],
         serde_json::json!("interrupted"),
         "the task does not say it was interrupted: {task}"
     );
-    let pending = host.call("session.collaboration.pendingDispatch", serde_json::json!({}));
+    let pending = host.call(
+        "session.collaboration.pendingDispatch",
+        serde_json::json!({}),
+    );
     let notices: Vec<&serde_json::Value> = pending["result"]["messages"]
         .as_array()
         .expect("pendingDispatch returns messages")
@@ -519,7 +519,10 @@ fn an_interrupted_task_is_visible_and_restarts_when_the_host_restarts() {
         .filter(|message| message["kind"] == serde_json::json!("stage"))
         .collect();
     assert_eq!(notices.len(), 1, "the steward was not told: {pending}");
-    assert_eq!(notices[0]["targetSessionId"], serde_json::json!("steward-1"));
+    assert_eq!(
+        notices[0]["targetSessionId"],
+        serde_json::json!("steward-1")
+    );
     let payload: serde_json::Value =
         serde_json::from_str(notices[0]["content"].as_str().expect("content")).expect("json");
     assert_eq!(payload["taskId"], serde_json::json!("task-1"));

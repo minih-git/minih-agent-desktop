@@ -41,6 +41,32 @@ export type BotListItem = {
 
 export type BotList = { bots: BotListItem[] };
 
+/**
+ * One row of the steward's roster (`bot.roster`, employee mode 0.5 slice 3).
+ *
+ * It is not a `BotListItem`: the steward must not see herself, and what she
+ * needs to choose is different — a duty, the repository the employee reads, how
+ * much is already on its plate, and whether it is free. `repos` is reserved for
+ * the repositories an employee is responsible for; one employee reads one
+ * repository today, and an empty array is the honest answer until then.
+ */
+export type BotRosterEntry = {
+  sessionId: string;
+  name: string;
+  duty?: string | null;
+  permissionMode?: string | null;
+  observe?: boolean;
+  projectPath?: string;
+  modelKey?: string;
+  repos: string[];
+  openTaskCount: number;
+  waitingCount: number;
+  idle: boolean;
+  status: BotStatusPoint;
+};
+
+export type BotRoster = { employees: BotRosterEntry[] };
+
 export type BotProfileInput = {
   name: string;
   avatar?: string;

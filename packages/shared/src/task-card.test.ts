@@ -20,6 +20,8 @@ const draft = (overrides: Partial<TaskCardDraft> = {}): TaskCardDraft => ({
   boundaries: ["Do not touch billing"],
   permissionMode: "accept-edits",
   mustAsk: ["push"],
+  // Why this employee (employee mode 0.5 slice 3). Required on every card.
+  reason: "The task is pages and interaction; you mentioned Desktop; it is idle.",
   ...overrides,
 });
 
@@ -45,6 +47,30 @@ const freeze = (card: TaskCardDraft, overrides: Record<string, unknown> = {}) =>
  * asserts the specific refusal rather than a generic failure.
  */
 describe("a card never carries authority nobody chose", () => {
+  it("refuses a card that does not say why it names this employee", () => {
+    // Slice 3: a card names a person, and the person confirming it has to be
+    // able to read why. A missing reason is a refusal, not an empty line.
+    const result = normalizeTaskCard(draft({ reason: undefined }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("reason");
+  });
+
+  it("keeps the reason on the card and out of the frozen mandate", () => {
+    const normalized = normalizeTaskCard(draft());
+    expect(normalized.ok).toBe(true);
+    if (!normalized.ok) return;
+    expect(normalized.card.reason).toBe(
+      "The task is pages and interaction; you mentioned Desktop; it is idle.",
+    );
+    // The reason explains a choice; it never authorizes anything, so it is not
+    // part of what a confirmation freezes.
+    const frozen = freeze(draft());
+    expect(frozen.ok).toBe(true);
+    if (!frozen.ok) return;
+    expect(JSON.stringify(frozen.mandate)).not.toContain("why it names this employee");
+    expect(Object.keys(frozen.mandate)).not.toContain("reason");
+  });
+
   it("refuses a card with no permission mode instead of defaulting one", () => {
     const result = normalizeTaskCard(draft({ permissionMode: undefined }));
     expect(result.ok).toBe(false);

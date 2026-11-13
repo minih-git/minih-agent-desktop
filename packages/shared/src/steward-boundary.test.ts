@@ -19,7 +19,7 @@ import {
 const stewardDocument = `---
 name: steward
 description: Dispatch work to employee sessions.
-tools: [SessionList, SessionSend, SessionResult, SessionCreate, TaskCard]
+tools: [Roster, TaskCard, SessionSend, SessionResult, TaskStatus]
 ---
 
 Dispatch work.`;
@@ -37,6 +37,29 @@ const parentCatalog = [
 const writingTools = ["Write", "Edit", "Bash"];
 
 describe("the steward definition", () => {
+  it("cannot be given the session list or session creation any more", () => {
+    // Employee mode 0.5 slice 3: the steward picks people from `Roster`. The
+    // old tools are the ones that made her guess at session titles, so they are
+    // no longer steward-only and stay denied to every delegate.
+    const parsed = parseSubagentDefinition(
+      `---
+name: steward
+description: Old steward.
+tools: [SessionList, SessionCreate, Roster, TaskCard]
+---
+
+Dispatch work.`,
+      { source: "builtin" },
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.definition.tools).toEqual(["Roster", "TaskCard"]);
+    expect(parsed.warnings).toEqual([
+      'ignoring unknown tool "SessionList"',
+      'ignoring unknown tool "SessionCreate"',
+    ]);
+  });
+
   it("parses with exactly the gateway tools", () => {
     const parsed = parseSubagentDefinition(stewardDocument, { source: "builtin" });
     expect(parsed.ok).toBe(true);

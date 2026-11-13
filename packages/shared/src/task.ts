@@ -79,6 +79,11 @@ export type TaskView = {
    * while the work was in flight, and nothing will resume it on its own.
    */
   deliveryStatus?: SessionMessageStatus;
+  /**
+   * When that delivery last moved, so a "just finished" question can be
+   * answered: a task row has no `updated_at` of its own.
+   */
+  deliveryUpdatedAt?: string;
 };
 
 /**

@@ -36,6 +36,11 @@ const { createSessionCollaborationService } = load("../electron/main/services/se
   "@minih-agent/shared": await import("@minih-agent/shared"),
   "../agent-host-bridge": { DESKTOP_PRINCIPAL: { kind: "desktop" } },
   "../plugin-agent-complete": pluginAgentComplete,
+  // The steward's task board (employee mode 0.5 slice 3): pure derivations over
+  // `task.list` + `bot.list`, so it loads with no host at all.
+  "./task-status": load("../electron/main/services/task-status.ts", {
+    "@minih-agent/shared": await import("@minih-agent/shared"),
+  }),
 });
 
 function createHost(name, respond = () => ({})) {

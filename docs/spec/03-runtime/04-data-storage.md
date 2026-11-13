@@ -1231,6 +1231,22 @@ failing on the second attempt; the fresh schema applies the same list
 pre-existing task reads as `workspace_status = 'none'` with NULL base and
 delivery fields.
 
+`tasks.delivery_status` and `tasks.delivery_updated_at` are **not columns**: they
+are read from the ledger row `tasks.delivery_id` names, so the interruption the
+startup fence writes (schema v35, ADR 0239 amendment) is visible on the task
+without a second source of truth and without widening the `stage` check — the
+stage vocabulary has no word for "the application stopped".
+
+**Schema v34 -> v35.** One rebuilt table: the ledger's `kind` check gains `stage`
+(ADR 0239 amendment 2026-11-13), and SQLite cannot alter a `CHECK`. The step
+copies every column of `session_collaboration_messages`, compares the row count
+before and after, and fails only when the file's `pragma_foreign_key_check`
+count *increased*; historical orphans are carried across untouched, which is what
+a real user file requires (a 525 MB v32 file carried 214 781 of them). It is
+idempotent — a file whose table already accepts `stage` is stamped without a
+rebuild — and no other table references this one, so the `DROP` cannot cascade.
+The four indexes are recreated under their original names.
+
 ### 4.7 messages — transcript index
 
 The transcript itself is the per-session JSONL file (§2.1); this table is its

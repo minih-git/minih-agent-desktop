@@ -59,7 +59,9 @@ async fn bot_roster_is_routed_and_leaves_out_the_secretary() {
     )
     .await
     .unwrap_or_else(|error| panic!("bot.roster must be routed: {error:?}"));
-    let employees = roster["employees"].as_array().expect("bot.roster returns employees");
+    let employees = roster["employees"]
+        .as_array()
+        .expect("bot.roster returns employees");
     assert_eq!(employees.len(), 1, "{roster}");
     assert_eq!(employees[0]["sessionId"], json!(backend));
     assert_eq!(employees[0]["name"], json!("Router 后端"));

@@ -1,0 +1,107 @@
+/*
+  The secretary's slice-3 surfaces (employee mode 0.5 §3).
+
+  Everything here is new in this slice and belongs to one of four things the
+  person now sees:
+
+  - **why this employee** — the card's own `reason`, read before they decide;
+  - **the assignee picker** — a dropdown, because a guessed employee is worse
+    than an empty one, and picking one is how an empty card becomes startable;
+  - **"started automatically"** — a read-only card the host started by itself,
+    folded into one quiet line instead of a card nobody has to act on;
+  - **"interrupted"** and 「重新开工」 — the startup fence stopped the work, so it
+    says so in the warning tone and offers the one click back.
+
+  Shapes follow the 0.5 prototype (card ① `.why` / `.sel`, card ④'s orange
+  "stuck" tone, `.prow.collapsed` for the collapsed row). Colours are the
+  desktop's own `--ds-*` surface tokens, never the prototype's palette, so both
+  themes and every contributed theme keep control: the app is monochrome by
+  design and only `--ds-warning` is allowed to read as "needs a look".
+*/
+
+/* Why this employee: a note beside the goal, not another criterion. The rule on
+   the left is what makes it read as the steward's voice rather than the
+   person's requirement. */
+.task-card-reason {
+  margin: 0 0 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--ds-border-strong);
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-relaxed);
+}
+
+/* The assignee, as something the person can change. */
+.task-card-assign {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-card-assign label {
+  color: var(--ds-text-faint);
+}
+
+.task-card-assign-select {
+  min-width: 0;
+  max-width: 220px;
+  padding: 1px 6px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-2xs);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.task-card-assign-select:hover:not(:disabled) {
+  border-color: var(--ds-text-faint);
+}
+
+.task-card-assign-select:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 1px;
+}
+
+.task-card-assign-select:disabled {
+  color: var(--ds-text-faint);
+  cursor: default;
+}
+
+/* A read-only card the host started on its own. It is not asking for anything,
+   so it is one dashed line with a tick, quieter than a card the person has to
+   read. */
+.task-card-auto {
+  border-style: dashed;
+  color: var(--ds-text-muted);
+}
+
+.task-card-auto::before {
+  content: "✓";
+  margin-right: 6px;
+  color: var(--ds-text-faint);
+}
+
+/* "Interrupted" is not a stage — the fence stopped the work and nothing resumes
+   it — so it borrows the warning tone instead of a stage colour, in both places
+   a task shows its state. */
+.ct-chip.interrupted,
+.sidebar-bot-task-stage.interrupted {
+  color: var(--ds-warning);
+  border-color: color-mix(in oklab, var(--ds-warning) 45%, transparent);
+}
+
+/* 「重新开工」 in the task header: the one click back from an interruption. */
+.task-restart {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-restart-error {
+  color: var(--ds-warning);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-compact);
+}

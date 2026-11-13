@@ -127,6 +127,57 @@ fn a_card_must_target_an_employee_and_not_its_own_session() {
     }
 }
 
+/// A card with nobody on it is allowed and cannot start: the person picks the
+/// employee from the dropdown first (employee mode 0.5 slice 3).
+#[test]
+fn a_card_without_an_employee_waits_for_the_person_to_pick_one() {
+    let db = database();
+    let steward = session(&db, "Steward", None, "auto");
+    let proposed = super::propose(
+        &db,
+        &json!({
+            "sessionId": steward,
+            "sourceUtterance": "把 Desktop 的 E2E 修一下",
+            "card": card("accept-edits"),
+        }),
+    )
+    .unwrap();
+    let draft = proposed["draft"].clone();
+    assert_eq!(draft["targetSessionId"], json!(""));
+    assert_eq!(draft["status"], json!("proposed"));
+    // Policy never starts a card with no employee.
+    assert_eq!(
+        auto_start_refusal(&db, "", &draft["card"]).unwrap(),
+        Some("target-not-an-employee")
+    );
+    // A click cannot either, and says why.
+    let refused = super::confirm(
+        &db,
+        ConfirmRequest {
+            draft_id: draft["id"].as_str().unwrap(),
+            card_hash: draft["cardHash"].as_str().unwrap(),
+            confirmed_by: CONFIRMED_BY_USER,
+            host_id: Some("mac-mini"),
+            device_id: None,
+            policy_version: "steward-1",
+            notify_on_completion: true,
+            idempotency_key: "click-without-employee",
+            project_path: None,
+        },
+    )
+    .unwrap_err();
+    assert!(refused.to_string().contains("CONFLICT"), "{refused}");
+    // Picking one in the dropdown is what makes it startable.
+    let employee = session(&db, "小爪", Some("bot"), "accept-edits");
+    let picked = super::reassign(
+        &db,
+        &json!({"draftId": draft["id"].as_str().unwrap(), "targetSessionId": employee}),
+    )
+    .unwrap();
+    assert_eq!(picked["draft"]["targetSessionId"], json!(employee));
+    assert_eq!(picked["draft"]["status"], json!("proposed"));
+}
+
 #[test]
 fn confirming_with_a_stale_hash_is_refused_after_a_revise() {
     let db = database();

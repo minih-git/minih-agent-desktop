@@ -507,6 +507,12 @@ async function handle(method: string, params: any): Promise<unknown> {
         mcpToolNames: parseMcpToolNames(params.mcpToolNames),
         attachments,
         ...(params.sessionMessage ? { sessionMessage: params.sessionMessage as SessionMessageOrigin } : {}),
+        // The host's per-turn brief (employee mode 0.5 slice 3). It rides on this
+        // request only: the runtime never stores it, so it is not in the
+        // transcript, not in a compaction summary, and not in the next turn.
+        ...(typeof params.turnBriefing === "string" && params.turnBriefing.trim()
+          ? { turnBriefing: params.turnBriefing }
+          : {}),
       };
       void runtime.prompt(prompt, userMessageId, turnId).catch((err) => {
         // Rejected-prompt path (pre-flight/transport failures). Streamed

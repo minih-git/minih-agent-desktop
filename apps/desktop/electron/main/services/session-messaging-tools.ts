@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type {
+  BotRosterEntry,
   SessionCollaborationDelivery,
   SessionCollaborationList,
   SessionCollaborationMessage,
 } from "@minih-agent/shared";
 import type { LocalToolHandler, LocalToolResult } from "../agent-sidecar";
 import type { SessionCollaborationService } from "./session-collaboration";
+import { describeTaskBoard, type TaskBoard } from "./task-status";
 
 /**
  * Main's built-in tools for handing work to another Agent session.
@@ -144,16 +146,110 @@ export function createSessionListTool(service: SessionCollaborationService): Loc
 }
 
 /**
- * Deliver a task or message to an existing session.
+ * The steward's roster (employee mode 0.5 slice 3): who she may hand work to.
+ *
+ * This is the read that replaces guessing from session titles. One line per
+ * employee, carrying exactly what a choice needs and nothing else — the only
+ * internal identifier is the `sessionId` a task card has to name.
+ */
+export function createRosterTool(service: SessionCollaborationService): LocalToolHandler {
+  return async ({ sessionId, turnId, args, signal }) => {
+    const parsed = parseArgs(args, []);
+    if ("rejected" in parsed) return parsed.rejected;
+    try {
+      const roster = (await service.invokeBuiltin({
+        sessionId,
+        turnId: turnId ?? "",
+        operation: "roster",
+        args: {},
+        signal,
+      })) as { employees?: BotRosterEntry[] };
+      const employees = roster?.employees ?? [];
+      if (employees.length === 0) {
+        return success(
+          "No employee is available to dispatch to. The person hires employees in employee settings; until then, answer the request yourself and say that nobody is hired.",
+        );
+      }
+      const lines = employees.map((entry) => {
+        const facts = [
+          entry.duty ? entry.duty : "no stated duty",
+          entry.modelKey ? `model=${entry.modelKey}` : "no model bound",
+          entry.permissionMode ? `permission=${entry.permissionMode}` : undefined,
+          entry.projectPath ? `repo=${entry.projectPath}` : "no repository",
+          `open=${entry.openTaskCount}${entry.waitingCount ? ` (${entry.waitingCount} waiting on the person)` : ""}`,
+          entry.idle ? "idle" : "busy",
+          `sessionId=${entry.sessionId}`,
+        ].filter((part): part is string => typeof part === "string");
+        return `- ${entry.name} — ${facts.join("; ")}`;
+      });
+      return success(
+        `${employees.length} employee(s) you may dispatch to:\n${lines.join("\n")}`,
+      );
+    } catch (error) {
+      return failure(errorCodeOf(error), errorMessageOf(error));
+    }
+  };
+}
+
+/**
+ * The steward's view of the ledger (employee mode 0.5 slice 3): `task.list`,
+ * grouped the way a supervisor reads it.
+ *
+ * It includes the tasks the person dispatched themselves: she knows about those
+ * and does not act on them, and a board that hid them would make her report
+ * incomplete.
+ */
+export function createTaskStatusTool(service: SessionCollaborationService): LocalToolHandler {
+  return async ({ sessionId, turnId, args, signal }) => {
+    const parsed = parseArgs(args, []);
+    if ("rejected" in parsed) return parsed.rejected;
+    try {
+      const board = (await service.invokeBuiltin({
+        sessionId,
+        turnId: turnId ?? "",
+        operation: "taskStatus",
+        args: { employeeSessionId: stringArg(parsed.record, "employeeSessionId") },
+        signal,
+      })) as TaskBoard;
+      return success(
+        describeTaskBoard(board, { employeeSessionId: stringArg(parsed.record, "employeeSessionId") }),
+      );
+    } catch (error) {
+      return failure(errorCodeOf(error), errorMessageOf(error));
+    }
+  };
+}
+
+/**
+ * Deliver a follow-up, or a task, to another session.
+ *
+ * Two argument shapes are accepted, and the difference is the point of employee
+ * mode 0.5 slice 3:
+ *
+ * - `{ taskId, message }` — the steward's shape. She addresses the work, not a
+ *   session id, so the host resolves the task's own session and refuses an
+ *   archived or unknown one with an error she can act on.
+ * - `{ sessionId, content }` — the original shape, kept for the callers that
+ *   address a session directly.
  *
  * The source session and turn are bound by the service; a `sourceSessionId`
  * the model might add is never forwarded.
  */
 export function createSessionSendTool(service: SessionCollaborationService): LocalToolHandler {
   return async ({ sessionId, turnId, toolCallId, args, signal }) => {
-    const parsed = parseArgs(args, ["sessionId", "content"]);
+    const parsed = parseArgs(args, []);
     if ("rejected" in parsed) return parsed.rejected;
     const { record } = parsed;
+    const taskId = stringArg(record, "taskId");
+    const targetSessionId = stringArg(record, "sessionId");
+    const content = stringArg(record, "content") ?? stringArg(record, "message");
+    if (!taskId && !targetSessionId) {
+      return failure(
+        "INVALID_ARGUMENT",
+        "`taskId` (the task this continues) or `sessionId` is required.",
+      );
+    }
+    if (!content) return failure("INVALID_ARGUMENT", "`content` is required.");
     const kind = record.kind;
     if (kind !== undefined && kind !== "task" && kind !== "message") {
       return failure("INVALID_ARGUMENT", "`kind` must be task or message.");
@@ -174,8 +270,11 @@ export function createSessionSendTool(service: SessionCollaborationService): Loc
         turnId: turnId ?? "",
         operation: "send",
         args: {
-          sessionId: stringArg(record, "sessionId"),
-          content: stringArg(record, "content"),
+          ...(targetSessionId ? { sessionId: targetSessionId } : {}),
+          // The task is what the steward actually knows; the host resolves it to
+          // the task's session and refuses an archived or missing one.
+          ...(taskId ? { taskId } : {}),
+          content,
           ...(kind ? { kind } : {}),
           ...(delivery ? { delivery } : {}),
           ...(typeof notify === "boolean" ? { notifyOnCompletion: notify } : {}),

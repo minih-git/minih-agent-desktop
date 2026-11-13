@@ -13,6 +13,7 @@ import {
   isImageGenerationModel,
   modelWireIdsEqual,
 } from "@minih-agent/shared";
+import { readTaskBoard } from "./task-status";
 import { DESKTOP_PRINCIPAL, type AgentHostBridge } from "../agent-host-bridge";
 import { listReadyPluginModels, parsePluginModelKey } from "../plugin-agent-complete";
 import type { McpControlInvokeInput } from "../mcp-control";
@@ -552,7 +553,20 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
     async invokeBuiltin(input: {
       sessionId: string;
       turnId: string;
-      operation: "list" | "send" | "result" | "create" | "propose" | "revise" | "drop";
+      operation:
+        | "list"
+        | "send"
+        | "result"
+        | "create"
+        | "propose"
+        | "revise"
+        | "drop"
+        // The steward's two reads (employee mode 0.5 slice 3): her roster, and
+        // the task board. Both stay out of the sidecar's allowlist, so the model
+        // cannot call `bot.*` / `task.*` itself; these operations are how the
+        // tools she does have reach them.
+        | "roster"
+        | "taskStatus";
       args: Record<string, unknown>;
       signal?: AbortSignal;
     }): Promise<unknown> {
@@ -572,6 +586,17 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         case "list":
           await drain();
           return host.call("session.collaboration.list", {});
+        case "roster":
+          // The steward must not see herself among the people she hands work
+          // to; the host applies that from the caller's own session id.
+          return host.call("bot.roster", { sessionId: sourceSessionId });
+        case "taskStatus": {
+          const board = await readTaskBoard((method, params) => host.call(method, params));
+          const only = text(input.args, "employeeSessionId", false);
+          return only
+            ? { ...board, tasks: board.tasks.filter((task) => task.employeeSessionId === only) }
+            : board;
+        }
         case "result": {
           const messageId = text(input.args, "messageId", false);
           await drain();
@@ -594,6 +619,27 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         }
         case "send": {
           const content = text(input.args, "content");
+          // A steward addresses the task, not the session (slice 3): the host
+          // names the task's own session, and an archived or unknown task is
+          // refused here rather than delivered to a session she guessed at.
+          const taskId = text(input.args, "taskId", false);
+          let targetSessionId = text(input.args, "sessionId", false);
+          if (taskId) {
+            const fetched = await host.call<{ task?: { sessionId?: string; archivedAt?: string; shortId?: string } }>(
+              "task.get",
+              { taskId },
+            );
+            const task = fetched?.task;
+            if (!task?.sessionId) fail("TASK_NOT_FOUND", `No task with id ${taskId}.`);
+            if (task.archivedAt) {
+              fail(
+                "TASK_ARCHIVED",
+                `Task #${task.shortId ?? ""} is archived, so nothing runs in it any more. Ask the person whether to start a new task.`,
+              );
+            }
+            targetSessionId = task.sessionId;
+          }
+          if (!targetSessionId) fail("INVALID_ARGUMENT", "`taskId` or `sessionId` is required");
           const notify = input.args.notifyOnCompletion;
           if (notify !== undefined && typeof notify !== "boolean") fail("INVALID_ARGUMENT", "notifyOnCompletion must be a boolean");
           // A task is the reason a user hands work to another session; a plain
@@ -617,7 +663,10 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
             idempotencyKey: text(input.args, "idempotencyKey", false) ?? randomUUID(),
             ...(typeof notify === "boolean" ? { notifyOnCompletion: notify } : {}),
             ...(mandate ? { mandate } : {}),
-            sessionId: text(input.args, "sessionId"),
+            sessionId: targetSessionId,
+            // Kept so the host can apply `require_open_task` to a bot target: a
+            // follow-up that names the task it continues is authorized by it.
+            ...(taskId ? { taskId } : {}),
           });
           return dispatch(response.message, input.signal, mode);
         }

@@ -33,6 +33,11 @@ const shared = await import("@minih-agent/shared");
 const taskCardsChanged = load("../electron/main/services/task-cards-changed.ts", {
   "@minih-agent/shared": shared,
 });
+// The steward's task board (employee mode 0.5 slice 3): pure derivations over
+// `task.list` + `bot.list`, so it loads with no host at all.
+const taskStatus = load("../electron/main/services/task-status.ts", {
+  "@minih-agent/shared": shared,
+});
 const { createSessionCollaborationService } = load(
   "../electron/main/services/session-collaboration.ts",
   {
@@ -41,6 +46,7 @@ const { createSessionCollaborationService } = load(
     "../agent-host-bridge": { DESKTOP_PRINCIPAL: { kind: "desktop" } },
     // Only used by the plugin-agent completion path, which these tests never take.
     "../plugin-agent-complete": {},
+    "./task-status": taskStatus,
   },
 );
 const { createTaskCardTool } = load("../electron/main/services/task-card-tool.ts", {
@@ -273,6 +279,8 @@ test("a card the model proposes is announced to the app", async () => {
     card: {
       goal: "查一下 router 项目进度", criteria: [{ id: "c1", text: "有结论" }],
       boundaries: [], permissionMode: "ask", mustAsk: [], risk: "low",
+      // Why this employee (employee mode 0.5 slice 3): required on every card.
+      reason: "只有 Router 后端读那个仓库；它空闲。",
     },
     cardHash: "a".repeat(64),
     sourceUtterance: "帮我查查 router 进度",

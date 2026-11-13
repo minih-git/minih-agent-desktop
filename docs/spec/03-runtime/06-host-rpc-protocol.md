@@ -764,11 +764,34 @@ or general MCP operations:
   the status point, derived from the session's latest delivery stage. Dismissing
   sets the role back to `user` and keeps the conversation. Seeding creates the
   default crew and is called only from an explicit user action.
+- `bot.roster` — the steward's view of the crew (slice 3): every employee except
+  the caller and every other `steward`, with the facts a choice needs — name,
+  duty, model, permission mode, bound repository, open tasks, how many of those
+  wait on the person, and whether it is idle. `repos` is a reserved array (one
+  employee reads one repository today). Not in the sidecar's proxy allowlist:
+  the model reaches it only through its `Roster` tool, in Main.
 - `taskCard.list` / `taskCard.propose` / `taskCard.revise` / `taskCard.drop` —
-  durable task-card drafts bound to the steward session.
+  durable task-card drafts bound to the steward session. `propose` accepts a
+  card with no target at all: a steward that cannot attribute the work leaves
+  the employee empty and the person picks one in the card's dropdown.
 - `taskCard.autoStart` — whether the host may confirm a proposed card by itself,
   from the employee's stored `observe` flag and the card's ceiling. Never from
-  the `risk` a model supplied.
+  the `risk` a model supplied. Slice 3 narrows it to **read-only** cards: the
+  card's mode must be `auto`, the employee must not be observing, and the card
+  must ask for no gate beyond `deploy` / `delete` / `spend`. A card that changes
+  files, or that asks for anything more, waits for the person.
+- `taskCard.reassign` — the person moves a proposed card to another employee.
+  The host narrows the card to `min(card, sender, new employee)`, recomputes its
+  `cardHash` and leaves it `proposed`; the card is started by a separate click.
+- `task.restart` — start a task again after the startup fence interrupted it. The
+  host writes one new delivery from the same sender with the same Mandate,
+  re-points `tasks.delivery_id` at it and leaves it `queued`; the operation is
+  idempotent per interrupted delivery, so a double click is one restart.
+- Stage notices — a task that stops making progress on its own wakes its steward
+  with one `kind = stage` delivery (payload: `taskId`, employee, stage, reason,
+  delivery id, sequence). Written in the same transaction that moved the stage,
+  under an idempotency key of (task, delivery, stage, report sequence), and only
+  for `origin = steward`; `origin = direct` tasks never wake the steward.
 - `taskCard.confirm` — the person's click: it checks the `cardHash` the caller
   displayed, freezes the card, records `confirmedBy`, dispatches the work and
   notifies the steward, all in one transaction. Electron main calls it from its
@@ -782,7 +805,10 @@ or general MCP operations:
 The ledger is durable across a host restart. A queued entry with its
 `turn_queue.session_message_id` remains held for a new Agent Host controller;
 an unclaimed or running delivery is marked `interrupted` by the startup fence
-and is never replayed automatically. Transcript provenance is host-derived and
+and is never replayed automatically. The fence also announces that interruption
+to the task's steward (slice 3), and the task reads as `interrupted` through
+`tasks.delivery_status` — the stage vocabulary has no word for it — until the
+person clicks 「重新开工」 (`task.restart`). Transcript provenance is host-derived and
 cannot be forged or removed by `session.appendMessage` or transcript
 replacement. Steering (`UiMessage.steering`) into a claimed delivery turn is
 additional human input in that session: it does not receive the delivery

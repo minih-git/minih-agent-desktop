@@ -29,6 +29,8 @@ export function TaskCardDock({
   drafts: providedDrafts,
   onConfirm = (draft) => api.confirmTaskCard(confirmRequest(draft)),
   onDrop = (draft) => api.dropTaskCard(draft.id),
+  onAssign = (draft, targetSessionId) =>
+    api.reassignTaskCard({ draftId: draft.id, targetSessionId }),
   onReload = () => api.listTaskCards(sessionId),
 }: {
   sessionId: string;
@@ -36,6 +38,14 @@ export function TaskCardDock({
   drafts?: readonly TaskCardDraftView[];
   onConfirm?: (draft: TaskCardDraftView) => Promise<unknown>;
   onDrop?: (draft: TaskCardDraftView) => Promise<unknown>;
+  /**
+   * The person changing the employee on a proposed card (slice 3).
+   *
+   * It is a click like confirming, and the host answers with a new `cardHash`
+   * plus whether the card's repository is reachable from the new employee — the
+   * dock shows the warning and still waits for "开工".
+   */
+  onAssign?: (draft: TaskCardDraftView, targetSessionId: string) => Promise<unknown>;
   onReload?: () => Promise<{ drafts: TaskCardDraftView[] }>;
 }) {
   const { t } = useTranslation();
@@ -46,6 +56,8 @@ export function TaskCardDock({
   const [loadError, setLoadError] = useState<string | null>(null);
   /** Target session id → its project path (empty when unbound). */
   const [targetProjects, setTargetProjects] = useState<Record<string, string>>({});
+  /** The employees the dropdown offers, as the sidebar's roster read returns them. */
+  const [employees, setEmployees] = useState<readonly { sessionId: string; name: string }[]>([]);
   /** Why a dispatched card never started, keyed by draft. */
   const [startErrors, setStartErrors] = useState<Record<string, string>>({});
 
@@ -74,6 +86,12 @@ export function TaskCardDock({
           Object.fromEntries(
             (roster.bots ?? []).map((bot) => [bot.sessionId, bot.projectPath ?? ""]),
           ),
+        );
+        setEmployees(
+          (roster.bots ?? []).map((bot) => ({
+            sessionId: bot.sessionId,
+            name: bot.profile?.name?.trim() || bot.title,
+          })),
         );
       } catch {
         // A failed read only costs the project line, never the card itself.
@@ -169,6 +187,34 @@ export function TaskCardDock({
     }
   };
 
+  /**
+   * The person picking a different employee (slice 3).
+   *
+   * Only the host decides what that means: it narrows the card to what the new
+   * employee may do, recomputes the hash, and answers with the project it could
+   * resolve. The dock then reloads, because the card on screen is no longer the
+   * card the host holds — sending the old hash would be refused, and re-sending
+   * it here would approve text nobody re-read.
+   */
+  const assign = async (draft: TaskCardDraftView, targetSessionId: string) => {
+    if (busyId || !targetSessionId || targetSessionId === draft.targetSessionId) return;
+    setBusyId(draft.id);
+    setError(draft.id, null);
+    setStartErrors((current) => {
+      const next = { ...current };
+      delete next[draft.id];
+      return next;
+    });
+    try {
+      await onAssign(draft, targetSessionId);
+      await reload();
+    } catch (cause) {
+      setError(draft.id, t("bots.card.assignFailed", { reason: reasonOf(cause) }));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   if (visible.length === 0 && !loadError) return null;
 
   return (
@@ -194,8 +240,24 @@ export function TaskCardDock({
       ) : null}
       {visible.map((draft) =>
         draft.status === "confirmed" ? (
-          <div key={draft.id} className="task-card-dispatched" data-draft-id={draft.id}>
-            <span>{dispatchedLine(draft, t)}</span>
+          // A card the host started by itself (a read-only card for an employee
+          // that is not observing) folds into one quiet line: it is work in
+          // motion, not something the person has to read now.
+          <div
+            key={draft.id}
+            className={`task-card-dispatched${
+              draft.confirmedBy === "policy" ? " task-card-auto" : ""
+            }`}
+            data-draft-id={draft.id}
+            data-auto-started={draft.confirmedBy === "policy" ? "true" : undefined}
+          >
+            <span>
+              {draft.confirmedBy === "policy"
+                ? t("bots.card.autoStarted", {
+                    name: draft.targetTitle ?? t("bots.card.targetUnknown"),
+                  })
+                : dispatchedLine(draft, t)}
+            </span>
             {startErrors[draft.id] ? (
               <span className="task-card-error" role="alert">
                 {t("bots.card.startFailed", { reason: startErrors[draft.id] })}
@@ -209,6 +271,8 @@ export function TaskCardDock({
             busy={busyId === draft.id}
             error={errors[draft.id] ?? null}
             onConfirm={() => void confirm(draft)}
+            onAssign={(targetSessionId) => void assign(draft, targetSessionId)}
+            employees={employees}
             project={targetProjects[draft.targetSessionId]}
             onDrop={() => void drop(draft)}
           />
@@ -223,6 +287,8 @@ function TaskCard({
   busy,
   error,
   project,
+  employees = [],
+  onAssign,
   onConfirm,
   onDrop,
 }: {
@@ -231,12 +297,20 @@ function TaskCard({
   error: string | null;
   /** The target employee's project; empty or absent means unbound. */
   project?: string;
+  /** The roster the dropdown offers (slice 3). */
+  employees?: readonly { sessionId: string; name: string }[];
+  /** The person's pick; the host re-narrows and re-hashes the card. */
+  onAssign?: (targetSessionId: string) => void;
   onConfirm: () => void;
   onDrop: () => void;
 }) {
   const { t } = useTranslation();
   const [sourceOpen, setSourceOpen] = useState(false);
   const { card } = draft;
+  // A card the steward could not attribute has no employee yet; starting it is
+  // refused by the host until the person picks one, so the button says so
+  // instead of failing on the click.
+  const hasTarget = Boolean(draft.targetSessionId.trim());
 
   return (
     <section
@@ -253,6 +327,14 @@ function TaskCard({
         <span>{t(riskKey(card.risk))}</span>
       </div>
       <p className="task-card-goal">{card.goal}</p>
+
+      {card.reason ? (
+        // Why this employee: the steward's one-sentence justification, read
+        // before the person decides. It is the card's own field, not a log.
+        <p className="task-card-reason" data-card-reason="">
+          {card.reason}
+        </p>
+      ) : null}
 
       {card.criteria.length > 0 ? (
         <div className="task-card-section">
@@ -277,16 +359,44 @@ function TaskCard({
       ) : null}
 
       <div className="task-card-meta">
-        <span>
-          {t("bots.card.target")}: {draft.targetTitle ?? t("bots.card.targetUnknown")}
+        <span className="task-card-assign">
+          <label htmlFor={`task-card-assign-${draft.id}`}>{t("bots.card.target")}</label>
+          {onAssign && employees.length > 0 ? (
+            <select
+              id={`task-card-assign-${draft.id}`}
+              className="task-card-assign-select"
+              value={draft.targetSessionId}
+              disabled={busy}
+              data-card-assign=""
+              onChange={(event) => onAssign(event.currentTarget.value)}
+            >
+              {/* A card with nobody on it starts here: the person picks the
+                  employee, and the host narrows the card to what that one may
+                  do before anything can be started. */}
+              <option value="" disabled>
+                {t("bots.card.targetUnknown")}
+              </option>
+              {employees.map((employee) => (
+                <option key={employee.sessionId} value={employee.sessionId}>
+                  {employee.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span>{draft.targetTitle ?? t("bots.card.targetUnknown")}</span>
+          )}
         </span>
         <span>
           {t("bots.card.permission")}: {t(permissionKey(card.permissionMode))}
         </span>
         {card.mustAsk.length > 0 ? <span>{t("bots.card.mustAsk")}</span> : null}
-        <span className={project ? undefined : "task-card-warning"}>
+        <span className={hasTarget && project ? undefined : "task-card-warning"}>
           {t("bots.card.project")}:{" "}
-          {project ? project : t("bots.card.projectUnbound")}
+          {!hasTarget
+            ? t("bots.card.projectUnknownTarget")
+            : project
+              ? project
+              : t("bots.card.projectUnbound")}
         </span>
       </div>
 
@@ -312,8 +422,12 @@ function TaskCard({
         <Button variant="secondary" disabled={busy} onClick={onDrop}>
           {busy ? t("bots.card.dropping") : t("bots.card.drop")}
         </Button>
-        <Button variant="primary" disabled={busy} onClick={onConfirm}>
-          {busy ? t("bots.card.confirming") : t("bots.card.confirm")}
+        <Button variant="primary" disabled={busy || !hasTarget} onClick={onConfirm}>
+          {busy
+            ? t("bots.card.confirming")
+            : hasTarget
+              ? t("bots.card.confirm")
+              : t("bots.card.pickEmployee")}
         </Button>
       </div>
     </section>

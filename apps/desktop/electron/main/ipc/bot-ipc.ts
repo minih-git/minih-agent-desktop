@@ -186,6 +186,30 @@ export function registerBotIpc({
     return result;
   });
 
+  // Start a task again after the startup fence interrupted it (employee mode
+  // 0.5 slice 3). The host writes a new delivery from the same mandate; starting
+  // it is the same dispatch a confirmed card uses, and the person's click is the
+  // authorization that it resumes.
+  handle(IPC.invoke.taskRestart, async (request) => {
+    const { taskId } = (request ?? {}) as { taskId?: string };
+    if (!taskId) throw new Error("taskId is required");
+    const result = (await host().call("task.restart", { taskId })) as {
+      task?: TaskView;
+      delivery?: SessionCollaborationMessage;
+    };
+    let startError: string | undefined;
+    if (result.delivery) {
+      try {
+        await sessionCollaboration.dispatchConfirmed(result.delivery);
+      } catch (error) {
+        startError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (result.task) announceTask(result.task, "stage");
+    await reconcileTaskStages();
+    return { task: result.task, ...(startError ? { startError } : {}) };
+  });
+
   handle(IPC.invoke.taskCardDrop, async (request) => {
     const { draftId } = (request ?? {}) as { draftId?: string };
     if (!draftId) throw new Error("draftId is required");
@@ -196,6 +220,28 @@ export function registerBotIpc({
       sessionId: result.draft?.sessionId ?? "",
       draftId,
     });
+    return result;
+  });
+
+  // The person changes the employee on a proposed card (employee mode 0.5 slice
+  // 3). It is their click, like confirming: the host narrows the card to what
+  // the new employee may do, recomputes the hash, and leaves the card proposed,
+  // so starting it is still a separate act nobody can do for them.
+  handle(IPC.invoke.taskCardReassign, async (request) => {
+    const { draftId, targetSessionId } = (request ?? {}) as {
+      draftId?: string;
+      targetSessionId?: string;
+    };
+    if (!draftId || !targetSessionId) throw new Error("draftId and targetSessionId are required");
+    const result = (await host().call("taskCard.reassign", { draftId, targetSessionId })) as {
+      draft?: TaskCardDraftView;
+      repoAvailable?: boolean;
+      projectPath?: string;
+    };
+    // The card on screen changed, so the dock has to re-read the version the
+    // host now holds; a stale hash would refuse the person's next click.
+    notifyTaskCardsChanged({ sessionId: result.draft?.sessionId ?? "", draftId });
+    sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
     return result;
   });
 }

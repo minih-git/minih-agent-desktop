@@ -25,6 +25,13 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+/// What a restart copies from the delivery it replaces.
+///
+/// `(source, plugin, mandate, ceiling, hops, status, idempotency key)`: one
+/// tuple, because these seven values are read from one row and handed to one
+/// insert, and a struct here would only rename them.
+type PreviousDelivery = (String, String, Option<String>, String, i64, String, String);
+
 pub fn restart(db: &Database, input: &Value) -> Result<Value> {
     let task_id = super::string(input, "taskId", 256)?.to_owned();
     let tx = db.conn().unchecked_transaction()?;
@@ -39,8 +46,9 @@ pub fn restart(db: &Database, input: &Value) -> Result<Value> {
     if archived.is_some() {
         return Err(anyhow!("CONFLICT: this task is archived"));
     }
-    let delivery_id = delivery.ok_or_else(|| anyhow!("CONFLICT: this task was never dispatched"))?;
-    let previous: Option<(String, String, Option<String>, String, i64, String, String)> = tx
+    let delivery_id =
+        delivery.ok_or_else(|| anyhow!("CONFLICT: this task was never dispatched"))?;
+    let previous: Option<PreviousDelivery> = tx
         .query_row(
             "SELECT source_session_id, plugin_id, mandate_json, permission_ceiling,
                     remaining_hops, status, idempotency_key
@@ -86,12 +94,7 @@ pub fn restart(db: &Database, input: &Value) -> Result<Value> {
             let goal = mandate
                 .as_deref()
                 .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-                .and_then(|value| {
-                    value
-                        .get("goal")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                })
+                .and_then(|value| value.get("goal").and_then(Value::as_str).map(str::to_owned))
                 .unwrap_or_else(|| "Resume the interrupted task".into());
             let message = Message {
                 id: Uuid::new_v4().to_string(),

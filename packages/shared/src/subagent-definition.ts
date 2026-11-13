@@ -163,13 +163,20 @@ export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
  * holds no tool that changes the workspace, so handing work out is the only
  * thing it can do. The exception is opt-in by name — never by `tools: inherit`
  * — so a definition that merely claims to be a steward cannot widen itself.
+ *
+ * `Roster` replaces `SessionList` (employee mode 0.5 slice 3): the steward picks
+ * an employee by name, duty, repository, permission, busyness and "how much is
+ * waiting on the person", never by guessing which session title looks right.
+ * `TaskStatus` is how she reads the ledger instead of remembering it.
+ * `SessionList` and `SessionCreate` are deliberately **not** here any more:
+ * they stay denied to every delegate, so a steward cannot acquire them.
  */
 export const STEWARD_ONLY_TOOLS: readonly string[] = [
-  "SessionList",
+  "Roster",
+  "TaskCard",
   "SessionSend",
   "SessionResult",
-  "SessionCreate",
-  "TaskCard",
+  "TaskStatus",
 ];
 
 /**

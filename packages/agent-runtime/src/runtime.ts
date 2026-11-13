@@ -384,6 +384,14 @@ export type RuntimePrompt = {
   mcpToolNames?: string[];
   sessionMessage?: SessionMessageOrigin;
   attachments?: RuntimePromptAttachment[];
+  /**
+   * A brief the host generated for this turn alone (employee mode 0.5 slice 3).
+   *
+   * It is injected into the model request — never into the runtime's message
+   * state — so it is not persisted, not compacted, and does not carry into a
+   * later turn: the next turn gets a freshly generated one or none at all.
+   */
+  turnBriefing?: string;
 };
 
 /**
@@ -1975,6 +1983,14 @@ export class DesktopAgentRuntime {
    * check can see a persona that appeared, changed, or disappeared.
    */
   private readonly personaIdentity: string;
+  /**
+   * The host's brief for the turn that is starting (employee mode 0.5 slice 3).
+   *
+   * Set when a prompt arrives and used only to build each request in that turn:
+   * it is deliberately not part of `agent.state.messages`, so it is never
+   * persisted, never compacted, and never inherited by the next turn.
+   */
+  private turnBriefing?: string;
   private subagentProviders: Record<string, RuntimeProviderConfig>;
   private subagentModelKeys: Set<string>;
   /** On-demand Task.model grants; never mixed into launch opt-in matching. */
@@ -2913,7 +2929,27 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     for (const message of messages.slice(context.messages.length)) {
       this.agent.state.messages.push(message);
     }
-    return { context: { ...context, messages, tools } };
+    // The host's brief rides on this request only, and is added *after* that
+    // mirror: a message appended here would otherwise become a persisted row and
+    // ride along in every later turn and in the next compaction summary.
+    return { context: { ...context, messages: this.withTurnBriefing(messages), tools } };
+  }
+
+  /**
+   * One delimited data block with the host's brief, immediately before the
+   * newest message of the request.
+   *
+   * The newest message is what the model has to answer, so the brief sits beside
+   * it rather than behind the whole history; and it is a `user` row because the
+   * system transcript journal persists system rows, which would turn a
+   * per-turn brief into transcript history.
+   */
+  private withTurnBriefing(messages: readonly AgentMessage[]): AgentMessage[] {
+    const briefing = this.turnBriefing;
+    if (!briefing) return messages as AgentMessage[];
+    const at = Math.max(messages.length - 1, 0);
+    const block: AgentMessage = { role: "user", content: briefing, timestamp: Date.now() };
+    return [...messages.slice(0, at), block, ...messages.slice(at)];
   }
 
   private setAgentTools(tools: AgentTool[]): void {
@@ -9794,6 +9830,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       : input;
     this.retainPendingSteering();
     const nextTurnId = durableTurnId;
+    // A brief belongs to one turn: a prompt without one clears the previous
+    // turn's, so a later session (or a steward turn whose host read failed)
+    // cannot answer from a brief that is no longer true.
+    this.turnBriefing =
+      typeof input === "string" ? undefined : input.turnBriefing?.trim() || undefined;
     this.turnId = nextTurnId;
     this.acceptingSteering = true;
     this.gracefulStopRequested = false;

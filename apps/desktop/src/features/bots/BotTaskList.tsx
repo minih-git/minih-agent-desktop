@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { TaskView } from "@minih-agent/shared";
+import { isTaskInterrupted, type TaskView } from "@minih-agent/shared";
 import { useTranslation } from "react-i18next";
 import { WorktreeBehindMarker } from "../worktree/WorktreeBehind";
 import { taskStageLabelKey, taskStatusTone } from "./bot-status";
@@ -97,7 +97,10 @@ function BotTaskRow({
   const { t } = useTranslation();
   const tone = taskStatusTone(task);
   const repo = taskRepoName(task);
-  const stage = t(taskStageLabelKey(task.stage));
+  // The startup fence is not a stage, so the row says what happened in its own
+  // words instead of borrowing the stage the task was left in.
+  const interrupted = isTaskInterrupted(task);
+  const stage = interrupted ? t("bots.tasks.interrupted") : t(taskStageLabelKey(task.stage));
   const label = repo
     ? t("bots.tasks.openTaskInRepo", { title: task.title, repo, stage })
     : t("bots.tasks.openTask", { title: task.title, stage });
@@ -121,7 +124,12 @@ function BotTaskRow({
           the project" count applies to it: the person has to be able to see
           that the task is working on stale code before it delivers. */}
       {!archived ? <WorktreeBehindMarker sessionId={task.sessionId} /> : null}
-      <span className="sidebar-bot-task-stage">{archived ? t("bots.tasks.archived") : stage}</span>
+      <span
+        className={`sidebar-bot-task-stage${interrupted ? " interrupted" : ""}`}
+        data-task-stage={interrupted ? "interrupted" : undefined}
+      >
+        {archived ? t("bots.tasks.archived") : stage}
+      </span>
     </button>
   );
 }

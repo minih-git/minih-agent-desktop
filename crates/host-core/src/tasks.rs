@@ -104,6 +104,10 @@ pub struct Task {
     /// writes a new delivery, so this value cannot go stale.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_status: Option<String>,
+    /// When that delivery last moved: the only timestamp a "just finished"
+    /// question can be answered with, because a task row has no `updated_at`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_updated_at: Option<String>,
 }
 
 const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title, t.origin,
@@ -114,7 +118,8 @@ const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title,
         AND m.text IS NOT NULL AND trim(m.text) != ''
       ORDER BY m.seq DESC LIMIT 1),
     t.workspace_status, t.workspace_error, t.base_ref, t.base_remote, t.delivery_mode,
-    (SELECT m.status FROM session_collaboration_messages m WHERE m.id = t.delivery_id)
+    (SELECT m.status FROM session_collaboration_messages m WHERE m.id = t.delivery_id),
+    (SELECT m.updated_at FROM session_collaboration_messages m WHERE m.id = t.delivery_id)
  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
@@ -141,6 +146,7 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         base_remote: row.get::<_, i64>(17)? != 0,
         delivery_mode: row.get(18)?,
         delivery_status: row.get(19)?,
+        delivery_updated_at: row.get::<_, Option<i64>>(20)?.map(ms_to_ts),
     })
 }
 

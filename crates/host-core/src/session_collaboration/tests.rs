@@ -634,7 +634,11 @@ fn the_roster_offers_employees_but_never_the_secretary() {
 
     let roster = handle(&db, "bot.roster", &json!({"sessionId": steward})).unwrap();
     let employees = roster["employees"].as_array().unwrap();
-    assert_eq!(employees.len(), 3, "the four seeded crew minus the secretary");
+    assert_eq!(
+        employees.len(),
+        3,
+        "the four seeded crew minus the secretary"
+    );
     assert!(
         employees
             .iter()
@@ -646,7 +650,10 @@ fn the_roster_offers_employees_but_never_the_secretary() {
         .find(|entry| entry["sessionId"] == json!(backend))
         .unwrap();
     assert_eq!(backend_row["name"], json!("Router 后端"));
-    assert_eq!(backend_row["duty"], json!("Minih-Router gateway, accounts and billing."));
+    assert_eq!(
+        backend_row["duty"],
+        json!("Minih-Router gateway, accounts and billing.")
+    );
     assert_eq!(backend_row["permissionMode"], json!("ask"));
     assert_eq!(backend_row["observe"], json!(false));
     assert_eq!(backend_row["openTaskCount"], json!(1));
@@ -753,10 +760,7 @@ fn an_interrupted_task_is_announced_and_starts_again_once() {
         .unwrap();
 
     recover(&db).unwrap();
-    assert_eq!(
-        get(&db, &delivery).unwrap().unwrap().status,
-        "interrupted"
-    );
+    assert_eq!(get(&db, &delivery).unwrap().unwrap().status, "interrupted");
     let task = crate::tasks::get_task(&db, &task_id).unwrap().unwrap();
     assert_eq!(task.delivery_status.as_deref(), Some("interrupted"));
     let notices = all_stage_notices(&db, &steward);
@@ -845,24 +849,31 @@ fn reassigning_a_card_narrows_it_and_keeps_it_proposed() {
     .unwrap();
     let draft = &reassigned["draft"];
     assert_eq!(draft["targetSessionId"], json!(narrow));
-    assert_eq!(draft["status"], json!("proposed"), "the person still starts it");
+    assert_eq!(
+        draft["status"],
+        json!("proposed"),
+        "the person still starts it"
+    );
     // `ask` is narrower than `accept-edits`, so the card may only ask for `ask`.
     assert_eq!(draft["card"]["permissionMode"], json!("ask"));
-    assert_ne!(draft["cardHash"], json!(before), "the card changed, so its hash did");
+    assert_ne!(
+        draft["cardHash"],
+        json!(before),
+        "the card changed, so its hash did"
+    );
     // The reason travels with the card.
     assert_eq!(
         draft["card"]["reason"],
         json!("页面与交互是它的活；你提到了 Desktop；它空闲")
     );
     // An employee with no repository cannot carry a card that names one.
-    assert_eq!(reassigned["repoAvailable"], json!(true), "no repo on the card");
+    assert_eq!(
+        reassigned["repoAvailable"],
+        json!(true),
+        "no repo on the card"
+    );
     // Only a proposed card is reassignable.
-    handle(
-        &db,
-        "taskCard.drop",
-        &json!({"draftId": draft_id}),
-    )
-    .unwrap();
+    handle(&db, "taskCard.drop", &json!({"draftId": draft_id})).unwrap();
     let refused = handle(
         &db,
         "taskCard.reassign",

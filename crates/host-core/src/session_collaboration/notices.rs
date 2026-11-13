@@ -21,7 +21,7 @@
 //! these stages means the turn did *not* finish the work. Main starts a turn for
 //! it through the same `pendingDispatch` drain every other queued delivery uses.
 
-use super::{permissions, repository::Message, drafts::CARD_DELIVERY_OWNER};
+use super::{drafts::CARD_DELIVERY_OWNER, permissions, repository::Message};
 use crate::db::{ms_to_ts, now_ms, Database};
 use anyhow::Result;
 use rusqlite::{params, OptionalExtension};
@@ -33,7 +33,10 @@ use uuid::Uuid;
 /// `person/accept` (finished work) already reaches her through the delivery's
 /// completion receipt, and `queued` / `waiting` / `working` are not news.
 pub fn wakes_steward(stage: &str) -> bool {
-    matches!(stage, "failed" | "blocked" | "person/answer" | "interrupted")
+    matches!(
+        stage,
+        "failed" | "blocked" | "person/answer" | "interrupted"
+    )
 }
 
 /// Write one stage notice for the task bound to `delivery_id`, if there is one.

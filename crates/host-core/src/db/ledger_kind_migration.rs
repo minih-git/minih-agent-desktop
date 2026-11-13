@@ -107,9 +107,11 @@ fn accepts_stage(tx: &Transaction<'_>) -> Result<bool> {
 }
 
 fn violations(tx: &Transaction<'_>) -> Result<i64> {
-    Ok(tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
-        row.get(0)
-    })?)
+    Ok(
+        tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })?,
+    )
 }
 
 fn rows(tx: &Transaction<'_>) -> Result<i64> {
@@ -187,8 +189,10 @@ mod tests {
     }
 
     fn violations_now(conn: &Connection) -> i64 {
-        conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| row.get(0))
-            .unwrap()
+        conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
     }
 
     fn kinds(conn: &Connection) -> Vec<String> {
@@ -310,7 +314,10 @@ mod tests {
 
         let db = Database::open(&path).unwrap();
         assert_eq!(version(db.conn()), SCHEMA_VERSION);
-        assert_eq!(kinds(db.conn()), vec!["task".to_string(), "completion".to_string()]);
+        assert_eq!(
+            kinds(db.conn()),
+            vec!["task".to_string(), "completion".to_string()]
+        );
         seed_delivery(db.conn(), "notice", "stage", "three");
         assert_eq!(kinds(db.conn()).len(), 3);
         // The indexes came back with the table.
@@ -348,7 +355,9 @@ mod tests {
         let path = dir.path().join("pi.sqlite");
         seed_sessions(db.conn());
         downgrade_to_v34(db.conn());
-        db.conn().pragma_update(None, "foreign_keys", false).unwrap();
+        db.conn()
+            .pragma_update(None, "foreign_keys", false)
+            .unwrap();
         // A delivery whose target session was deleted by an older build.
         db.conn()
             .execute(

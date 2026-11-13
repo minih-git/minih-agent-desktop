@@ -655,7 +655,7 @@ describe("session messaging stays out of delegates", () => {
     // Declaring the name is what makes a definition a steward, so the parser
     // keeps it — and keeps nothing it did not declare.
     const steward = parse(
-      "---\ndescription: Steward.\ntools: SessionList, SessionSend, SessionResult, SessionCreate, TaskCard\n---\nDispatch.",
+      "---\ndescription: Steward.\ntools: Roster, TaskCard, SessionSend, SessionResult, TaskStatus\n---\nDispatch.",
     );
     expect(steward.ok).toBe(true);
     if (!steward.ok) return;

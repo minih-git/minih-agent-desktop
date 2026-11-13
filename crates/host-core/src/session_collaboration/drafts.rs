@@ -172,23 +172,35 @@ fn evict_oldest(conn: &rusqlite::Connection, session_id: &str) -> Result<()> {
 /// exactly what a person will be shown.
 pub fn propose(db: &Database, input: &Value) -> Result<Value> {
     let session_id = require_text(input, "sessionId", 256)?.to_string();
-    let target = require_text(input, "targetSessionId", 256)?.to_string();
+    // The target is **optional** (employee mode 0.5 slice 3): a steward that
+    // cannot tell which employee owns the work leaves the card without one and
+    // the person picks from the dropdown. A guessed employee is worse than an
+    // empty slot, and an empty slot cannot dispatch anything.
+    let target = input
+        .get("targetSessionId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string();
     let source_utterance = require_text(input, "sourceUtterance", 4_096)?.to_string();
     let card = input
         .get("card")
         .ok_or_else(|| anyhow!("INVALID_ARGUMENT: card required"))?
         .clone();
-    // A steward cannot dispatch to itself, and the target has to be a bot: a
-    // card exists to hand work to an employee, not to a casual conversation.
-    if target == session_id {
-        return Err(anyhow!(
-            "INVALID_ARGUMENT: a card cannot target its own session"
-        ));
-    }
-    if sessions::session_role(db, &target)?.as_deref() != Some("bot") {
-        return Err(anyhow!(
-            "INVALID_ARGUMENT: a task card targets an employee session"
-        ));
+    if !target.is_empty() {
+        // A steward cannot dispatch to itself, and the target has to be a bot: a
+        // card exists to hand work to an employee, not to a casual conversation.
+        if target == session_id {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: a card cannot target its own session"
+            ));
+        }
+        if sessions::session_role(db, &target)?.as_deref() != Some("bot") {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: a task card targets an employee session"
+            ));
+        }
     }
     let hash = card_hash(&card);
     let now = now_ms();
@@ -270,7 +282,7 @@ pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
             "INVALID_ARGUMENT: a card cannot target its own session"
         ));
     }
-    if sessions::session_role(db, &target)?.as_deref() != Some("bot") {
+    if sessions::session_role(db, target)?.as_deref() != Some("bot") {
         return Err(anyhow!(
             "INVALID_ARGUMENT: a task card targets an employee session"
         ));
@@ -281,11 +293,9 @@ pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("INVALID_ARGUMENT: the card states no permission mode"))?;
     let sender = super::permissions::effective_mode(db, &existing.session_id)?;
-    let employee = super::permissions::effective_mode(db, &target)?;
-    let narrowed = super::permissions::narrower(
-        &super::permissions::narrower(requested, &sender),
-        &employee,
-    );
+    let employee = super::permissions::effective_mode(db, target)?;
+    let narrowed =
+        super::permissions::narrower(&super::permissions::narrower(requested, &sender), &employee);
     let mut card = existing.card.clone();
     card["permissionMode"] = json!(narrowed);
     let hash = card_hash(&card);
@@ -293,13 +303,19 @@ pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
         "UPDATE task_card_drafts
          SET target_session_id=?2, card_json=?3, card_hash=?4, updated_at=?5
          WHERE id=?1 AND status='proposed'",
-        params![draft_id, target, serde_json::to_string(&card)?, hash, now_ms()],
+        params![
+            draft_id,
+            target,
+            serde_json::to_string(&card)?,
+            hash,
+            now_ms()
+        ],
     )?;
     // The repository the new employee reads, and whether the card's own remote
     // can be carried there. The resolution to a real checkout runs git and
     // belongs to the RPC layer, so this only reports the warning the dock needs:
     // an employee with no repository cannot work a card that names one.
-    let project_path = match super::tasks::employee_project_id(db, &target)? {
+    let project_path = match super::tasks::employee_project_id(db, target)? {
         Some(id) => db.project_path(id)?,
         None => None,
     };
@@ -385,10 +401,9 @@ pub fn auto_start_refusal(
         .get("mustAsk")
         .and_then(Value::as_array)
         .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .any(|action| !crate::session_collaboration::progress::ALWAYS_ASKED.contains(&action))
+            items.iter().filter_map(Value::as_str).any(|action| {
+                !crate::session_collaboration::progress::ALWAYS_ASKED.contains(&action)
+            })
         })
         .unwrap_or(false);
     if asked {
@@ -433,6 +448,19 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
     }
     if draft.status == "dropped" {
         return Err(anyhow!("CONFLICT: this card was dropped"));
+    }
+    // A card proposed without an employee cannot be started: the person picks
+    // one in the dropdown first (employee mode 0.5 slice 3), and until they do,
+    // there is nobody to hand the work to and nobody to charge with it.
+    if draft.target_session_id.trim().is_empty() {
+        return Err(anyhow!(
+            "CONFLICT: this card has no employee yet; pick one before starting it"
+        ));
+    }
+    if sessions::session_role(db, &draft.target_session_id)?.as_deref() != Some("bot") {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: a task card targets an employee session"
+        ));
     }
     // The card names a repository by its normalized remote. The caller resolves
     // that to a checkout on this machine; when it could not, the employee's own

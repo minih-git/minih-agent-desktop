@@ -107,3 +107,36 @@ Validation: runtime unit coverage for the accepted shapes, the trust boundary,
 tool batches, provider retry, steering before and after the reply, and context
 exclusion; `pnpm test:e2e:session-completion` against the real host ledger,
 sidecar, and a local SSE provider. See E2E-SESSION-completion-notice-allows-silence.
+
+## Amendment (2026-11-13, schema v35): a fourth provenance kind, `stage`
+
+Employee mode 0.5 slice 3 (ADR `bot-sessions-and-steward`, "Steward roster,
+briefing and wake-ups") adds one kind of message to the ledger: a **stage
+notice**. Everything else in this decision is unchanged.
+
+- A task that stops making progress on its own — `failed`, `blocked`, waiting for
+  a person, or interrupted by the startup fence — writes one receipt-like
+  delivery to the steward that dispatched it. It is `kind = stage`, `queued`, and
+  addressed to the sender of the delivery that carried the task.
+- It exists because the `completion` receipt answers "did the turn finish", and
+  every one of those stages means the turn did *not* finish the work. Reusing
+  `completion` would also hand the notice this decision's silent-reply exception,
+  which is exactly how a steward would swallow a failure.
+- **Exactly once per stage change.** The notice is written in the same
+  transaction that moved the task's stage, and only when the stage actually
+  moved, under an idempotency key of (task, delivery, stage, report sequence).
+  A repeated write of the same stage adds nothing, so a fence that runs again
+  cannot duplicate it.
+- **Not for `origin = direct`.** Work the person dispatched from an employee's
+  own workbench is theirs; it never wakes the steward.
+- The startup fence is unchanged and still never replays: it marks unclaimed or
+  running deliveries `interrupted` and, as of this amendment, tells the task's
+  steward once. The way back is the person's click (`task.restart`), which writes
+  a *new* delivery from the same Mandate.
+- `kind` carried a `CHECK`, so the schema step rebuilds
+  `session_collaboration_messages` once. It is additive in what it stores, keeps
+  every row, counts the file's dangling references before and after, and fails
+  only on an increase — a real database arrives with historical orphans that must
+  not be "fixed" by an upgrade.
+- Nothing else changes: no protocol field, no caller authority, no second
+  identity, and the delivery `status` still answers "did the turn finish".
