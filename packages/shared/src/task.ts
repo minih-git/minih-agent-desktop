@@ -18,6 +18,7 @@
  */
 
 import type { TaskStage } from "./bot-session.js";
+import type { TaskCardDraftView } from "./bot-ipc.js";
 import type { SessionMessageStatus } from "./session-collaboration.js";
 
 /** Who started the task. */
@@ -34,6 +35,53 @@ export const TASK_INITIAL_STAGE: TaskStage = "queued";
 export function isTaskOrigin(value: unknown): value is TaskOrigin {
   return typeof value === "string" && (TASK_ORIGINS as readonly string[]).includes(value);
 }
+
+/** One request a task is waiting on, as the host stores it. */
+export type TaskWaitingKind = "ask" | "permission";
+
+/**
+ * A structured request a task's session is blocked on (employee mode 0.5 slice
+ * 4a).
+ *
+ * The four surfaces that show a waiting task all render *this*, and never a
+ * sentence parsed out of the employee's reply: an employee that ends a turn with
+ * "anything else?" did not ask a question the person has to answer.
+ */
+export type TaskWaiting = {
+  requestId: string;
+  kind: TaskWaitingKind;
+  /** The question, for an `ask`. */
+  question?: string;
+  /** The options the employee offered, in its own order. */
+  options?: string[];
+  /** The tool that asked for permission, for a `permission`. */
+  toolName?: string;
+  /** Why that tool says it needs the person. */
+  reason?: string;
+  openedAt: string;
+};
+
+/**
+ * Why a task is stuck.
+ *
+ * A `TaskReport` writes `where`/`tried`/`suggestion`; the person's own stop
+ * writes `reason: "stopped"`; a failed turn has the error its own card shows, so
+ * the blocker is empty there.
+ */
+export type TaskBlocker = {
+  status?: "blocked";
+  /** `stopped` is the person's own stop; `error` is a turn that failed. */
+  reason?: "stopped" | "error";
+  /** The error code of a failed turn, as the runtime settled it. */
+  code?: string;
+  /** Where it got stuck, in the employee's words. */
+  where?: string;
+  /** What it already tried before giving up. */
+  tried?: string;
+  /** What it suggests the person do. */
+  suggestion?: string;
+  reportedAt?: string;
+};
 
 /** One task row as the host stores and returns it. */
 export type TaskView = {
@@ -84,6 +132,27 @@ export type TaskView = {
    * answered: a task row has no `updated_at` of its own.
    */
   deliveryUpdatedAt?: string;
+  /**
+   * The requests this task's session is blocked on right now, newest last
+   * (employee mode 0.5 slice 4a).
+   *
+   * This is what `stage = "person/answer"` *means*: a question with its options,
+   * or the tool a permission was asked for — the employee's own structured
+   * words, never a sentence read out of its reply. Every surface (the task's own
+   * card, the steward's dock, the sidebar count, the system notification) shows
+   * these same entries, and answering one anywhere closes it everywhere.
+   */
+  waiting?: TaskWaiting[];
+  /**
+   * Why a stuck task is stuck, as the `TaskReport` that reported it wrote it:
+   * where, what it already tried, and what it suggests.
+   *
+   * Absent is not a failure: a task stopped by the person carries
+   * `{ reason: "stopped" }` here, and a failed one has the turn's own error.
+   */
+  blocker?: TaskBlocker;
+  /** How many times this task's stage has moved (the notice key). */
+  stageSeq?: number;
 };
 
 /**
@@ -231,4 +300,72 @@ export type TasksChangedEvent = {
   employeeSessionId: string;
   taskId?: string;
   reason: "created" | "stage" | "archived";
+};
+
+/**
+ * Whether the task's work was cut off, failed, or reported itself stuck: the
+ * cases the blocked card answers (employee mode 0.5 slice 4a).
+ *
+ * The three say different things and the card shows different sources — a
+ * blocker's own words, the turn's error, or "the app restarted" — but the
+ * person's next action is the same, so they share one card and one predicate.
+ */
+export function isTaskStuck(
+  task: Pick<TaskView, "stage" | "deliveryStatus"> | null | undefined,
+): boolean {
+  if (!task) return false;
+  return (
+    task.stage === "blocked" || task.stage === "failed" || task.deliveryStatus === "interrupted"
+  );
+}
+
+/** Whether the task is waiting on an answer from the person right now. */
+export function isTaskWaitingForAnswer(
+  task: Pick<TaskView, "stage" | "waiting"> | null | undefined,
+): boolean {
+  if (!task) return false;
+  return (task.waiting?.length ?? 0) > 0 || task.stage === "person/answer";
+}
+
+/**
+ * Whether one task counts toward the sidebar's "waiting for you" number.
+ *
+ * The ADR's rule (amended in slice 4a) is that a task the person has to act on
+ * counts, whatever keeps it from moving: a question, a finished piece of work
+ * waiting for acceptance, or a task that got stuck. A blocked task used to be
+ * only the employee's own problem, which is exactly why it could sit there
+ * unnoticed. The number is the *same* predicate in the sidebar, the dock and the
+ * tests, so the surfaces cannot disagree about how much is waiting.
+ */
+export function taskCountsAsWaiting(
+  task: Pick<TaskView, "stage" | "deliveryStatus" | "archivedAt">,
+): boolean {
+  if (task.archivedAt) return false;
+  return task.stage === "person/answer" || task.stage === "person/accept" || isTaskStuck(task);
+}
+
+/** How many tasks are waiting on the person, across every employee. */
+export function waitingTaskCount(
+  tasks: readonly Pick<TaskView, "stage" | "deliveryStatus" | "archivedAt">[],
+): number {
+  return tasks.filter(taskCountsAsWaiting).length;
+}
+
+/**
+ * Hand a stuck task's work to somebody else.
+ *
+ * `reason` is rendered by the caller in the person's own language: the card it
+ * ends up on is stored, and a stored row cannot be translated later.
+ */
+export type TaskReassignRequest = {
+  taskId: string;
+  reason?: string;
+  /** The steward conversation the new card is proposed on; defaults to the host's. */
+  stewardSessionId?: string;
+};
+
+export type TaskReassignResult = {
+  draft: TaskCardDraftView;
+  created?: boolean;
+  task: TaskView;
 };

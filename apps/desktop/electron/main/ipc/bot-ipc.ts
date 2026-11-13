@@ -214,6 +214,31 @@ export function registerBotIpc({
     return { task: result.task, ...(startError ? { startError } : {}) };
   });
 
+  // 「改派给…」: the person hands a stuck task's work to somebody else (employee
+  // mode 0.5 slice 4a). The host writes a fresh card on the steward's own
+  // conversation — same goal, nobody assigned — and the dock shows it for
+  // confirmation. Nothing is dispatched here: starting it is that click.
+  handle(IPC.invoke.taskReassign, async (request) => {
+    const { taskId, reason, stewardSessionId } = (request ?? {}) as {
+      taskId?: string;
+      reason?: string;
+      stewardSessionId?: string;
+    };
+    if (!taskId) throw new Error("taskId is required");
+    const result = (await host().call("task.reassign", {
+      taskId,
+      ...(reason ? { reason } : {}),
+      ...(stewardSessionId ? { stewardSessionId } : {}),
+    })) as { draft?: { sessionId?: string; id?: string } };
+    // The steward's dock holds the new card, so the conversation that renders it
+    // repaints from the host rather than from this reply.
+    notifyTaskCardsChanged({
+      sessionId: result.draft?.sessionId ?? "",
+      draftId: result.draft?.id ?? "",
+    });
+    return result;
+  });
+
   handle(IPC.invoke.taskCardDrop, async (request) => {
     const { draftId } = (request ?? {}) as { draftId?: string };
     if (!draftId) throw new Error("draftId is required");

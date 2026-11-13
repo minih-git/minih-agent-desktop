@@ -14,7 +14,8 @@ import type { AgentSidecar } from "../agent-sidecar";
 import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import type { PersistenceOutbox } from "../persistence-outbox";
-import { buildStewardBriefing } from "../services/task-status";
+import { buildStewardBriefing, TASK_SESSION_BRIEFING } from "../services/task-status";
+import { closeTaskWaiting } from "../runtime/task-waiting";
 import type { ComposerCommandService } from "./composer-ipc";
 import type { IpcRegistrar } from "./types";
 
@@ -561,14 +562,20 @@ export function registerAgentIpc({
     // `host` is captured once: the closure below must not observe a later
     // reconnect (or a null) between the check and the read.
     const briefingHost = host;
-    const turnBriefing =
-      briefingHost && session.role === "bot" && session.botProfile?.definition?.trim() === "steward"
-        ? await buildStewardBriefing(
-            (method, params) => briefingHost.call(method, params),
-            // The name the person gave this employee, from its own profile: the
-            // brief is where the model learns what to answer to.
-            session.botProfile?.name,
-          )
+    const isSteward =
+      session.role === "bot" && session.botProfile?.definition?.trim() === "steward";
+    const turnBriefing = isSteward
+      ? await buildStewardBriefing(
+          (method, params) => briefingHost!.call(method, params),
+          // The name the person gave this employee, from its own profile: the
+          // brief is where the model learns what to answer to.
+          session.botProfile?.name,
+        )
+      : // A task session has no definition, so these rules are the only thing that
+        // tells it how to ask for a decision or to give up (slice 4a). They ride
+        // with the turn and are never written to the transcript.
+        session.role === "task"
+        ? TASK_SESSION_BRIEFING
         : undefined;
     try {
       result = await sidecar.call<{ accepted: boolean; turnId: string }>(
@@ -819,6 +826,11 @@ export function registerAgentIpc({
         ? { decision: resolution.decision }
         : {}),
     });
+    // Answering here answers everywhere (employee mode 0.5 slice 4a): the task
+    // that was waiting on this permission stops showing a question.
+    void closeTaskWaiting(host, resolution.requestId, null, (message, error) =>
+      logger.app("runtime", "warn", message, { data: String(error) }),
+    );
     return resolved;
   });
 
@@ -837,6 +849,11 @@ export function registerAgentIpc({
       sessionId,
       requestId,
     });
+    // Whichever path answered, the waiting record closes here too: the card in the
+    // task, the steward's dock and the sidebar count are one record.
+    void closeTaskWaiting(host, requestId, sessionId, (message, error) =>
+      logger.app("runtime", "warn", message, { data: String(error) }),
+    );
     if (settled) return settled;
     return sidecar.call("asktool.resolve", {
       ...resolution,

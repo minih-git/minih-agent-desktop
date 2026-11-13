@@ -22,6 +22,7 @@ import {
   createTaskStatusTool,
 } from "../services/session-messaging-tools";
 import { createTaskCardTool } from "../services/task-card-tool";
+import { openTaskWaiting } from "./task-waiting";
 import { taskCardsChangedSender } from "../services/task-cards-changed";
 import { registerPluginDevTools } from "../plugin-dev-tools";
 import { resolveLocalFile } from "../browser-view";
@@ -178,6 +179,19 @@ export function createSidecarRuntime({
     if (isStaleTerminalEvent(envelope)) return;
     runtimeState.agentHostBridge?.ingest(envelope);
     sendToRenderer(IPC.event.agentMessage, envelope);
+    // The waiting channel (employee mode 0.5 slice 4a): a question or a permission
+    // request in a **task** session is one record the four surfaces share. It is
+    // opened here because this is the single funnel every interactive event passes
+    // through, including the ones a subagent raised. The host ignores sessions
+    // that are not a task's.
+    if (
+      envelope.event.type === "asktool_request" ||
+      envelope.event.type === "tool_permission_request"
+    ) {
+      void openTaskWaiting(runtimeState.host, envelope, (message, error) =>
+        logger.app("runtime", "warn", message, { data: String(error) }),
+      );
+    }
   };
   const activeToolCalls = new Map<
     string,

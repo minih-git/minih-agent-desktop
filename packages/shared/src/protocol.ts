@@ -175,6 +175,12 @@ export const IPC = {
      * starts it through the ordinary dispatch.
      */
     taskRestart: "minih-agent-desktop/task/restart",
+    /**
+     * Hand a stuck task's work to somebody else (slice 4a): the host proposes a
+     * fresh card on the steward's conversation, carrying the original goal and
+     * nobody assigned, and the person confirms it like any first dispatch.
+     */
+    taskReassign: "minih-agent-desktop/task/reassign",
     sessionCreate: "minih-agent-desktop/session/create",
     sessionFork: "minih-agent-desktop/session/fork",
     sessionMoveProject: "minih-agent-desktop/session/moveProject",

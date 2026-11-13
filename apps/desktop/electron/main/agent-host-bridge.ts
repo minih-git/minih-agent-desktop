@@ -68,6 +68,12 @@ export type AgentHostBridgeOptions = {
    * link nothing listens and the callback is a no-op.
    */
   onNotifyEvent?: (event: NotifyEvent) => void;
+  /**
+   * One interactive request was settled, from any surface (the desktop's card, a
+   * phone over RACP, an MCP client). Main closes the host's waiting record for it
+   * so the task stops saying `person/answer` everywhere at once.
+   */
+  onInteractiveResolved?: (event: { sessionId: string; requestId: string }) => void;
   log: (level: "info" | "warn", message: string, data?: Record<string, unknown>) => void;
 };
 
@@ -279,6 +285,9 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
       options.onQueueChange?.({ sessionId, entries: entries.map(toQueueSummary) });
     },
     ...(options.onNotifyEvent ? { onNotifyEvent: options.onNotifyEvent } : {}),
+    ...(options.onInteractiveResolved
+      ? { onInteractiveResolved: options.onInteractiveResolved }
+      : {}),
   });
 
   // Housekeeping owns its own timer: it bounds the replay window of every

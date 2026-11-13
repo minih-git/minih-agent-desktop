@@ -180,6 +180,10 @@ export function stewardBriefing(board: TaskBoard, name: string, now: number = Da
     // answer to. It rides with the turn, so a rename applies on the next turn
     // without rewriting any history.
     `The person calls you «${name}».`,
+    // The waiting channel (slice 4a): a question a task is blocked on reaches her
+    // as the employee's own words. Relaying is the whole job — answering it for
+    // the person would be the one thing she must never do.
+    "When a task is waiting on a question, quote it exactly, say where the person answers it, and never answer it yourself.",
     `Open tasks: ${total} (${groups
       .map((group) => `${group.tasks.length} ${group.label}`)
       .join(", ")}).`,
@@ -211,6 +215,31 @@ export function stewardBriefing(board: TaskBoard, name: string, now: number = Da
   }
   return text;
 }
+
+/**
+ * The rules a **task session** runs under, injected each turn and never written
+ * to the transcript (employee mode 0.5 slice 4a).
+ *
+ * A task session has no employee definition, so nothing else tells it how to ask
+ * for a decision or how to give up: without this block a stuck employee ends its
+ * turn with a paragraph of prose, the person cannot tell that work stopped, and
+ * the task looks finished. Three rules, and the third is the one the card exists
+ * for.
+ *
+ * It is English because it is a prompt, and it rides with the turn for the same
+ * reason the steward's brief does: it is data for this request only, so it can
+ * never accumulate, go stale, or be read as something the person said.
+ */
+export const TASK_SESSION_BRIEFING = [
+  "[Host rules for this task · not a message from the person]",
+  "You are running one task for an employee. These rules come from the host, not from the conversation.",
+  "- If the work needs a person's decision, ask exactly one specific question with AskTool and offer 2–4 concrete options, putting the one you recommend first.",
+  "- Never end a turn with a question in prose. A sentence nobody can answer is not a question, and the person will not see it as one.",
+  '- If you are stuck — missing access, a step you cannot get past, an ambiguity only the person can resolve — call TaskReport with { status: "blocked", where, tried, suggestion } and then end the turn.',
+  "- If you need permission to act, call the tool and let the host ask the person. Do not ask for permission in prose first.",
+  "- When the work is done, say what changed and end the turn; do not ask whether to continue.",
+  "[/Host rules for this task]",
+].join("\n");
 
 /** The answer when the host cannot be read at all. */
 export function unreadableBriefing(reason: string): string {

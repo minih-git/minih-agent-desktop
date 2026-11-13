@@ -98,6 +98,16 @@ export type AgentHostOptions = {
    * being re-derived by observing the durable stream.
    */
   onNotifyEvent?: (event: NotifyEvent) => void;
+  /**
+   * Called when an interactive request is settled, **whoever** settled it: the
+   * desktop's own card, a phone over RACP, an MCP client.
+   *
+   * It carries the runtime request id and the session, which is exactly what the
+   * host's waiting channel needs to close the one record every surface shows
+   * (employee mode 0.5 slice 4a). Without it a request answered from the phone
+   * would keep its task `person/answer` until the turn ended.
+   */
+  onInteractiveResolved?: (event: { sessionId: string; requestId: string }) => void;
 };
 
 /**
@@ -247,6 +257,10 @@ export class AgentHost {
   private readonly onQueueChange?: (sessionId: string, entries: QueueEntryView[]) => void;
   /** The §11.6 notification hook; see `AgentHostOptions.onNotifyEvent`. */
   private readonly onNotifyEvent?: (event: NotifyEvent) => void;
+  private readonly onInteractiveResolved?: (event: {
+    sessionId: string;
+    requestId: string;
+  }) => void;
   private readonly states = new Map<string, SessionState>();
   private readonly turnIndex = new Map<string, string>();
   private readonly runtimeAliases = new Map<string, string>();
@@ -282,6 +296,7 @@ export class AgentHost {
     this.idleSweepIntervalMs = options.idleSweepIntervalMs ?? DEFAULT_IDLE_SWEEP_INTERVAL_MS;
     this.onQueueChange = options.onQueueChange;
     this.onNotifyEvent = options.onNotifyEvent;
+    this.onInteractiveResolved = options.onInteractiveResolved;
     this.hub = new EventHub({ clock: this.clock, ids: this.ids, limits: this.limits });
     this.queue = new TurnQueue(options.queueStore ?? new MemoryQueueStore(), this.limits.maxQueuedTurnsPerSession);
     this.approvals = new ApprovalBroker(options.approvals, this.clock);
@@ -1002,6 +1017,7 @@ export class AgentHost {
     if (!result.alreadyResolved) {
       this.afterApproval(state, request?.turnId);
       this.emit(state, "approval.resolved", result, { turnId: request?.turnId });
+      this.resolvedInteractively(state.id, response.approvalId);
     }
     return result;
   }
@@ -1032,6 +1048,7 @@ export class AgentHost {
       state.status = state.activeTurnId ? "running" : "idle";
     }
     this.emit(state, "input.resolved", { inputId: response.inputId, status: "resolved", by: principal.subject }, { turnId: entry.request.turnId });
+    this.resolvedInteractively(state.id, entry.original.requestId);
     return { inputId: response.inputId, status: "resolved" };
   }
 
@@ -1218,6 +1235,12 @@ export class AgentHost {
    * affect the turn or the approval it describes, so it is swallowed: a push is
    * best-effort by construction.
    */
+  /** Tell the embedding Host that one interactive request is settled. */
+  private resolvedInteractively(sessionId: string, requestId: string): void {
+    if (!this.onInteractiveResolved || !requestId) return;
+    this.onInteractiveResolved({ sessionId, requestId });
+  }
+
   private notifyEvent(event: { kind: RacpNotifyKind; sessionId: string; approvalId?: string }): void {
     if (!this.onNotifyEvent) return;
     // How much still waits for the user in this session, right now, including the

@@ -18,6 +18,7 @@ import { registerPluginSchemes } from "../plugin-schemes";
 import { applyNetworkProxyFromAppSettings } from "../network-proxy";
 import { readCloseBehavior } from "../window-preferences";
 import { createAgentHostBridge, type AgentHostBridge } from "../agent-host-bridge";
+import { closeTaskWaiting } from "../runtime/task-waiting";
 import { createBackendRouter, createDeleteOnlyOfflineBackend, type BackendRouter } from "../remote/backend-router";
 import { createRemoteHostsBoot, setActiveRemoteHostsBoot } from "./remote-hosts";
 import { createGatewayLinkBootstrap, setActiveGatewayLink } from "./gateway-link";
@@ -318,6 +319,14 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
         deps.onSessionQueueChange?.();
       },
       onNotifyEvent: (event) => notifyHost.notify(event),
+      // The waiting channel (employee mode 0.5 slice 4a): a request answered from
+      // the phone or an MCP client is answered everywhere, so the host's record of
+      // what the task is waiting on is closed from this one hook.
+      onInteractiveResolved: (event) => {
+        void closeTaskWaiting(getHost(), event.requestId, event.sessionId, (message, error) =>
+          logger.app("runtime", "warn", message, { data: String(error) }),
+        );
+      },
       log: (level, message, data) => logger.app("runtime", level, message, { data }),
     });
     // Memory measurement hook for the isolated soak harness

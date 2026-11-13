@@ -133,6 +133,11 @@ type RuntimeParams = {
   trustedExtensions?: TrustedExtensionSpec[];
   /** Delegates this session may spawn through `Task` (ADR 0062). */
   subagents?: SubagentDefinition[];
+  /**
+   * Whether this session is a task's own (employee mode 0.5 slice 4a), so it may
+   * declare `TaskReport`. Main resolves it from the session's `role`.
+   */
+  taskReporter?: boolean;
   /** Provider bindings for pinned models, keyed by `subagentModelKey`. */
   subagentProviders?: Record<string, RuntimeProviderConfig>;
   /** Opted-in override keys, separate from definition-only pinned bindings. */
@@ -262,6 +267,7 @@ async function runtimeFor(
     trustedExtensions,
     subagents,
     ...(botPersona ? { botPersona } : {}),
+    ...(params.taskReporter === true ? { taskReporter: true } : {}),
     subagentProviders,
     subagentModelKeys,
     jevApiKey: params.jevApiKey,

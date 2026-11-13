@@ -1,24 +1,5 @@
 import { join } from "node:path";
 import {
-  ErrorCodes as SharedErrorCodes,
-  isActiveInProject,
-  isCommandShellCatalog,
-  isMinihRouterVendorKey,
-  JEV_API_KEY_SECRET_REF,
-  normalizeMode,
-  type CommandShellCatalog,
-  type LearnedMemoryIndex,
-  type McpServerRecord,
-  type ModelBinding,
-  type Mode,
-  type Risk,
-  normalizeBotProfile,
-  type SessionThinkingLevel,
-  type SubagentDefinition,
-  type UserSkillRecord,
-  type UserSubagentRecord,
-} from "@minih-agent/shared";
-import {
   capabilitiesFromModelConfig,
   loadCustomSystemPrompt,
   loadInstructionChain,
@@ -28,23 +9,42 @@ import {
   resolveSubagentProviders,
   type UserSubagentDocument,
 } from "@minih-agent/agent-runtime";
+import {
+  type CommandShellCatalog,
+  isActiveInProject,
+  isCommandShellCatalog,
+  isMinihRouterVendorKey,
+  JEV_API_KEY_SECRET_REF,
+  type LearnedMemoryIndex,
+  type McpServerRecord,
+  type Mode,
+  type ModelBinding,
+  normalizeBotProfile,
+  normalizeMode,
+  type Risk,
+  type SessionThinkingLevel,
+  ErrorCodes as SharedErrorCodes,
+  type SubagentDefinition,
+  type UserSkillRecord,
+  type UserSubagentRecord,
+} from "@minih-agent/shared";
+import { getActiveRemoteHostsBoot } from "../bootstrap/remote-hosts";
 import { builtinSkills } from "../builtin-skills";
 import { resolveMinihRouterEndpoint } from "../ipc/minih-router-ipc";
-import { OAUTH_AUTH_KIND, type VendorOAuth } from "../oauth";
+import type { Logger } from "../logger";
 import {
   catalogModelConfigFor,
   type ModelsDevCatalog,
 } from "../models-dev-catalog";
-import type { Logger } from "../logger";
+import { OAUTH_AUTH_KIND, type VendorOAuth } from "../oauth";
 import type { PluginRuntime } from "../plugin-runtime";
-import type { UserMcpRuntime } from "../user-mcp";
-import type { RuntimeState } from "./context";
-import type { RuntimeProvider } from "./provider-catalog";
-import type { LoadedSkillDocument } from "../skill-document";
-import { getActiveRemoteHostsBoot } from "../bootstrap/remote-hosts";
 import { loadRemoteWorkspaceInstructions } from "../remote/remote-workspace-instructions.js";
-import { createRuntimeModelResolver } from "./model-resolution";
+import type { LoadedSkillDocument } from "../skill-document";
+import type { UserMcpRuntime } from "../user-mcp";
 import { resolveBotPersona, runtimeBotPersona } from "./bot-persona";
+import type { RuntimeState } from "./context";
+import { createRuntimeModelResolver } from "./model-resolution";
+import type { RuntimeProvider } from "./provider-catalog";
 
 const ErrorCodes = {
   ...SharedErrorCodes,
@@ -758,6 +758,10 @@ export function createSessionLaunchRuntime({
         // default capability set. A named definition that does not resolve is
         // handed over as missing so the turn fails instead of widening.
         ...(botPersona ? { botPersona } : {}),
+        // A task's own session may say it is stuck (employee mode 0.5 slice 4a).
+        // The role is Main's to read: the runtime never sees a session's role, and
+        // the tool it unlocks writes the task row on the host.
+        ...(session.role === "task" ? { taskReporter: true } : {}),
         subagentProviders: subagentBindings.providers,
         subagentModelKeys,
       },

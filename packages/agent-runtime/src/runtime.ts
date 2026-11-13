@@ -355,6 +355,7 @@ import {
 } from "./context-calibration.js";
 
 import { rebuildNodeNetworkTransport } from "./node-proxy.js";
+import { declaresTaskReport, TASK_REPORT_TOOL_NAME } from "./task-report.js";
 import {
   createProviderTransportHealth,
   explainsProviderFetchFailure,
@@ -1186,6 +1187,16 @@ export type AgentRuntimeOptions = {
    */
   botPersona?: { definition: SubagentDefinition } | { missingName: string };
   /**
+   * Whether this session is a **task**'s own session, so it may report that it
+   * is stuck (employee mode 0.5 slice 4a).
+   *
+   * Main sets it from the session's `role`, because a task session has no
+   * persona and no other session may hand the person a blocked card. The tool
+   * itself writes the task row on the host, which is the only thing that decides
+   * a stage.
+   */
+  taskReporter?: boolean;
+  /**
    * Provider resolved for each definition that pins one, keyed by its model
    * key. Main owns credential lookup, so a pinned provider that is missing
    * here is unavailable and the delegate must fail loudly rather than
@@ -1243,6 +1254,8 @@ export type RuntimeMatchConfig = {
    * previous turn's catalog.
    */
   botPersona?: { definition: SubagentDefinition } | { missingName: string };
+  /** A task session keeps `TaskReport`; nothing else declares it. */
+  taskReporter?: boolean;
 };
 
 /** Tool calls ride in the assistant content array as `type: "toolCall"`. A
@@ -1976,6 +1989,7 @@ export class DesktopAgentRuntime {
   private personaError?: string;
   /** The employee definition this session runs as, when it runs as one. */
   private botPersona?: SubagentDefinition;
+  private readonly taskReporter: boolean;
   /** That definition's prompt, composed into the system prompt. */
   private personaPrompt?: string;
   /**
@@ -2272,6 +2286,7 @@ export class DesktopAgentRuntime {
     this.trustedExtensionSpecs = opts.trustedExtensions ?? [];
     this.subagents = opts.subagents ?? [];
     this.personaIdentity = personaFingerprint(opts.botPersona);
+    this.taskReporter = opts.taskReporter === true;
     if (opts.botPersona && "missingName" in opts.botPersona) {
       // A named definition that does not resolve must not fall back to the full
       // catalog: that would silently run a steward with Write and Bash.
@@ -3275,6 +3290,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       // or not this session is an employee; the persona therefore needs its own
       // item, or becoming a steward would keep the previous turn's toolset.
       ["botPersona", this.personaIdentity === personaFingerprint(config.botPersona)],
+      ["taskReporter", this.taskReporter === (config.taskReporter === true)],
       ["subagents", safeJson(this.subagents) === safeJson(config.subagents ?? [])],
       ["subagentProviders", safeJson(this.subagentProviders) === safeJson(config.subagentProviders ?? {})],
       ["subagentModelKeys", safeJson([...this.subagentModelKeys].sort()) === safeJson([...new Set(config.subagentModelKeys ?? [])].sort())],
@@ -3797,6 +3813,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       if (memoryToolDescriptions[toolName]) return memoryToolDescriptions[toolName];
       if (backgroundTaskToolDescriptions[toolName]) return backgroundTaskToolDescriptions[toolName];
       switch (toolName) {
+        case "TaskReport":
+          // Only a task session sees this, and it is the one structured way out
+          // of an empty turn: the person gets where it stopped, not prose.
+          return "Report that this task is stuck and end the turn: `{ status: \"blocked\", where, tried, suggestion }`. The person sees the card it writes and can retry, reassign, drop or answer. Never end a turn stuck silently.";
         case "BrowserPreview":
           return "Open an HTML file in Minih-Agent-Desktop's built-in browser panel. `path` may be relative to a project folder or this session's scratch directory, or an absolute path inside those roots. No project is required for scratch previews. The preview live-reloads on later edits to the file or its sibling assets, so call once per page.";
         case "Read":
@@ -3851,6 +3871,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const parameters: Record<string, Parameters<typeof Type.Object>[0]> = {
       GenerateImages: imageGenerationParameters,
       TodoWrite: todoWriteParameters,
+      TaskReport: {
+        status: Type.Literal("blocked"),
+        where: Type.String({ minLength: 1, maxLength: 600 }),
+        tried: Type.String({ minLength: 1, maxLength: 600 }),
+        suggestion: Type.String({ minLength: 1, maxLength: 600 }),
+      },
       Read: {
         path: pathParam(
           "Existing regular file only, never a directory; workspace-relative or explicitly approved.",
@@ -4493,6 +4519,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         : ["Read", "Glob", "Grep", "BrowserPreview", "Bash", "Write", "Edit"];
     if (this.mode === "agent") {
       tools.push("PluginScaffold", "PluginPack", "GenerateImages", ...Object.keys(scheduledToolParameters));
+      // A task's own session is the one that can say "I am stuck" (employee mode
+      // 0.5 slice 4a). The steward and an ordinary conversation never declare it:
+      // the card it writes belongs to a task row, and only a task has one.
+      if (declaresTaskReport(this.mode, this.taskReporter)) tools.push(TASK_REPORT_TOOL_NAME);
       // Cross-session delivery (ADR builtin-session-messaging) is Agent-only: a
       // Plan or Goal turn must not hand work to another Agent.
       tools.push(...Object.keys(sessionToolParameters));
