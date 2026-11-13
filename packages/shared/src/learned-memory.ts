@@ -19,8 +19,11 @@ export const LEARNED_MEMORY_KINDS = [
 
 export type LearnedMemoryKind = (typeof LEARNED_MEMORY_KINDS)[number];
 
-/** A learned entry belongs to one project (or group), or to the user. */
-export type LearnedMemoryScopeKind = "project" | "user";
+/**
+ * Where a learned entry lives: one project (or project group), the user, or one
+ * employee — its lessons from tasks it already finished (0.5 slice 5).
+ */
+export type LearnedMemoryScopeKind = "project" | "user" | "bot";
 
 /** One entry of the session-start index, as `memory.index` returns it. */
 export type LearnedMemoryIndexEntry = {
@@ -46,9 +49,17 @@ export type LearnedMemoryIndex = {
   omittedCount: number;
   /** Bytes the returned entries spend in the host's budget. */
   bytes: number;
+  /**
+   * The employee's lessons from its earlier tasks, when this session is one of
+   * that employee's tasks (0.5 slice 5). They spend their own budget and are
+   * rendered as their own section: they are what the employee learned, not what
+   * the person said, and the section says so before listing one.
+   */
+  lessons?: LearnedMemoryIndexEntry[];
+  /** Lessons the host's smaller lesson budget left out. */
+  omittedLessons?: number;
 };
-
-/** Where an entry lives: one project (or project group), or the user. */
+/** Where an entry sits in its lifecycle: proposed, active, or archived. */
 export type LearnedMemoryStatus = "suggested" | "active" | "archived";
 export type LearnedMemoryOrigin = "explicit" | "user_ui" | "extracted";
 export type LearnedMemoryEvidence = "user_stated" | "verified" | "inferred";

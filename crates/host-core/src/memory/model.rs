@@ -7,6 +7,13 @@ use serde::Serialize;
 
 pub const SCOPE_PROJECT: &str = "project";
 pub const SCOPE_USER: &str = "user";
+/// An employee's own lessons, keyed by the employee's session id (employee
+/// mode 0.5 slice 5). Nothing the person writes addresses this scope directly:
+/// it is produced by extraction, read by that employee's tasks, and shown in the
+/// employee's own settings section.
+pub const SCOPE_BOT: &str = "bot";
+/// The scopes a client may name in a write. `bot` is deliberately absent: an
+/// employee's lessons are not something a caller asks to store.
 pub const SCOPES: [&str; 2] = [SCOPE_PROJECT, SCOPE_USER];
 
 pub const KIND_PREFERENCE: &str = "preference";
@@ -48,6 +55,11 @@ pub const INDEX_MAX_LINES: usize = 40;
 pub const INDEX_MAX_BYTES: usize = 6 * 1024;
 /// Per-entry accounting overhead for the index budget (kind, date, markers).
 pub const INDEX_ENTRY_OVERHEAD_BYTES: usize = 48;
+/// Session-start index for one employee's lessons: at most this many entries,
+/// inside their own byte budget, so a task always keeps its project notes.
+pub const LESSON_INDEX_MAX_LINES: usize = 12;
+/// Byte budget of the lessons section, counted like the main index.
+pub const LESSON_INDEX_MAX_BYTES: usize = 2 * 1024;
 /// Extraction lease length; a crashed owner never blocks the session forever.
 pub const EXTRACTION_LEASE_MS: i64 = 10 * 60 * 1000;
 /// Longest `last_error` the host records for a failed extraction run. It holds
@@ -58,9 +70,10 @@ pub fn is_known(value: &str, allowed: &[&str]) -> bool {
     allowed.contains(&value)
 }
 
-/// `project` or `user` plus the scope key. A project scope key is the owning
-/// project group id, or the canonical project path for a project that is not in
-/// a stored group (ADR 0249); the user scope has no key.
+/// `project`, `user`, or `bot` plus the scope key. A project scope key is the
+/// owning project group id, or the canonical project path for a project that is
+/// not in a stored group (ADR 0249); the user scope has no key; the bot scope's
+/// key is the employee's session id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryScope {
     pub kind: &'static str,
@@ -79,6 +92,14 @@ impl MemoryScope {
         Self {
             kind: SCOPE_USER,
             key: None,
+        }
+    }
+
+    /// One employee's own lessons.
+    pub fn bot(key: impl Into<String>) -> Self {
+        Self {
+            kind: SCOPE_BOT,
+            key: Some(key.into()),
         }
     }
 
@@ -118,12 +139,13 @@ pub struct MemoryEntryRecord {
 
 impl MemoryEntryRecord {
     pub fn scope(&self) -> MemoryScope {
+        let kind = match self.scope_kind.as_str() {
+            SCOPE_USER => SCOPE_USER,
+            SCOPE_BOT => SCOPE_BOT,
+            _ => SCOPE_PROJECT,
+        };
         MemoryScope {
-            kind: if self.scope_kind == SCOPE_USER {
-                SCOPE_USER
-            } else {
-                SCOPE_PROJECT
-            },
+            kind,
             key: self.scope_key.clone(),
         }
     }
@@ -176,6 +198,15 @@ pub struct MemoryIndex {
     pub omitted_count: i64,
     /// Bytes the returned entries spend in the budget.
     pub bytes: usize,
+    /// One employee's earlier tasks, rendered as their own section and never
+    /// mixed into the dated notes above: they are not the person's words, they
+    /// are what an employee learned, and the section says so (employee mode 0.5
+    /// slice 5).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lessons: Vec<MemoryIndexEntry>,
+    /// Lessons their own budget left out.
+    #[serde(default)]
+    pub omitted_lessons: i64,
 }
 
 /// A write the host refused. The code is stable and the message never repeats

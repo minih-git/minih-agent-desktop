@@ -88,12 +88,29 @@ pub(crate) fn validate(
     }
     // Extraction may only propose, and only extraction may propose (ADR §4). The
     // host decides this, not the caller that happens to pass `status`.
+    //
+    // An employee's own lesson is the one exception (0.5 slice 5): it is not a
+    // claim about the person and nothing in it needs their approval, so a
+    // `bot`-scope extraction is stored active and reaches the next task without
+    // an inbox step. The exception is the scope, not the caller: the same code
+    // path writing into a project or user scope still has to suggest.
+    let lesson = write.scope.kind == SCOPE_BOT;
     if matches!(path, WritePath::Create)
+        && !lesson
         && (write.origin == ORIGIN_EXTRACTED) != (write.status == STATUS_SUGGESTED)
     {
         return Ok(reject(
             REJECT_INVALID_FIELD,
             "an extracted memory must be a suggestion, and a suggestion must come from extraction",
+        ));
+    }
+    if matches!(path, WritePath::Create)
+        && lesson
+        && (write.origin == ORIGIN_EXTRACTED) != (write.status == STATUS_ACTIVE)
+    {
+        return Ok(reject(
+            REJECT_INVALID_FIELD,
+            "an employee lesson is written active and by extraction",
         ));
     }
     if write.source_message_ids.len() > MAX_SOURCE_MESSAGE_IDS {

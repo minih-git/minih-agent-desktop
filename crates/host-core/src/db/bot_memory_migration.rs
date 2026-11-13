@@ -145,9 +145,11 @@ fn violations(tx: &Transaction<'_>) -> Result<i64> {
 }
 
 fn rows(tx: &Transaction<'_>, table: &str) -> Result<i64> {
-    Ok(tx.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-        row.get(0)
-    })?)
+    Ok(
+        tx.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })?,
+    )
 }
 
 fn searchable(tx: &Transaction<'_>) -> Result<i64> {
@@ -473,8 +475,19 @@ mod tests {
     #[test]
     fn a_fresh_database_accepts_the_employee_scope() {
         let (_dir, db) = database();
-        assert_eq!(db.conn().query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), SCHEMA_VERSION);
-        seed_entry(db.conn(), "lesson-1", "bot", Some("employee-1"), "mvnw verify broke on JDK 17");
+        assert_eq!(
+            db.conn()
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            SCHEMA_VERSION
+        );
+        seed_entry(
+            db.conn(),
+            "lesson-1",
+            "bot",
+            Some("employee-1"),
+            "mvnw verify broke on JDK 17",
+        );
         seed_tombstone(db.conn(), 1, "bot", Some("employee-1"), "fp-x");
         for (column, _) in TASK_EXPERIENCE_COLUMNS {
             let present = db
@@ -495,8 +508,20 @@ mod tests {
     fn a_v38_database_keeps_its_rows_its_search_hits_and_learns_the_employee_scope() {
         let (dir, db) = database();
         let path = dir.path().join("pi.sqlite");
-        seed_entry(db.conn(), "proj-1", "project", Some("/repo/a"), "the migration needs a backup");
-        seed_entry(db.conn(), "user-1", "user", None, "the user prefers Chinese replies");
+        seed_entry(
+            db.conn(),
+            "proj-1",
+            "project",
+            Some("/repo/a"),
+            "the migration needs a backup",
+        );
+        seed_entry(
+            db.conn(),
+            "user-1",
+            "user",
+            None,
+            "the user prefers Chinese replies",
+        );
         seed_tombstone(db.conn(), 7, "project", Some("/repo/a"), "fp-proj-1");
         downgrade_to_v38(db.conn());
         assert_eq!(version(db.conn()), 38);
@@ -519,7 +544,13 @@ mod tests {
             .query_row("SELECT id FROM memory_tombstones", [], |row| row.get(0))
             .unwrap();
         assert_eq!(tombstone_id, 7);
-        seed_entry(db.conn(), "lesson-1", "bot", Some("employee-1"), "the gate needs cargo fmt first");
+        seed_entry(
+            db.conn(),
+            "lesson-1",
+            "bot",
+            Some("employee-1"),
+            "the gate needs cargo fmt first",
+        );
         assert_eq!(hits(db.conn(), "cargo"), vec!["lesson-1".to_string()]);
     }
 
@@ -529,7 +560,13 @@ mod tests {
     fn the_step_is_idempotent() {
         let (dir, db) = database();
         let path = dir.path().join("pi.sqlite");
-        seed_entry(db.conn(), "proj-1", "project", Some("/repo/a"), "the migration needs a backup");
+        seed_entry(
+            db.conn(),
+            "proj-1",
+            "project",
+            Some("/repo/a"),
+            "the migration needs a backup",
+        );
         downgrade_to_v38(db.conn());
         drop(db);
 
@@ -553,7 +590,13 @@ mod tests {
     fn historical_foreign_key_violations_do_not_block_the_upgrade() {
         let (dir, db) = database();
         let path = dir.path().join("pi.sqlite");
-        seed_entry(db.conn(), "proj-1", "project", Some("/repo/a"), "the migration needs a backup");
+        seed_entry(
+            db.conn(),
+            "proj-1",
+            "project",
+            Some("/repo/a"),
+            "the migration needs a backup",
+        );
         downgrade_to_v38(db.conn());
         // A state row whose session was deleted by an older build.
         db.conn()

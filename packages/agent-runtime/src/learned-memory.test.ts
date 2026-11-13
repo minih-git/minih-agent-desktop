@@ -127,6 +127,37 @@ describe("learnedMemoryPrompt", () => {
     const section = learnedMemoryPrompt(index([entry({ createdAt: Number.NaN })]))!;
     expect(section).toContain("- [preference · undated]");
   });
+  it("renders an employee's lessons as their own section, with the warning", () => {
+    const section = learnedMemoryPrompt({
+      ...index([entry()]),
+      lessons: [
+        entry({
+          id: "lesson-1",
+          kind: "fact",
+          scopeKind: "bot",
+          content: "The migration test needs a v38 fixture.",
+          createdAt: Date.UTC(2026, 10, 13, 0, 0, 0),
+        }),
+      ],
+      omittedLessons: 0,
+    })!;
+    // The dated notes stay exactly what they were, and the lessons follow in a
+    // section of their own whose heading says they are reference only.
+    expect(section).toContain("- [preference · 2026-10-02] Prefers terse Chinese replies.");
+    expect(section).toContain("## Lessons from this employee's earlier tasks");
+    expect(section).toContain(
+      "Lessons from this employee's earlier tasks — reference only, may be outdated; verify before relying on them.",
+    );
+    expect(section).toContain("- [2026-11-13] The migration test needs a v38 fixture.");
+    // The lesson is rendered after the notes, never beside them.
+    expect(section.indexOf("- [2026-11-13]")).toBeGreaterThan(
+      section.indexOf("- [preference · 2026-10-02]"),
+    );
+    // Lessons can be the only content: a task in a project with no notes of its
+    // own still starts with what the employee learned.
+    expect(learnedMemoryPrompt({ entries: [], omittedCount: 0, bytes: 0, lessons: [entry()] }))
+      .toContain("# Learned memory");
+  });
 });
 
 describe("learned memory at session start", () => {

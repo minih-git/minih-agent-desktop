@@ -149,7 +149,9 @@ test("turning reading off skips the read and carries the switch", async () => {
   assert.deepEqual(memoryWarnings(logs), []);
 });
 
-test("a session without a project still starts with the user-scope index", async () => {
+test("the index read names the session, so the host can resolve its scopes", async () => {
+  // A project path alone cannot say whose task this is: the employee lessons
+  // (0.5 slice 5) hang off the session, not off the folder.
   const indexCalls = [];
   const { runtime } = fixture({ indexCalls });
   const launch = await runtime.resolveAgentRuntimeLaunch(
@@ -157,14 +159,80 @@ test("a session without a project still starts with the user-scope index", async
     { providerId: provider.id, modelId: "parent" },
     {},
   );
-  // Naming no project is what makes the host answer with the user scope alone.
-  assert.deepEqual(indexCalls, [{}]);
+  assert.deepEqual(indexCalls, [{ sessionId: "session" }]);
   assert.deepEqual(launch.sidecarParams.learnedMemoryIndex, index);
   assert.equal(launch.sidecarParams.learnedMemoryRead, true);
 
-  // A session with a project still names it.
+  // A session with a project asks the same question; the host still decides
+  // which scopes that session reads.
   const scoped = [];
   const { runtime: projectRuntime } = fixture({ indexCalls: scoped });
   await launchParams(projectRuntime);
-  assert.deepEqual(scoped, [{ path: workspace }]);
+  assert.deepEqual(scoped, [{ sessionId: "session" }]);
+});
+
+test("an employee's lessons alone are enough to compose the section", async () => {
+  // The dated notes can be empty while the lessons are not: a task in a fresh
+  // project still starts with what its employee learned.
+  const withLessons = {
+    entries: [],
+    omittedCount: 0,
+    bytes: 0,
+    lessons: [
+      {
+        id: "lesson-1",
+        kind: "fact",
+        scopeKind: "bot",
+        content: "The migration test needs a v38 fixture.",
+        createdAt: 1_759_400_000_000,
+        updatedAt: 1_759_400_000_000,
+      },
+    ],
+    omittedLessons: 0,
+  };
+  const runtime = createSessionLaunchRuntime({
+    runtimeState: {
+      host: {
+        isAvailable: () => true,
+        call: async (method) => {
+          if (method === "commandShells.list") {
+            return { configuredId: "bash", effective: shell, fallback: false, choices: [shell] };
+          }
+          if (method === "providers.list") return { providers: [provider] };
+          if (method === "providers.getSecret") return {};
+          if (method === "agents.active") return { subagents: [] };
+          if (method === "skills.disabledBuiltins") return { disabled: [] };
+          if (method === "skills.active") return { skills: [] };
+          if (method === "mcp.active") return { servers: [] };
+          if (method === "project.memory.get") return {};
+          if (method === "memory.index") return { index: withLessons };
+          throw new Error(`Unexpected host call ${method}`);
+        },
+      },
+    },
+    logger: { app: () => {} },
+    userMcp: { setRecords() {}, toolsForProject: async () => [] },
+    plugins: {
+      listLoaded: () => [],
+      getSkills: () => [],
+      getTools: () => [],
+      getAgentExtensions: () => [],
+    },
+    sessionProjects: new Map(),
+    dataDir: workspace,
+    vendorOAuth: {},
+    modelsDevCatalog: {
+      configureAccount: () => {},
+      ensureLoaded: async () => {},
+      findModel: () => undefined,
+    },
+    getWorkspacePath: () => workspace,
+    pluginActiveInProject: () => true,
+    bindingForModel: (row, id) => row.models.find((model) => model.id === id),
+    effectiveSubagentModelConfig: () => ({}),
+    normalizeThinkingLevel: () => "off",
+  });
+  const params = await launchParams(runtime);
+  assert.deepEqual(params.learnedMemoryIndex.lessons, withLessons.lessons);
+  assert.deepEqual(params.learnedMemoryIndex.entries, []);
 });

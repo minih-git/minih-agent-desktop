@@ -20,6 +20,9 @@ pub(crate) mod tombstones;
 mod validation;
 
 #[cfg(test)]
+#[path = "bot_scope_tests.rs"]
+mod bot_scope_tests;
+#[cfg(test)]
 #[path = "extraction_tests.rs"]
 mod extraction_tests;
 #[cfg(test)]
@@ -41,8 +44,8 @@ pub(crate) use model::MemoryTombstoneRecord;
 pub(crate) use model::{
     is_known, MemoryEntryRecord, MemoryScope, EVIDENCES, EVIDENCE_USER_STATED, EVIDENCE_VERIFIED,
     EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_EXPLICIT,
-    ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
-    STATUS_SUGGESTED,
+    ORIGIN_USER_UI, SCOPES, SCOPE_BOT, SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE,
+    STATUS_ARCHIVED, STATUS_SUGGESTED,
 };
 pub(crate) use repository::{
     delete_learned_scope_tx, rekey_learned_memory_to_group, CreateMemoryOutcome,

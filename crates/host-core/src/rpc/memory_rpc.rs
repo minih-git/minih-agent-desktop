@@ -205,13 +205,24 @@ fn search(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
     Ok(json!({ "entries": entries }))
 }
 
-/// The session-start snapshot. `path` names the session's project; a caller
-/// without one gets the user scope alone, so a session that belongs to no
-/// project still starts with the user's own notes (ADR agent-long-term-memory
-/// §5).
+/// The session-start snapshot.
+///
+/// `sessionId` names the session whose scopes the host resolves: one of an
+/// employee's tasks also reads that employee's lessons (employee mode 0.5 slice
+/// 5), and nothing else does. `path` is the older project-only shape, kept for a
+/// caller that has no session; a caller with neither gets the user scope alone,
+/// so a session that belongs to no project still starts with the user's own
+/// notes (ADR agent-long-term-memory §5).
 fn index(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
-    let path = optional_str(params, "path")?;
-    let index = db.learned_memory_index(path).map_err(internal)?;
+    let index = match optional_str(params, "sessionId")? {
+        Some(session_id) => db
+            .learned_memory_index_for_session(session_id)
+            .map_err(internal)?
+            .ok_or_else(|| not_found("session not found"))?,
+        None => db
+            .learned_memory_index_for_path(optional_str(params, "path")?)
+            .map_err(internal)?,
+    };
     // The launch path records what it captured, so the manager can show the
     // measured size of the last session start (plan §1). A counter that cannot
     // be written is not a reason to fail a session launch.

@@ -143,21 +143,21 @@ fn insert_entry(conn: &Connection, entry: &MemoryEntryRecord) -> Result<()> {
     Ok(())
 }
 
-/// Two scope slots for one statement: the session's project scope (or none) and
-/// the user scope.
-fn scope_slots(scopes: &[MemoryScope]) -> (MemoryScope, MemoryScope) {
+/// Three scope slots for one statement: an employee's own lessons (or none),
+/// the session's project scope (or none), and the user scope.
+fn scope_slots(scopes: &[MemoryScope]) -> (MemoryScope, MemoryScope, MemoryScope) {
+    let mut bot = NO_SCOPE;
     let mut project = NO_SCOPE;
     let mut user = NO_SCOPE;
     for scope in scopes {
-        if scope.kind == SCOPE_USER {
-            user = MemoryScope::user();
-        } else {
-            project = scope.clone();
+        match scope.kind {
+            SCOPE_USER => user = MemoryScope::user(),
+            SCOPE_BOT => bot = scope.clone(),
+            _ => project = scope.clone(),
         }
     }
-    (project, user)
+    (bot, project, user)
 }
-
 #[derive(Debug, Clone)]
 pub(crate) struct CreateMemoryRequest {
     pub scope: MemoryScope,
@@ -234,8 +234,14 @@ impl Database {
         }
     }
 
-    /// The scopes a session reads: its project scope when it has one, then the
-    /// user scope. `None` means the session does not exist.
+    /// The scopes a session reads: an employee's own lessons when the session is
+    /// one of its tasks, then its project scope when it has one, then the user
+    /// scope. `None` means the session does not exist.
+    ///
+    /// Only `role = 'task'` reads the `bot` scope, and only the employee that
+    /// owns it: the employee container and the steward are not tasks, so their
+    /// own lessons never reach their context — an employee would otherwise
+    /// recall yesterday's work as if it were the person's request.
     pub fn learned_memory_scopes_for_session(
         &self,
         session_id: &str,
@@ -243,7 +249,20 @@ impl Database {
         let Some(paths) = self.project_scope_paths_for_session(session_id)? else {
             return Ok(None);
         };
-        let mut scopes = Vec::with_capacity(paths.len() + 1);
+        let owner: Option<(String, Option<String>)> = self
+            .conn()
+            .query_row(
+                "SELECT role, owner_session_id FROM sessions WHERE id = ?1",
+                params![session_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let mut scopes = Vec::with_capacity(paths.len() + 2);
+        if let Some((role, Some(owner))) = owner {
+            if role == "task" {
+                scopes.push(MemoryScope::bot(owner));
+            }
+        }
         if let Some(path) = paths.first() {
             scopes.push(self.learned_memory_scope_for_path(path)?);
         }
@@ -636,33 +655,31 @@ impl Database {
         Ok(SuggestionOutcome::Rejected)
     }
 
-    /// The session-start index: active entries of the project scope and the user
-    /// scope, explicit ones first, then by recency of use, inside a fixed budget.
+    /// The session-start index: active entries of the scopes the session may
+    /// read, explicit ones first, then by recency of use, inside a fixed budget.
     /// Ordering is total, so two launches of the same data return the same lines.
-    /// `path` is the project the session belongs to. Without one the snapshot is
-    /// the user scope alone, so a session that belongs to no project still
-    /// starts with the notes the user wrote for themselves (ADR §5).
-    pub fn learned_memory_index(&self, path: Option<&str>) -> Result<MemoryIndex> {
-        let scopes = match path {
-            Some(path) => vec![
-                self.learned_memory_scope_for_path(path)?,
-                MemoryScope::user(),
-            ],
-            None => vec![MemoryScope::user()],
-        };
-        let (project_slot, user_slot) = scope_slots(&scopes);
+    ///
+    /// An employee's lessons are collected separately: they spend their own
+    /// smaller budget and the runtime renders them as their own section, so a
+    /// task's project notes are never pushed out by what the employee learned
+    /// yesterday. `lessons` also carries them at most once per task.
+    pub fn learned_memory_index(&self, scopes: &[MemoryScope]) -> Result<MemoryIndex> {
+        let (bot_slot, project_slot, user_slot) = scope_slots(scopes);
         let sql = format!(
             "SELECT {ENTRY_COLUMNS} FROM memory_entries
              WHERE status = ?1
                AND ((scope_kind = ?2 AND IFNULL(scope_key, '') = ?3)
-                 OR (scope_kind = ?4 AND IFNULL(scope_key, '') = ?5))
-             ORDER BY CASE WHEN origin = ?6 THEN 0 ELSE 1 END,
+                 OR (scope_kind = ?4 AND IFNULL(scope_key, '') = ?5)
+                 OR (scope_kind = ?6 AND IFNULL(scope_key, '') = ?7))
+             ORDER BY CASE WHEN origin = ?8 THEN 0 ELSE 1 END,
                       last_used_at DESC, updated_at DESC, id ASC"
         );
         let mut statement = self.conn().prepare_cached(&sql)?;
         let rows = statement.query_map(
             params![
                 STATUS_ACTIVE,
+                bot_slot.kind,
+                bot_slot.stored_key(),
                 project_slot.kind,
                 project_slot.stored_key(),
                 user_slot.kind,
@@ -672,11 +689,25 @@ impl Database {
             entry_from_row,
         )?;
         let mut entries = Vec::new();
+        let mut lessons = Vec::new();
         let mut bytes = 0usize;
         let mut omitted = 0i64;
+        let mut omitted_lessons = 0i64;
+        let mut lesson_bytes = 0usize;
         for row in rows {
             let entry = row?;
             let cost = entry.index_bytes();
+            if entry.scope_kind == SCOPE_BOT {
+                if lessons.len() >= LESSON_INDEX_MAX_LINES
+                    || lesson_bytes + cost > LESSON_INDEX_MAX_BYTES
+                {
+                    omitted_lessons += 1;
+                    continue;
+                }
+                lesson_bytes += cost;
+                lessons.push(MemoryIndexEntry::from(&entry));
+                continue;
+            }
             if entries.len() >= INDEX_MAX_LINES || bytes + cost > INDEX_MAX_BYTES {
                 omitted += 1;
                 continue;
@@ -688,7 +719,35 @@ impl Database {
             entries,
             omitted_count: omitted,
             bytes,
+            lessons,
+            omitted_lessons,
         })
+    }
+
+    /// The same snapshot for a session the host must look up first: its own
+    /// project scope, the user scope, and — when it is one of an employee's
+    /// tasks — that employee's lessons. `None` means the session does not exist.
+    pub fn learned_memory_index_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<MemoryIndex>> {
+        let Some(scopes) = self.learned_memory_scopes_for_session(session_id)? else {
+            return Ok(None);
+        };
+        Ok(Some(self.learned_memory_index(&scopes)?))
+    }
+
+    /// The snapshot for a caller that names a project path instead of a session:
+    /// the project scope and the user scope, with no lessons.
+    pub fn learned_memory_index_for_path(&self, path: Option<&str>) -> Result<MemoryIndex> {
+        let scopes = match path {
+            Some(path) => vec![
+                self.learned_memory_scope_for_path(path)?,
+                MemoryScope::user(),
+            ],
+            None => vec![MemoryScope::user()],
+        };
+        self.learned_memory_index(&scopes)
     }
 
     /// Search active entries of the given scopes. Hits refresh `last_used_at`
@@ -702,7 +761,7 @@ impl Database {
             return Ok(Vec::new());
         }
         crate::session_search::register_contains(self)?;
-        let (project_slot, user_slot) = scope_slots(request.scopes);
+        let (bot_slot, project_slot, user_slot) = scope_slots(request.scopes);
         let kinds = if request.kinds.is_empty() {
             None
         } else {
@@ -726,7 +785,8 @@ impl Database {
             "SELECT {} FROM memory_entries m
              WHERE m.status = ?1
                AND ((m.scope_kind = ?2 AND IFNULL(m.scope_key, '') = ?3)
-                 OR (m.scope_kind = ?4 AND IFNULL(m.scope_key, '') = ?5))
+                 OR (m.scope_kind = ?4 AND IFNULL(m.scope_key, '') = ?5)
+                 OR (m.scope_kind = ?10 AND IFNULL(m.scope_key, '') = ?11))
                AND (?6 IS NULL OR m.kind IN (SELECT value FROM json_each(?6)))
                AND (pi_search_contains(m.content, ?8)
                     OR pi_search_contains(COALESCE(m.rationale, ''), ?8)) {fts}
@@ -747,7 +807,9 @@ impl Database {
                 kinds,
                 quoted,
                 query,
-                limit
+                limit,
+                bot_slot.kind,
+                bot_slot.stored_key()
             ],
             entry_from_row,
         )?;
