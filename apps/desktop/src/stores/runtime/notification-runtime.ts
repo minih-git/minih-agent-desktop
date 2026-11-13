@@ -2,6 +2,7 @@ import i18n from "i18next";
 import { api } from "../../lib/api";
 import { playNotificationChime } from "../../lib/notification-sound";
 import type { StoreGet } from "../slices/types";
+import { taskLabelsFor } from "./task-waiting-runtime";
 
 export type InteractivePromptKind = "ask" | "permission" | "plan";
 
@@ -12,6 +13,8 @@ export type InteractivePromptPayload = {
   requestId?: string;
   /** Turn that is blocked on the request, when the runtime reports one. */
   turnId?: string;
+  /** Why the tool says it needs the person, for a permission request. */
+  reason?: string;
 };
 
 export type InteractivePromptNotifier = (
@@ -26,18 +29,35 @@ export function createInteractivePromptNotifier(
   return (sessionId, kind, payload) => {
     const session = get().sessions.find((item) => item.id === sessionId);
     const sessionTitle = session?.title || i18n.t("chat.untitledTask");
+    // A task's own session is named the way the person knows it: the employee,
+    // then the task (employee mode 0.5 slice 4a). The directory is kept by
+    // `task-waiting-runtime`, which reads it on `tasksChanged`/`botsChanged`, so
+    // this stays synchronous.
+    const labels = taskLabelsFor(sessionId);
+    const taskTitle = labels
+      ? i18n.t("notifications.taskWaitingTitle", {
+          employee: labels.employee ?? i18n.t("bots.card.targetUnknown"),
+          task: labels.task,
+        })
+      : undefined;
     let title = "";
     let body = "";
     if (kind === "ask") {
       // Session titles can contain generated/tool-call text; keep the native
       // banner title stable and let its body carry the actual question.
-      title = i18n.t("notifications.askTitle");
+      title = taskTitle ?? i18n.t("notifications.askTitle");
       body = payload?.question?.trim() || i18n.t("notifications.askBodyFallback");
     } else if (kind === "permission") {
-      title = i18n.t("notifications.permissionTitle", { sessionTitle });
-      body = i18n.t("notifications.permissionBody", {
-        toolName: payload?.toolName || "tool",
-      });
+      title = taskTitle ?? i18n.t("notifications.permissionTitle", { sessionTitle });
+      body =
+        labels && payload?.reason?.trim()
+          ? i18n.t("notifications.permissionBodyWithReason", {
+              toolName: payload?.toolName || "tool",
+              reason: payload.reason.trim(),
+            })
+          : i18n.t("notifications.permissionBody", {
+              toolName: payload?.toolName || "tool",
+            });
     } else {
       title = i18n.t("notifications.planApprovalTitle", { sessionTitle });
       body = i18n.t("notifications.planApprovalBody");

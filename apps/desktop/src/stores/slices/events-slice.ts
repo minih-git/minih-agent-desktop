@@ -558,6 +558,7 @@ export function createEventsSlice({
           }));
           notifyInteractivePrompt(envelope.sessionId, "permission", {
             toolName: event.request.toolName,
+            reason: event.request.reason,
             requestId: event.request.requestId,
             turnId: envelope.turnId,
           });

@@ -9,6 +9,7 @@ import {
   normalizeMode,
   PROTOCOL_VERSION,
 } from "@minih-agent/shared";
+import i18n from "i18next";
 import { api } from "../lib/api";
 import { rememberProject } from "../lib/recent-projects";
 import {
@@ -70,6 +71,7 @@ import {
   untitledTaskTitle,
 } from "../lib/session-title-utils";
 import { createInteractivePromptNotifier } from "./runtime/notification-runtime";
+import { startTaskWaitingRuntime } from "./runtime/task-waiting-runtime";
 import { createTranscriptReadingRuntime } from "./runtime/transcript-reading-runtime";
 export type {
   AgentTurnResult,
@@ -129,6 +131,15 @@ const interactionRuntime: InteractionRuntime = createInteractionRuntime();
 const notifyInteractivePrompt = createInteractivePromptNotifier(
   runtimeStoreAccess.get,
 );
+// The waiting channel's renderer half (employee mode 0.5 slice 4a): a task is
+// named by its employee and its title in a notification, and a task that stopped
+// gets one pinned reminder plus one system notification per stage. Started here
+// because the toast it shows is this store's.
+startTaskWaitingRuntime({
+  translate: (key, options) => i18n.t(key, options),
+  showToast: (message, options) => runtimeStoreAccess.get().showToast(message, options as never),
+  notifyNative: api.showNativeNotification,
+});
 const sessionCoordination: SessionCoordination = createSessionCoordination({
   ...runtimeStoreAccess,
   runtime: sessionRuntime,
