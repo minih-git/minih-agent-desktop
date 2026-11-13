@@ -818,6 +818,15 @@ export const fr = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   "bots": {
+    "taskStage": {
+      "queued": "En file d'attente",
+      "working": "En cours",
+      "waiting": "En attente",
+      "blocked": "Bloquée",
+      "failed": "Échouée",
+      "personAnswer": "En attente de votre réponse",
+      "personAccept": "Prête à relire",
+    },
     "group": {
       "title": "Employés",
       "openBot": "Ouvrir {{name}}",
@@ -940,6 +949,7 @@ export const fr = {
       "archiveDiscardConfirm": "{{detail}}\n\nArchiver quand même et abandonner ce travail ?",
     },
     "workbench": {
+      "title": "Espace de travail",
       "tabs": "Sections de l'employé",
       "noDuty": "Aucune fonction définie",
       "modelInherited": "Le modèle suit cet employé",

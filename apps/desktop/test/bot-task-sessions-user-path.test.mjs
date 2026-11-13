@@ -264,9 +264,15 @@ window.tasksProbe = async () => {
     "the completed task's sidebar row",
   );
   const completedRow = document.querySelector("[data-sidebar-bot-task='task-0001']");
+  // The task's own word for the stage, not the employee's status word: a task
+  // waiting to be reviewed reads "Ready for review", never "Waiting for you".
   check(
-    /Waiting for you/.test(completedRow.textContent),
+    /Ready for review/.test(completedRow.textContent),
     "the row does not name the stage it is in: " + completedRow.textContent,
+  );
+  check(
+    !/Waiting for you/.test(completedRow.textContent),
+    "the row reads the employee's status instead of the task's stage: " + completedRow.textContent,
   );
   report.completedRow = completedRow.textContent.replace(/\s+/g, " ").trim();
 

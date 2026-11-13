@@ -823,6 +823,15 @@ export const zhTW = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    taskStage: {
+      queued: "排隊中",
+      working: "進行中",
+      waiting: "等待中",
+      blocked: "受阻",
+      failed: "失敗",
+      personAnswer: "等你回答",
+      personAccept: "待驗收",
+    },
     group: {
       title: "員工",
       openBot: "開啟 {{name}}",
@@ -945,6 +954,7 @@ export const zhTW = {
       archiveDiscardConfirm: "{{detail}}\n\n仍要封存並捨棄這些變更？",
     },
     workbench: {
+      title: "工作台",
       tabs: "員工分區",
       noDuty: "尚未填寫職務",
       modelInherited: "模型沿用該員工",

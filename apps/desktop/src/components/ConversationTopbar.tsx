@@ -32,10 +32,12 @@ import {
 import { Button, Input, TooltipButton } from "./ui";
 import { useBots } from "../features/bots/use-bots";
 import { useTasks } from "../features/bots/use-tasks";
-import { taskStageLabelKey, taskStatusTone } from "../features/bots/bot-status";
+import { taskStageLabelKey } from "../features/bots/bot-task-stage";
+import { taskStatusTone } from "../features/bots/bot-status";
 import { taskRepoName } from "../features/bots/BotTaskList";
 import { TaskRestartButton } from "../features/bots/TaskRestartButton";
 import { TaskWorkspaceStatus } from "../features/bots/TaskWorkspaceStatus";
+import { TaskArchiveButton } from "../features/bots/TaskArchiveButton";
 
 function projectName(path?: string | null, name?: string | null) {
   if (name) return name;
@@ -345,14 +347,25 @@ export function ConversationTopbar({
           {remoteSession && <span className="thread-item-source">{t("remote:remote")} · {activeSession?.remoteHostLabel}</span>}
           {task ? (
             <div className="ct-task-meta" data-task-header={task.id}>
-              <span className="ct-chip" data-task-origin={task.origin}>
+              {/* The only chip a narrow header keeps is this one, so it is also
+                  the one that truncates: the full "employee @ repository" stays
+                  available as the chip's own tooltip. */}
+              <span
+                className="ct-chip"
+                data-task-origin={task.origin}
+                title={[taskEmployee?.profile.name ?? task.employeeSessionId, taskRepoName(task)]
+                  .filter(Boolean)
+                  .join(" @ ")}
+              >
                 {taskEmployee?.profile.name ?? task.employeeSessionId}
                 {taskRepoName(task) ? ` @ ${taskRepoName(task)}` : ""}
               </span>
               {/* Where it works, which branch it got, which commit it started
-                  from and how its work will be delivered; a failed
-                  preparation retries from here. */}
-              <TaskWorkspaceStatus task={task} withRetry withArchive />
+                  from and how its work will be delivered, as chips that may be
+                  dropped at a narrow width. A failed preparation is one red
+                  chip here; its words and its retry live in the banner below
+                  the band, where they fit. */}
+              <TaskWorkspaceStatus task={task} />
               {task.archivedAt ? (
                 <span className="ct-chip archived" data-task-stage="archived">
                   {t("bots.tasks.archived")}
@@ -362,20 +375,24 @@ export function ConversationTopbar({
                 // it; the stage vocabulary has no word for that, so it gets its
                 // own chip rather than a stage the host does not hold.
                 <span className="ct-chip interrupted" data-task-stage="interrupted">
-                  {t("bots.tasks.interrupted")}
+                  {t(taskStageLabelKey(task.stage, { interrupted: true }))}
                 </span>
               ) : (
                 <span className={`ct-chip ${taskStatusTone(task)}`} data-task-stage={task.stage}>
                   {t(taskStageLabelKey(task.stage))}
                 </span>
               )}
+              {/* The way back from an interruption sits beside the chip that
+                  says there was one. */}
               <TaskRestartButton task={task} onRestarted={() => void taskState.reload()} />
-              <span className="ct-chip">
+              <span className="ct-chip" data-task-optional="early">
                 {task.origin === "steward"
                   ? t("bots.workbench.originSteward")
                   : t("bots.workbench.originDirect")}
               </span>
-              <span className="ct-chip">#{task.shortId}</span>
+              <span className="ct-chip" data-task-optional="early">
+                #{task.shortId}
+              </span>
             </div>
           ) : null}
         </div>
@@ -383,6 +400,9 @@ export function ConversationTopbar({
 
       <div className="ct-right">
         <div className="ct-actions">
+          {/* Archiving is an action on the task, so it sits with the other
+              actions instead of reading as one more chip in the header. */}
+          {task && !task.archivedAt ? <TaskArchiveButton task={task} /> : null}
           <TooltipButton
             type="button"
             className="ct-icon-btn"

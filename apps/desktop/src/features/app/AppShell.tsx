@@ -28,6 +28,8 @@ import { useAppStore } from "../../stores/app-store";
 import { api } from "../../lib/api";
 import { PortalVisibilityProvider } from "../../lib/portal-visibility";
 import { workPanelLayout } from "../../lib/work-panel-resize";
+import { EmployeeTitlebar } from "../bots/EmployeeTitlebar";
+import { ActiveTaskWorkspaceBanner } from "../bots/TaskWorkspaceBanner";
 import { useBots } from "../bots/use-bots";
 import { PluginViewPage } from "../plugins/PluginViewPage";
 import { LiveVoiceStatusHost } from "../voice/live/LiveVoiceStatusHost";
@@ -214,13 +216,25 @@ export function AppShell() {
 
             {!workPanelMaximized && (
               <section ref={setToastAnchor} className="main-pane">
-                {page === "chat" ? (
+                {page === "chat" && !workbenchEmployee ? (
                   <ConversationTopbar
                     sidebarCollapsed={sidebarCollapsed}
                     workPanelOpen={presentedWorkPanelOpen}
                     onToggleSidebar={toggleSidebar}
                     onNewTask={() => void runMenuCommand("newTask")}
                     onOpenSearch={() => setSearchOpen(true)}
+                  />
+                ) : workbenchEmployee ? (
+                  /* The pane is showing this employee's workbench, not a
+                     conversation: the band names the employee instead of
+                     keeping the last session's breadcrumb and controls. */
+                  <EmployeeTitlebar
+                    employee={workbenchEmployee}
+                    sidebarCollapsed={sidebarCollapsed}
+                    workPanelOpen={presentedWorkPanelOpen}
+                    sidebarToggleShortcut={sidebarToggleShortcut}
+                    onToggleSidebar={reopenSidebar}
+                    onNewTask={() => void runMenuCommand("newTask")}
                   />
                 ) : (
                   <div
@@ -240,6 +254,10 @@ export function AppShell() {
                     )}
                   </div>
                 )}
+                {/* A task whose workspace could not be prepared says so in the
+                    content area, where the words and the retry fit; the band
+                    above keeps one red chip. */}
+                {page === "chat" && !workbenchEmployee ? <ActiveTaskWorkspaceBanner /> : null}
                 {page !== "settings" ? <UpdateBanner /> : null}
 
                 {backendDown && (
@@ -314,12 +332,17 @@ export function AppShell() {
                       <PluginViewPage />
                     </div>
                   ) : workbenchEmployee ? (
-                    <EmployeeWorkbench
-                      employee={workbenchEmployee}
-                      onOpenTask={(task) => {
-                        void useAppStore.getState().selectSession(task.sessionId);
-                      }}
-                    />
+                    /* Same page frame as the other destination routes: it owns
+                       the scroll, the side margins and the reading width, so
+                       the workbench does not render flush against the pane. */
+                    <div className="route-surface route-page">
+                      <EmployeeWorkbench
+                        employee={workbenchEmployee}
+                        onOpenTask={(task) => {
+                          void useAppStore.getState().selectSession(task.sessionId);
+                        }}
+                      />
+                    </div>
                   ) : (
                     <ChatSurface visible={page === "chat"} />
                   )}

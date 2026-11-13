@@ -107,16 +107,6 @@ export function botInitials(name: string): string {
   return first.toLocaleUpperCase();
 }
 
-/**
- * The stage word a task row shows, e.g. "Waiting for you" or "Working".
- *
- * A task is a stage plus a colour; the word comes from the same catalog the
- * employee dot uses, so one stage never reads two ways in one sidebar.
- */
-export function taskStageLabelKey(stage: TaskStage): string {
-  return botStatusView({ kind: "stage", stage }).labelKey;
-}
-
 /** Where a task sits in a list, as one of three tones (ADR §7). */
 export function taskStatusTone(task: Pick<TaskView, "stage">): TaskTone {
   return taskTone(task.stage);

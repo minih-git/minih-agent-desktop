@@ -817,6 +817,15 @@ export const ptBR = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    taskStage: {
+      queued: "Na fila",
+      working: "Em andamento",
+      waiting: "Aguardando",
+      blocked: "Bloqueada",
+      failed: "Falhou",
+      personAnswer: "Aguardando sua resposta",
+      personAccept: "Pronta para revisão",
+    },
     group: {
       title: "Funcionários",
       openBot: "Abrir {{name}}",
@@ -939,6 +948,7 @@ export const ptBR = {
       archiveDiscardConfirm: "{{detail}}\n\nArquivar mesmo assim e descartar esse trabalho?",
     },
     workbench: {
+      title: "Área de trabalho",
       tabs: "Seções do funcionário",
       noDuty: "Nenhuma função escrita ainda",
       modelInherited: "O modelo segue este funcionário",

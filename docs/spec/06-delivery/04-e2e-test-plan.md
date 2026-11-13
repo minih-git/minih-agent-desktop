@@ -9263,6 +9263,49 @@ selection already in place shows it without waiting for another event.
   combination (restart, then click, then a live turn) is not claimed as a full
   end-to-end run.
 
+#### E2E-BOT-workbench-surfaces-carry-their-layout: The workbench, its sidebar rows and the task header are laid out, not bare
+
+- **Preconditions**: An employee holds one task waiting on the person, one in
+  progress and one archived. The person opens the employee from the sidebar.
+- **Steps**: 1) Read the workbench in the dark theme, then in the light theme.
+  2) Open the employee's history rows in the sidebar. 3) Open the waiting task's
+  session and read its header. 4) Make that task's workspace preparation fail
+  and reopen its header.
+- **Expected**: The workbench header shows an avatar, the name one step larger
+  and bold, one line of duty · model · permission · scope, and the count of
+  waiting tasks — orange while any are waiting. "New task" is one dashed row:
+  the field takes the remaining width, then the repository, then Start, all on
+  one baseline, with the hint smaller and fainter below. The tabs sit on one line
+  with the selection underlined; group titles are small, uppercased and faint; a
+  task is a card whose title and latest step sit left and whose stage sits right
+  — orange while waiting, blue in progress, green once archived, red when blocked
+  or failed. A task's stage reads in the task's own words (queued / in progress /
+  waiting / blocked / failed / waiting for your answer / ready for review), never
+  in the employee's status words, in the sidebar row, the workbench card and the
+  header chip alike. Sidebar task rows are indented under their employee, the
+  waiting one is orange, and the history row is faint with its count. The task
+  header is one fixed-height row of chips and never wraps or leaves the window:
+  employee @ repository and the stage always show, the branch, base, delivery,
+  origin and short id drop out as the pane narrows, no two chips may overlap and
+  the row never reaches the action group, the employee chip truncates with its
+  full text on hover, and the task title keeps about a dozen characters before it
+  ellipsises (1440, 1024 and 900 all checked). Archiving is an icon in the
+  header's action group, not a chip. A failed workspace
+  keeps one red "workspace failed" chip in the header; its words and "retry
+  preparing" sit in a red-bordered banner directly below the header, never
+  overlapping it. While the workbench owns the pane the title bar names that
+  employee and the surface, never the previous conversation's breadcrumb or
+  session actions.
+- **Specs linked**: ADR `bot-sessions-and-steward` §4/§7, prototype
+  `员工模式-0.5-原型` ② ③
+- **Acceptance**: C (conversation & stream), Quality
+- **Milestone**: Employee mode 0.5, slice 2
+- **Status**: Partial. `apps/desktop/test/bot-workbench-visual.test.mjs` renders
+  the production components against the compiled renderer stylesheet in a real
+  Electron window at 1440×900, captures both themes to `.artifacts/`, and asserts
+  the geometry and colours above; `apps/desktop/test/bot-ui-class-styles.test.mjs`
+  fails if any class these surfaces use has no rule in the stylesheet.
+
 #### E2E-146a: Approved Plan/Goal progress text continues once
 
 - **Preconditions**: A project-bound session has an approved Plan or Goal and a

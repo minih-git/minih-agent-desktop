@@ -827,6 +827,15 @@ export const ko = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    taskStage: {
+      queued: "대기 중",
+      working: "진행 중",
+      waiting: "대기",
+      blocked: "차단됨",
+      failed: "실패",
+      personAnswer: "답변 대기",
+      personAccept: "검토 대기",
+    },
     group: {
       title: "직원",
       openBot: "{{name}} 열기",
@@ -949,6 +958,7 @@ export const ko = {
       archiveDiscardConfirm: "{{detail}}\n\n그래도 보관하고 이 작업을 버릴까요?",
     },
     workbench: {
+      title: "작업대",
       tabs: "직원 섹션",
       noDuty: "아직 직무가 없습니다",
       modelInherited: "모델은 이 직원을 따릅니다",

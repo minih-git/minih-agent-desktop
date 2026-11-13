@@ -36,6 +36,7 @@ import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { EmployeeWorkbench } from "../../apps/desktop/src/features/bots/EmployeeWorkbench";
 import { ConversationTopbar } from "../../apps/desktop/src/components/ConversationTopbar";
+import { ActiveTaskWorkspaceBanner } from "../../apps/desktop/src/features/bots/TaskWorkspaceBanner";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import { useWorktreeUi } from "../../apps/desktop/src/features/worktree/worktree-ui-store";
 import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
@@ -123,6 +124,9 @@ window.minihAgent = {
     }
     if (channel === IPC.invoke.taskWorkspaceRetry) {
       tasks = tasks.map((row) => ({ ...row, workspaceStatus: "ready", workspaceError: undefined }));
+      // The host announces the new row, so every surface reading the list shows
+      // the same state without polling for it.
+      emit(IPC.event.tasksChanged, { employeeSessionId: "router", taskId: tasks[0].id, reason: "workspace" });
       return { ok: true, data: { task: tasks[0] } };
     }
     if (channel === IPC.invoke.taskArchive) {
@@ -183,6 +187,15 @@ const topbar = () => React.createElement(ConversationTopbar, {
   sidebarCollapsed: false, workPanelOpen: false,
   onToggleSidebar: () => undefined, onNewTask: () => undefined, onOpenSearch: () => undefined,
 });
+
+// The task session as a person sees it: the band plus the banner that carries a
+// failed workspace's words and its retry.
+const sessionChrome = () => React.createElement(
+  React.Fragment,
+  null,
+  topbar(),
+  React.createElement(ActiveTaskWorkspaceBanner),
+);
 
 window.workspaceProbe = async () => {
   const report = {};
@@ -251,15 +264,20 @@ window.workspaceProbe = async () => {
     ],
     activeSessionId: "sess-task-0002",
   });
-  mount(topbar());
+  mount(sessionChrome());
   await until(() => document.querySelector("[data-task-workspace-retry]"), "the retry control");
   const header = document.querySelector("[data-task-header]");
+  const banner = document.querySelector("[data-task-workspace-banner]");
   check(/Workspace failed/.test(text(header)), "the header does not say the workspace failed: " + text(header));
-  check(/setup command failed/.test(text(header)), "the header does not say why: " + text(header));
+  check(Boolean(banner), "a failed workspace shows no banner");
+  check(/setup command failed/.test(text(banner)), "the banner does not say why: " + text(banner));
+  check(!/setup command failed/.test(text(header)), "the header still carries the whole error: " + text(header));
   report.failedHeader = text(header);
+  report.failedBanner = text(banner);
   const retriesBefore = callsTo(IPC.invoke.taskWorkspaceRetry).length;
   flushSync(() => document.querySelector("[data-task-workspace-retry]").click());
   await until(() => callsTo(IPC.invoke.taskWorkspaceRetry).length === retriesBefore + 1, "the retry call");
+  await until(() => !document.querySelector("[data-task-workspace-banner]"), "the banner to go away");
   await until(() => /Workspace ready/.test(text(document.querySelector("[data-task-header]"))), "the ready chip");
   check(!document.querySelector("[data-task-workspace-retry]"), "the retry control stayed after it worked");
   report.retried = text(document.querySelector("[data-task-header]"));
