@@ -382,9 +382,10 @@ export function ConversationTopbar({
                   {t(taskStageLabelKey(task.stage))}
                 </span>
               )}
-              {/* The way back from an interruption sits beside the chip that
-                  says there was one. */}
-              <TaskRestartButton task={task} onRestarted={() => void taskState.reload()} />
+              {/* 「重新开工」 is an action on the task, so it goes with the other
+                  actions below rather than reading as one more chip: the chip
+                  row says what happened, the action group is what the person
+                  can do about it (same place #252 put the archive button). */}
               <span className="ct-chip" data-task-optional="early">
                 {task.origin === "steward"
                   ? t("bots.workbench.originSteward")
@@ -400,8 +401,12 @@ export function ConversationTopbar({
 
       <div className="ct-right">
         <div className="ct-actions">
-          {/* Archiving is an action on the task, so it sits with the other
-              actions instead of reading as one more chip in the header. */}
+          {/* Starting an interrupted task again, and archiving a finished one:
+              both act on the task, so both sit here instead of in the chip
+              row. */}
+          {task ? (
+            <TaskRestartButton task={task} onRestarted={() => void taskState.reload()} />
+          ) : null}
           {task && !task.archivedAt ? <TaskArchiveButton task={task} /> : null}
           <TooltipButton
             type="button"
