@@ -105,3 +105,38 @@ Chromium `sessionData` may follow the copied browser profile. No silent relocati
 or reset of existing renderer state is introduced. The original rejection of
 implicitly relocating `userData` for locking remains valid. See
 [Custom storage location](custom-storage-location.md).
+
+## Amendment: the host process locks its data directory (2026-11-12)
+
+The rejected alternative above is about the *desktop app's* lock and stays
+rejected: `userData` is not relocated, and no marker file decides whether an app
+may start or a window may be raised.
+
+What was missing is one level down. Nothing stopped a second **host-core** — a
+manual `--version` probe of an installed binary, or a second run pointed at the
+same explicit `MINIH_AGENT_DATA_DIR` — from opening a data directory a live host
+was already using. Its boot maintenance settles every `running` turn, so on
+2026-11-12 a stray `--version` marked nine running turns `aborted` /
+`TURN_ABORTED` while the real host (and the agents it was running) kept working;
+the completion those turns had already reported was lost.
+
+1. The host binary parses its own command line before it creates or opens
+   anything: `--version` / `-V` and `--help` / `-h` answer and exit 0, and an
+   unrecognised argument exits 2. Neither touches the data directory. The two
+   internal runner flags (`--internal-tool-runner`, `--easytier-tun-runner`) keep
+   their behaviour and are handled before the lock.
+2. Before `AppState::open`, host-core takes an exclusive OS lock on
+   `<data_dir>/host.lock` and holds it for the process lifetime. The kernel
+   releases it on exit, so a crash cannot leave a stale lock; the file is never
+   deleted and carries no content, so it is not a marker.
+3. A start that cannot take the lock retries for five seconds and then reports
+   `another host-core process is using the data directory` on stderr and exits
+   with code 3, without opening the database. The desktop's existing restart
+   supervisor (0.5 s → 1 s → 2 s backoff, three restarts per two-minute window,
+   then fatal) bounds the retries in the other direction.
+
+Consequence: two runs pointed at the *same* explicit data directory are no longer
+both admitted. The second app's host refuses the directory, and the app reports a
+fatal host status instead of silently settling the first app's running turns. Two
+runs pointed at *different* data directories are unaffected, and so are the E2E
+harnesses, the capture rig, and side-by-side profiles.

@@ -3,12 +3,14 @@ mod agent_capabilities;
 mod artifacts;
 mod audit;
 mod background_tasks;
+mod cli;
 mod config_sync;
 mod conversation_archive;
 mod data_relocation;
 mod db;
 mod delegations;
 mod easytier_net;
+mod host_lock;
 mod keyboard;
 mod mcp_servers;
 mod memory;
@@ -58,25 +60,46 @@ async fn main() -> anyhow::Result<()> {
     if data_relocation::run_cli()? {
         return Ok(());
     }
-    if std::env::args().any(|arg| arg == tools::INTERNAL_TOOL_RUNNER_FLAG) {
-        let exit_code = match tools::run_internal_tool_runner().await {
-            Ok(exit_code) => exit_code,
-            Err(error) => {
-                eprintln!("internal tool runner failed: {error:#}");
-                1
-            }
-        };
-        std::process::exit(exit_code);
-    }
-    if std::env::args().any(|arg| arg == easytier_net::INTERNAL_EASYTIER_TUN_RUNNER_FLAG) {
-        let exit_code = match easytier_net::run_internal_tun_runner().await {
-            Ok(exit_code) => exit_code,
-            Err(error) => {
-                eprintln!("internal easytier tun runner failed: {error:#}");
-                1
-            }
-        };
-        std::process::exit(exit_code);
+    // Classify the arguments before anything is created or opened: a manual
+    // `--version` probe must not reach the boot maintenance that settles the
+    // turns of the host already using the data directory.
+    match cli::parse(&std::env::args().skip(1).collect::<Vec<String>>()) {
+        cli::HostInvocation::Version => {
+            println!("{}", cli::version_line());
+            return Ok(());
+        }
+        cli::HostInvocation::Help => {
+            print!("{}", cli::USAGE);
+            return Ok(());
+        }
+        cli::HostInvocation::Unrecognized(argument) => {
+            eprintln!(
+                "{}: unrecognized argument '{argument}'; run --help for usage",
+                env!("CARGO_BIN_NAME")
+            );
+            std::process::exit(cli::EXIT_USAGE);
+        }
+        cli::HostInvocation::ToolRunner => {
+            let exit_code = match tools::run_internal_tool_runner().await {
+                Ok(exit_code) => exit_code,
+                Err(error) => {
+                    eprintln!("internal tool runner failed: {error:#}");
+                    1
+                }
+            };
+            std::process::exit(exit_code);
+        }
+        cli::HostInvocation::TunRunner => {
+            let exit_code = match easytier_net::run_internal_tun_runner().await {
+                Ok(exit_code) => exit_code,
+                Err(error) => {
+                    eprintln!("internal easytier tun runner failed: {error:#}");
+                    1
+                }
+            };
+            std::process::exit(exit_code);
+        }
+        cli::HostInvocation::Boot => {}
     }
 
     tracing_subscriber::fmt()
@@ -95,6 +118,20 @@ async fn main() -> anyhow::Result<()> {
         });
 
     std::fs::create_dir_all(&data_dir)?;
+
+    // The data directory admits one host process. Everything below — the boot
+    // maintenance that settles `running` turns, the single SQLite writer, the
+    // scratch sweep — is only safe when nothing else is using it, and a second
+    // host that opened it anyway would abort the turns a live host is running.
+    // The lock is held until the process exits; the OS releases it then.
+    let data_dir_lock = match host_lock::acquire(&data_dir) {
+        Ok(lock) => lock,
+        Err(error @ host_lock::AcquireError::Busy { .. }) => {
+            eprintln!("{}: {error}", env!("CARGO_BIN_NAME"));
+            std::process::exit(host_lock::EXIT_DATA_DIR_BUSY);
+        }
+        Err(error) => return Err(anyhow::Error::new(error)),
+    };
     std::fs::create_dir_all(data_dir.join("logs"))?;
     std::fs::create_dir_all(data_dir.join("plugins/installed"))?;
     std::fs::create_dir_all(data_dir.join("plugins/data"))?;
@@ -104,7 +141,11 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(data_dir.join("scratch"))?;
 
     let state = Arc::new(Mutex::new(AppState::open(&data_dir)?));
-    tracing::info!(path = %data_dir.display(), "host-core starting");
+    tracing::info!(
+        path = %data_dir.display(),
+        lock = %data_dir_lock.path().display(),
+        "host-core starting"
+    );
     {
         // Sweep orphaned/stale session scratch dirs left behind by crashes or
         // deletions that bypassed session.delete (D114).

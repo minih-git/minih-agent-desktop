@@ -44,6 +44,29 @@ holds its lock, and the two never share a database, an outbox, or a log tree
 (D599, ADR 0094). An explicit `--user-data-dir` is honored instead, because the
 E2E harnesses point a build at a throwaway profile with it.
 
+The host process enforces the same rule one level down. Before it opens
+`pi.sqlite` it takes an exclusive OS lock on `<data_dir>/host.lock` and holds it
+for its whole lifetime; the kernel releases it when the process exits, so the
+file is never deleted and cannot go stale. A start that cannot take the lock
+retries for five seconds — long enough to cover the supervisor's own handover,
+which disposes the previous child (3 s graceful, then a 1 s force kill) before it
+asks for a restart — and then writes `another host-core process is using the data
+directory` to stderr and exits with code 3 without opening the database. That
+separation is what makes the boot maintenance safe: settling every `running`
+turn, `task_runs` row, and pending approval it finds is crash recovery, correct
+only when nothing else is using the directory. Retries in the other direction
+stay bounded by the restart supervisor (§4): 0.5 s → 1 s → 2 s backoff, at most
+three restarts per two-minute window, then a fatal `hostStatus`.
+
+The host's own command line is part of that boundary, and it is parsed before any
+directory is created. `--version` / `-V` print the version and `--help` / `-h`
+print the usage, both exiting 0 without touching the data directory; any other
+argument exits 2 with a message and likewise touches nothing. Only the two
+internal flags the running host spawns itself (`--internal-tool-runner`,
+`--easytier-tun-runner <spec>`) start other work, and both are handled before the
+lock. A manual invocation of a host binary therefore cannot reach a data
+directory that is in use (ADR 0094, amendment 2026-11-12).
+
 1. Electron main starts
 2. Load English locale defaults
 3. Spawn Rust host-core
