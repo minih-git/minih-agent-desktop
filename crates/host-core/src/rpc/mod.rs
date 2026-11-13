@@ -6116,6 +6116,9 @@ async fn handle_request(
 }
 
 #[cfg(test)]
+mod bot_surface_extras;
+
+#[cfg(test)]
 mod tests {
     use std::fs;
     use std::io::{self, Write};
