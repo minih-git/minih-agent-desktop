@@ -143,6 +143,28 @@ fn require_text<'a>(input: &'a Value, key: &str, limit: usize) -> Result<&'a str
     let value = super::string(input, key, limit)?;
     Ok(value)
 }
+/// The mode a card on this employee will actually run at.
+///
+/// A person's click is the authorization, so the work runs at the *narrower* of
+/// what the card asks for and what the employee itself may do. The steward's own
+/// mode is deliberately not part of it: a steward runs at `ask` by design, and
+/// while its mode was part of the minimum, every employee the person had opened
+/// up to `accept-edits` could never receive the work she was told to hand out —
+/// the confirmation was refused as *too wide* (employee mode 0.5 slice 3,
+/// review S2).
+///
+/// Applied where the card is written, not only where it is confirmed, because
+/// the dock shows this stored card: a card displaying a mode its task could
+/// never run at would be a value the person cannot act on.
+fn granted_mode(db: &Database, target: &str, requested: &str) -> Result<String> {
+    if target.trim().is_empty() {
+        return Ok(requested.to_string());
+    }
+    Ok(super::permissions::narrower(
+        requested,
+        &super::permissions::effective_mode(db, target)?,
+    ))
+}
 
 fn evict_oldest(conn: &rusqlite::Connection, session_id: &str) -> Result<()> {
     let count: i64 = conn.query_row(
@@ -184,7 +206,7 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
         .unwrap_or_default()
         .to_string();
     let source_utterance = require_text(input, "sourceUtterance", 4_096)?.to_string();
-    let card = input
+    let mut card = input
         .get("card")
         .ok_or_else(|| anyhow!("INVALID_ARGUMENT: card required"))?
         .clone();
@@ -201,6 +223,11 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
                 "INVALID_ARGUMENT: a task card targets an employee session"
             ));
         }
+    }
+    // Stored at the mode it will run at, so the value the dock shows is the
+    // value the task gets (review S2).
+    if let Some(requested) = card.get("permissionMode").and_then(Value::as_str) {
+        card["permissionMode"] = json!(granted_mode(db, &target, requested)?);
     }
     let hash = card_hash(&card);
     let now = now_ms();
@@ -248,10 +275,15 @@ pub fn revise(db: &Database, input: &Value) -> Result<Value> {
             "CONFLICT: only a proposed card can be revised; a confirmed authorization is never rewritten"
         ));
     }
-    let card = input
+    let mut card = input
         .get("card")
         .ok_or_else(|| anyhow!("INVALID_ARGUMENT: card required"))?
         .clone();
+    // A revise keeps the employee the card already names, so the narrowed mode
+    // is recomputed against that same employee (review S2).
+    if let Some(requested) = card.get("permissionMode").and_then(Value::as_str) {
+        card["permissionMode"] = json!(granted_mode(db, &existing.target_session_id, requested)?);
+    }
     let hash = card_hash(&card);
     db.conn().execute(
         "UPDATE task_card_drafts SET card_json=?2, card_hash=?3, updated_at=?4
@@ -264,10 +296,12 @@ pub fn revise(db: &Database, input: &Value) -> Result<Value> {
 /// Move a proposed card to another employee (employee mode 0.5 slice 3).
 ///
 /// Reassigning is the person's click, and it re-narrows authority: the card may
-/// only ask for the narrower of what it asked for, what the steward may grant,
-/// and what the new employee may do. The card's hash is recomputed because the
-/// card itself changed, and the card stays **proposed** — the person still has
-/// to start it, so a reassignment can never become a second, unread approval.
+/// only ask for the narrower of what it already asks for and what the new
+/// employee may do. The steward's own mode is not part of it — she hands the
+/// work out, the employee runs it (review S2). The card's hash is recomputed
+/// because the card itself changed, and the card stays **proposed** — the person
+/// still has to start it, so a reassignment can never become a second, unread
+/// approval.
 pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
     let draft_id = require_text(input, "draftId", 256)?;
     let target = require_text(input, "targetSessionId", 256)?;
@@ -292,10 +326,7 @@ pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
         .get("permissionMode")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("INVALID_ARGUMENT: the card states no permission mode"))?;
-    let sender = super::permissions::effective_mode(db, &existing.session_id)?;
-    let employee = super::permissions::effective_mode(db, target)?;
-    let narrowed =
-        super::permissions::narrower(&super::permissions::narrower(requested, &sender), &employee);
+    let narrowed = granted_mode(db, target, requested)?;
     let mut card = existing.card.clone();
     card["permissionMode"] = json!(narrowed);
     let hash = card_hash(&card);
@@ -496,6 +527,21 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
         ));
     }
     super::progress::validate_mandate(&serde_json::to_string(&draft.card)?)?;
+    // What this task actually runs at. A person's click authorizes the card
+    // narrowed to what the employee may do; a policy confirmation — nobody
+    // looked at the card — never runs wider than `ask`, whatever the card says
+    // (review S1's backstop). The mandate records the mode that will run, not
+    // the one that was asked for, so the ledger and the session cannot disagree.
+    let requested_mode = draft
+        .card
+        .get("permissionMode")
+        .and_then(Value::as_str)
+        .unwrap_or("ask");
+    let granted = if request.confirmed_by == CONFIRMED_BY_POLICY {
+        "ask".to_string()
+    } else {
+        granted_mode(db, &draft.target_session_id, requested_mode)?
+    };
     let mut requested_by = json!({
         "kind": "user",
         "hostId": request.host_id.unwrap_or("local"),
@@ -509,7 +555,7 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
         "goal": draft.card.get("goal").cloned().unwrap_or(Value::Null),
         "criteria": draft.card.get("criteria").cloned().unwrap_or(json!([])),
         "boundaries": draft.card.get("boundaries").cloned().unwrap_or(json!([])),
-        "permissionMode": draft.card.get("permissionMode").cloned().unwrap_or(Value::Null),
+        "permissionMode": granted.clone(),
         "mustAsk": draft.card.get("mustAsk").cloned().unwrap_or(json!([])),
         "risk": draft.card.get("risk").cloned().unwrap_or(Value::Null),
         "requestedBy": requested_by,
@@ -522,6 +568,7 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
     if let Some(repo) = draft.card.get("repo") {
         mandate["repo"] = repo.clone();
     }
+
     let message = super::send_record_on(
         db,
         &tx,
@@ -573,6 +620,10 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
                 .map(str::to_owned),
             source_utterance: Some(draft.source_utterance.clone()),
             delivery_id: Some(message.id.clone()),
+            // Created at the mode the confirmation authorized: a task session
+            // that inherited the employee's wider mode would be refused when its
+            // delivery is checked, which is the bug this replaces (review S2).
+            permission_mode: Some(granted.as_str()),
         },
     )?;
     tx.execute(

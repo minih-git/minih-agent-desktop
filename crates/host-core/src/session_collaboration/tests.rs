@@ -882,3 +882,86 @@ fn reassigning_a_card_narrows_it_and_keeps_it_proposed() {
     .unwrap_err();
     assert!(refused.to_string().contains("CONFLICT"), "{refused}");
 }
+
+/// A follow-up carries no new authority: it is checked against the task's own
+/// authorization, never against the steward's mode (review S2).
+///
+/// Before this rule the ceiling was the sender's `ask`, so a steward could not
+/// continue even the task she had just handed out at `accept-edits`: the send
+/// was refused as `PERMISSION_DENIED: target permission mode exceeds the sending
+/// session's authorization`.
+#[test]
+fn a_follow_up_is_checked_against_the_tasks_own_authorization() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let steward = sessions::create_session_with_options(
+        &db,
+        sessions::SessionCreateOptions {
+            title: Some("秘书".into()),
+            mode: Some("agent".into()),
+            permission_mode: Some("ask".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .id;
+    let employee = employee(&db, "界面", None, false);
+    let proposed = handle(
+        &db,
+        "taskCard.propose",
+        &json!({
+            "sessionId": steward,
+            "targetSessionId": employee,
+            "sourceUtterance": "任务列表加个筛选",
+            "card": {
+                "goal": "Add a filter to the task list",
+                "criteria": [{"id": "c1", "text": "The list filters"}],
+                "permissionMode": "accept-edits",
+                "mustAsk": [],
+                "risk": "low",
+                "reason": "页面与交互是它的活；你提到了 Desktop",
+            },
+        }),
+    )
+    .unwrap();
+    let confirmed = handle(
+        &db,
+        "taskCard.confirm",
+        &json!({
+            "draftId": proposed["draft"]["id"],
+            "cardHash": proposed["draft"]["cardHash"],
+            "confirmedBy": "user",
+            "idempotencyKey": "confirm-follow-up",
+        }),
+    )
+    .unwrap();
+    let task_session = confirmed["task"]["sessionId"].as_str().unwrap().to_string();
+    let task_id = confirmed["task"]["id"].as_str().unwrap().to_string();
+    let sent = handle(
+        &db,
+        "session.collaboration.send",
+        &json!({
+            "sourceSessionId": steward,
+            "pluginId": "builtin:session-messaging",
+            "content": "Also handle the empty list",
+            "kind": "task",
+            "idempotencyKey": "follow-up",
+            "sessionId": task_session,
+            // The task this delivery continues: what authorizes it, and what
+            // its ceiling is read from.
+            "taskId": task_id,
+        }),
+    )
+    .unwrap();
+    assert_eq!(sent["message"]["targetSessionId"], json!(task_session));
+    assert_eq!(
+        sent["message"]["status"],
+        json!("queued"),
+        "the follow-up was delivered, not refused"
+    );
+    assert_eq!(
+        sent["message"]["permissionCeiling"],
+        json!("accept-edits"),
+        "the task's own authorization, not the steward's"
+    );
+}

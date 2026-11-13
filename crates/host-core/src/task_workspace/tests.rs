@@ -81,6 +81,7 @@ async fn task(env: &Env, project: Option<&Path>) -> (String, String) {
             branch: None,
             source_utterance: None,
             delivery_id: None,
+            permission_mode: None,
         },
     )
     .unwrap();

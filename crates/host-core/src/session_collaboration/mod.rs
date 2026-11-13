@@ -114,16 +114,26 @@ fn send_record_on(
             Some(encoded)
         }
     };
-    // A confirmed card is a ceiling of its own: the delivery may only be as
-    // permissive as the *narrower* of what the sender may grant and what the
-    // person confirmed. Without this, a `ask` card would dispatch under the
-    // steward's `auto` and the person's choice would be silently ignored.
+    // What limits a delivery is the work, not the person who handed it over: a
+    // confirmed card is already the authorization of this task, so its ceiling
+    // is the *narrower* of what the card asks for and what the employee itself
+    // may do. The sender's own mode is deliberately absent — a steward runs at
+    // `ask` by design, and while she was part of the minimum, every employee the
+    // person had opened up to `accept-edits` could never receive the work she
+    // was told to hand out (employee mode 0.5 slice 3, review S2).
     let sender_ceiling = permissions::effective_mode(db, source)?;
     let permission_ceiling = match mandate_json.as_deref() {
         Some(encoded) => permissions::narrower(
-            &sender_ceiling,
             &progress::mandate_permission_mode(encoded)?,
+            &permissions::effective_mode(db, target)?,
         ),
+        // A follow-up grants nothing new: the task was authorized when it was
+        // started, so the ceiling is that task session's own mode. Comparing it
+        // with the sender's would refuse exactly the follow-up the person asked
+        // the steward to write.
+        None if input.get("taskId").and_then(Value::as_str).is_some() => {
+            permissions::effective_mode(db, target)?
+        }
         None => sender_ceiling,
     };
     permissions::check_target(db, target, &permission_ceiling)?;
@@ -204,6 +214,14 @@ pub(super) struct SpawnRequest<'a> {
     /// workspace from the session row, so leaving the parent's project there
     /// would make the choice display-only.
     pub project_path: Option<String>,
+    /// The permission mode the child runs at; absent means the source's own.
+    ///
+    /// A worker inherits, which is the safe direction. A task passes the mode
+    /// the person's click authorized — the narrower of the card and the
+    /// employee — because a task session created at the employee's own mode
+    /// would then be *refused* on dispatch instead of running at the mode the
+    /// person actually approved (employee mode 0.5 slice 3, review S2).
+    pub permission_mode: Option<String>,
 }
 
 /// Create a child of an existing session, and inherit exactly what a child may.
@@ -215,9 +233,11 @@ pub(super) struct SpawnRequest<'a> {
 /// - **inherited**: mode (`agent`), project, thinking level, and the permission
 ///   mode of the source session — a child never starts wider than its parent,
 ///   and never wider than what the source already had to be allowed to do;
-/// - **overridden by the caller**: provider, model, and the project, when the
-///   request names them — the source may have no model bound at all, and a task
-///   works in the repository it was given rather than in the employee's own;
+/// - **overridden by the caller**: provider, model, the project and the
+///   permission mode, when the request names them — the source may have no
+///   model bound at all, a task works in the repository it was given rather
+///   than in the employee's own, and a task runs at the mode the person's click
+///   authorized rather than at whatever the employee happens to hold;
 /// - **not inherited**: an employee's `role`/`botProfile` and its transcript.
 ///   A child is a session in its own right; copying an identity would make two
 ///   rows claim to be the same employee.
@@ -247,7 +267,11 @@ pub(super) fn spawn_session(
             model_id: request.model_id,
             project_path: request.project_path.or(parent.summary.project_path),
             thinking_level: Some(parent.summary.thinking_level),
-            permission_mode: Some(parent.summary.permission_mode),
+            permission_mode: Some(
+                request
+                    .permission_mode
+                    .unwrap_or(parent.summary.permission_mode),
+            ),
             role: request.role,
             bot_profile_json: None,
         },
@@ -304,8 +328,10 @@ fn spawn(db: &Database, input: &Value) -> Result<Value> {
             // A worker is not an employee: it inherits configuration, never a
             // bot identity, so it cannot be addressed as one later.
             role: None,
-            // A worker works where its parent does (ADR 0239 inheritance).
+            // A worker works where its parent does and runs at its parent's
+            // mode (ADR 0239 inheritance).
             project_path: None,
+            permission_mode: None,
         },
     )?;
     db.conn().execute("INSERT INTO session_collaboration_links(session_id,created_by_session_id,plugin_id,created_at) VALUES(?1,?2,?3,?4)",params![created.id,source,plugin,now_ms()])?;

@@ -190,12 +190,20 @@ pub struct CreateRequest<'a> {
     pub branch: Option<String>,
     pub source_utterance: Option<String>,
     pub delivery_id: Option<String>,
+    /// The permission mode this task runs at.
+    ///
+    /// Absent means "the employee's own", which is what a task the person
+    /// created straight in the workbench wants. A confirmed card passes the
+    /// mode its click authorized, so the task session is *created* at that mode
+    /// instead of inheriting one that would then be refused on dispatch
+    /// (employee mode 0.5 slice 3, review S2).
+    pub permission_mode: Option<&'a str>,
 }
 
 /// Create a task and its session, atomically.
 ///
-/// The session is created through [`spawn_session`], so it inherits the
-/// employee's configuration exactly as a worker inherits its parent's, and the
+/// The session is created through [`spawn_session`], so it takes the
+/// employee's configuration exactly as a worker takes its parent's, and the
 /// task row records what only this task knows: who started it, which delivery
 /// authorized it, and where it works.
 ///
@@ -260,6 +268,7 @@ pub fn create_in(
             model_id: None,
             role: Some("task".into()),
             project_path,
+            permission_mode: request.permission_mode.map(str::to_owned),
         },
     )?;
     conn.execute(
@@ -357,6 +366,9 @@ pub fn create(db: &Database, input: &Value) -> Result<Value> {
             branch: optional_text(input, "branch", 255)?,
             source_utterance: optional_text(input, "sourceUtterance", 4_096)?,
             delivery_id: optional_text(input, "deliveryId", 256)?,
+            // A task the person creates in the workbench runs at the employee's
+            // own mode: there is no card here to narrow it.
+            permission_mode: None,
         },
     )?;
     tx.commit()?;

@@ -17,6 +17,19 @@ const sessionId = Type.String({
   description: "A real Session ID from SessionList. Never guess or invent one.",
 });
 
+/**
+ * The task a delivery continues, when the sender knows the work rather than the
+ * session. The secretary addresses tasks, not sessions (employee mode 0.5 slice
+ * 3): she read them from `TaskStatus`, and the host resolves this to the task's
+ * own session and refuses an archived or unknown one.
+ */
+const taskId = Type.String({
+  minLength: 1,
+  maxLength: 256,
+  description:
+    "The task this delivery continues, from TaskStatus. Use it instead of a session ID when the work already runs: the host resolves it to the task's own session and refuses one that is archived or unknown.",
+});
+
 export const sessionToolParameters: Record<string, Parameters<typeof Type.Object>[0]> = {
   SessionList: {
     query: Type.Optional(
@@ -28,7 +41,10 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
     ),
   },
   SessionSend: {
-    sessionId,
+    // A follow-up is addressed by the task it continues; a session ID is the
+    // older form. At least one is required, and the handler refuses neither.
+    sessionId: Type.Optional(sessionId),
+    taskId: Type.Optional(taskId),
     content: Type.String({
       minLength: 1,
       maxLength: 65_536,
@@ -133,7 +149,7 @@ export const sessionToolDescriptions: Record<string, string> = {
   TaskCard:
     "Propose, revise or drop one task card for an employee session. A card is what the person confirms before work is dispatched: goal, acceptance criteria, boundaries, repository, permission mode, and the actions that must come back to them. Use `action: \"propose\"` with `targetSessionId` to show a card, `\"revise\"` to change a card nobody has confirmed, and `\"drop\"` to withdraw one. You cannot confirm a card: the person confirms it in the app, and their click is what dispatches the work. A card asks for permission and never grants it — `permissionMode` is required, `inherit` is refused, and deploy/delete/spend are always added to `mustAsk`.",
   SessionSend:
-    "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. Choose `delivery: \"now\"` when the target must act on it inside its current turn instead of after that turn ends; the default queues it. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session: use SessionCreate first when no session exists yet. It cannot cancel another sender's delivery either.",
+    "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Address a follow-up to work that is already running by `taskId`; address an existing session directly by Session ID. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. Choose `delivery: \"now\"` when the target must act on it inside its current turn instead of after that turn ends; the default queues it. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session: use SessionCreate first when no session exists yet. It cannot cancel another sender's delivery either.",
   SessionResult:
     "Read the durable outcome of the latest delivery this session made into a session, or of one such delivery by messageId: status, result, error and the task text. Use it after a SessionSend to check a delivery that has not completed, or when the completion notice is not enough. Deliveries sent by other sessions or plugins are not readable here.",
   SessionCreate:

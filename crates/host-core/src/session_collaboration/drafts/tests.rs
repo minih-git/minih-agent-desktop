@@ -574,3 +574,103 @@ fn the_steward_notice_is_terminal_and_never_dispatchable() {
         "a notice is never picked up as work to start"
     );
 }
+
+/// A person's click is the authorization (employee mode 0.5 slice 3, review
+/// S2). The task runs at the *narrower* of the card and the employee; the
+/// steward's own mode is not part of it.
+///
+/// Before this rule the steward's `ask` was part of the minimum, so every
+/// employee the person had opened up to `accept-edits` was unreachable: the
+/// confirmation was refused as `PERMISSION_DENIED: target permission mode
+/// exceeds the sending session's authorization`.
+#[test]
+fn a_click_starts_the_task_at_the_narrower_of_the_card_and_the_employee() {
+    let db = database();
+    let steward = session(&db, "Steward", None, "ask");
+    let employee = bot(&db, "界面", "accept-edits", false);
+    let draft = propose_card(&db, &steward, &employee, "accept-edits");
+    let confirmed = super::confirm(&db, confirm_request(&draft, "click-wide")).unwrap();
+    let task_session = confirmed["task"]["sessionId"].as_str().unwrap();
+    assert_eq!(
+        sessions::session_permission_mode(&db, task_session)
+            .unwrap()
+            .as_deref(),
+        Some("accept-edits"),
+        "the task runs at the mode the click authorized"
+    );
+    // Queued, not refused: the work can start a turn.
+    assert_eq!(confirmed["delivery"]["status"], json!("queued"));
+    assert_eq!(
+        confirmed["delivery"]["permissionCeiling"],
+        json!("accept-edits")
+    );
+}
+
+/// A card asking for more than the employee may do runs at the employee's mode,
+/// and says so on the card the person reads.
+#[test]
+fn a_card_wider_than_the_employee_runs_at_the_employees_mode() {
+    let db = database();
+    let steward = session(&db, "Steward", None, "auto");
+    let employee = bot(&db, "界面", "accept-edits", false);
+    let draft = propose_card(&db, &steward, &employee, "auto");
+    assert_eq!(
+        draft.card["permissionMode"],
+        json!("accept-edits"),
+        "the stored card carries the mode that will run"
+    );
+    let confirmed = super::confirm(&db, confirm_request(&draft, "click-wide-card")).unwrap();
+    let task_session = confirmed["task"]["sessionId"].as_str().unwrap();
+    assert_eq!(
+        sessions::session_permission_mode(&db, task_session)
+            .unwrap()
+            .as_deref(),
+        Some("accept-edits")
+    );
+    assert_eq!(
+        confirmed["delivery"]["permissionCeiling"],
+        json!("accept-edits")
+    );
+}
+
+/// Reassigning re-narrows against the new employee only: the steward's mode
+/// still does not take part (review S2).
+#[test]
+fn reassigning_a_card_narrows_it_to_the_new_employees_mode() {
+    let db = database();
+    // The steward hands work out at `ask`; the employees run it.
+    let steward = session(&db, "Steward", None, "ask");
+    let first = bot(&db, "界面", "accept-edits", false);
+    let second = bot(&db, "后端", "accept-edits", false);
+    let narrow = bot(&db, "文档", "ask", false);
+    let draft = propose_card(&db, &steward, &first, "accept-edits");
+    // An employee at the same mode does not narrow it: the steward's `ask` was
+    // never the card's ceiling.
+    let moved = super::reassign(
+        &db,
+        &json!({"draftId": &draft.id, "targetSessionId": second}),
+    )
+    .unwrap();
+    assert_eq!(
+        moved["draft"]["card"]["permissionMode"],
+        json!("accept-edits"),
+        "the new employee's mode, not the steward's"
+    );
+    // A narrower employee does, and the task it starts runs at that mode.
+    let moved = super::reassign(
+        &db,
+        &json!({"draftId": &draft.id, "targetSessionId": narrow}),
+    )
+    .unwrap();
+    assert_eq!(moved["draft"]["card"]["permissionMode"], json!("ask"));
+    let moved = serde_json::from_value::<Draft>(moved["draft"].clone()).unwrap();
+    let confirmed = super::confirm(&db, confirm_request(&moved, "click-narrow")).unwrap();
+    let task_session = confirmed["task"]["sessionId"].as_str().unwrap();
+    assert_eq!(
+        sessions::session_permission_mode(&db, task_session)
+            .unwrap()
+            .as_deref(),
+        Some("ask")
+    );
+    assert_eq!(confirmed["delivery"]["permissionCeiling"], json!("ask"));
+}
