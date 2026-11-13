@@ -163,6 +163,13 @@ window.minihAgent = {
     if (channel === IPC.invoke.botList) return { ok: true, data: { bots: [router, desk, steward] } };
     if (channel === IPC.invoke.taskList) return { ok: true, data: { tasks: state.tasks } };
     if (channel === IPC.invoke.taskCardList) return { ok: true, data: { drafts: [] } };
+    // The composer's Todo/background-task container renders nothing when both
+    // sides are empty — and a scene that shows "0 background tasks" would be a
+    // picture of a failure, not of the product.
+    if (channel === IPC.invoke.backgroundTasksList) return { ok: true, data: { tasks: [] } };
+    if (channel === IPC.invoke.todosGet) {
+      return { ok: true, data: { sessionId: input && input.sessionId, todos: [] } };
+    }
     if (channel === IPC.invoke.pendingInteractive) return { ok: true, data: { asks: [], permissions: [] } };
     if (channel === IPC.invoke.taskDeliveryCheck) {
       state.checkCalls.push(input.taskId);
@@ -191,9 +198,23 @@ window.minihAgent = {
   },
 };
 
+// A task session is a session like any other, with role "task": that is what
+// makes the topbar render the task band (employee @ repository, branch, stage).
+// Without it the picture shows an ordinary conversation header over a task card.
+function taskSession(id, title, updatedAt) {
+  return { id, title, role: "task", projectPath: "/repo/Minih-Agent-Desktop",
+    createdAt: "2026-11-13T01:00:00.000Z", updatedAt };
+}
 const sessions = [
   { id: "steward", title: "Super Agent", role: "bot", projectPath: "/repo/Minih-Agent-Desktop",
     botProfile: steward.profile, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-13T02:00:00.000Z" },
+  taskSession("sess-done", "修一下登录超时", "2026-11-13T03:20:00.000Z"),
+  taskSession("sess-accepted", "修一下登录超时", "2026-11-13T03:30:00.000Z"),
+  taskSession("sess-refused", "修一下登录超时", "2026-11-13T03:05:00.000Z"),
+  taskSession("sess-delivery", "修一下登录超时", "2026-11-13T03:15:00.000Z"),
+  taskSession("sess-batch-1", "依赖对齐 1", "2026-11-13T03:10:00.000Z"),
+  taskSession("sess-batch-2", "依赖对齐 2", "2026-11-13T03:20:00.000Z"),
+  taskSession("sess-batch-3", "依赖对齐 3", "2026-11-13T03:30:00.000Z"),
 ];
 
 function store() {
@@ -286,12 +307,36 @@ function shell(options) {
       React.createElement("div", { className: "route-surface route-page shot-stack" },
         React.createElement("div", { className: "shot-turn" },
           React.createElement("p", { className: "shot-user" }, options.user),
-          React.createElement("p", { className: "shot-steward" }, options.answer)),
+          React.createElement("p", { className: "shot-steward" }, options.answer),
+          ...(options.followUp
+            ? [
+                React.createElement("p", { className: "shot-user" }, options.followUp.user),
+                React.createElement("p", { className: "shot-steward" }, options.followUp.answer),
+              ]
+            : [])),
         React.createElement("div", { className: "shot-spacer" })),
       options.dock
         ? React.createElement("div", { className: "composer-dock composer-dock-docked" },
             React.createElement("div", { className: "composer-stack" }, options.dock))
         : React.createElement(Composer, { variant: "docked" })));
+}
+
+// The composer's Todo/background-task container renders nothing when it has
+// nothing to show. A picture with "0 background tasks" above the input would be
+// a picture of a failed read, not of the product.
+function assertNoStrayDock() {
+  const header = document.querySelector(".composer-stack .dock-header-text");
+  if (header) throw new Error("a stray dock is in the composer: " + header.textContent);
+}
+
+// The topbar of a task session carries the task band: employee @ repository, the
+// branch, and the stage chip. A picture of a completion card under an ordinary
+// header would misrepresent where the card lives.
+async function assertTaskBand() {
+  await until(() => document.querySelector("[data-task-header]"), "the task band");
+  const chip = document.querySelector(".ct-task-meta [data-task-stage]");
+  if (!chip) throw new Error("the task band has no stage chip");
+  return chip.getAttribute("data-task-stage");
 }
 
 let rootNode = null;
@@ -311,6 +356,10 @@ async function scene(kind) {
       dock: React.createElement(TaskCompletionCardForSession, { sessionId: "sess-done" }) }));
     await until(() => document.querySelector("[data-task-completion]"), "the completion card");
     await until(() => document.querySelector("[data-completion-can-merge='true']"), "a mergeable card");
+    if ((await assertTaskBand()) !== "person/accept") {
+      throw new Error("the task band does not say where the task is");
+    }
+    assertNoStrayDock();
     return;
   }
   if (kind === "card-refused") {
@@ -320,6 +369,8 @@ async function scene(kind) {
       dock: React.createElement(TaskCompletionCardForSession, { sessionId: "sess-refused" }) }));
     await until(() => document.querySelector("[data-completion-reason='ci-running']"), "the greyed card");
     await until(() => document.body.textContent.indexOf("CI 还在跑") >= 0, "the reason's words");
+    await assertTaskBand();
+    assertNoStrayDock();
     return;
   }
   if (kind === "card-accepted") {
@@ -329,6 +380,8 @@ async function scene(kind) {
       dock: React.createElement(TaskCompletionCardForSession, { sessionId: "sess-accepted" }) }));
     await until(() => document.querySelector("[data-completion-accepted='true']"), "the accepted card");
     await until(() => document.body.textContent.indexOf("已接受，待合并") >= 0, "the accepted note");
+    await assertTaskBand();
+    assertNoStrayDock();
     return;
   }
   if (kind === "blocked-delivery") {
@@ -338,19 +391,30 @@ async function scene(kind) {
       dock: React.createElement(TaskBlockedCardForSession, { sessionId: "sess-delivery" }) }));
     await until(() => document.querySelector("[data-blocked-delivery='push-remotes']"), "the delivery card");
     await until(() => document.body.textContent.indexOf("拒绝推送") >= 0, "the remote's own words");
+    if ((await assertTaskBand()) !== "blocked") {
+      throw new Error("the blocked task's band does not say blocked");
+    }
+    assertNoStrayDock();
     return;
   }
   if (kind === "batch") {
     state.tasks = batch.slice();
     mount(shell({ sessionId: "steward", user: "三个仓库的依赖对齐一下。",
-      answer: "拆成三张卡派出去了，都回来了。" }));
+      answer: "拆成三张卡派出去了：Desktop、Router、文档站，各一个员工。",
+      followUp: { user: "都回来了吗？", answer: "三份都做完了，按顺序收一下就行：" } }));
     await until(() => document.querySelector("[data-task-batch]"), "the batch summary");
     await until(() => document.querySelectorAll("[data-batch-row]").length === 3, "three rows");
+    if (document.body.textContent.indexOf("拆成三张卡") < 0) {
+      throw new Error("the steward's own words are missing above the summary");
+    }
+    assertNoStrayDock();
     return;
   }
   if (kind === "dock-many") {
     state.tasks = many.slice();
-    mount(shell({ sessionId: "steward", user: "这几件事都看一下。", answer: "都派下去了。" }));
+    mount(shell({ sessionId: "steward", user: "这几件事都看一下。",
+      answer: "八件都派下去了，有四件在等你的回答。",
+      followUp: { user: "先看最要紧的。", answer: "最上面的那条是登录接口的取舍，答完其余就通了。" } }));
     const dock = await until(() => document.querySelector("[data-testid='task-waiting-dock']"), "the dock");
     await settle(3);
     const style = window.getComputedStyle(dock);
@@ -359,6 +423,10 @@ async function scene(kind) {
     if (dock.scrollHeight <= dock.clientHeight) throw new Error("the dock did not overflow");
     if (height > limit + 2) throw new Error("the dock is " + height + "px, over the " + limit + "px ceiling");
     if (style.overflowY !== "auto") throw new Error("the dock does not scroll internally: " + style.overflowY);
+    if (document.body.textContent.indexOf("八件都派下去了") < 0) {
+      throw new Error("the steward's own words are missing above the dock");
+    }
+    assertNoStrayDock();
     return;
   }
   if (kind === "sidebar") {
@@ -534,6 +602,11 @@ const harnessCss = `
   .shot-surface { display: flex; flex-direction: column; gap: 16px; }
   .shot-topbar > * { position: static; }
   .shot-sidebar { width: 300px; }
+  .shot-stack { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }
+  .shot-user { align-self: flex-end; max-width: 72%; margin: 0; padding: 8px 12px;
+    border-radius: var(--radius-md); background: var(--ds-bg-secondary); color: var(--ds-text-primary); }
+  .shot-steward { max-width: 92%; margin: 0; color: var(--ds-text-secondary); }
+  .shot-spacer { flex: 1 1 auto; min-height: 0; }
 `;
 
 test(
