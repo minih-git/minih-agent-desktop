@@ -825,3 +825,168 @@ last statement.
 | A question or a stuck task is announced once, and a stop is not | **Yes** — title/body per state, `stage_seq` de-dupe, `stopped` skipped | `stores/runtime/task-waiting-runtime.ts` |
 | A stage write failing does not fail the turn | **Yes** — logged, the turn stays settled | `sessions.rs` |
 | Schema v37 is additive and idempotent | **Yes** — three `ADD COLUMN`s, orphan-safe, pinned by migration tests | `db/task_waiting_migration.rs` |
+
+## Employee mode 0.5, slice 4b: the completion card, and merging as a host step
+
+A turn ended and the task became `person/accept`, but there was nothing to accept:
+no card, no summary, no way to merge. The person had to open the conversation,
+read the last message, and merge by hand — and "merge" meant running six git
+commands, each of which they had to remember.
+
+This section records the four decisions that close that gap. Three are about the
+card; one is about who performs an irreversible act.
+
+### 1. The completion card is two layers, and the person decides from both
+
+**What the employee says** is its own report: `TaskReport { status: "ready",
+summary, acceptance: [{ criterion, met, note? }], leftovers }`, stored in
+`tasks.result_json`. One entry per acceptance criterion of the confirmed card,
+each marked with whether the employee met it. It is a report, not a claim: the
+employee cannot set `met` for a criterion nobody wrote.
+
+**What the host can prove** is computed, never reported: the commits on the task
+branch that its base does not have (at most twenty), the file count, the pull
+request, how long the task took, what its turns cost, and the CI summary. The two
+layers are rendered apart on purpose — a person deciding whether to trust the
+first needs the second as evidence, and a card that mixed them would make the
+employee's own account look like the host's finding.
+
+An employee that ends its turn without calling `TaskReport` is not an error: the
+card then shows only the host's half, and says so.
+
+### 2. Accepting is not archiving, and it is not merging
+
+`task.accept` writes `tasks.accepted_at`. Nothing else changes: the task stays
+open, its card stays reachable so a merge can be done later, and only the
+sidebar's "waiting for you" count drops it (`taskCountsAsWaiting` excludes an
+accepted task). A second click keeps the first timestamp.
+
+The alternative — accepting archived the task — was rejected because the merge
+may not be possible yet (CI red, a conflict, a review pending) and a person who
+accepts the work should not lose the entry that finishes it.
+
+A new turn clears both `accepted_at` and `result_json` (`turn_began`): 打回 and
+追加要求 are both a user message, a message starts a turn, and the previous
+attempt's acceptance and result do not describe the new one.
+
+### 3. The merge is a fixed list of host steps, not a model's judgement
+
+Two reasons, and only the first is about permissions:
+
+- In `ask` mode every git command an employee runs raises a permission card, which
+  contradicts the click that authorized the merge: 「接受并合并」 is a
+  confirmation, not an intention to be re-confirmed six times.
+- An irreversible act must not depend on a model remembering an order. The steps
+  are the same ones this repository's own worktree code already performs, with
+  hooks disabled and no prompts.
+
+The `pr` path, in order:
+
+| Step | Does | Fails as |
+| --- | --- | --- |
+| `read-pr` | `gh pr list --head <branch> --state open --json …` | the reason `gh` gave |
+| `gate` | the table in §4, evaluated again | the refused code |
+| `head` | worktree clean and on its branch, its HEAD equal to the PR's `headRefOid`, the project on `main` and clean, and the branch a descendant of `main` | which precondition |
+| `land` | fetch, refuse a local `main` behind its remote, then `merge::land` — a fast-forward with no merge commit | the git refusal |
+| `push-main` | `git push <primary> main`, fast-forward only, never `--force` | the remote's refusal |
+| `push-remotes` | the same to every other remote (for example Gitea) | which remote |
+| `verify-merged` | `gh` says `MERGED`, or the pushed head is contained in the fetched remote `main` | `pr-not-merged` |
+| `delete-branches` | every remote that still has the task branch | which remote |
+| `cleanup` | `cleanup_for_archive`, `git branch -d`, `task.archive` | the removal's refusal |
+
+The `local` path is the ADR 0329 surface it always was — `preview_session`,
+`merge_session`, then `cleanup` — so a project without a GitHub remote keeps
+behaving exactly as it did.
+
+Every step writes `{name, status, at, detail}` into `tasks.delivery_json` before
+the next one starts, which is what makes a retry safe: **重试 resumes at the first
+step that is not `done`**, and a completed step is never executed twice.
+
+Failure is a blocked card, never a half-merged silence:
+
+- **before `push-main`** (or before `merge` on the local path) nothing left this
+  machine: the card says which step stopped and why, and the task stays open;
+- **after it** the work is already published: the card says so — "已合入 GitHub,
+  Gitea 未对齐: <reason>" — the task is **not** archived, and the retry runs only
+  the remaining steps.
+
+The blocker is `{ reason: "delivery", step, detail }`, so the card composes its
+sentence from a code and a remote name instead of storing an English string.
+
+### 4. The gate is a table, and a mistake in it is a refusal
+
+`task.delivery.check { taskId }` answers `{ canMerge, reason?, reasonDetail?,
+prUrl?, checks?, changes?, elapsedMs?, usage? }`. The renderer reads it once when
+the card opens and again when the person clicks 刷新 — **no polling**, because a
+timer over `gh` is a cost nobody asked for.
+
+| Fact | `reason` |
+| --- | --- |
+| `gh` unavailable or unreadable | `pr-unreadable` |
+| no open PR | `pr-missing` |
+| `statusCheckRollup` empty | `ci-missing` |
+| a check still running | `ci-running` |
+| a check failed | `ci-failed` (the names) |
+| `mergeable = CONFLICTING` | `conflict` |
+| `mergeable = UNKNOWN` | `mergeable-unknown` |
+| `reviewDecision` = `REVIEW_REQUIRED` / `CHANGES_REQUESTED` | `review-required` |
+| empty `reviewDecision`, or `APPROVED` | *passes* |
+| `local` preview shows a conflict | `conflict-local` |
+| `local` preview is empty | `nothing-to-merge` |
+| the task has no repository | `no-project` |
+
+A read that failed is a refusal with its reason, never a pass: a green button over
+an unknown state is worse than a grey one that says why. The click re-evaluates
+the same table before anything runs, because the state can change between the
+read and the click.
+
+### 5. One batch, one summary; and where the card lives
+
+Main fills `task_card_drafts.batch_id` from the turn that proposed the cards, so
+"one sentence, three repositories" is one batch by construction rather than by
+guessing from titles. A summary card appears when a batch has **at least two**
+tasks and **every one of them** is at `person/accept` (accepted or not); its rows
+are in card order, which is the order to merge them, and 「全部接受」 walks that
+order and stops at the first refusal — the stopped task becomes its own blocked
+card, and the tasks after it are not touched. 「逐个看」 expands the same batch into
+the individual cards.
+
+The completion card occupies the task session's one card slot beside the composer,
+mutually exclusive with the blocked card by stage. The steward's dock shows a
+completion card only for `origin = steward` tasks that are **not yet accepted**
+(an accepted task is no longer something the person has to act on, and its card is
+in its own conversation), and it sits last in the dock order: questions, stuck
+tasks, start cards, then finished work. The dock itself is capped at half the
+viewport with internal scrolling, so a pile of cards can no longer squeeze the
+conversation out of the window.
+
+### 6. Schema v38
+
+`tasks` gains `accepted_at INTEGER`, `result_json TEXT`, `delivery_json TEXT`; and
+`task_card_drafts` gains `batch_id TEXT`. Pure `ADD COLUMN`, no table rebuilt, and
+the same orphan-tolerant rule as v37: a file with historical foreign-key
+violations upgrades, a column that already exists is completed rather than
+restarted, and `user_version` is stamped last.
+
+### Enforcement status after this section
+
+| Rule | Enforced | Where |
+| --- | --- | --- |
+| A ready report is stored, and only a task session may write it | **Yes** — `task.report` dispatches by status; the host refuses other sessions | `task_stage.rs`, `rpc/task_tools.rs` |
+| A ready report does not move the stage | **Yes** — the report writes `result_json` only; the turn's end writes `person/accept` | `task_stage.rs::report_ready` |
+| Accepting is not archiving | **Yes** — `accepted_at` only; the row and its card survive | `task_stage.rs::accept` |
+| An accepted task stops counting as waiting | **Yes** — `taskCountsAsWaiting` excludes `accepted_at` | `packages/shared/src/task.ts` |
+| A new turn clears the acceptance and the previous result | **Yes** — cleared in `turn_began`, inside one statement | `task_stage.rs::turn_began` |
+| The merge gate is a table, and an unreadable fact refuses | **Yes** — `gate_for` is pure, `gate_unreadable` covers the error row, each row has a test | `task_delivery.rs` |
+| The card reads once and on 刷新, never on a timer | **Yes** — one `check` per mount plus one per click | `features/bots/TaskCompletionCard.tsx` |
+| The merge runs the host's own steps, in order | **Yes** — one fixed list per delivery mode, one loop that cannot skip a step | `task_delivery.rs` |
+| A retry never repeats a completed step | **Yes** — `delivery_json.steps` is consulted per step; pinned by a real-git retry test | `task_delivery.rs`, `task_delivery_tests.rs` |
+| No merge commit is created | **Yes** — the branch must be a descendant of `main`, then `land` fast-forwards | `task_delivery.rs::head_step` |
+| A push is never forced | **Yes** — plain `git push`, and a refusal is a failure | `task_delivery.rs::push_main` |
+| A partial failure is a blocked card, not a silent half-merge | **Yes** — `reason: "delivery"` with the step and the detail; the task is not archived | `task_delivery.rs::stop_with_card` |
+| `gh` credentials are never printed | **Yes** — no environment is read or echoed; only `gh`'s first stderr line reaches the card | `task_delivery.rs::GhCli` |
+| One batch is one summary, in card order | **Yes** — `batch_id` from the turn, `taskBatches` requires two or more finished tasks | `taskBatches` in `features/bots/task-delivery.ts` |
+| 全部接受 stops at the first refusal | **Yes** — the loop breaks and the stopped task keeps its own card | `TaskBatchCard.tsx` |
+| The dock cannot swallow the conversation | **Yes** — `max-height: 50vh`, internal scroll, asserted in the visual test | `styles/bots-steward.css`, `bot-completion-user-path.test.mjs` |
+| The steward is always the first employee row | **Yes** — `sortBots` orders by definition first, then by tone | `features/bots/bot-status.ts` |
+| Schema v38 is additive and idempotent | **Yes** — four `ADD COLUMN`s, orphan-safe, pinned by migration tests | `db/task_delivery_migration.rs` |

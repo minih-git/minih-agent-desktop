@@ -810,7 +810,43 @@ or general MCP operations:
   Closing the last request of a turn that is still running returns the task to
   `working`; after the turn ended the stage stays what the turn wrote. Idempotent,
   and silent: the person already acted.
-- `task.report` — the task's own structured "I am stuck":
+- `task.report` — the task's own structured outcome, in two shapes:
+  `{ sessionId, status: "ready", summary, acceptance: [{ criterion, met, note? }],
+  leftovers }` when the work is done, and `{ sessionId, status: "blocked", where,
+  tried, suggestion }` when it is stuck. `sessionId` is filled from the transport,
+  never from the model's arguments; a session that is not a task's is refused.
+  A `ready` report writes `tasks.result_json` and **does not move the stage** — the
+  turn ending is what writes `person/accept` — while a `blocked` report writes
+  `blocker_json` and moves the stage to `blocked` in one transaction. Any other
+  status is refused.
+- `task.accept` — the person accepts the work. Writes `tasks.accepted_at` and
+  nothing else: the task stays open, its completion card stays reachable so the
+  merge can still be done, and only the sidebar's waiting count drops it.
+  Idempotent — a second click keeps the first timestamp. A new turn of the task's
+  own session clears the stamp together with `result_json`.
+- `task.delivery.check` — can this task be merged, and if not, why. Answers
+  `{ canMerge, reason?, reasonDetail?, prUrl?, checks?, changes?, elapsedMs?,
+  usage? }`. `reason` is a stable code (`pr-unreadable`, `pr-missing`,
+  `ci-missing`, `ci-running`, `ci-failed`, `conflict`, `mergeable-unknown`,
+  `review-required`, `no-project`, `conflict-local`, `nothing-to-merge`,
+  `preview-failed`) that the renderer translates; a fact that cannot be read is a
+  refusal, never a pass. `changes` is the host's own count of the commits on the
+  task branch (at most 20) and the files it touched. The renderer calls it once
+  when the card opens and again on 刷新 — never on a timer. `gh` is the only
+  network read, and its credentials stay `gh`'s own.
+- `task.delivery.merge` — accept **and** land the work. The click is the
+  confirmation, so nothing raises a permission card: the host runs one fixed list
+  of steps per delivery mode (`pr`: `read-pr`, `gate`, `head`, `land`,
+  `push-main`, `push-remotes`, `verify-merged`, `delete-branches`, `cleanup`;
+  `local`: `preview`, `merge`, `cleanup`), records each one in
+  `tasks.delivery_json` before starting the next, and resumes at the first step
+  that is not `done` when it is called again. Answers `{ merged, task?,
+  failedStep?, detail?, published? }` — a failure is a blocked task with
+  `blocker.reason = "delivery"`, not an RPC error, because the person's next action
+  is that card's 重试. No force-push, no merge commit, no request body ever
+  contains a credential.
+- `task.report` — (blocked) the legacy reading of the same tool, kept in the table
+  above for `blocked`:
   `{ sessionId, status: "blocked", where, tried, suggestion }`, each field at most
   600 characters. `sessionId` is filled from the transport, never from the model's
   arguments; a session that is not a task's is refused. Writes `blocker_json` and

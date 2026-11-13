@@ -1257,6 +1257,17 @@ file that already carries historical foreign-key violations; a column that alrea
 exists is completed rather than restarted, and `user_version` is stamped only
 after the last statement.
 
+**Schema v37 -> v38.** Four additive columns (ADR bot-sessions-and-steward, the
+completion card): `tasks.accepted_at` (the person accepted the work — not an
+archive), `tasks.result_json` (the employee's own `ready` report: summary, one
+line per acceptance criterion, leftovers), `tasks.delivery_json` (the fixed merge
+steps with their status and time, so a retry resumes instead of repeating an
+irreversible push), and `task_card_drafts.batch_id` (the turn that proposed
+several cards). No table is rebuilt and no row is rewritten; the step must also
+run on a file that already carries historical foreign-key violations, completes a
+column that already exists rather than restarting it, and stamps `user_version`
+last.
+
 ### 4.7 messages — transcript index
 
 The transcript itself is the per-session JSONL file (§2.1); this table is its

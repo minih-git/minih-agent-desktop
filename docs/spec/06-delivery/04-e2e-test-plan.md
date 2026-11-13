@@ -21419,3 +21419,92 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   and the silence of a stop. The renderer half (the header chip following the
   turns) is covered by the existing task-header tests and is not re-run against a
   live host here.
+#### E2E-BOT-accept-and-merge-pr-task: The click that accepts also lands the work, on every remote
+
+- **Preconditions**: An employee ran a task in a project with a GitHub remote, the
+  branch was pushed and a pull request is open. CI is green, the pull request has
+  no conflict with `main`, and the review has passed.
+- **Steps**: 1) Open the task's conversation at the end of its turn. 2) Read the
+  completion card. 3) Click 接受并合并 and wait. 4) Read the task list, the remote
+  branches and the project folder.
+- **Expected**: Step 2 shows the employee's own report — summary, one line per
+  acceptance criterion with ✓/✗, the leftovers — beside the host's facts: the
+  commits (at most twenty), the file count, the PR link, one line of time and
+  spend, and the CI summary. The merge button is enabled only because all three
+  conditions hold; where one does not, the button is grey and says which
+  (`还没有 PR`, `还没有 CI 结果`, `CI 还在跑`, `CI 失败: <name>`,
+  `有冲突，需先合最新 main`, `GitHub 还在算能否合并`, `评审未通过`,
+  `查不到 PR 状态: <reason>`). Step 3 writes `tasks.delivery_json` step by step
+  and needs no second confirmation: no permission card interrupts it. Step 4
+  finds both remotes' `main` at the task's commit, the task branch deleted on both
+  remotes, the workspace folder gone, the local branch gone, **no merge commit**,
+  and the task archived. A remote that refuses its push stops the run: the card
+  becomes a blocked card saying 已合入 GitHub, that remote 未对齐 and why, the task
+  is not archived, and 重试 runs only the remaining steps.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Completion card and
+  accept-and-merge"), `03-runtime/06-host-rpc-protocol.md`
+  (`task.delivery.check`, `task.delivery.merge`), `03-runtime/04-data-storage.md`
+  (schema v38)
+- **Acceptance**: C (conversation & stream), F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 4b
+- **Status**: Partial. `crates/host-core/src/task_delivery_tests.rs` runs the whole
+  `pr` path against two bare repositories with a scripted `gh`: both remotes move,
+  both branches are deleted, the workspace is removed, `rev-list --merges` is
+  empty, and a remote that refuses the push blocks the task and is finished by a
+  retry that leaves the completed steps' timestamps untouched;
+  `apps/desktop/test/bot-completion-user-path.test.mjs` renders the card in a real
+  Electron window, asserts the enabled and greyed states with their reasons,
+  captures it in both themes at 1440 and 1024, and clicks 刷新. A live GitHub pull
+  request is not touched by CI, by design.
+
+#### E2E-BOT-accept-only-then-merge-later: Accepting is not archiving
+
+- **Preconditions**: A task sits at `person/accept` with its completion card open.
+  Its CI is still running, so the merge button is grey.
+- **Steps**: 1) Read the sidebar's 「等你 N 件」. 2) Click 只接受. 3) Read the card
+  and the sidebar again. 4) Wait for CI, click 刷新, then merge from the same card.
+- **Expected**: Step 1 counts the task. Step 2 stores `accepted_at` and nothing
+  else: the task stays open, no branch is touched and nothing is archived. Step 3
+  shows 已接受，待合并 with the merge button still there, and the sidebar's number is
+  one lower. Step 4 enables the button on 刷新 and merges the work from the card
+  the person accepted — no second card, no second conversation. A task sent back
+  with 打回, or given an 追加要求, starts a new turn, and that turn clears both the
+  acceptance and the previous result.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Completion card and
+  accept-and-merge" §2), `03-runtime/06-host-rpc-protocol.md` (`task.accept`,
+  `task.delivery.check`)
+- **Acceptance**: C (conversation & stream), F (persistence)
+- **Milestone**: Employee mode 0.5, slice 4b
+- **Status**: Partial. `crates/host-core/src/tasks_completion_tests.rs` proves the
+  host half: accepting keeps the row open, is idempotent, leaves `person/accept`,
+  and a new turn clears `accepted_at` together with `result_json`;
+  `apps/desktop/test/bot-completion-user-path.test.mjs` clicks 只接受 in a real
+  Electron window and asserts the card's state and that the sidebar's count drops
+  by one, then clicks 打回 and 追加要求 and asserts which conversation each message
+  reached.
+
+#### E2E-BOT-batch-summary-accepts-in-order: One sentence, three cards, one summary
+
+- **Preconditions**: The steward split one request into three cards in one turn, so
+  all three tasks carry the same `batch_id` and all three are at `person/accept`.
+- **Steps**: 1) Read the steward's dock. 2) Click 逐个看. 3) Click 全部接受 and let
+  the second task fail its push to the second remote.
+- **Expected**: Step 1 shows one summary card with the three tasks as rows, in the
+  order the cards were proposed, and the employee each belongs to; the individual
+  completion cards are not also in the dock. Step 2 expands it into the three real
+  cards, each answerable on its own. Step 3 walks the rows in that order: a task
+  that can merge is merged, a task that cannot is only accepted, and the first
+  refusal stops the batch — that task becomes its own blocked card, the third is
+  untouched, and the summary dissolves because not every task is finished any more.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Completion card and
+  accept-and-merge" §5), `03-runtime/06-host-rpc-protocol.md`
+  (`task.delivery.merge`), `03-runtime/04-data-storage.md` (schema v38,
+  `task_card_drafts.batch_id`)
+- **Acceptance**: C (conversation & stream), Quality
+- **Milestone**: Employee mode 0.5, slice 4b
+- **Status**: Partial. `apps/desktop/test/bot-completion-user-path.test.mjs` renders
+  the summary in a real Electron window, clicks 全部接受 with a scripted host and
+  asserts the merge order (`task-batch-1`, `task-batch-2`), that the third is never
+  touched, and that the failure leaves a blocked card; the host-side step order and
+  resumption are proven in `task_delivery_tests.rs`. A batch proposed by a live
+  steward turn is not part of CI.
