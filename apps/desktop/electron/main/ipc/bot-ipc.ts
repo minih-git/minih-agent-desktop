@@ -69,6 +69,10 @@ export function registerBotIpc({
   handle(IPC.invoke.botUpdate, async (request) => {
     const result = await host().call("bot.update", (request ?? {}) as Record<string, unknown>);
     sendToRenderer(IPC.event.botsChanged, { reason: "updated" } satisfies BotsChangedEvent);
+    // Renaming an employee also rewrites its session title, and the renderer
+    // only re-reads the session list on this event — the conversation topbar
+    // kept showing the old name until something else refreshed it.
+    sendToRenderer(IPC.event.sessionsChanged, { reason: "bot.updated" });
     return result;
   });
 

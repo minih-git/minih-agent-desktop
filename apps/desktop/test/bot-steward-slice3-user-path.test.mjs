@@ -184,7 +184,8 @@ window.minihAgent = {
     calls.push({ channel, input });
     if (channel === IPC.invoke.botList) return { ok: true, data: { bots } };
     if (channel === IPC.invoke.botUpdate) {
-      // A rename writes the name and the session title, and tells everyone.
+      // A rename writes the name and the session title, and tells everyone:
+      // the roster on botsChanged, the session list on sessionsChanged.
       const target = bots.find((bot) => bot.sessionId === input.sessionId);
       const name = String(input.profile.name ?? "").trim();
       if (target && name) {
@@ -192,7 +193,20 @@ window.minihAgent = {
         target.title = name;
       }
       emit(IPC.event.botsChanged, { reason: "status" });
+      emit(IPC.event.sessionsChanged, { reason: "bot.updated" });
       return { ok: true, data: { session: { id: input.sessionId, title: name } } };
+    }
+    if (channel === IPC.invoke.sessionList) {
+      // The host keeps a renamed employee's session title in step with its name.
+      const name = steward().profile.name;
+      return {
+        ok: true,
+        data: {
+          sessions: sessions.map((session) =>
+            session.id === "steward-1" ? { ...session, title: name } : session,
+          ),
+        },
+      };
     }
     if (channel === IPC.invoke.taskCardList) {
       return { ok: true, data: { drafts: [cardDraft()] } };
@@ -259,7 +273,12 @@ useAppStore.setState({
   renameSession: async () => undefined,
   showToast: noop,
   bootstrap: async () => undefined,
-  refreshSessions: async () => undefined,
+  // The real store re-reads the list through api.listSessions on the event;
+  // nothing here updates a title by hand.
+  refreshSessions: async () => {
+    const result = await window.minihAgent.invoke(IPC.invoke.sessionList);
+    useAppStore.setState({ sessions: result.data.sessions });
+  },
   prefetchSession: async () => undefined,
   planningStates: {},
   navStack: [],
@@ -340,6 +359,15 @@ function Shell() {
     const listener = () => forceUpdate((value) => value + 1);
     viewListeners.add(listener);
     return () => viewListeners.delete(listener);
+  }, []);
+  // The real shell refreshes the session list on sessionsChanged
+  // (useAppShellRuntime), which is the only way a renamed title reaches the
+  // conversation topbar. Subscribing here keeps that link under test.
+  React.useEffect(() => {
+    const off = window.minihAgent.on(IPC.event.sessionsChanged, () => {
+      void useAppStore.getState().refreshSessions();
+    });
+    return off;
   }, []);
   // The steward's chat and a task's session both show the conversation topbar;
   // only the employees page is a route of its own.
@@ -430,6 +458,7 @@ window.stewardProbe = async () => {
   );
   // The card states one effective permission and keeps the read-only badge.
   report.cardMeta = [...document.querySelectorAll(".task-card-meta > *")].map(text);
+  report.defaultConversationTitle = text(document.querySelector(".ct-title"));
 
   // 2. The workbench row names the steward for the work it sent.
   go("workbench");
@@ -456,6 +485,13 @@ window.stewardProbe = async () => {
     "the renamed card heading",
   );
   report.renamedCardTitle = text(document.querySelector(".task-card-header span"));
+  // The topbar reads the session list, so a rename only lands there if
+  // bot.update announces sessionsChanged and the shell re-reads it.
+  await until(
+    () => text(document.querySelector(".ct-title")) === "阿福",
+    "the renamed conversation title",
+  );
+  report.renamedConversationTitle = text(document.querySelector(".ct-title"));
   report.renamedSidebarName = text(
     document.querySelector('[data-sidebar-bot-entry="steward-1"] .bot-entry-name, [data-sidebar-bot-entry="steward-1"] .sidebar-bot-name'),
   );
@@ -471,6 +507,11 @@ window.stewardProbe = async () => {
     "the restored card heading",
   );
   report.restoredCardTitle = text(document.querySelector(".task-card-header span"));
+  await until(
+    () => text(document.querySelector(".ct-title")) === "Super Agent",
+    "the restored conversation title",
+  );
+  report.restoredConversationTitle = text(document.querySelector(".ct-title"));
   return report;
 };
 
@@ -517,6 +558,7 @@ window.stewardScreens = {
       page: { width: window.innerWidth, height: window.innerHeight, scale: window.devicePixelRatio },
       stewardName: text(document.querySelector('[data-sidebar-bot-entry="steward-1"] .bot-entry-name, [data-sidebar-bot-entry="steward-1"] .sidebar-bot-name')),
       cardTitle: text(document.querySelector(".task-card-header span")),
+      conversationTitle: text(document.querySelector(".ct-title")),
       card: card
         ? {
             radius: style(card).borderTopLeftRadius,
@@ -634,10 +676,11 @@ async function runInElectron(stylesheet) {
       { kind: "task", locale: "en", steward: "Super Agent", name: "steward-task-en" },
     ];
     const plan = ["dark", "light"].flatMap((theme) => shots.map((shot) => ({ theme, ...shot })));
-    // The renamed surfaces: the same card and sidebar, with the name the person
-    // chose, in both themes.
+    // The renamed surfaces: the same card, sidebar and conversation title, with
+    // the name the person chose, in both themes. `-v2` replaces the captures
+    // taken while the topbar still showed the previous name.
     for (const theme of ["dark", "light"]) {
-      plan.push({ kind: "cards-renamed", locale: "zh-CN", theme, steward: "阿福", name: "steward-cards-renamed" });
+      plan.push({ kind: "cards-renamed", locale: "zh-CN", theme, steward: "阿福", name: "steward-cards-renamed-v2" });
     }
     await writeFile(
       join(workDir, "main.cjs"),
@@ -727,6 +770,9 @@ test(
     // 1. The default is what the crew seeds, and nothing writes it into copy.
     assert.equal(probe.defaultCardTitle, "Super Agent 给你的任务");
     assert.equal(probe.defaultSidebarName, "Super Agent");
+    // The conversation topbar shows the session title, which `bot.update` keeps
+    // in step with the name — the default, and both sides of the rename.
+    assert.equal(probe.defaultConversationTitle, "Super Agent");
     // 2. One effective permission level, plus the read-only badge.
     assert.ok(
       probe.cardMeta.some((entry) => entry.startsWith("权限档")),
@@ -748,10 +794,12 @@ test(
     assert.equal(probe.updates[0].profile.name, "阿福");
     assert.equal(probe.renamedCardTitle, "阿福 给你的任务");
     assert.equal(probe.renamedSidebarName, "阿福");
+    assert.equal(probe.renamedConversationTitle, "阿福");
     assert.match(probe.renamedWorkbenchOrigin, /阿福 派/);
     // 6. And back: it is a setting, not a one-way migration.
     assert.equal(probe.updates[1].profile.name, "Super Agent");
     assert.equal(probe.restoredCardTitle, "Super Agent 给你的任务");
+    assert.equal(probe.restoredConversationTitle, "Super Agent");
 
     // 7. Each capture is the app's own stylesheet at the reference window size.
     assert.equal(screens.length, 14);
@@ -767,6 +815,12 @@ test(
         assert.equal(
           report.cardTitle,
           capture.locale === "en" ? `Task from ${capture.steward}` : `${capture.steward} 给你的任务`,
+        );
+        // The capture itself shows the name in the topbar, not only in the card.
+        assert.equal(
+          report.conversationTitle,
+          capture.steward,
+          `${file}: the topbar does not show the name`,
         );
         assert.equal(report.card.borderWidth !== "0px", true, `${file}: the card has no border`);
         const readOnlyWord = capture.locale === "en" ? "Read-only" : "只读";
