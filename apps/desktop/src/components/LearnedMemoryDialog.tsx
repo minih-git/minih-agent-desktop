@@ -53,7 +53,12 @@ export function LearnedMemoryDialog({
   onOpenPinnedMemory,
   onOpenSourceSession,
 }: {
-  scope: LearnedMemoryScopeKind;
+  /**
+   * The scopes this dialog manages. An employee's lessons are not one of them:
+   * they are read and deleted from the employee's own settings section (0.5
+   * slice 5), which also names the task each one came from.
+   */
+  scope: Exclude<LearnedMemoryScopeKind, "bot">;
   projectPath?: string;
   projectName?: string;
   onClose: () => void;

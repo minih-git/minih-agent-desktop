@@ -76,7 +76,7 @@ pub(crate) enum ExtractionInputOutcome {
 
 /// Turn an over-long text into a prefix that ends on a character boundary, so a
 /// truncated summary never splits a multi-byte character.
-fn truncate_to_bytes(text: &str, limit: usize) -> (String, bool) {
+pub(crate) fn truncate_to_bytes(text: &str, limit: usize) -> (String, bool) {
     if text.len() <= limit {
         return (text.to_string(), false);
     }

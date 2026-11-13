@@ -513,6 +513,12 @@ pub fn archive(db: &Database, input: &Value) -> Result<Value> {
                 "UPDATE sessions SET archived_at=?2, updated_at=?2 WHERE id=?1",
                 params![session_id, at],
             )?;
+            // The archive owes one extraction of what this task taught the
+            // employee, in the same transaction that ends the task (0.5 slice 5).
+            // Every archive path — this button, the merge cleanup, an abandoned
+            // blocked card — therefore owes exactly one, and a restart between
+            // the stamp and the run resumes it instead of losing it.
+            crate::memory::stamp_pending_tx(&tx, task_id)?;
             at
         }
     };

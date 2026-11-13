@@ -6,6 +6,7 @@
 //! detector, `tombstones` the identity and forgetting guarantees, and
 //! `extraction` the per-session cursor and lease the optional extractor uses.
 
+mod experience;
 mod extraction;
 mod extraction_budget;
 mod extraction_input;
@@ -23,6 +24,9 @@ mod validation;
 #[path = "bot_scope_tests.rs"]
 mod bot_scope_tests;
 #[cfg(test)]
+#[path = "experience_tests.rs"]
+mod experience_tests;
+#[cfg(test)]
 #[path = "extraction_tests.rs"]
 mod extraction_tests;
 #[cfg(test)]
@@ -37,6 +41,7 @@ mod provenance_tests;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use experience::{stamp_pending_tx, ExperienceCandidate};
 pub(crate) use extraction_input::ExtractionInputOutcome;
 /// Configuration sync reads and writes learned memory through these; the rules
 /// stay in this module.
@@ -44,8 +49,8 @@ pub(crate) use model::MemoryTombstoneRecord;
 pub(crate) use model::{
     is_known, MemoryEntryRecord, MemoryScope, EVIDENCES, EVIDENCE_USER_STATED, EVIDENCE_VERIFIED,
     EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_EXPLICIT,
-    ORIGIN_USER_UI, SCOPES, SCOPE_BOT, SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE,
-    STATUS_ARCHIVED, STATUS_SUGGESTED,
+    ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
+    STATUS_SUGGESTED,
 };
 pub(crate) use repository::{
     delete_learned_scope_tx, rekey_learned_memory_to_group, CreateMemoryOutcome,

@@ -123,6 +123,19 @@ pub(super) async fn handle(
                 .await
                 .map_err(session_collaboration_rpc_err)
         }
+        // An employee's lessons from an archived task (employee mode 0.5 slice
+        // 5). Database work only: Main drains the pending list and calls a model
+        // of its own, and the host stays the one that decides what is stored.
+        "task.experience.pending"
+        | "task.experience.claim"
+        | "task.experience.input"
+        | "task.experience.complete"
+        | "task.experience.fail"
+        | "task.experience.skip"
+        | "task.experience.list" => {
+            let st = state.lock().await;
+            experience(&st.db, method, &params)
+        }
         _ => {
             let st = state.lock().await;
             crate::session_collaboration::handle_task(&st.db, method, &params)
@@ -182,4 +195,82 @@ pub(super) async fn confirm_card(
     let mut result = result;
     result["task"] = read_task(state, &task_id).await?;
     Ok(result)
+}
+/// `task.experience.*`: what an archived task taught its employee.
+///
+/// Main owns the model call; the host owns the rules. `pending` and `claim` make
+/// the run exactly-once across restarts, `input` decides how much transcript the
+/// run may read, and `complete` / `fail` / `skip` are the only three ways the
+/// state can move.
+fn experience(
+    db: &crate::db::Database,
+    method: &str,
+    params: &Value,
+) -> Result<Value, JsonRpcError> {
+    match method {
+        "task.experience.pending" => {
+            let limit = params.get("limit").and_then(Value::as_i64).unwrap_or(20);
+            Ok(json!({ "tasks": db.experience_pending(limit).map_err(internal)? }))
+        }
+        "task.experience.claim" => {
+            let task_id = param(params, "taskId")?;
+            let lease = params
+                .get("leaseMs")
+                .and_then(Value::as_i64)
+                .unwrap_or(crate::memory::EXTRACTION_LEASE_MS);
+            let claimed = db.experience_claim(task_id, lease).map_err(internal)?;
+            Ok(json!({ "claimed": claimed.is_some(), "state": claimed }))
+        }
+        "task.experience.input" => {
+            let task_id = param(params, "taskId")?;
+            // A task the person already deleted is not an error for the drain: it
+            // answers with no input and the caller moves on.
+            let input = db.experience_input(task_id).map_err(internal)?;
+            Ok(json!({ "input": input }))
+        }
+        "task.experience.complete" => {
+            let task_id = param(params, "taskId")?;
+            let entries = params
+                .get("entries")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            serde_json::from_value::<crate::memory::ExperienceCandidate>(
+                                item.clone(),
+                            )
+                            .ok()
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let result = db
+                .experience_complete(task_id, &entries)
+                .map_err(internal)?;
+            Ok(json!({ "result": result }))
+        }
+        "task.experience.fail" => {
+            let task_id = param(params, "taskId")?;
+            let code = params
+                .get("code")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("EXPERIENCE_FAILED");
+            let state = db.experience_fail(task_id, code).map_err(internal)?;
+            Ok(json!({ "state": state }))
+        }
+        "task.experience.skip" => {
+            let task_id = param(params, "taskId")?;
+            let state = db.experience_skip(task_id).map_err(internal)?;
+            Ok(json!({ "state": state }))
+        }
+        "task.experience.list" => {
+            let employee = param(params, "employeeSessionId")?;
+            let entries = db.experience_list(employee).map_err(internal)?;
+            Ok(json!({ "entries": entries }))
+        }
+        _ => Err(rpc_err(1007, "unknown experience method", "NOT_FOUND")),
+    }
 }

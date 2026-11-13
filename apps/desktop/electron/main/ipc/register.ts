@@ -70,6 +70,12 @@ export type RegisterIpcDependencies = {
   /** Watch settings writes so turning extraction off cancels pending runs. */
   onLearnedMemorySettingsChanged: (settings: AppSettings) => void;
   /**
+   * A task left the open list: drain whatever lesson extraction is still owed
+   * (employee mode 0.5 slice 5). Optional, because a test that wires the IPC
+   * surface alone has no extractor to notify.
+   */
+  onTaskArchived?: () => void;
+  /**
    * Announce a title written inside Main to the RACP Host, so an attached
    * remote client refreshes its header instead of keeping the old name. The
    * renderer fan-out stays the caller's own concern; this is the RACP side.
@@ -125,7 +131,6 @@ function wrap<T>(fn: () => Promise<T>): Promise<Result<T>> {
       ),
     );
 }
-
 export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
   const {
     generateSessionTitle,
@@ -134,6 +139,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     onLearnedMemorySettingsChanged,
     announceSessionTitleChanged,
     ipcMain,
+    onTaskArchived,
     getMainWindow,
     getHost,
     getSidecar,
@@ -412,6 +418,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     sendToRenderer,
     sessionCollaboration: dependencies.sessionCollaboration,
     tasks: dependencies.taskChanges,
+    onTaskArchived,
   });
   registerScheduledIpc({
     registrar,

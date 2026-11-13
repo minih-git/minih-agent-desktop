@@ -31,6 +31,7 @@ export function registerBotIpc({
   getHost,
   sendToRenderer,
   sessionCollaboration,
+  onTaskArchived,
   tasks,
 }: {
   registrar: IpcRegistrar;
@@ -48,6 +49,12 @@ export function registerBotIpc({
    * performs — goes through this same object.
    */
   tasks: TaskChangeAnnouncer;
+  /**
+   * A task left the open list — archived by the person, or archive-as-cleanup
+   * after a merge. The lesson extractor drains what that archive owes; absent,
+   * the archive is simply not announced to an extractor.
+   */
+  onTaskArchived?: () => void;
 }): void {
   const { handle } = registrar;
   const notifyTaskCardsChanged = taskCardsChangedSender(sendToRenderer);
@@ -177,6 +184,9 @@ export function registerBotIpc({
     const result = (await host().call("task.archive", (request ?? {}) as Record<string, unknown>)) as
       TaskArchiveResult;
     announceTask(result.task, "archived");
+    // The archive owed one lesson extraction; this is the only place that knows
+    // a person's click produced it.
+    onTaskArchived?.();
     return result;
   });
 
@@ -271,6 +281,9 @@ export function registerBotIpc({
       { taskId },
     )) as TaskDeliveryMergeResult;
     if (result?.task) announceTask(result.task, result.merged ? "archived" : "stage");
+    // A merge archives the task as its cleanup step, so the lesson extraction it
+    // owes is scheduled here too.
+    if (result?.merged) onTaskArchived?.();
     await reconcileTaskStages();
     sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
     return result;

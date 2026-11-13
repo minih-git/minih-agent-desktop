@@ -76,6 +76,7 @@ import {
 import { generateFollowUpSuggestion as generateFollowUpSuggestionImpl } from "./follow-up-suggestion-service";
 import { createSessionChangeNotifier } from "./session-change-notifier";
 import { createMemoryExtractionService } from "./memory/memory-extraction-service";
+import { createTaskExperienceService } from "./memory/task-experience-service";
 import { createConversationSummaryService } from "./memory/conversation-summary-service";
 import { createEventPersistence } from "./runtime/event-persistence";
 import { createPlanRuntime } from "./runtime/plans";
@@ -841,6 +842,25 @@ const memoryExtractionService = createMemoryExtractionService({
 });
 
 /**
+ * The lesson extractor for archived tasks (employee mode 0.5 slice 5).
+ *
+ * Separate from the two services above because it is triggered by something
+ * else — a task leaving the open list — and because its unit of work is a task,
+ * not a session. It shares their switch, their model, and their daily budget.
+ */
+const taskExperienceService = createTaskExperienceService({
+  getHost,
+  getSettings: async () =>
+    (await getHost()?.call("settings.get").catch(() => null)) as
+      | AppSettings
+      | null
+      | undefined,
+  resolveRuntimeModel,
+  vendorOAuth,
+  logger,
+});
+
+/**
  * The conversation summary generator (ADR conversation-archive §6). It shares
  * the extractor's triggers, its idle window, and its daily budget: one switch in
  * Settings, one promise about what learning costs a day.
@@ -1059,6 +1079,9 @@ function registerIpc() {
       memoryExtractionService.onSettingsChanged(settings);
       conversationSummaryService.onSettingsChanged(settings);
     },
+    // A task left the open list: the lesson extraction it owes runs now rather
+    // than at the next poll.
+    onTaskArchived: () => taskExperienceService.onArchive(),
     restartForStorage: () => {
       shutdownState.quitConfirmed = true;
       app.relaunch({ args: [...process.argv.slice(1).filter((arg) => arg !== "--pi-managed-storage"), "--pi-managed-storage"] });
@@ -1207,6 +1230,10 @@ void app.whenReady().then(() => {
   });
   powerMonitor.on("suspend", () => void liveCallService.endForLifecycle("app-suspended"));
   powerMonitor.on("lock-screen", () => void liveCallService.endForLifecycle("app-suspended"));
+  // Lesson extraction owed by a task archived before the last quit is drained
+  // now; until then nothing had asked for it, and the service keeps looking once
+  // a minute after that.
+  taskExperienceService.start();
 });
 
 // The widget is chrome for a call this window owns; it must never outlive the app.
@@ -1273,6 +1300,7 @@ registerShutdownHandlers({
   logger,
   confirmQuitDialog,
   disposePowerSaveBlockers,
+  disposeTaskExperience: () => taskExperienceService.dispose(),
   liveCallService,
   disposeSystemProxyRelay,
   disposeMemoryExtraction: () => memoryExtractionService.dispose(),

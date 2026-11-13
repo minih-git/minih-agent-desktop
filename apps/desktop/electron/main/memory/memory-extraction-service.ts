@@ -123,6 +123,37 @@ function splitModelKey(modelKey: string): { providerId: string; modelId: string 
   };
 }
 
+/**
+ * What resolving the extraction model needs, shared by both extractors: the
+ * preference extractor and the employee-lesson extractor read the same setting,
+ * so they must not drift in how a `provider/model` key becomes a provider
+ * config.
+ */
+export type ExtractionProviderDeps = {
+  resolveRuntimeModel: RuntimeModelResolver;
+  vendorOAuth: { resolveAuth: (providerId: string) => Promise<unknown> };
+};
+
+export async function resolveExtractionProvider(
+  deps: ExtractionProviderDeps,
+  settings: AppSettings,
+  modelKey: string,
+): Promise<RuntimeProviderConfig | null> {
+  const parts = splitModelKey(modelKey);
+  if (!parts) return null;
+  const model = await deps.resolveRuntimeModel(
+    {},
+    settings,
+    { providerId: parts.providerId, modelId: parts.modelId, thinkingLevel: "off" },
+  );
+  return {
+    ...model.provider,
+    ...(model.provider.authKind === "oauth"
+      ? { resolveAuth: () => deps.vendorOAuth.resolveAuth(model.providerId) as never }
+      : {}),
+  } as RuntimeProviderConfig;
+}
+
 function localDayOf(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -227,19 +258,7 @@ export function createMemoryExtractionService(
     settings: AppSettings,
     modelKey: string,
   ): Promise<RuntimeProviderConfig | null> {
-    const parts = splitModelKey(modelKey);
-    if (!parts) return null;
-    const model = await deps.resolveRuntimeModel(
-      {},
-      settings,
-      { providerId: parts.providerId, modelId: parts.modelId, thinkingLevel: "off" },
-    );
-    return {
-      ...model.provider,
-      ...(model.provider.authKind === "oauth"
-        ? { resolveAuth: () => deps.vendorOAuth.resolveAuth(model.providerId) as never }
-        : {}),
-    } as RuntimeProviderConfig;
+    return resolveExtractionProvider(deps, settings, modelKey);
   }
 
   /**
