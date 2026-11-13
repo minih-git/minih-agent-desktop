@@ -267,6 +267,19 @@ pub fn turn_began(
           WHERE id=?1 AND (accepted_at IS NOT NULL OR result_json IS NOT NULL)",
         params![task_id],
     )?;
+    // A delivery record is resumable only if it **published** the work. A record
+    // that stopped earlier describes preconditions — the pull request's head, its
+    // CI, its conflicts — which this new turn has just made stale, so it is
+    // thrown away rather than resumed.
+    conn.execute(
+        "UPDATE tasks SET delivery_json=NULL
+          WHERE id=?1 AND delivery_json IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM json_each(tasks.delivery_json, '$.steps') AS step
+               WHERE json_extract(step.value, '$.status')='done'
+                 AND json_extract(step.value, '$.name') IN ('push-main','merge'))",
+        params![task_id],
+    )?;
     move_stage(
         db,
         conn,

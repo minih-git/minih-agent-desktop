@@ -275,6 +275,17 @@ pub struct DeliveryState {
 }
 
 impl DeliveryState {
+    /// Whether this attempt got as far as publishing the work.
+    ///
+    /// It is the one question that decides whether a retry may resume at all: a
+    /// record that never reached this point describes preconditions that have to
+    /// be re-checked, not work that can be skipped.
+    pub(super) fn published(&self) -> bool {
+        self.steps
+            .iter()
+            .any(|step| step.status == "done" && PUBLISH_STEPS.contains(&step.name.as_str()))
+    }
+
     fn done(&self, step: &str) -> bool {
         self.steps
             .iter()
@@ -309,12 +320,16 @@ pub const PR_STEPS: [&str; 9] = [
 /// The local path (ADR 0329): preview, merge into the project, clean up.
 pub const LOCAL_STEPS: [&str; 3] = ["preview", "merge", "cleanup"];
 
-/// Steps that run **before** anything left this machine: a failure there never
-/// says "already merged somewhere".
+/// The step whose success means the work left this machine (or, for `local`,
+/// reached the project's own branch). Everything before it is a *precondition*,
+/// and a precondition is never resumable: see [`load_state`].
+pub(super) const PUBLISH_STEPS: [&str; 2] = ["push-main", "merge"];
+
+/// Index of the publishing step in one delivery's fixed list.
 pub(super) fn published_index(steps: &[&str]) -> usize {
     steps
         .iter()
-        .position(|step| *step == "push-main" || *step == "merge")
+        .position(|step| PUBLISH_STEPS.contains(step))
         .unwrap_or(0)
 }
 
@@ -338,6 +353,14 @@ pub(super) async fn load_state(
         .as_deref()
         .and_then(|encoded| serde_json::from_str(encoded).ok())
         .filter(|stored: &DeliveryState| stored.mode == mode.as_str())
+        // **Only a published attempt is resumable.** `read-pr`, `gate`, `head`
+        // and `land` (and `local`'s `preview`) are preconditions, not work: the
+        // pull request's head, its CI and its conflicts can all change between
+        // two attempts, so a retry that skipped them could merge a commit whose
+        // checks were never seen. A record that never published is therefore
+        // thrown away and every precondition runs again; one that did publish
+        // keeps its record so the remaining pushes are not repeated.
+        .filter(|stored: &DeliveryState| stored.published())
         .unwrap_or_else(|| DeliveryState {
             mode: mode.as_str().to_string(),
             ..DeliveryState::default()
@@ -378,6 +401,7 @@ pub(super) async fn stop_with_card(
     }))
 }
 
+#[derive(Debug)]
 pub(super) struct Stop {
     step: &'static str,
     message: String,

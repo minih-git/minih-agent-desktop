@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 use crate::session_worktrees::git::GitRunner;
@@ -20,10 +20,50 @@ use crate::state::AppState;
 use crate::task_delivery::{self, GhRunner};
 use crate::tasks;
 
-/// A `gh` that answers from a fixed script: the head commit of the "PR", and
-/// whether it reports the PR merged. No process, no network, no token.
+/// The facts `gh` answers with, as the host reads them.
+fn pr_facts(head: &str, mergeable: &str, checks: Value) -> Value {
+    json!({
+        "url": "https://github.com/o/r/pull/7",
+        "state": "OPEN",
+        "mergeable": mergeable,
+        "reviewDecision": "APPROVED",
+        "headRefOid": head,
+        "statusCheckRollup": checks,
+    })
+}
+
+fn green_checks() -> Value {
+    json!([
+        {"name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"},
+        {"name": "test", "status": "COMPLETED", "conclusion": "SUCCESS"}
+    ])
+}
+
+fn pending_checks() -> Value {
+    json!([
+        {"name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"},
+        {"name": "test", "status": "IN_PROGRESS", "conclusion": null}
+    ])
+}
+
+/// A `gh` that answers from a script the test can move: the "pull request" it
+/// reports, and whether it reports it merged. No process, no network, no token.
 struct ScriptedGh {
-    head: String,
+    facts: std::sync::Mutex<Value>,
+}
+
+impl ScriptedGh {
+    fn green(head: &str) -> Self {
+        Self {
+            facts: std::sync::Mutex::new(pr_facts(head, "MERGEABLE", green_checks())),
+        }
+    }
+
+    /// Point the scripted pull request at another head, with other checks — what
+    /// happens between two attempts when the employee pushes.
+    fn repoint(&self, head: &str, checks: Value) {
+        *self.facts.lock().unwrap() = pr_facts(head, "MERGEABLE", checks);
+    }
 }
 
 #[async_trait::async_trait]
@@ -32,22 +72,10 @@ impl GhRunner for ScriptedGh {
         if args.first() != Some(&"pr") {
             return Err(format!("unexpected gh call: {args:?}"));
         }
-        let all = args.contains(&"all");
-        if all {
+        if args.contains(&"all") {
             return Ok(json!([{ "state": "MERGED" }]).to_string());
         }
-        Ok(json!([{
-            "url": "https://github.com/o/r/pull/7",
-            "state": "OPEN",
-            "mergeable": "MERGEABLE",
-            "reviewDecision": "APPROVED",
-            "headRefOid": self.head,
-            "statusCheckRollup": [
-                {"name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"},
-                {"name": "test", "status": "COMPLETED", "conclusion": "SUCCESS"}
-            ]
-        }])
-        .to_string())
+        Ok(json!([self.facts.lock().unwrap().clone()]).to_string())
     }
 }
 
@@ -247,7 +275,7 @@ async fn a_pull_request_task_is_fast_forwarded_to_every_remote_and_cleaned_up() 
     let fixture = fixture("pr").await;
     let head = head_of(&fixture.worktree);
     let git = GitRunner::default();
-    let gh = ScriptedGh { head: head.clone() };
+    let gh = ScriptedGh::green(&head);
 
     let result = task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
         .await
@@ -346,7 +374,7 @@ async fn a_remote_that_refuses_the_push_blocks_the_task_and_the_retry_finishes()
     let fixture = fixture("pr").await;
     let head = head_of(&fixture.worktree);
     let git = GitRunner::default();
-    let gh = ScriptedGh { head: head.clone() };
+    let gh = ScriptedGh::green(&head);
     reject_pushes(&fixture.gitea);
 
     let failed = task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
@@ -423,7 +451,7 @@ async fn a_local_task_merges_into_the_project_and_is_archived() {
     let fixture = fixture("local").await;
     let head = head_of(&fixture.worktree);
     let git = GitRunner::default();
-    let gh = ScriptedGh { head: head.clone() };
+    let gh = ScriptedGh::green(&head);
 
     let result = task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
         .await
@@ -456,7 +484,7 @@ async fn a_local_conflict_blocks_the_task_instead_of_merging() {
     git_cmd(&fixture.project, &["commit", "-q", "-m", "conflict"]);
     let head = head_of(&fixture.worktree);
     let git = GitRunner::default();
-    let gh = ScriptedGh { head };
+    let gh = ScriptedGh::green(&head);
 
     let result = task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
         .await
@@ -508,5 +536,200 @@ async fn a_task_without_a_project_refuses_to_merge() {
     assert!(
         checked.is_err(),
         "a task without a workspace has no merge path"
+    );
+}
+
+/// **C1.** A retry must re-check the preconditions.
+///
+/// The first attempt fails at `head` (the workspace has uncommitted work), so
+/// nothing was published. The employee then pushes, the pull request's head
+/// moves, and its CI restarts. A click on 重试 must not walk past the gate with
+/// the old verdict: the preconditions run again, `ci-running` refuses, and the
+/// project's `main` never moves.
+#[tokio::test]
+async fn a_retry_re_runs_the_gate_and_refuses_a_pull_request_whose_checks_restarted() {
+    let fixture = fixture("pr").await;
+    let git = GitRunner::default();
+    let first_head = head_of(&fixture.worktree);
+    let gh = ScriptedGh::green(&first_head);
+    // Uncommitted work in the task's own folder: `head` refuses, nothing is
+    // published, and the record holds a passed gate that is about to go stale.
+    std::fs::write(fixture.worktree.join("login.txt"), "timeout=45s\n").unwrap();
+
+    let failed = task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
+        .await
+        .unwrap();
+    assert_eq!(failed["merged"], json!(false));
+    assert_eq!(failed["failedStep"], json!("head"));
+    let blocked = read_task(&fixture).await;
+    let recorded: Vec<String> = blocked
+        .delivery
+        .as_ref()
+        .unwrap()
+        .steps
+        .iter()
+        .map(|step| step.name.clone())
+        .collect();
+    assert_eq!(recorded, vec!["read-pr", "gate", "head"], "{recorded:?}");
+
+    // The employee commits and pushes; GitHub now has a new head and CI is
+    // running again.
+    git_cmd(&fixture.worktree, &["add", "login.txt"]);
+    git_cmd(
+        &fixture.worktree,
+        &["commit", "-q", "-m", "fix(bot): one more try"],
+    );
+    git_cmd(
+        &fixture.worktree,
+        &["push", "-q", "origin", &fixture.branch],
+    );
+    let second_head = head_of(&fixture.worktree);
+    assert_ne!(second_head, first_head);
+    gh.repoint(&second_head, pending_checks());
+    let main_before = git_cmd(&fixture.project, &["rev-parse", "HEAD"])
+        .trim()
+        .to_string();
+
+    let retried = task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
+        .await
+        .unwrap();
+    assert_eq!(retried["merged"], json!(false), "{retried}");
+    assert_eq!(
+        retried["failedStep"],
+        json!("gate"),
+        "the retry did not re-run the gate: {retried}"
+    );
+    assert!(
+        retried["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("ci-running"),
+        "the refusal does not name the checks: {retried}"
+    );
+    assert_eq!(
+        git_cmd(&fixture.project, &["rev-parse", "HEAD"]).trim(),
+        main_before,
+        "a refused retry moved the project's main"
+    );
+    // And the record is the fresh one: the preconditions ran again, and the
+    // stale `done` entries are gone.
+    let after = read_task(&fixture).await;
+    assert_eq!(after.stage, "blocked");
+    let steps: Vec<(String, String)> = after
+        .delivery
+        .as_ref()
+        .unwrap()
+        .steps
+        .iter()
+        .map(|step| (step.name.clone(), step.status.clone()))
+        .collect();
+    assert_eq!(
+        steps,
+        vec![
+            ("read-pr".to_string(), "done".to_string()),
+            ("gate".to_string(), "failed".to_string())
+        ],
+        "an unpublished attempt was resumed instead of restarted"
+    );
+}
+
+/// **C1.** A *published* attempt survives the person sending the task back.
+///
+/// `push-main` succeeded and the second remote refused, so the work is on
+/// GitHub. 打回 starts a new turn — which clears the acceptance and the report
+/// — but it must not throw away the record of what already happened: the retry
+/// then runs only the steps that are left.
+#[tokio::test]
+async fn a_rejected_task_keeps_its_published_record_and_resumes_after_the_push() {
+    let fixture = fixture("pr").await;
+    let head = head_of(&fixture.worktree);
+    let git = GitRunner::default();
+    let gh = ScriptedGh::green(&head);
+    reject_pushes(&fixture.gitea);
+
+    let failed = task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
+        .await
+        .unwrap();
+    assert_eq!(failed["failedStep"], json!("push-remotes"));
+    let before = steps_of(&read_task(&fixture).await);
+    let push_main_at = before
+        .iter()
+        .find(|(name, _)| name == "push-main")
+        .map(|(_, at)| at.clone())
+        .unwrap();
+
+    // 打回: a user message in the task's own session starts a new turn.
+    let session_id = {
+        let st = fixture.state.lock().await;
+        tasks::get_task(&st.db, &fixture.task_id)
+            .unwrap()
+            .unwrap()
+            .session_id
+    };
+    {
+        let st = fixture.state.lock().await;
+        tasks::turn_began(&st.db, st.db.conn(), &session_id).unwrap();
+    }
+    let kept = read_task(&fixture).await;
+    assert!(
+        kept.delivery.is_some(),
+        "a published delivery record must survive a new turn"
+    );
+    assert_eq!(
+        steps_of(&kept)
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>(),
+        before
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>()
+    );
+
+    allow_pushes(&fixture.gitea);
+    let retried = task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
+        .await
+        .unwrap();
+    assert_eq!(retried["merged"], json!(true), "{retried}");
+    let after = read_task(&fixture).await;
+    assert!(after.archived_at.is_some());
+    let recorded = after.delivery.as_ref().unwrap();
+    assert_eq!(
+        recorded
+            .steps
+            .iter()
+            .find(|step| step.name == "push-main")
+            .map(|step| step.at.clone()),
+        Some(push_main_at),
+        "the retry repeated a step that had already published"
+    );
+}
+
+/// **C1.** An unpublished record is not resumable, so a new turn throws it away.
+#[tokio::test]
+async fn a_new_turn_drops_a_delivery_record_that_never_published() {
+    let fixture = fixture("pr").await;
+    let git = GitRunner::default();
+    let gh = ScriptedGh::green(&head_of(&fixture.worktree));
+    std::fs::write(fixture.worktree.join("login.txt"), "timeout=45s\n").unwrap();
+    task_delivery::merge(&fixture.state, &git, &gh, &fixture.task_id)
+        .await
+        .unwrap();
+    assert!(read_task(&fixture).await.delivery.is_some());
+
+    let session_id = {
+        let st = fixture.state.lock().await;
+        tasks::get_task(&st.db, &fixture.task_id)
+            .unwrap()
+            .unwrap()
+            .session_id
+    };
+    {
+        let st = fixture.state.lock().await;
+        tasks::turn_began(&st.db, st.db.conn(), &session_id).unwrap();
+    }
+    assert!(
+        read_task(&fixture).await.delivery.is_none(),
+        "a record that never published was kept across a new turn"
     );
 }
