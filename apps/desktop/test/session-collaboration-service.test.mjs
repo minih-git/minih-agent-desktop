@@ -403,6 +403,93 @@ test("a built-in send binds the calling session and its live turn", async () => 
   assert.equal(send[0].params.kind, "task", "a built-in send defaults to a task");
 });
 
+test("a built-in send by taskId resolves the task's own session", async () => {
+  // Employee mode 0.5 slice 3: the steward addresses the work, not a session id,
+  // so the host names the task's session and the caller never guesses one.
+  const host = createHost("host-1", (method) => {
+    if (method === "task.get") {
+      return { task: { id: "task-1", sessionId: "task-session-1", shortId: "task-1", stage: "working" } };
+    }
+    if (method === "session.collaboration.send") return { message: sessionMessage({ targetSessionId: "task-session-1" }) };
+    if (method === "session.collaboration.message") return { message: sessionMessage({ id: "message-1", targetSessionId: "task-session-1" }) };
+    return {};
+  });
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-live" },
+  });
+
+  // Starting the turn needs an Agent runtime; this test is about the ledger row
+  // the host wrote, so a missing runtime is the expected end of the call.
+  await service
+    .invokeBuiltin({
+      sessionId: "source-session",
+      turnId: "turn-live",
+      operation: "send",
+      args: { taskId: "task-1", content: "also add the retry" },
+    })
+    .catch((error) => assert.equal(error.code, "HOST_UNAVAILABLE"));
+
+  const sends = methodCalls(host, "session.collaboration.send");
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].params.sessionId, "task-session-1");
+  assert.equal(sends[0].params.content, "also add the retry");
+  // The task id travels too, so the host can apply its own open-task check.
+  assert.equal(sends[0].params.taskId, "task-1");
+});
+
+test("a follow-up to an archived task is refused and never delivered", async () => {
+  const host = createHost("host-1", (method) => {
+    if (method === "task.get") {
+      return {
+        task: {
+          id: "task-1",
+          sessionId: "task-session-1",
+          shortId: "task-1",
+          stage: "person/accept",
+          archivedAt: "2026-11-12T10:00:00.000Z",
+        },
+      };
+    }
+    return {};
+  });
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-live" },
+  });
+
+  await assert.rejects(
+    service.invokeBuiltin({
+      sessionId: "source-session",
+      turnId: "turn-live",
+      operation: "send",
+      args: { taskId: "task-1", content: "one more thing" },
+    }),
+    { code: "TASK_ARCHIVED" },
+  );
+  // Nothing reached the ledger: an archived task is not a place work can go.
+  assert.deepEqual(methodCalls(host, "session.collaboration.send"), []);
+});
+
+test("a follow-up to a task that does not exist is refused by name", async () => {
+  const host = createHost("host-1", (method) => (method === "task.get" ? {} : {}));
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-live" },
+  });
+
+  await assert.rejects(
+    service.invokeBuiltin({
+      sessionId: "source-session",
+      turnId: "turn-live",
+      operation: "send",
+      args: { taskId: "task-missing", content: "hello" },
+    }),
+    { code: "TASK_NOT_FOUND" },
+  );
+  assert.deepEqual(methodCalls(host, "session.collaboration.send"), []);
+});
+
 test("a built-in send without a live turn is refused before any host send", async () => {
   const host = createHost("host-1", () => ({}));
   const { service } = createService({ getHost: () => host });
