@@ -655,6 +655,10 @@ function spawnProcess(binary, args) {
 test("completion: the task session's rules name the tool and the ship-first order", () => {
   const source = readFileSync(join(root, "apps/desktop/electron/main/services/task-status.ts"), "utf8");
   assert.match(source, /status: \\"ready\\"/, "the briefing does not name the ready report");
-  assert.match(source, /one acceptance entry per criterion/, "the briefing does not ask for the criteria");
-  assert.match(source, /pushes its branch and opens the PR first/, "the briefing does not ship before reporting");
+  assert.match(source, /one entry per acceptance criterion/, "the briefing does not ask for the criteria");
+  assert.match(
+    source,
+    /pushes its branch and opens the PR before it reports ready/,
+    "the briefing does not ship before reporting",
+  );
 });
