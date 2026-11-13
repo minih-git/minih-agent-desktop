@@ -104,7 +104,7 @@ pub(super) async fn merge_pr(
                 .map(Some),
             "delete-branches" => {
                 let remotes = remotes_of(git, &target.project).await;
-                delete_remote_branches(git, target, &remotes)
+                delete_remote_branches(git, &target.project, &target.row.branch, &remotes)
                     .await
                     .map(|_| None)
             }
@@ -471,25 +471,36 @@ async fn verify_merged(
 /// that finished its work last time.
 async fn delete_remote_branches(
     git: &GitRunner,
-    target: &Target,
+    project: &Path,
+    branch: &str,
     remotes: &[(String, String)],
 ) -> std::result::Result<(), Stop> {
     for (name, _) in remotes {
         let heads = git
-            .output(
-                &target.project,
-                &["ls-remote", "--heads", name, &target.row.branch],
-            )
+            .output(project, &["ls-remote", "--heads", name, branch])
             .await
-            .map_err(|error| Stop::new("delete-branches", error.to_string(), true))?;
-        if !heads.success() || heads.stdout.trim().is_empty() {
+            .map_err(|error| {
+                Stop::new(
+                    "delete-branches",
+                    format!("{name}: could not be read ({error})"),
+                    true,
+                )
+            })?;
+        // "Nobody could tell" is not "already gone": reporting success over a
+        // failed read would leave the branch on the remote while calling the
+        // step finished, and the person would never be told.
+        if !heads.success() {
+            return Err(Stop::new(
+                "delete-branches",
+                format!("{name}: {}", heads.stderr.trim()),
+                true,
+            ));
+        }
+        if heads.stdout.trim().is_empty() {
             continue;
         }
         let output = git
-            .output(
-                &target.project,
-                &["push", name, "--delete", &target.row.branch],
-            )
+            .output(project, &["push", name, "--delete", branch])
             .await
             .map_err(|error| Stop::new("delete-branches", error.to_string(), true))?;
         if !output.success() {
@@ -576,4 +587,56 @@ fn primary_remote_blocking(
 
 async fn primary_remote(git: &GitRunner, project: &Path) -> String {
     primary_remote_of(&remotes_of(git, project).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session_worktrees::test_support::init_repo;
+
+    /// **C5.** A remote that cannot be read is a failed step, never a pass.
+    ///
+    /// `ls-remote` answers "does this branch still exist", and "nobody could
+    /// tell" is not "it is gone": reporting success would leave the branch on the
+    /// remote while the record said the step was finished.
+    #[tokio::test]
+    async fn a_remote_that_cannot_be_read_fails_the_delete_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = init_repo(dir.path());
+        let git = GitRunner::default();
+        let remotes = vec![("ghost".to_string(), "nowhere".to_string())];
+        let failure = delete_remote_branches(&git, &repo, "minih-agent/task-1", &remotes)
+            .await
+            .unwrap_err();
+        assert_eq!(failure.step, "delete-branches");
+        assert!(
+            failure.message.starts_with("ghost:"),
+            "the refusal does not name the remote: {}",
+            failure.message
+        );
+    }
+
+    /// A branch that is already gone is finished work, not a failure.
+    #[tokio::test]
+    async fn a_branch_that_is_already_gone_passes_the_delete_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = init_repo(dir.path());
+        let bare = dir.path().join("origin.git");
+        std::fs::create_dir_all(&bare).unwrap();
+        crate::session_worktrees::test_support::git_cmd(
+            &bare,
+            &["init", "-q", "--bare", "-b", "main"],
+        );
+        crate::session_worktrees::test_support::git_cmd(
+            &repo,
+            &["remote", "add", "origin", bare.to_str().unwrap()],
+        );
+        crate::session_worktrees::test_support::git_cmd(&repo, &["push", "-q", "origin", "main"]);
+        let git = GitRunner::default();
+        let remotes = vec![("origin".to_string(), bare.to_string_lossy().to_string())];
+        match delete_remote_branches(&git, &repo, "minih-agent/gone", &remotes).await {
+            Ok(()) => {}
+            Err(failure) => panic!("a branch that does not exist is not a failure: {failure:?}"),
+        }
+    }
 }
