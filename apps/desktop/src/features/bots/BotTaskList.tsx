@@ -101,7 +101,7 @@ function BotTaskRow({
   // The startup fence is not a stage, so the row says what happened in its own
   // words instead of borrowing the stage the task was left in.
   const interrupted = isTaskInterrupted(task);
-  const stage = interrupted ? t("bots.tasks.interrupted") : t(taskStageLabelKey(task.stage));
+  const stage = t(taskStageLabelKey(task.stage, { interrupted }));
   const label = repo
     ? t("bots.tasks.openTaskInRepo", { title: task.title, repo, stage })
     : t("bots.tasks.openTask", { title: task.title, stage });

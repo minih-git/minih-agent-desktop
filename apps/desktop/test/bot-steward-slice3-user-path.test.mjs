@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
+import { loadStyles } from "./helpers/styles.mjs";
 
 /*
  * The secretary's slice-3 surfaces, as a person operates them (employee mode 0.5
@@ -127,7 +128,18 @@ function bot(sessionId, name) {
 
 const rootNode = createRoot(document.getElementById("root"));
 const frame = () => new Promise(requestAnimationFrame);
-async function settle() { await frame(); await frame(); }
+async function settle(times = 2) { for (let n = 0; n < times; n += 1) await frame(); }
+// The product fades its surfaces in; a capture taken mid-animation is a dark
+// smear, not a screenshot. Same rule as bot-workbench-visual.test.mjs:
+// finish every finite effect, leave the infinite ones alone.
+function finishAnimations() {
+  for (const animation of document.getAnimations()) {
+    const timing = animation.effect && animation.effect.getTiming ? animation.effect.getTiming() : null;
+    if (timing && timing.iterations === Infinity) continue;
+    try { animation.finish(); } catch { /* idle or infinite: nothing to finish */ }
+  }
+}
+document.documentElement.dataset.platform = "darwin";
 function check(condition, message) { if (!condition) throw new Error(message); }
 async function until(predicate, label) {
   for (let n = 0; n < 240; n += 1) {
@@ -221,7 +233,8 @@ window.stewardScreens = {
     drafts = [proposal("hash-1")];
     showCards();
     await until(() => button("Start"), "the card for the screenshot");
-    await settle();
+    finishAnimations();
+    await settle(2);
     return true;
   },
   autoStarted: async (theme) => {
@@ -230,14 +243,16 @@ window.stewardScreens = {
     drafts = [proposal("hash-auto")];
     showCards();
     await until(() => document.querySelector("[data-auto-started]"), "the auto row for the screenshot");
-    await settle();
+    finishAnimations();
+    await settle(2);
     return true;
   },
   interrupted: async (theme) => {
     document.documentElement.dataset.theme = theme;
     showInterrupted();
     await until(() => document.querySelector("[data-task-restart]"), "the interrupted row for the screenshot");
-    await settle();
+    finishAnimations();
+    await settle(2);
     return true;
   },
 };
@@ -250,17 +265,17 @@ test(
     const temp = await mkdtemp(join(tmpdir(), "pi-steward-slice3-"));
     await mkdir(artifacts, { recursive: true });
     try {
-      // The real token scales, and the two stylesheets that style these
-      // surfaces. `@theme` is the Tailwind v4 block; the screenshot host has no
-      // Tailwind, so it becomes a plain `:root` here — the values are the same
-      // custom properties the app ships.
-      const styles = (
-        await Promise.all([
-          readFile(join(root, "apps/desktop/src/styles/tokens.css"), "utf8"),
-          readFile(join(root, "apps/desktop/src/styles/bots.css"), "utf8"),
-          readFile(join(root, "apps/desktop/src/styles/bots-steward.css"), "utf8"),
-        ])
-      ).map((text, index) => (index === 0 ? text.replace(/@theme\s*\{/, ":root {") : text));
+      // The effective stylesheet, exactly as `globals.css` sequences it, so a
+      // screenshot can never show rules the app does not load (that is the bug
+      // `bot-ui-class-styles` guards, seen from the other side). Two edits for
+      // this host only: the Tailwind import has no bundler here, and `@theme` is
+      // the Tailwind v4 block — it becomes a plain `:root` so the same custom
+      // properties the app ships are defined.
+      const styles = [
+        (await loadStyles())
+          .replace(/^@import "tailwindcss";\s*$/m, "")
+          .replace(/@theme\s*\{/, ":root {"),
+      ];
 
       await build({
         stdin: { contents: fixture, resolveDir: join(root, "scripts/e2e"), loader: "tsx" },

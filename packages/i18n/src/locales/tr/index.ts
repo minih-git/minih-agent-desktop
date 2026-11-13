@@ -835,6 +835,7 @@ export const tr = {
       failed: "Başarısız",
       personAnswer: "Yanıtınızı bekliyor",
       personAccept: "İncelemeye hazır",
+      "interrupted": "Kesildi",
     },
     group: {
       title: "Çalışanlar",
@@ -938,7 +939,6 @@ export const tr = {
     tasks: {
       history: "Geçmiş ({{count}})",
       archived: "Arşivlendi",
-      "interrupted": "Kesildi",
       "restart": "Yeniden başlat",
       "restarting": "Yeniden başlatılıyor…",
       "restartFailed": "Görev yeniden başlatılamadı: {{reason}}",

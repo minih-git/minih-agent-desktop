@@ -24,8 +24,22 @@ const TASK_STAGE_KEYS: Record<TaskStage, string> = {
   "person/accept": "bots.taskStage.personAccept",
 };
 
+/**
+ * The word a task shows when the **startup fence** interrupted it.
+ *
+ * It is not a stage: the task keeps the stage it had, and the interruption is
+ * the bound delivery's status (ADR 0239's fence). But it is a word a task row has
+ * to say, in the same family as the other task words — a row that read "进行中"
+ * after the application stopped would be describing work nobody is doing.
+ */
+export const TASK_INTERRUPTED_KEY = "bots.taskStage.interrupted";
+
 /** The i18n key for a task stage, e.g. `bots.taskStage.personAccept`. */
-export function taskStageLabelKey(stage: TaskStage): string {
+export function taskStageLabelKey(
+  stage: TaskStage,
+  options: { interrupted?: boolean } = {},
+): string {
+  if (options.interrupted) return TASK_INTERRUPTED_KEY;
   // A stage the host reports but this build does not know yet still needs a
   // word; "queued" is the truth for "nothing has happened yet".
   return TASK_STAGE_KEYS[stage] ?? "bots.taskStage.queued";

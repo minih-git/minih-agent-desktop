@@ -15,7 +15,9 @@ import test from "node:test";
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 
-const { taskStageLabelKey } = await import("../src/features/bots/bot-task-stage.ts");
+const { taskStageLabelKey, TASK_INTERRUPTED_KEY } = await import(
+  "../src/features/bots/bot-task-stage.ts"
+);
 const { botStatusView } = await import("../src/features/bots/bot-status.ts");
 const { catalogs, flattenCatalog } = await import("../../../packages/i18n/src/index.ts");
 
@@ -65,5 +67,22 @@ test("all seven task words exist in every locale", () => {
       assert.ok(word.trim().length > 0, `${locale} has an empty ${key}`);
       assert.notEqual(word, key, `${locale} did not translate ${key}`);
     }
+  }
+});
+
+test("an interrupted task says so, in the same family, in every locale", () => {
+  // The startup fence is not a stage: the task keeps the stage it had and the
+  // interruption is the delivery's status. The row still has to say it, and it
+  // has to say it in the words that belong to a task rather than to an employee.
+  assert.equal(TASK_INTERRUPTED_KEY, "bots.taskStage.interrupted");
+  assert.equal(taskStageLabelKey("working", { interrupted: true }), TASK_INTERRUPTED_KEY);
+  // It is a word of its own: none of the seven stages borrows it.
+  for (const stage of STAGES) assert.notEqual(taskStageLabelKey(stage), TASK_INTERRUPTED_KEY);
+  for (const locale of Object.keys(catalogs)) {
+    const flat = flattenCatalog(catalogs[locale]);
+    const word = flat[TASK_INTERRUPTED_KEY];
+    assert.equal(typeof word, "string", `${locale} is missing ${TASK_INTERRUPTED_KEY}`);
+    assert.ok(word.trim().length > 0, `${locale} has an empty ${TASK_INTERRUPTED_KEY}`);
+    assert.notEqual(word, TASK_INTERRUPTED_KEY, `${locale} did not translate it`);
   }
 });

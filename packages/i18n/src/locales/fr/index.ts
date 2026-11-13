@@ -826,6 +826,7 @@ export const fr = {
       "failed": "Échouée",
       "personAnswer": "En attente de votre réponse",
       "personAccept": "Prête à relire",
+      "interrupted": "Interrompue",
     },
     "group": {
       "title": "Employés",
@@ -929,7 +930,6 @@ export const fr = {
     "tasks": {
       "history": "Historique ({{count}})",
       "archived": "Archivée",
-      "interrupted": "Interrompue",
       "restart": "Relancer",
       "restarting": "Relance…",
       "restartFailed": "Impossible de relancer la tâche : {{reason}}",

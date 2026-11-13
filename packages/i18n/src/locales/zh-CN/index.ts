@@ -839,6 +839,7 @@ export const zhCN = {
       failed: "失败",
       personAnswer: "等你回答",
       personAccept: "待验收",
+      interrupted: "已中断",
     },
     group: {
       title: "员工",
@@ -942,7 +943,6 @@ export const zhCN = {
     tasks: {
       history: "历史（{{count}}）",
       archived: "已归档",
-      interrupted: "已中断",
       restart: "重新开工",
       restarting: "正在重新开工…",
       restartFailed: "重新开工失败：{{reason}}",

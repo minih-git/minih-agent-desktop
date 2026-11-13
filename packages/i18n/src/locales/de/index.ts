@@ -826,6 +826,7 @@ export const de = {
       "failed": "Fehlgeschlagen",
       "personAnswer": "Wartet auf Ihre Antwort",
       "personAccept": "Bereit zur Prüfung",
+      "interrupted": "Unterbrochen",
     },
     "group": {
       "title": "Mitarbeiter",
@@ -929,7 +930,6 @@ export const de = {
     "tasks": {
       "history": "Verlauf ({{count}})",
       "archived": "Archiviert",
-      "interrupted": "Unterbrochen",
       "restart": "Erneut starten",
       "restarting": "Wird erneut gestartet…",
       "restartFailed": "Aufgabe konnte nicht erneut gestartet werden: {{reason}}",

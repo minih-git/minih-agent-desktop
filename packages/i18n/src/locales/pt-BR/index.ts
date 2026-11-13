@@ -825,6 +825,7 @@ export const ptBR = {
       failed: "Falhou",
       personAnswer: "Aguardando sua resposta",
       personAccept: "Pronta para revisão",
+      "interrupted": "Interrompida",
     },
     group: {
       title: "Funcionários",
@@ -928,7 +929,6 @@ export const ptBR = {
     tasks: {
       history: "Histórico ({{count}})",
       archived: "Arquivada",
-      "interrupted": "Interrompida",
       "restart": "Reiniciar",
       "restarting": "Reiniciando…",
       "restartFailed": "Não foi possível reiniciar a tarefa: {{reason}}",

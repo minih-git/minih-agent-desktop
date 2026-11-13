@@ -835,6 +835,7 @@ export const ko = {
       failed: "실패",
       personAnswer: "답변 대기",
       personAccept: "검토 대기",
+      interrupted: "중단됨",
     },
     group: {
       title: "직원",
@@ -938,7 +939,6 @@ export const ko = {
     tasks: {
       history: "기록 ({{count}})",
       archived: "보관됨",
-      interrupted: "중단됨",
       restart: "다시 시작",
       restarting: "다시 시작하는 중…",
       restartFailed: "다시 시작하지 못했습니다: {{reason}}",

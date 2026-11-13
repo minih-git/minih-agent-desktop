@@ -87,7 +87,10 @@
    it — so it borrows the warning tone instead of a stage colour, in both places
    a task shows its state. */
 .ct-chip.interrupted,
-.sidebar-bot-task-stage.interrupted {
+.sidebar-bot-task-stage.interrupted,
+/* The workbench's task row says it too: the same state must not read two ways
+   in one product. */
+.employee-task-stage.interrupted {
   color: var(--ds-warning);
   border-color: color-mix(in oklab, var(--ds-warning) 45%, transparent);
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BotListItem, TaskView } from "@minih-agent/shared";
-import { taskTitleFromUtterance } from "@minih-agent/shared";
+import { isTaskInterrupted, taskTitleFromUtterance } from "@minih-agent/shared";
 import { Button, Input, Select } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
@@ -226,7 +226,14 @@ function TaskGroup({
                     <span className="employee-task-progress">{task.latestProgress}</span>
                   ) : null}
                   <span className="employee-task-meta">
-                    <span className={`employee-task-stage ${tone}`}>{t(taskStageLabelKey(task.stage))}</span>
+                    <span
+                      className={`employee-task-stage ${tone}${
+                        isTaskInterrupted(task) ? " interrupted" : ""
+                      }`}
+                      data-task-stage={isTaskInterrupted(task) ? "interrupted" : task.stage}
+                    >
+                      {t(taskStageLabelKey(task.stage, { interrupted: isTaskInterrupted(task) }))}
+                    </span>
                     <span>
                       {task.origin === "steward"
                         ? t("bots.workbench.originSteward")

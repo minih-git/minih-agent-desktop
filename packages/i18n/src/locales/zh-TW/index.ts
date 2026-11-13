@@ -831,6 +831,7 @@ export const zhTW = {
       failed: "失敗",
       personAnswer: "等你回答",
       personAccept: "待驗收",
+      interrupted: "已中斷",
     },
     group: {
       title: "員工",
@@ -934,7 +935,6 @@ export const zhTW = {
     tasks: {
       history: "歷史（{{count}}）",
       archived: "已封存",
-      interrupted: "已中斷",
       restart: "重新開工",
       restarting: "正在重新開工…",
       restartFailed: "重新開工失敗：{{reason}}",

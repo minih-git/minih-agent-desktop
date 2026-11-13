@@ -848,6 +848,7 @@ export const en = {
       failed: "Failed",
       personAnswer: "Waiting for your answer",
       personAccept: "Ready for review",
+      interrupted: "Interrupted",
     },
     group: {
       title: "Employees",
@@ -951,7 +952,6 @@ export const en = {
     tasks: {
       history: "History ({{count}})",
       archived: "Archived",
-      interrupted: "Interrupted",
       restart: "Start again",
       restarting: "Starting…",
       restartFailed: "Could not start the task again: {{reason}}",
