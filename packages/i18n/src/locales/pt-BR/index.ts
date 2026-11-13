@@ -906,6 +906,19 @@ export const ptBR = {
         checking: "Verificando…",
       },
     },
+    experience: {
+      title: "Experiências",
+      description:
+        "O que cada funcionário aprendeu com tarefas já concluídas. Apenas referência; uma experiência apagada não é aprendida de novo.",
+      forEmployee: "Funcionário: {{name}}",
+      empty: "Ainda sem experiências.",
+      disabled: "A extração de experiências está desligada.",
+      openSettings: "Abrir ajustes de memória",
+      whereSettings: "Ative em Ajustes → IA → Memória de longo prazo.",
+      source: "Tarefa #{{shortId}} · {{date}}",
+      deleteLabel: "Apagar esta experiência",
+      deleteFailed: "Não foi possível apagar. Tente de novo.",
+    },
     taskStage: {
       queued: "Na fila",
       working: "Em andamento",

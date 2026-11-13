@@ -920,6 +920,19 @@ export const zhCN = {
         checking: "正在查…",
       },
     },
+    experience: {
+      title: "经验",
+      description:
+        "每个员工从已完成任务里学到的经验。只作参考，不作依据；删掉的经验不会再学回来。",
+      forEmployee: "员工：{{name}}",
+      empty: "还没有经验。",
+      disabled: "经验提炼没打开。",
+      openSettings: "打开记忆设置",
+      whereSettings: "在「设置 → AI → 长期记忆」里打开。",
+      source: "任务 #{{shortId}} · {{date}}",
+      deleteLabel: "删除这条经验",
+      deleteFailed: "删除失败，请重试。",
+    },
     taskStage: {
       queued: "排队中",
       working: "进行中",

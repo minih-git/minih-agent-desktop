@@ -1268,6 +1268,20 @@ run on a file that already carries historical foreign-key violations, completes 
 column that already exists rather than restarting it, and stamps `user_version`
 last.
 
+**Schema v38 -> v39.** The employee lesson layer (ADR bot-sessions-and-steward,
+"Employee experience and inspection"). `memory_entries` and `memory_tombstones`
+are **rebuilt** with `'bot'` added to the `scope_kind` check (the key is the
+employee's session id); every row is copied verbatim, the row counts and the
+`memory_entries_fts` hit count are compared before and after, the external-content
+index and its three triggers are recreated and rebuilt from the copied rows, and
+the step refuses only *new* dangling references — the v32→v33 lesson, again. On
+`tasks`, two additive columns: `experience_json` (the extraction state of one
+archived task: `pending`, `running`, `done`, `skipped:disabled`,
+`failed:<code>`, `exhausted`, plus the entry ids it wrote) and
+`stage_changed_at` (when the current stage was written; the hourly inspection
+measures a wait from it, and a historic row leaves it NULL, which reads as
+"unknown" and is never reported).
+
 ### 4.7 messages — transcript index
 
 The transcript itself is the per-session JSONL file (§2.1); this table is its

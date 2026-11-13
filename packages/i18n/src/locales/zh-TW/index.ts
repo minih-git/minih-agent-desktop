@@ -912,6 +912,19 @@ export const zhTW = {
         checking: "正在查…",
       },
     },
+    experience: {
+      title: "經驗",
+      description:
+        "每個員工從已完成任務裡學到的經驗。只作參考，不作依據；刪掉的經驗不會再學回來。",
+      forEmployee: "員工：{{name}}",
+      empty: "還沒有經驗。",
+      disabled: "經驗提煉沒打開。",
+      openSettings: "開啟記憶設定",
+      whereSettings: "在「設定 → AI → 長期記憶」裡開啟。",
+      source: "任務 #{{shortId}} · {{date}}",
+      deleteLabel: "刪除這條經驗",
+      deleteFailed: "刪除失敗，請重試。",
+    },
     taskStage: {
       queued: "排隊中",
       working: "進行中",

@@ -349,3 +349,33 @@ writes, suggestion APIs, and detailed provenance remain out of scope.
 - **`MemoryRemember` uses the normal permission path in every mode.** Detecting
   "the user asked to remember" from message text is language-dependent and
   easy to spoof; the receipt with Undo keeps explicit saves low-friction.
+
+## Employee scope (employee mode 0.5, schema v39, amended in slice 5)
+
+The learned-memory layer gains a fourth scope kind, `bot`, whose key is the
+employee's session id. It exists so an employee can remember what its own finished
+tasks taught it (ADR bot-sessions-and-steward, "Employee experience and
+inspection"); it is not a memory about the person.
+
+Amendment to §3.1 and §4, and only for this scope:
+
+- **An extracted lesson may be stored `active`.** The general rule — extraction
+  only proposes, and a proposal must come from extraction — exists to protect the
+  person from machine-written claims about themselves and their projects. A lesson
+  is neither: it is the employee's own note about its own work, it is rendered in
+  a section that says "reference only", and it is deleted with one click. A `bot`
+  scope write must therefore be `origin = extracted` **and** `status = active`;
+  the same code path writing into a `project` or `user` scope still has to
+  suggest. The rule lives in `validation.rs` and is pinned by a test.
+- **The session-start index keeps lessons separate.** `memory.index` returns them
+  in their own array with their own budget (12 lines, 2 KiB), so a task's project
+  notes can never be pushed out by what its employee learned.
+- **Only a task session reads them**, and only the employee that owns it. The
+  employee container, the steward, and ordinary conversations read exactly what
+  they read before.
+
+Everything else is unchanged: the same credential detector, the same fingerprints
+and compare-and-set revisions, the same tombstones (a deleted lesson never comes
+back), and the same manager rules for the two older scopes. `memory.delete`
+applies to a lesson unchanged, which is what makes "delete it here and never learn
+it again" true.

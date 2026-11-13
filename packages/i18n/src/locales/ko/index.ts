@@ -916,6 +916,19 @@ export const ko = {
         checking: "확인 중…",
       },
     },
+    experience: {
+      title: "경험",
+      description:
+        "각 직원이 이미 끝난 작업에서 배운 경험입니다. 참고용일 뿐이며, 삭제한 경험은 다시 배우지 않습니다.",
+      forEmployee: "직원: {{name}}",
+      empty: "아직 경험이 없습니다.",
+      disabled: "경험 추출이 꺼져 있습니다.",
+      openSettings: "기억 설정 열기",
+      whereSettings: "설정 → AI → 장기 기억에서 켜세요.",
+      source: "작업 #{{shortId}} · {{date}}",
+      deleteLabel: "이 경험 삭제",
+      deleteFailed: "삭제하지 못했습니다. 다시 시도하세요.",
+    },
     taskStage: {
       queued: "대기 중",
       working: "진행 중",

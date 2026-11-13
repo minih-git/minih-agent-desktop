@@ -300,6 +300,12 @@ export const IPC = {
     memoryArchive: "minih-agent-desktop/memory/archive",
     memoryRestore: "minih-agent-desktop/memory/restore",
     memoryDelete: "minih-agent-desktop/memory/delete",
+    /**
+     * One employee's lessons from its finished tasks (employee mode 0.5 slice 5).
+     * They live in the learned-memory `bot` scope but have their own list because
+     * each one has to name the task it came from.
+     */
+    taskExperienceList: "minih-agent-desktop/task/experience/list",
     // The transcript receipt's "remember again": the user's own action, and the
     // only path that clears a delete. Never reachable from a model tool.
     memoryRememberAgain: "minih-agent-desktop/memory/rememberAgain",

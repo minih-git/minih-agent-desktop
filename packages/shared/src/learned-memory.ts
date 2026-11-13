@@ -90,6 +90,20 @@ export type LearnedMemoryEntry = {
   useCount: number;
 };
 
+/**
+ * One employee lesson, as `task.experience.list` returns it (employee mode 0.5
+ * slice 5). The entry is an ordinary learned-memory row in the employee's `bot`
+ * scope; the extra fields name the task it was learned from, so a lesson can be
+ * opened in its context and deleted with the knowledge of where it came from.
+ */
+export type EmployeeLesson = LearnedMemoryEntry & {
+  sourceTaskId?: string;
+  sourceTaskShortId?: string;
+  sourceTaskTitle?: string;
+  /** When that task was archived, if it has been. */
+  sourceTaskArchivedAt?: string;
+};
+
 /** What one manager read asks for: one scope, optionally filtered. */
 export type LearnedMemoryListRequest = {
   scope: LearnedMemoryScopeKind;

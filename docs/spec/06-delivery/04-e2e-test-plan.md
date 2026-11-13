@@ -21508,3 +21508,68 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   touched, and that the failure leaves a blocked card; the host-side step order and
   resumption are proven in `task_delivery_tests.rs`. A batch proposed by a live
   steward turn is not part of CI.
+
+#### E2E-BOT-archived-task-teaches-its-employee: A finished task leaves one lesson, and the next task starts with it
+
+- **Preconditions**: An employee exists; `learnedMemory.learn` is on with a model
+  and a daily budget. Task A ran in repository R and was archived by the person.
+- **Steps**: 1) Open Settings → Employees and read the employee's 经验 section.
+  2) Archive a second task (or merge it, which archives as cleanup). 3) Open a new
+  task of the same employee in R and read its system prompt before the first
+  turn. 4) Delete one lesson from the settings section, then run another task of
+  the same kind.
+- **Expected**: Step 1 lists at most three lessons per task, each with its source
+  「任务 #短号 · 日期」; clicking the source opens that task's session. Step 2
+  produces exactly one extraction for that task (`experience_json` goes
+  `pending` → `done`), and a second drain writes nothing. Step 3 shows a
+  「Lessons from this employee's earlier tasks」 section under the dated notes,
+  with the warning that they are reference only and may be outdated; the task's
+  project notes are unchanged. Step 4 removes the lesson immediately and its
+  tombstone stops the same text from being learned again, so step 4's task either
+  learns something new or nothing at all. With the switch off, the section says
+  经验提炼没打开 and no model is called (`skipped:disabled`). The employee
+  container and the steward never read these lessons.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Employee experience and
+  inspection"), ADR `agent-long-term-memory` (§ "Employee scope"),
+  `03-runtime/06-host-rpc-protocol.md` (`task.experience.*`, `memory.index`),
+  `03-runtime/04-data-storage.md` (schema v39)
+- **Acceptance**: F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 5
+- **Status**: Partial. The host half is proven by
+  `crates/host-core/src/memory/experience_tests.rs` (stamp once, `done` terminal,
+  skip, three-attempt cap, tombstone, input tail) and
+  `crates/host-core/src/memory/bot_scope_tests.rs` (who reads the scope, the
+  separate lessons section, recall); Main's half by
+  `apps/desktop/test/task-experience-extraction.test.mjs` (one extraction per
+  archive, switch off costs nothing, restart resumes, failure keeps the task
+  archived) and `apps/desktop/test/learned-memory-launch.test.mjs` (the index read
+  names the session; lessons alone compose the section). The real-click user path
+  through the settings section is **not written yet**.
+
+#### E2E-BOT-inspection-speaks-only-on-anomaly: An hour of progress says nothing, and one stuck task says it once
+
+- **Preconditions**: One employee with open tasks: one moving, one in
+  `person/answer` for 2 h 5 min, and one started directly by the person that has
+  been `blocked` for 5 h. A steward exists.
+- **Steps**: 1) Let the inspection run once. 2) Read the steward's conversation
+  and the system notifications. 3) Let it run again an hour later, then again
+  after 24 h. 4) Answer the question and let it run once more.
+- **Expected**: Step 1 reports the two stuck tasks and **not** the moving one;
+  exactly one ledger notice is written (`kind = 'stage'`, payload
+  `reason: "inspection"` with both entries), and the direct task is marked
+  `direct` so the steward reports it without intervening. Step 2 shows one
+  notification per finding, worded 「<员工> 的 <任务> 已经等你 2 小时」. Step 3
+  writes nothing the next hour and one more reminder for each still-stuck pair a
+  day later. Step 4 writes nothing, because the task is no longer waiting. An
+  app quit before the next hour leaves no timer behind, and a task whose
+  `stage_changed_at` is unknown is never reported.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Employee experience and
+  inspection"), `03-runtime/06-host-rpc-protocol.md` (`task.inspect`)
+- **Acceptance**: A (function), Quality
+- **Milestone**: Employee mode 0.5, slice 5
+- **Status**: Partial. `crates/host-core/src/task_inspection_tests.rs` covers every
+  condition and both sides of its boundary, the unknown-age case, the 24-hour
+  dedupe, the merged notice, the `direct` marking, and "progress says nothing".
+  The Main timer (`services/task-inspection-service.ts`) and the renderer's
+  wording are **not covered by an automated test yet**, and the system
+  notification has not been exercised in a real Electron window.

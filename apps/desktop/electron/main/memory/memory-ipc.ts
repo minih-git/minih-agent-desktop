@@ -96,6 +96,17 @@ export function registerMemoryIpc({ registrar, getHost }: MemoryIpcDependencies)
     forward("memory.delete", { id: requiredText(request?.id, "memory id") }),
   );
 
+  // An employee's lessons (employee mode 0.5 slice 5). The host owns the scope
+  // and the provenance; Main only forwards, so the renderer cannot ask for
+  // another employee's notes by naming a scope of its own.
+  registrar.handle(
+    IPC.invoke.taskExperienceList,
+    async (request: Record<string, unknown> = {}) =>
+      forward("task.experience.list", {
+        employeeSessionId: requiredText(request?.employeeSessionId, "employee session id"),
+      }),
+  );
+
   // The receipt's "remember again". The renderer supplies the turn it belongs
   // to, never a message id: the host resolves the cited evidence from that
   // turn's rows, so this channel cannot be used to invent provenance.

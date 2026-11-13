@@ -1002,3 +1002,128 @@ restarted, and `user_version` is stamped last.
 | The dock cannot swallow the conversation | **Yes** — `max-height: 50vh`, internal scroll, asserted in the visual test | `styles/bots-steward.css`, `bot-completion-user-path.test.mjs` |
 | The steward is always the first employee row | **Yes** — `sortBots` orders by definition first, then by tone | `features/bots/bot-status.ts` |
 | Schema v38 is additive and idempotent | **Yes** — four `ADD COLUMN`s, orphan-safe, pinned by migration tests | `db/task_delivery_migration.rs` |
+
+## Employee experience and inspection (employee mode 0.5, schema v39)
+
+An employee that forgets every finished task repeats the same discoveries: the
+same flaky test, the same required flag, the same trap in the migration scripts.
+This slice gives an employee a **memory of its own work** — not a memory about the
+person — and adds one **hourly inspection** that speaks only when something has
+been waiting too long.
+
+### Experience: where a lesson lives
+
+A lesson is a learned-memory entry in a new scope, `bot`, whose key is the
+employee's session id. It is not a new store: it goes through the same write path
+as every other note, so the credential detector, the fingerprint dedupe, and the
+tombstones that make a delete stick apply unchanged (ADR
+agent-long-term-memory §4, §6, amended there for this scope).
+
+| Rule | Value |
+| --- | --- |
+| Read by | a `role = 'task'` session, for the employee that owns it — and nothing else |
+| Not read by | the employee container itself, the steward, and the person's own conversations |
+| `kind` | `fact` or `reference` (never `preference`/`feedback`: those are the person's words) |
+| `evidence` / `origin` | `inferred` / `extracted` |
+| `status` | `active` — a lesson is not a claim about the person and needs no inbox approval |
+| Promotion | none. A lesson stays active until the person deletes it, or the employee is dismissed |
+| Budget | its own: 12 lines and 2 KiB per session start, so lessons never push out a task's project notes |
+
+At session start the runtime renders them as their own section, under
+
+> Lessons from this employee's earlier tasks — reference only, may be outdated;
+> verify before relying on them.
+
+The heading is the whole safety property: a lesson is a strong hint about a
+repository and a weak claim about the current task.
+
+### Extraction: one archive, one run
+
+Every archive path — the person's own click, the merge cleanup of slice 4b, the
+abandoned blocked card — runs through `tasks::archive`, and that transaction now
+stamps `tasks.experience_json = {status: "pending", attempts: 0}`. Main drains
+the pending list (on archive, on start, then once a minute) and performs exactly
+one model call per task:
+
+| State | Meaning | Next |
+| --- | --- | --- |
+| `pending` | owed, not started | claim it |
+| `running` | claimed, lease in the stamp | taken over after the lease |
+| `done` | written; **terminal** | never runs again for this task |
+| `skipped:disabled` | the switch was off, no model was called | terminal |
+| `failed:<code>` | model, budget, or host error; attempts counted | retried, at most 3 |
+| `exhausted` | three failures | terminal |
+
+The input is the task's own record plus the **tail** of its transcript, inside the
+session extractor's 16 KiB budget: the useful part of a finished task is usually
+at its end. The prompt is a separate contract from the preference extractor — it
+asks for repository knowledge (traps, commands that worked, conventions, why an
+attempt failed) and explicitly refuses the task's own story and the person's
+preferences.
+
+Failure never touches the archive: the task stays archived, the code and the
+attempt count are recorded, and only codes and counts are logged.
+
+### Inspection: why not a scheduled task
+
+The inspection is a **host-side, deterministic** check (`task.inspect`). It calls
+no model, so a quiet hour costs nothing; the alternative — a scheduled task that
+starts a model turn every hour — would spend the person's quota to say "nothing
+happened", which is the opposite of what an inspection is for. That is the
+trade-off this slice makes explicit: the timer only decides *when* to ask, and the
+question is answered by SQL.
+
+| Condition | Threshold | Measured from |
+| --- | --- | --- |
+| `answer-wait` | 2 h in `person/answer` | `tasks.stage_changed_at` |
+| `accept-wait` | 24 h in `person/accept`, not accepted | `tasks.stage_changed_at` |
+| `stuck` | 4 h `blocked`, `failed`, or a delivery `interrupted` | `stage_changed_at` / the delivery's `updated_at` |
+| `running-long` | one running turn for 3 h | `turns.started_at` |
+
+A row from before `stage_changed_at` existed has no age, and an unknown age is not
+an anomaly: the inspection says nothing rather than guessing.
+
+Three bounds keep it calm:
+
+- one `(task, condition)` is announced at most once per 24 hours (a `kv` stamp per
+  pair, device-local);
+- one run writes **at most one** ledger notice (`kind = 'stage'`, payload
+  `reason: "inspection"` with the list), so the steward is woken once with a list
+  rather than once per task;
+- direct tasks are included and marked `direct`, and the prompt tells the steward
+  to report those without intervening.
+
+Main schedules the first run five minutes after the app is ready, then hourly, and
+clears the timer on quit. Each new anomaly also reaches the person as a system
+notification, worded by the renderer (which owns i18n).
+
+### Schema and validation
+
+Schema v39 (`db/bot_memory_migration.rs`): `memory_entries` and
+`memory_tombstones` are rebuilt with `'bot'` added to the `scope_kind` check, the
+`memory_entries_fts` index and its triggers are recreated and rebuilt from the
+copied rows, and `tasks` gains `experience_json` and `stage_changed_at` as pure
+`ADD COLUMN`s. `memory_session_state` is deliberately untouched, so the historical
+foreign-key violations a real file carries are never in the way; only *new*
+violations fail the step.
+
+### Enforcement status after this section
+
+| Rule | Enforced | Where |
+| --- | --- | --- |
+| Only a task reads its employee's lessons | **Yes** — `learned_memory_scopes_for_session` adds `bot` only for `role = 'task'` | `memory/repository.rs`, `bot_scope_tests.rs` |
+| Lessons never mix with dated notes | **Yes** — separate `lessons` array with its own budget | `memory/model.rs`, `learned-memory-prompt.ts` |
+| A lesson is reference only | **Yes** — the heading states it; a test pins the words | `packages/agent-runtime/src/learned-memory-prompt.ts` |
+| One archive owes exactly one extraction | **Yes** — stamped in the archive transaction; `done` is terminal | `tasks.rs::archive`, `memory/experience.rs` |
+| A restart does not lose an owed task | **Yes** — pending list drained on start; lease on the stamp | `task-experience-service.ts`, `task-experience-extraction.test.mjs` |
+| The switch being off calls no model | **Yes** — `skipped:disabled` written before any model call | `task-experience-service.ts` |
+| A failed run keeps the task archived | **Yes** — `experience_json` only; retried at most 3 times | `memory/experience.rs` |
+| A deleted lesson is not learned again | **Yes** — the write path refuses tombstoned fingerprints | `memory/validation.rs`, `experience_tests.rs` |
+| Dismissing an employee archives its lessons | **Yes** — `archive_employee_experience` sets `status='archived'` | `memory/experience.rs` |
+| The inspection calls no model | **Yes** — `task.inspect` is SQL and `kv` only | `task_inspection.rs` |
+| Progress says nothing | **Yes** — empty findings, no ledger row, no notification | `task_inspection_tests.rs` |
+| One reminder per (task, condition) per day | **Yes** — `kv` stamp compared with `REMIND_AFTER_MS` | `task_inspection.rs` |
+| One merged notice per run, direct tasks marked | **Yes** — one `kind='stage'` row with `reason: "inspection"` | `session_collaboration/notices.rs::inspection` |
+| The timer is cleaned up on quit | **Yes** — `disposeTaskInspection` in the shutdown chain | `bootstrap/shutdown.ts`, `task-inspection-service.ts` |
+| v39 is additive, idempotent, orphan-tolerant | **Yes** — row counts, FTS hits, and only-new-violations compared | `db/bot_memory_migration.rs` |
+| An accepted task is not "waiting on you" | **Yes** — `botStatusFromTasks` and `taskTone` ignore `acceptedAt` rows | `features/bots/bot-status.ts`, `packages/shared/src/task.ts` |

@@ -317,13 +317,16 @@ recall tools.
   user scope, with the trigram FTS index as a prefilter. `limit` defaults to 8 and
   is capped at 20. Hits refresh `lastUsedAt` and `useCount` only with
   `recordUse: true`; the session-start index never does.
-- `memory.index({ path? })` — the session-start index: active entries of the
-  project scope (when `path` names one) and the user scope, explicit entries
-  first, then by recency of use, bounded to 40 entries and 6 KiB. Without `path`
-  the snapshot is the user scope alone, so a session that belongs to no project
-  still starts with the user's own notes. Returns
-  `{ index: { entries, omittedCount, bytes } }`. A launch that cannot read it
-  continues without an index.
+- `memory.index({ sessionId?, path? })` — the session-start index. With
+  `sessionId` the host resolves the scopes itself: the session's project scope
+  (when it has one), the user scope, and — for a `role = 'task'` session — the
+  employee that owns it, whose lessons arrive in a **separate** `lessons` array
+  with their own 12-line / 2 KiB budget (employee mode 0.5 slice 5). `path` is
+  the older project-only shape for a caller without a session. Explicit entries
+  come first, then by recency of use, bounded to 40 entries and 6 KiB; without a
+  session or path the snapshot is the user scope alone. Returns
+  `{ index: { entries, omittedCount, bytes, lessons?, omittedLessons? } }`. A
+  launch that cannot read it continues without an index.
 - `memory.stats()` — the device-local counters the memory manager shows:
   `{ stats: { index: { entries, bytes, omitted, capturedAt }, suggestions:
   { accepted, rejected }, tombstones: { fromExtraction, fromCreate },
@@ -869,6 +872,28 @@ or general MCP operations:
   `origin = steward`; `origin = direct` tasks never wake the steward. A person's
   own stop leaves the task `blocked` with `reason: "stopped"` and is announced to
   nobody.
+- `task.inspect()` — the hourly inspection (employee mode 0.5 slice 5). A
+  deterministic check of every open task; **no model is called**. Answers
+  `{ findings: [{ taskId, shortId, title, employeeSessionId, employeeName,
+  sessionId, stage, condition, waitedMs, direct, since? }], notified, batch? }`,
+  where `condition` is `answer-wait` (2 h in `person/answer`), `accept-wait`
+  (24 h in `person/accept` and not accepted), `stuck` (4 h `blocked`, `failed`,
+  or an `interrupted` delivery), or `running-long` (a turn running 3 h). One
+  `(task, condition)` pair is reported at most once per 24 hours, and one run
+  writes at most one merged `kind = stage` ledger notice (payload
+  `reason: "inspection"`, the list of findings, `direct` marked) to the steward.
+  An empty answer is the normal case and writes nothing.
+- `task.experience.pending({ limit? })` / `.claim({ taskId, leaseMs? })` /
+  `.input({ taskId })` / `.complete({ taskId, entries })` / `.fail({ taskId,
+  code })` / `.skip({ taskId })` / `.list({ employeeSessionId })` — the employee
+  lesson lifecycle. `pending` answers the archived tasks that still owe one
+  extraction; `claim` moves one to `running` under a lease; `input` assembles the
+  task's facts plus the tail of its transcript inside the session extractor's
+  16 KiB budget; `complete` writes up to three `fact`/`reference` lessons into
+  the employee's `bot` scope (active, extracted, inferred) and marks the task
+  `done` — **terminal**; `fail` records a code and an attempt (three at most);
+  `skip` records `skipped:disabled` when the switch is off. `list` returns one
+  employee's lessons with the task each came from.
 - `taskCard.confirm` — the person's click: it checks the `cardHash` the caller
   displayed, freezes the card, records `confirmedBy`, dispatches the work and
   notifies the steward, all in one transaction. The task session it creates runs

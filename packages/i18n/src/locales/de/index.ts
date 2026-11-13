@@ -907,6 +907,19 @@ export const de = {
         checking: "Wird geprüft…",
       },
     },
+    experience: {
+      title: "Erfahrungen",
+      description:
+        "Was jeder Mitarbeiter aus bereits erledigten Aufgaben gelernt hat. Nur als Hinweis; eine gelöschte Erfahrung wird nicht erneut gelernt.",
+      forEmployee: "Mitarbeiter: {{name}}",
+      empty: "Noch keine Erfahrungen.",
+      disabled: "Erfahrungsextraktion ist aus.",
+      openSettings: "Speichereinstellungen öffnen",
+      whereSettings: "Unter Einstellungen → KI → Langzeitgedächtnis einschalten.",
+      source: "Aufgabe #{{shortId}} · {{date}}",
+      deleteLabel: "Diese Erfahrung löschen",
+      deleteFailed: "Löschen fehlgeschlagen. Bitte erneut versuchen.",
+    },
     "taskStage": {
       "queued": "In der Warteschlange",
       "working": "In Arbeit",

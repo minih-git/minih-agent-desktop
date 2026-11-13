@@ -916,6 +916,19 @@ export const tr = {
         checking: "Kontrol ediliyor…",
       },
     },
+    experience: {
+      title: "Deneyimler",
+      description:
+        "Her çalışanın tamamladığı işlerden öğrendikleri. Yalnızca referans; silinen bir deneyim yeniden öğrenilmez.",
+      forEmployee: "Çalışan: {{name}}",
+      empty: "Henüz deneyim yok.",
+      disabled: "Deneyim çıkarımı kapalı.",
+      openSettings: "Bellek ayarlarını aç",
+      whereSettings: "Ayarlar → Yapay zekâ → Uzun süreli bellek altında açın.",
+      source: "Görev #{{shortId}} · {{date}}",
+      deleteLabel: "Bu deneyimi sil",
+      deleteFailed: "Silinemedi. Yeniden deneyin.",
+    },
     taskStage: {
       queued: "Kuyrukta",
       working: "Sürüyor",

@@ -907,6 +907,19 @@ export const es = {
         checking: "Comprobando…",
       },
     },
+    experience: {
+      title: "Experiencias",
+      description:
+        "Lo que cada empleado aprendió de tareas ya terminadas. Solo como referencia; una experiencia borrada no se vuelve a aprender.",
+      forEmployee: "Empleado: {{name}}",
+      empty: "Todavía no hay experiencias.",
+      disabled: "La extracción de experiencias está desactivada.",
+      openSettings: "Abrir ajustes de memoria",
+      whereSettings: "Actívala en Ajustes → IA → Memoria a largo plazo.",
+      source: "Tarea #{{shortId}} · {{date}}",
+      deleteLabel: "Borrar esta experiencia",
+      deleteFailed: "No se pudo borrar. Inténtalo de nuevo.",
+    },
     "taskStage": {
       "queued": "En cola",
       "working": "En curso",

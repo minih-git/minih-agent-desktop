@@ -9,6 +9,7 @@ import { botInitials, botStatusView } from "./bot-status";
 import { EMPTY_BOT_DRAFT, draftFromBot, type BotDraft } from "./bot-draft";
 import { useBots } from "./use-bots";
 import { BotFormCard } from "./BotFormCard";
+import { EmployeeExperienceSection } from "./EmployeeExperienceSection";
 import { useBotDefinitions } from "./use-bot-definitions";
 import { stewardNameOf } from "./steward-name";
 
@@ -267,6 +268,15 @@ export function BotsSettingsPage({
           }}
           onSubmit={(profile, project) => void save(profile, project)}
         />
+      ) : null}
+
+      {bots.length > 0 ? (
+        <SettingsCard
+          title={t("bots.experience.title")}
+          description={t("bots.experience.description")}
+        >
+          <EmployeeExperienceSection bots={bots} />
+        </SettingsCard>
       ) : null}
 
       {bots.length > 0 ? (

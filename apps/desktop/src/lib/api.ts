@@ -207,6 +207,7 @@ import type {
   TaskView,
   TaskWorkspaceRetryResult,
   TaskInspectionEvent,
+  EmployeeLesson,
   TasksChangedEvent,
 } from "@minih-agent/shared";
 import {
@@ -1138,6 +1139,9 @@ export const api = {
   restoreLearnedMemory: (id: string) =>
     invoke<{ entry: LearnedMemoryEntry }>(IPC.invoke.memoryRestore, { id }),
   deleteLearnedMemory: (id: string) => invoke<{ ok: boolean }>(IPC.invoke.memoryDelete, { id }),
+  /** One employee's lessons, newest first, each naming the task it came from. */
+  listEmployeeExperience: (employeeSessionId: string) =>
+    invoke<{ entries: EmployeeLesson[] }>(IPC.invoke.taskExperienceList, { employeeSessionId }),
   // The user's own "remember again" on a receipt: the one write that clears a
   // delete. It sends the turn, never a message id, so the host stays the source
   // of the cited evidence.

@@ -907,6 +907,19 @@ export const fr = {
         checking: "Vérification…",
       },
     },
+    experience: {
+      title: "Expériences",
+      description:
+        "Ce que chaque employé a appris de tâches déjà terminées. À titre indicatif seulement ; une expérience supprimée n'est pas réapprise.",
+      forEmployee: "Employé : {{name}}",
+      empty: "Aucune expérience pour l'instant.",
+      disabled: "L'extraction d'expériences est désactivée.",
+      openSettings: "Ouvrir les réglages de mémoire",
+      whereSettings: "Activez-la dans Réglages → IA → Mémoire à long terme.",
+      source: "Tâche #{{shortId}} · {{date}}",
+      deleteLabel: "Supprimer cette expérience",
+      deleteFailed: "Suppression impossible. Réessayez.",
+    },
     "taskStage": {
       "queued": "En file d'attente",
       "working": "En cours",
