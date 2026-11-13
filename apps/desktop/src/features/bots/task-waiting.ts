@@ -6,6 +6,7 @@ import {
   type TaskView,
   type TaskWaiting,
 } from "@minih-agent/shared";
+import { deliveryFailure, showsCompletionCard, taskBatches } from "./task-delivery";
 
 /**
  * What the waiting channel shows, without React (employee mode 0.5 slice 4a).
@@ -19,7 +20,8 @@ import {
 /** One row of the steward's dock. */
 export type DockEntry =
   | { kind: "waiting"; task: TaskView; waiting: TaskWaiting }
-  | { kind: "stuck"; task: TaskView };
+  | { kind: "stuck"; task: TaskView }
+  | { kind: "done"; task: TaskView };
 
 /**
  * The entries the steward's dock holds for the tasks she dispatched.
@@ -37,6 +39,11 @@ export function stewardDockEntries(
   tasks: readonly TaskView[],
   options: { stewardSessionId?: string | null } = {},
 ): DockEntry[] {
+  // A batch is summarised as one card, so its members do not also appear as
+  // their own rows: the person acts on the summary, or expands it on purpose.
+  const batched = new Set(
+    taskBatches(tasks).flatMap((batch) => batch.tasks.map((task) => task.id)),
+  );
   const entries: DockEntry[] = [];
   for (const task of tasks) {
     if (task.archivedAt) continue;
@@ -47,6 +54,13 @@ export function stewardDockEntries(
       entries.push({ kind: "waiting", task, waiting });
     }
     if (isTaskStuck(task)) entries.push({ kind: "stuck", task });
+    // 完成 comes last, which is the ADR's order: a question stops the work, a
+    // stuck task has stopped, and finished work has not stopped anything. An
+    // accepted task keeps its card in its own conversation — it is no longer
+    // something the person has to act on — so the dock leaves it out.
+    if (showsCompletionCard(task) && !task.acceptedAt && !batched.has(task.id)) {
+      entries.push({ kind: "done", task });
+    }
   }
   return entries;
 }
@@ -114,13 +128,30 @@ export type BlockedFields = {
   where?: string;
   tried?: string;
   suggestion?: string;
-  /** `report` when the employee reported it, `stopped`, `failed`, `interrupted`. */
-  source: "report" | "stopped" | "failed" | "interrupted";
+  /**
+   * `report` when the employee reported it, `stopped`, `failed`, `interrupted`,
+   * and `delivery` when the host's own merge stopped part-way (slice 4b).
+   */
+  source: "report" | "stopped" | "failed" | "interrupted" | "delivery";
   /** The error code of a failed turn, when the host recorded one. */
   code?: string;
+  /** For `delivery`: which fixed step stopped. */
+  step?: string;
+  /** For `delivery`: what that step said (a remote name, a refusal, a code). */
+  detail?: string;
 };
 
 export function blockedFields(task: TaskView): BlockedFields {
+  // The host's own merge is checked first: it is the most specific thing that
+  // can have stopped the task, and its two fields are the whole story.
+  const failure = deliveryFailure(task);
+  if (failure) {
+    return {
+      source: "delivery",
+      step: failure.step,
+      detail: failure.detail,
+    };
+  }
   if (task.deliveryStatus === "interrupted") return { source: "interrupted" };
   const blocker = task.blocker;
   // A restart leaves no delivery on a directly dispatched task, so the reason is

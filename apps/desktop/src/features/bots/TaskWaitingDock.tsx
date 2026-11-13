@@ -14,7 +14,10 @@ import { stewardNameOf, stewardSessionIdOf } from "./steward-name";
 import { useBots } from "./use-bots";
 import { useTasks } from "./use-tasks";
 import { TaskBlockedCard } from "./TaskBlockedCard";
+import { TaskBatchCard } from "./TaskBatchCard";
+import { TaskCompletionCard } from "./TaskCompletionCard";
 import { type DockEntry, stewardDockEntries, waitingRowText } from "./task-waiting";
+import { showsCompletionCard, taskBatches } from "./task-delivery";
 
 /**
  * The steward's dock: the questions and the stuck cards of the work she
@@ -61,6 +64,12 @@ export function StewardTaskDock({ sessionId }: { sessionId: string }) {
       entry.kind === "waiting" && !answered[entry.waiting.requestId],
   );
   const stuckEntries = entries.filter((entry) => entry.kind === "stuck");
+  const doneEntries = entries.filter(
+    (entry): entry is Extract<DockEntry, { kind: "done" }> => entry.kind === "done",
+  );
+  // One summary per batch whose tasks all finished; the members it covers were
+  // already removed from the individual rows above.
+  const batches = useMemo(() => taskBatches(tasks), [tasks]);
   const sessions = useMemo(
     () => [...new Set(waitingEntries.map((entry) => entry.task.sessionId))],
     // The list is derived from the ids only, so a new question on the same
@@ -139,7 +148,14 @@ export function StewardTaskDock({ sessionId }: { sessionId: string }) {
     void useAppStore.getState().selectSession(task.sessionId);
   };
 
-  if (waitingEntries.length === 0 && stuckEntries.length === 0) return null;
+  if (
+    waitingEntries.length === 0 &&
+    stuckEntries.length === 0 &&
+    doneEntries.length === 0 &&
+    batches.length === 0
+  ) {
+    return null;
+  }
 
   return (
     <div className="task-card-dock task-waiting-dock" data-testid="task-waiting-dock">
@@ -254,7 +270,52 @@ export function StewardTaskDock({ sessionId }: { sessionId: string }) {
           onChanged={() => void reload()}
         />
       ))}
+      {doneEntries.map(({ task }) => (
+        <TaskCompletionCard
+          key={`done:${task.id}`}
+          task={task}
+          employeeName={names[task.employeeSessionId]}
+          stewardSessionId={stewardSessionId}
+          onChanged={() => void reload()}
+          variant="dock"
+        />
+      ))}
+      {batches.map((batch) => (
+        <TaskBatchCard
+          key={`batch:${batch.batchId}`}
+          batch={batch}
+          names={names}
+          stewardSessionId={stewardSessionId}
+          onChanged={() => void reload()}
+        />
+      ))}
     </div>
+  );
+}
+
+/**
+ * The completion card of the task session the person is reading.
+ *
+ * It renders nothing unless the open conversation *is* a task at
+ * `person/accept`, so the composer mounts it unconditionally next to the blocked
+ * card: the two share one slot and are mutually exclusive by stage — a task that
+ * stopped is a blocked card, a task that finished is this one.
+ */
+export function TaskCompletionCardForSession({ sessionId }: { sessionId: string }) {
+  const { tasks, reload } = useTasks(null, { includeArchived: false });
+  const { bots } = useBots();
+  const task = tasks.find(
+    (candidate) => candidate.sessionId === sessionId && showsCompletionCard(candidate),
+  );
+  if (!task) return null;
+  const employee = bots.find((bot) => bot.sessionId === task.employeeSessionId);
+  return (
+    <TaskCompletionCard
+      task={task}
+      employeeName={employee?.profile?.name?.trim() || employee?.title}
+      stewardSessionId={stewardSessionIdOf(bots)}
+      onChanged={() => void reload()}
+    />
   );
 }
 

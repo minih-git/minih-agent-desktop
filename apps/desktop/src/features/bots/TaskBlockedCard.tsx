@@ -5,6 +5,7 @@ import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
 import { Button } from "../../components/ui";
 import { TaskRestartButton } from "./TaskRestartButton";
+import { retryResumesDelivery } from "./task-delivery";
 import { blockedFields } from "./task-waiting";
 
 /**
@@ -70,6 +71,20 @@ export function TaskBlockedCard({
 
   const retry = () =>
     run("retry", async () => {
+      if (retryResumesDelivery(task)) {
+        // The work is done; what stopped was the host's own merge. Trying again
+        // is the click, and the host resumes at the first step that is not done.
+        const result = await api.mergeTaskDelivery(task.id);
+        if (!result?.merged) {
+          setError(
+            t("bots.completion.mergeFailed", {
+              step: result?.failedStep ?? "",
+              detail: result?.detail ?? "",
+            }),
+          );
+        }
+        return;
+      }
       // A fixed message in the person's own language: it is the click, not a
       // sentence they had to write.
       const accepted = await sendPrompt(t("bots.blocked.retryMessage"), undefined, task.sessionId);
@@ -129,6 +144,14 @@ export function TaskBlockedCard({
           {fields.code
             ? t("bots.blocked.failedWithCode", { code: fields.code })
             : t("bots.blocked.failed")}
+        </p>
+      ) : null}
+      {fields.source === "delivery" ? (
+        <p className="task-blocked-note" data-blocked-delivery={fields.step ?? ""}>
+          {t("bots.blocked.delivery", {
+            step: fields.step ?? "",
+            detail: fields.detail ?? "",
+          })}
         </p>
       ) : null}
       {fields.source === "stopped" ? (

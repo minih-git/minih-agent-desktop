@@ -133,6 +133,15 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* A dock full of cards used to grow until it squeezed the conversation out of
+     the window, and the person lost both the transcript and the row they were
+     reading. Half the viewport is a ceiling, not a target: the scroll region
+     starts at the most urgent row, because the order is a question first, then a
+     stopped task, then finished work. */
+  max-height: 50vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 .task-waiting-row {
@@ -343,4 +352,354 @@
   flex: 0 0 auto;
   color: var(--ds-text-muted);
   font-size: var(--text-2xs);
+}
+
+/* --- The completion card and the batch summary (slice 4b) ------------------- */
+
+/* Two layers, and the split is the point: what the employee says about its own
+   work above the rule, what the host can prove below it. The card is green-leaning
+   because the work is done — the warning tone belongs to the blocked card, and a
+   finished task must never read like a stopped one. */
+
+.task-completion-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in oklab, var(--ds-success) 40%, transparent);
+  border-left: 3px solid var(--ds-success);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--ds-success) 6%, var(--ds-bg-secondary));
+}
+
+/* Accepted is not archived: the card stays, one shade quieter, because the
+   merge is still reachable from it. */
+.task-completion-card.accepted {
+  border-color: var(--ds-border-subtle);
+  border-left-color: var(--ds-border-strong);
+  background: var(--ds-bg-secondary);
+}
+
+.task-completion-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-completion-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--leading-snug);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-completion-task {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-completion-goal {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.task-completion-note,
+.task-completion-reason {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-compact);
+}
+
+.task-completion-reason {
+  color: var(--ds-warning);
+}
+
+.task-completion-summary {
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+}
+
+.task-completion-summary.muted {
+  color: var(--ds-text-muted);
+  font-style: italic;
+}
+
+.task-completion-criteria {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-completion-criteria li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+.task-completion-criteria li.met .task-completion-mark {
+  color: var(--ds-success);
+}
+
+.task-completion-criteria li.unmet .task-completion-mark {
+  color: var(--ds-warning);
+}
+
+.task-completion-mark {
+  flex: none;
+  font-weight: 700;
+}
+
+.task-completion-criterion {
+  color: var(--ds-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.task-completion-criteria li.unmet .task-completion-criterion {
+  color: var(--ds-text-secondary);
+}
+
+.task-completion-note-inline {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+}
+
+.task-completion-leftovers,
+.task-completion-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.task-completion-leftovers ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+}
+
+.task-completion-label {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.task-completion-count {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-completion-commits {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-completion-commits li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+}
+
+.task-completion-commits code {
+  flex: none;
+  color: var(--ds-text-muted);
+  font-family: var(--font-mono);
+}
+
+.task-completion-commits span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-completion-link {
+  align-self: flex-start;
+  color: var(--ds-accent);
+  font-size: var(--text-2xs);
+  text-decoration: underline;
+}
+
+.task-completion-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-completion-writer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-completion-input {
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--ds-bg-primary);
+  color: var(--ds-text-primary);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  resize: vertical;
+}
+
+.task-completion-input:focus {
+  outline: 2px solid color-mix(in oklab, var(--ds-accent) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.task-completion-writer-actions,
+.task-completion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-completion-error {
+  margin: 0;
+  color: var(--ds-danger);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-compact);
+}
+
+/* The summary of a batch: one row per task, in merge order, and the number is
+   the order itself rather than a decoration. */
+
+.task-batch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--ds-border-subtle);
+  border-left: 3px solid var(--ds-accent);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-secondary);
+}
+
+.task-batch-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.task-batch-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.task-batch-hint {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+}
+
+.task-batch-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-batch-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+.task-batch-index {
+  flex: none;
+  width: 16px;
+  color: var(--ds-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-batch-task {
+  flex: none;
+  color: var(--ds-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-batch-goal {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ds-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-batch-employee {
+  flex: none;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+}
+
+.task-batch-state {
+  flex: none;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+}
+
+.task-batch-row[data-batch-accepted="true"] .task-batch-state {
+  color: var(--ds-success);
+}
+
+.task-batch-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-batch-error {
+  margin: 0;
+  color: var(--ds-warning);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-compact);
 }

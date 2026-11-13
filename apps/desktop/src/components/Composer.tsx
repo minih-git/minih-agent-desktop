@@ -34,7 +34,11 @@ import { PlanApprovalBar } from "./PlanApprovalBar";
 import { TaskDock } from "./TaskDock";
 import { isStewardSession } from "../features/bots/bot-status";
 import { TaskCardDock } from "../features/bots/TaskCardDock";
-import { StewardTaskDock, TaskBlockedCardForSession } from "../features/bots/TaskWaitingDock";
+import {
+  StewardTaskDock,
+  TaskBlockedCardForSession,
+  TaskCompletionCardForSession,
+} from "../features/bots/TaskWaitingDock";
 import {
   COMPOSER_MAX_VISIBLE_ROWS,
   COMPOSER_MIN_HEIGHT_PX,
@@ -576,6 +580,11 @@ export function Composer({
             drop and 「我来说两句」. It renders nothing unless this session *is* a
             task that stopped. */}
         {activeSessionId ? <TaskBlockedCardForSession sessionId={activeSessionId} /> : null}
+        {/* The other half of that slot (slice 4b): a task that finished and is
+            waiting for the person. The two are mutually exclusive by stage —
+            `person/accept` shows this one, a stopped task shows the card above —
+            so the composer mounts both and neither has to ask about the other. */}
+        {activeSessionId ? <TaskCompletionCardForSession sessionId={activeSessionId} /> : null}
         {/* One container for todo and background tasks: the tabs live in the
             header, so the gate now covers both the way it already covered the
             todo dock. */}
