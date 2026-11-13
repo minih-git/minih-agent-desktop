@@ -29,6 +29,7 @@ import { api } from "../../lib/api";
 import { PortalVisibilityProvider } from "../../lib/portal-visibility";
 import { workPanelLayout } from "../../lib/work-panel-resize";
 import { EmployeeTitlebar } from "../bots/EmployeeTitlebar";
+import { ActiveTaskWorkspaceBanner } from "../bots/TaskWorkspaceBanner";
 import { useBots } from "../bots/use-bots";
 import { PluginViewPage } from "../plugins/PluginViewPage";
 import { LiveVoiceStatusHost } from "../voice/live/LiveVoiceStatusHost";
@@ -253,6 +254,10 @@ export function AppShell() {
                     )}
                   </div>
                 )}
+                {/* A task whose workspace could not be prepared says so in the
+                    content area, where the words and the retry fit; the band
+                    above keeps one red chip. */}
+                {page === "chat" && !workbenchEmployee ? <ActiveTaskWorkspaceBanner /> : null}
                 {page !== "settings" ? <UpdateBanner /> : null}
 
                 {backendDown && (

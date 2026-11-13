@@ -827,6 +827,15 @@ export const tr = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    taskStage: {
+      queued: "Kuyrukta",
+      working: "Sürüyor",
+      waiting: "Bekliyor",
+      blocked: "Engellendi",
+      failed: "Başarısız",
+      personAnswer: "Yanıtınızı bekliyor",
+      personAccept: "İncelemeye hazır",
+    },
     group: {
       title: "Çalışanlar",
       openBot: "{{name}} kişisini aç",

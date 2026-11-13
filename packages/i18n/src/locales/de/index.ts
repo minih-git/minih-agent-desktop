@@ -818,6 +818,15 @@ export const de = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   "bots": {
+    "taskStage": {
+      "queued": "In der Warteschlange",
+      "working": "In Arbeit",
+      "waiting": "Wartet",
+      "blocked": "Blockiert",
+      "failed": "Fehlgeschlagen",
+      "personAnswer": "Wartet auf Ihre Antwort",
+      "personAccept": "Bereit zur Prüfung",
+    },
     "group": {
       "title": "Mitarbeiter",
       "openBot": "{{name}} öffnen",

@@ -10,15 +10,6 @@
   flex: 0 0 auto;
 }
 
-.bot-group-count {
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding: 0 6px;
-  color: var(--ds-text-muted);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-  line-height: var(--leading-none);
-}
 
 .sidebar-bot-row {
   display: flex;

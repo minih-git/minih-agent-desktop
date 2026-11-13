@@ -823,6 +823,15 @@ export const zhTW = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    taskStage: {
+      queued: "排隊中",
+      working: "進行中",
+      waiting: "等待中",
+      blocked: "受阻",
+      failed: "失敗",
+      personAnswer: "等你回答",
+      personAccept: "待驗收",
+    },
     group: {
       title: "員工",
       openBot: "開啟 {{name}}",

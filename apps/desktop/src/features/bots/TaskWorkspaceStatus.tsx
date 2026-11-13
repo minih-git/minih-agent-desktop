@@ -1,111 +1,53 @@
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TaskView } from "@minih-agent/shared";
-import { Button } from "../../components/ui";
-import { api } from "../../lib/api";
-import {
-  asksBeforeDiscarding,
-  baseRefLabel,
-  deliveryModeKey,
-  taskBranch,
-  workspaceStatusKey,
-} from "./task-workspace";
+import { baseRefLabel, deliveryModeKey, taskBranch, workspaceStatusKey } from "./task-workspace";
 
 /**
- * A task's workspace, on the surface that has to show it: its workbench row and
- * its own session header (employee mode 0.5 slice 2).
+ * A task's workspace as one row of chips: preparing / ready / failed, the branch
+ * it got, where it started from, and how its work will be delivered.
  *
- * One component for both, because the two must never describe the same folder
- * differently: preparing, ready or failed, on which branch, from which commit,
- * delivered how. It reads the row it was given and keeps the answer the host
- * returned from a retry, so a fixed workspace shows as ready without waiting for
- * a list refresh.
+ * Presentation only. What the failure says and how to retry live in
+ * `TaskWorkspaceBanner`, because a session header is one fixed-height row and an
+ * error message plus a button cannot fit in it: they wrapped the chip row and
+ * pushed it off the top of the window. The workbench row and the task header
+ * still read this one component, so neither can describe the same folder
+ * differently.
  *
- * Nothing here decides policy. "Retry" asks the host to prepare again, and
- * "Archive" asks the host to archive — including the refusal that comes back
- * while the folder still holds work, which is the one question this component
- * puts to the person.
+ * Chips a narrow header can drop are marked `data-task-optional`, in the order
+ * they go: `early` (delivery route) before `late` (branch, base, a healthy
+ * state). A failed state keeps no mark, because that is the one chip the person
+ * must not lose.
  */
-export function TaskWorkspaceStatus({
-  task,
-  withRetry = false,
-  withArchive = false,
-}: {
-  task: TaskView;
-  /** Offer "retry preparing" when the preparation failed. */
-  withRetry?: boolean;
-  /** Offer to archive the task, with the discard confirmation. */
-  withArchive?: boolean;
-}) {
+export function TaskWorkspaceStatus({ task }: { task: TaskView }) {
   const { t } = useTranslation();
-  const [row, setRow] = useState(task);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-
-  useEffect(() => setRow(task), [task]);
-
-  const retry = async () => {
-    setBusy(true);
-    setFailure(null);
-    try {
-      const result = await api.retryTaskWorkspace(row.id);
-      if (result?.task) setRow(result.task);
-    } catch (cause) {
-      setFailure(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const archive = async () => {
-    setBusy(true);
-    setFailure(null);
-    try {
-      // The host refuses while the workspace still holds work; the second
-      // click is the person saying they know, and it is the only path to
-      // `discard`.
-      try {
-        await api.archiveTask(row.id);
-      } catch (cause) {
-        // "It still holds work" and "it could not be checked" both ask before
-        // discarding; anything else is a real failure the person should see.
-        const code = (cause as { code?: string } | null)?.code;
-        if (!asksBeforeDiscarding(code)) throw cause;
-        const detail = cause instanceof Error ? cause.message : String(cause);
-        if (!window.confirm(t("bots.tasks.archiveDiscardConfirm", { detail }))) return;
-        await api.archiveTask(row.id, true);
-      }
-    } catch (cause) {
-      setFailure(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const statusKey = workspaceStatusKey(row.workspaceStatus);
+  const statusKey = workspaceStatusKey(task.workspaceStatus);
   if (!statusKey) return null;
-  const branch = taskBranch(row);
-  const base = baseRefLabel(row.baseRef, row.baseRemote);
-  const deliveryKey = deliveryModeKey(row.deliveryMode);
-  const error = failure ?? row.workspaceError ?? null;
+  const branch = taskBranch(task);
+  const base = baseRefLabel(task.baseRef, task.baseRemote);
+  const deliveryKey = deliveryModeKey(task.deliveryMode);
 
   return (
     <span
       className="task-workspace"
-      data-task-workspace={row.id}
-      data-task-workspace-status={row.workspaceStatus}
+      data-task-workspace={task.id}
+      data-task-workspace-status={task.workspaceStatus}
     >
-      <span className="ct-chip" data-task-workspace-state={row.workspaceStatus}>
+      <span
+        className="ct-chip"
+        data-task-workspace-state={task.workspaceStatus}
+        data-task-optional={task.workspaceStatus === "failed" ? undefined : "late"}
+      >
         {t(statusKey)}
       </span>
       {branch ? (
-        <span className="ct-chip" data-task-workspace-branch={branch}>
+        <span className="ct-chip" data-task-optional="late" data-task-workspace-branch={branch}>
           {branch}
         </span>
       ) : null}
       {base ? (
         <span
           className="ct-chip"
+          data-task-optional="late"
           data-task-workspace-base={base.remote ? "remote" : "local"}
         >
           {base.remote ? base.label : t("bots.tasks.baseLocal", { branch: base.label })}
@@ -114,36 +56,10 @@ export function TaskWorkspaceStatus({
       {deliveryKey ? (
         <span
           className="ct-chip"
-          data-task-delivery={row.deliveryMode ?? "none"}
+          data-task-optional="early"
+          data-task-delivery={task.deliveryMode ?? "none"}
         >
           {t(deliveryKey)}
-        </span>
-      ) : null}
-      {withRetry && row.workspaceStatus === "failed" ? (
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={busy}
-          data-task-workspace-retry=""
-          onClick={() => void retry()}
-        >
-          {busy ? t("bots.tasks.workspacePreparing") : t("bots.tasks.retryWorkspace")}
-        </Button>
-      ) : null}
-      {withArchive ? (
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={busy}
-          data-task-archive=""
-          onClick={() => void archive()}
-        >
-          {t("bots.tasks.archive")}
-        </Button>
-      ) : null}
-      {error ? (
-        <span className="task-workspace-error" role="status" data-task-workspace-error="">
-          {error}
         </span>
       ) : null}
     </span>

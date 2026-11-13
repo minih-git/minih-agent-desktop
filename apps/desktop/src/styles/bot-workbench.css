@@ -63,7 +63,18 @@
 /* ── Task session header ──────────────────────────────────────────────────
    One row of small chips beside the task title: who works on it and where,
    its branch and base, its stage, how it will be delivered, from where, and
-   its short id. */
+   its short id.
+
+   The band is one fixed-height row on every platform, so nothing here may
+   wrap and nothing may hang past the window. Two priorities of chip can drop
+   out as the pane narrows (`data-task-optional="early"` / `"late"`); the stage
+   chip and the employee @ repository chip never do, and neither does a failed
+   workspace's chip. A wrapped row is what used to push the whole header off
+   the top of the window. */
+
+.conversation-topbar {
+  container-type: inline-size;
+}
 
 .ct-task-meta {
   display: flex;
@@ -71,9 +82,26 @@
   flex: 0 1 auto;
   align-items: center;
   gap: 4px;
-  overflow: hidden;
-  /* The title is the authority in this row; the chips are looked at second. */
   margin-left: 4px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+/* A task title keeps about a dozen characters before it ellipsises, so the
+   chips give way before the reader loses what the session is about. */
+.conversation-topbar .ct-title {
+  min-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-topbar .ct-title-trigger {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A remote session's source label sits in the same row, equally quiet. */
@@ -87,8 +115,8 @@
 
 /* ── A task's workspace state ─────────────────────────────────────────────
    Used twice on purpose: on the workbench row inside the task title, and in
-   the task session header. It is one line of chips that may wrap, with the
-   failure text as the loud element when preparation did not finish. */
+   the task session header. In the header it is one unwrapping line of chips;
+   on a workbench card it may wrap, because a card has no fixed height. */
 
 .task-workspace {
   display: inline-flex;
@@ -99,10 +127,63 @@
   margin-left: 2px;
 }
 
+.ct-task-meta .task-workspace {
+  flex-wrap: nowrap;
+}
+
 .task-workspace-error {
   color: var(--ds-error);
   font-size: var(--text-xs-plus);
   line-height: var(--leading-normal);
+}
+
+/* Chips that are not load-bearing leave as the header narrows: first the
+   delivery route, origin and short id, then the branch, its base and a healthy
+   workspace state. A failed workspace keeps its chip at every width. */
+@container (max-width: 1500px) {
+  .ct-task-meta .ct-chip[data-task-optional="early"] {
+    display: none;
+  }
+}
+
+@container (max-width: 1100px) {
+  .ct-task-meta .ct-chip[data-task-optional="late"] {
+    display: none;
+  }
+}
+
+/* ── A failed workspace, said in full ─────────────────────────────────────
+   The band keeps one red chip; the words and the way out sit here, just under
+   it: the error on the left, "retry preparing" on the right. Git's own output
+   keeps its line breaks, so the banner grows downward instead of sideways. */
+
+.task-workspace-banner {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 12px;
+  margin: calc(var(--ds-toolbar-height) + 8px) 16px 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in oklab, var(--ds-error) 45%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--ds-error) 7%, transparent);
+}
+
+.task-workspace-banner .task-workspace-error {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.task-workspace-banner .btn {
+  flex: 0 0 auto;
+}
+
+/* The banner has taken the band's place at the top of the pane, so the
+   transcript must not reserve that space a second time. */
+.main-pane:has(> .task-workspace-banner) .thread-content {
+  padding-top: 4px;
 }
 
 /* ── Sidebar: an employee's tasks ─────────────────────────────────────────

@@ -426,6 +426,14 @@ Every one of them announces through the task-channel writer, which compares the
 stage it last announced with the one the host now holds: one move, one event,
 no polling, and a settle that changed nothing is silent.
 
+The interface keeps two stage vocabularies apart. `bots.status.*` says what the
+*employee* is doing ("busy", "waiting for you") and stays with the employee row;
+`bots.taskStage.*` says where the *task* is ("in progress", "ready for review")
+and is what the sidebar task row, the workbench card and the task header show.
+Sharing one set made a finished task read "waiting for you" and a working one
+read "busy". The task map is keyed by the stage union, so a new stage cannot ship
+without its own word.
+
 ### 4c. A task works in its own folder inside the repository
 
 A task that touches a repository does its work in its own git worktree at

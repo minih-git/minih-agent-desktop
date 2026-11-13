@@ -9223,13 +9223,21 @@ selection already in place shows it without waiting for another event.
   with the selection underlined; group titles are small, uppercased and faint; a
   task is a card whose title and latest step sit left and whose stage sits right
   — orange while waiting, blue in progress, green once archived, red when blocked
-  or failed. Sidebar task rows are indented under their employee, the waiting one
-  is orange, and the history row is faint with its count. The task header is one
-  row of chips: employee @ repository, workspace state, branch, base, delivery,
-  stage, origin and short id; a failed workspace is red and offers "retry
-  preparing". While the workbench owns the pane the title bar names that employee
-  and the surface, never the previous conversation's breadcrumb or session
-  actions.
+  or failed. A task's stage reads in the task's own words (queued / in progress /
+  waiting / blocked / failed / waiting for your answer / ready for review), never
+  in the employee's status words, in the sidebar row, the workbench card and the
+  header chip alike. Sidebar task rows are indented under their employee, the
+  waiting one is orange, and the history row is faint with its count. The task
+  header is one fixed-height row of chips and never wraps or leaves the window:
+  employee @ repository and the stage always show, the branch, base, delivery,
+  origin and short id drop out as the pane narrows, and the task title keeps about
+  a dozen characters before it ellipsises (1440 and 1024 both checked). Archiving
+  is an action beside the header's other actions, not a chip. A failed workspace
+  keeps one red "workspace failed" chip in the header; its words and "retry
+  preparing" sit in a red-bordered banner directly below the header, never
+  overlapping it. While the workbench owns the pane the title bar names that
+  employee and the surface, never the previous conversation's breadcrumb or
+  session actions.
 - **Specs linked**: ADR `bot-sessions-and-steward` §4/§7, prototype
   `员工模式-0.5-原型` ② ③
 - **Acceptance**: C (conversation & stream), Quality

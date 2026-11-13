@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { TaskView } from "@minih-agent/shared";
 import { useTranslation } from "react-i18next";
 import { WorktreeBehindMarker } from "../worktree/WorktreeBehind";
-import { taskStageLabelKey, taskStatusTone } from "./bot-status";
+import { taskStageLabelKey } from "./bot-task-stage";
+import { taskStatusTone } from "./bot-status";
 
 /**
  * One employee's open tasks (ADR bot-sessions-and-steward §7).

@@ -831,6 +831,15 @@ export const zhCN = {
   },
   // 员工：侧栏分组、设置页，以及管家的任务卡（ADR bot-sessions-and-steward §5）。
   bots: {
+    taskStage: {
+      queued: "排队中",
+      working: "进行中",
+      waiting: "等待中",
+      blocked: "受阻",
+      failed: "失败",
+      personAnswer: "等你回答",
+      personAccept: "待验收",
+    },
     group: {
       title: "员工",
       openBot: "打开 {{name}}",

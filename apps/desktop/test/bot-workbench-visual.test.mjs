@@ -47,6 +47,7 @@ import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebar
 import { EmployeeTitlebar } from "../../apps/desktop/src/features/bots/EmployeeTitlebar";
 import { EmployeeWorkbench } from "../../apps/desktop/src/features/bots/EmployeeWorkbench";
 import { ConversationTopbar } from "../../apps/desktop/src/components/ConversationTopbar";
+import { ActiveTaskWorkspaceBanner } from "../../apps/desktop/src/features/bots/TaskWorkspaceBanner";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 
 await i18n.use(initReactI18next).init({
@@ -225,8 +226,10 @@ const surfaces = {
   "workbench-tasks": () => shell({ sidebar: sidebar(), band: titlebar(), main: workbench() }),
   "workbench-done": () => shell({ sidebar: sidebar(), band: titlebar(), main: workbench() }),
   "sidebar-history": () => shell({ sidebar: sidebar(), band: titlebar(), main: workbench() }),
-  "task-session": () => shell({ sidebar: sidebar(), band: taskTopbar(), main: null }),
-  "task-session-failed": () => shell({ sidebar: sidebar(), band: taskTopbar(), main: null }),
+  "task-session": () =>
+    shell({ sidebar: sidebar(), band: taskTopbar(), main: React.createElement(ActiveTaskWorkspaceBanner) }),
+  "task-session-failed": () =>
+    shell({ sidebar: sidebar(), band: taskTopbar(), main: React.createElement(ActiveTaskWorkspaceBanner) }),
 };
 
 function cssVar(name) {
@@ -391,6 +394,30 @@ window.shot = {
 
     const band = document.querySelector(".conversation-topbar, .main-titlebar");
     if (band) {
+      const bandRect = band.getBoundingClientRect();
+      // Anything the band draws has to stay inside it: the row is one fixed
+      // height, so a chip or a button that hangs past it is clipped by the
+      // window instead of by the band. The collapsed-sidebar slot is hidden on
+      // purpose (zero width, no pointer events), so it is not a leak.
+      const leaking = [...band.querySelectorAll("*")]
+        .filter((node) => {
+          if (node.closest('[aria-hidden="true"]')) return false;
+          const style = getComputedStyle(node);
+          if (style.visibility === "hidden" || style.opacity === "0") return false;
+          const rect = node.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) return false;
+          return (
+            rect.left < bandRect.left - 1 ||
+            rect.right > bandRect.right + 1 ||
+            rect.top < bandRect.top - 1 ||
+            rect.bottom > bandRect.bottom + 1
+          );
+        })
+        .map((node) => node.tagName.toLowerCase() + "." + String(node.className || ""));
+      // A chip the header dropped for width has no box; it is not part of the row.
+      const visibleChips = [...band.querySelectorAll(".ct-chip")].filter(
+        (chip) => chip.getBoundingClientRect().width > 0,
+      );
       report.band = {
         className: band.className,
         box: box(band),
@@ -398,27 +425,37 @@ window.shot = {
         headingTitle: words(band.querySelector(".main-titlebar-title")),
         headingSub: words(band.querySelector(".main-titlebar-sub")),
         title: words(band.querySelector(".ct-title")),
+        titleBox: box(band.querySelector(".ct-title")),
         breadcrumb: words(band.querySelector(".ct-project-name")),
         meta: box(band.querySelector(".ct-task-meta")),
-        chips: [...band.querySelectorAll(".ct-chip")].map((chip) => ({
+        chips: visibleChips.map((chip) => ({
           text: words(chip),
           color: ink(chip),
           border: getComputedStyle(chip).borderTopColor,
           radius: getComputedStyle(chip).borderTopLeftRadius,
           box: box(chip),
         })),
-        workspaceError: {
-          text: words(band.querySelector(".task-workspace-error")),
-          color: ink(band.querySelector(".task-workspace-error")),
+        leaking,
+        carriesError: Boolean(band.querySelector("[data-task-workspace-error]")),
+        carriesRetry: Boolean(band.querySelector("[data-task-workspace-retry]")),
+        archive: Boolean(band.querySelector("[data-task-archive]")),
+        archiveText: words(band.querySelector("[data-task-archive]")),
+        archiveBox: box(band.querySelector("[data-task-archive]")),
+      };
+    }
+
+    const banner = document.querySelector("[data-task-workspace-banner]");
+    if (banner) {
+      report.banner = {
+        box: box(banner),
+        borderStyle: getComputedStyle(banner).borderTopStyle,
+        borderColor: getComputedStyle(banner).borderTopColor,
+        error: words(banner.querySelector(".task-workspace-error")),
+        errorColor: ink(banner.querySelector(".task-workspace-error")),
+        retry: {
+          text: words(banner.querySelector("[data-task-workspace-retry]")),
+          box: box(banner.querySelector("[data-task-workspace-retry]")),
         },
-        retry: band.querySelector("[data-task-workspace-retry]")
-          ? {
-              text: words(band.querySelector("[data-task-workspace-retry]")),
-              color: ink(band.querySelector("[data-task-workspace-retry]")),
-              box: box(band.querySelector("[data-task-workspace-retry]")),
-            }
-          : null,
-        archive: !!band.querySelector("[data-task-archive]"),
       };
     }
     return report;
@@ -514,7 +551,14 @@ async function runCaptures(stylesheet) {
 
     const shots = ["workbench-tasks", "workbench-done", "sidebar-history", "task-session", "task-session-failed"];
     const themes = ["dark", "light"];
-    const plan = themes.flatMap((theme) => shots.map((shot) => ({ theme, shot })));
+    /*
+     * Two widths: the desktop reference, and a narrow one where the task header
+     * has to shed chips instead of growing a second row.
+     */
+    const plan = themes.flatMap((theme) => [
+      ...shots.map((shot) => ({ theme, shot, width: 1440 })),
+      { theme, shot: "task-session-failed", width: 1024 },
+    ]);
     await writeFile(
       join(workDir, "main.cjs"),
       `
@@ -534,13 +578,13 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript("new Promise((resolve, reject) => { const deadline = Date.now() + 20000; (function check() { if (window.shot) return resolve(true); if (Date.now() > deadline) return reject(new Error('fixture did not mount')); requestAnimationFrame(check); })(); })");
     const histogram = ${HISTOGRAM};
     for (const entry of schedule) {
+      win.setContentSize(entry.width, 900);
       await win.webContents.executeJavaScript("window.shot.render(" + JSON.stringify(entry.shot) + ", " + JSON.stringify(entry.theme) + ")");
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const image = win.webContents.capturePage();
-      const awaited = await image;
-      const file = path.join(outDir, entry.theme + "-" + entry.shot + ".png");
-      writeFileSync(file, awaited.toPNG());
-      const pixels = histogram(awaited);
+      const image = await win.webContents.capturePage();
+      const file = path.join(outDir, entry.theme + "-" + entry.shot + (entry.width === 1440 ? "" : "-" + entry.width) + "-v2.png");
+      writeFileSync(file, image.toPNG());
+      const pixels = histogram(image);
       const report = await win.webContents.executeJavaScript("window.shot.measure(" + JSON.stringify(entry.shot) + ")");
       console.log("SHOT " + JSON.stringify({ ...entry, file, pixels, report }));
     }
@@ -601,14 +645,16 @@ test(
       return hit;
     };
 
-    await t.test("every capture is a 1440x900 frame with a rendered page", () => {
+    await t.test("every capture is a full frame with a rendered page", () => {
       for (const entry of captures) {
         const { width, height } = entry.pixels;
-        assert.equal(entry.report.page.innerWidth, 1440, `${entry.theme}/${entry.shot} viewport width`);
+        assert.equal(entry.report.page.innerWidth, entry.width, `${entry.theme}/${entry.shot} viewport width`);
         assert.equal(entry.report.page.innerHeight, 900, `${entry.theme}/${entry.shot} viewport height`);
         // The capture is in device pixels; only its shape has to match here.
-        assert.ok(width >= 1440 && Math.abs(width / height - 1440 / 900) < 0.01,
-          `${entry.theme}/${entry.shot} captured ${width}x${height}`);
+        assert.ok(
+          width >= entry.width && Math.abs(width / height - entry.width / 900) < 0.01,
+          `${entry.theme}/${entry.shot} captured ${width}x${height}`,
+        );
         assert.ok(entry.pixels.colors > 40, `${entry.theme}/${entry.shot} painted only ${entry.pixels.colors} colours`);
         assert.ok(
           entry.report.page.scrollWidth <= entry.report.page.innerWidth + 1,
@@ -680,7 +726,7 @@ test(
           assert.equal(group.color, report.tokens.textFaint, "a group title is not the faint ink");
         }
 
-        // Rows: cards, stage on the right, waiting in the warning ink.
+        // Rows: cards, stage on the right, and the task's own word for it.
         assert.equal(bench.rows.length, 2, "the tasks tab shows the wrong number of rows");
         for (const row of bench.rows) {
           assert.ok(row.box.h >= 44, `a task row is too short (${row.box.h}px)`);
@@ -690,7 +736,9 @@ test(
         }
         const waitingRow = bench.rows.find((row) => row.stage === "person/accept");
         const workingRow = bench.rows.find((row) => row.stage === "working");
+        assert.equal(waitingRow.stageText, "待验收", "a task waiting for review does not say so");
         assert.equal(waitingRow.stageColor, report.tokens.warning, "the waiting stage is not orange");
+        assert.equal(workingRow.stageText, "进行中", "a working task reads as the employee, not the task");
         assert.equal(workingRow.stageColor, report.tokens.busy, "the in-progress stage is not blue");
       });
 
@@ -710,9 +758,9 @@ test(
         const rows = report.workbench.rows;
         assert.equal(rows.length, 1, "the done tab does not show the finished task");
         assert.equal(rows[0].archived, true, "the finished task is not marked archived");
+        assert.equal(rows[0].stageText, "待验收", "a finished task does not name its stage");
         assert.equal(rows[0].stageColor, report.tokens.success, "a finished task is not green");
       });
-
       await t.test(`the sidebar indents its task rows and shows history (${theme})`, () => {
         const report = shot(theme, "sidebar-history").report;
         const side = report.sidebar;
@@ -742,14 +790,15 @@ test(
         assert.ok(band, "the task header did not mount");
         assert.match(band.className, /conversation-topbar/, "a task session lost its conversation band");
         assert.equal(band.title, "修 E2E 超时", "the header does not name the task");
+        const texts = band.chips.map((chip) => chip.text);
         assert.match(
-          band.chips.map((chip) => chip.text).join(" | "),
+          texts.join(" | "),
           /Router 后端 @ Minih-Agent-Desktop/,
           "the header does not name the employee and repository",
         );
-        assert.ok(band.chips.some((chip) => chip.text === "fix/e2e-timeout"), "the header lost the branch");
-        assert.ok(band.chips.some((chip) => chip.text === "#37"), "the header lost the short id");
-        assert.ok(band.chips.some((chip) => chip.text === "等你处理"), "the header lost the stage");
+        // The task's own vocabulary, not the employee's status words.
+        assert.ok(texts.includes("待验收"), `the header lost the task's stage word: ${texts.join(" | ")}`);
+        assert.ok(!texts.includes("等你处理"), "the header reads the employee's status, not the task's stage");
         const tops = band.chips.map((chip) => chip.box.y);
         assert.ok(Math.max(...tops) - Math.min(...tops) <= 2, "the chips are not one row");
         const xs = band.chips.map((chip) => chip.box.x);
@@ -758,21 +807,75 @@ test(
           assert.notEqual(chip.radius, "0px", "a chip has no rounding");
           assert.notEqual(chip.color, report.tokens.textPrimary, "a chip is shouting in primary ink");
         }
-        const stageChip = band.chips.find((chip) => chip.text === "等你处理");
+        const stageChip = band.chips.find((chip) => chip.text === "待验收");
         assert.equal(stageChip.color, report.tokens.warning, "the waiting stage chip is not orange");
+
+        // A ready workspace puts nothing but chips in the band, and nothing the
+        // band draws may hang outside it.
+        assert.equal(band.carriesError, false, "the band carries the whole error text");
+        assert.equal(band.carriesRetry, false, "the band carries the retry button");
+        assert.equal(report.banner, undefined, "a ready workspace shows a banner");
+        assert.deepEqual(band.leaking, [], "something in the band hangs outside it");
+
+        // Archiving is an action beside the other actions, not a chip.
         assert.equal(band.archive, true, "the task header lost its archive control");
-        assert.equal(band.retry, null, "a ready workspace offers a retry");
+        assert.match(band.archiveText, /归档任务/, "the archive control is not labelled");
+        assert.ok(
+          band.archiveBox.y >= band.box.y - 1 &&
+            band.archiveBox.y + band.archiveBox.h <= band.box.y + band.box.h + 1,
+          "the archive action hangs outside the band",
+        );
+        assert.ok(!texts.includes("归档任务"), "the archive action still reads as one more chip");
       });
 
-      await t.test(`a failed workspace is red and offers the retry (${theme})`, () => {
+      await t.test(`a failed workspace keeps one red chip and says the rest below the band (${theme})`, () => {
         const report = shot(theme, "task-session-failed").report;
         const band = report.band;
         assert.ok(band, "the failed task header did not mount");
-        assert.equal(band.workspaceError.color, report.tokens.error, "the workspace failure is not red");
-        assert.match(band.workspaceError.text, /磁盘空间不足/, "the failure reason is not shown");
-        assert.ok(band.retry, "a failed workspace has no retry control");
-        assert.match(band.retry.text, /重试准备/, "the retry control is not labelled for what it does");
-        assert.ok(band.retry.box.w > 0 && band.retry.box.h > 0, "the retry control has no size");
+        const failedChip = band.chips.find((chip) => chip.text === "工作区准备失败");
+        assert.ok(failedChip, `the band lost the failed-workspace chip: ${band.chips.map((chip) => chip.text).join(" | ")}`);
+        assert.equal(failedChip.color, report.tokens.error, "the failed-workspace chip is not red");
+        assert.equal(band.carriesError, false, "the band still carries the error text");
+        assert.equal(band.carriesRetry, false, "the band still carries the retry button");
+        assert.deepEqual(band.leaking, [], "something in the band hangs outside it");
+
+        const banner = report.banner;
+        assert.ok(banner, "a failed workspace shows no banner");
+        assert.equal(banner.errorColor, report.tokens.error, "the workspace failure is not red");
+        assert.match(banner.error, /磁盘空间不足/, "the failure reason is not shown");
+        assert.match(banner.retry.text, /重试准备/, "the retry control is not labelled for what it does");
+        assert.ok(banner.retry.box.w > 0 && banner.retry.box.h > 0, "the retry control has no size");
+        assert.equal(banner.borderStyle, "solid", "the banner has no border");
+        const bandEnd = band.box.y + band.box.h;
+        assert.ok(
+          banner.box.y >= bandEnd - 1,
+          `the banner overlaps the band (banner y ${banner.box.y}, band ends ${bandEnd})`,
+        );
+        assert.ok(
+          banner.box.x >= -1 && banner.box.x + banner.box.w <= report.page.innerWidth + 1,
+          "the banner runs past the window",
+        );
+      });
+
+      await t.test(`a narrow window sheds chips instead of overflowing (${theme})`, () => {
+        const narrow = captures.find(
+          (entry) => entry.theme === theme && entry.shot === "task-session-failed" && entry.width === 1024,
+        );
+        assert.ok(narrow, `missing the 1024 capture for ${theme}`);
+        assert.equal(narrow.report.page.innerWidth, 1024, "the narrow frame is not 1024 wide");
+        const band = narrow.report.band;
+        const texts = band.chips.map((chip) => chip.text);
+        assert.deepEqual(band.leaking, [], "something in the narrow band hangs outside it");
+        // The two chips the person must not lose, and nothing that made it wrap.
+        assert.ok(texts.some((text) => /Router 后端 @ Minih-Agent-Desktop/.test(text)), "the narrow band lost who and where");
+        assert.ok(texts.includes("待验收"), "the narrow band lost the task's stage");
+        assert.ok(!texts.includes("fix/e2e-timeout"), "the narrow band kept the branch");
+        assert.ok(!texts.includes("#37"), "the narrow band kept the short id");
+        assert.ok(band.titleBox.w >= 90, `the task title kept only ${band.titleBox.w}px`);
+        const banner = narrow.report.banner;
+        assert.ok(banner, "the narrow frame lost the banner");
+        assert.ok(banner.box.y >= band.box.y + band.box.h - 1, "the narrow banner overlaps the band");
+        assert.ok(banner.box.x >= -1 && banner.box.x + banner.box.w <= 1025, "the narrow banner runs past the window");
       });
     }
   },

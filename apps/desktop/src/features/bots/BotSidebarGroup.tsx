@@ -82,9 +82,6 @@ export function BotSidebarGroup({
           </span>
           <span id="sidebar-bot-group-label">{t("bots.group.title")}</span>
         </button>
-        <span className="bot-group-count" aria-hidden>
-          {bots.length}
-        </span>
       </div>
       <div
         id="sidebar-bot-group-body"
