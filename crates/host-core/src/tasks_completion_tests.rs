@@ -114,8 +114,8 @@ fn the_report_tool_refuses_a_status_it_does_not_know() {
     assert!(error.to_string().contains("INVALID_ARGUMENT"), "{error}");
     // A ready report without a summary is refused too: a card with no words is
     // not a completion card.
-    let error = tasks::report(&db, &json!({"sessionId": session_id, "status": "ready"}))
-        .unwrap_err();
+    let error =
+        tasks::report(&db, &json!({"sessionId": session_id, "status": "ready"})).unwrap_err();
     assert!(error.to_string().contains("INVALID_ARGUMENT"), "{error}");
 }
 

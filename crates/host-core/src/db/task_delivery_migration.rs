@@ -243,9 +243,11 @@ mod tests {
         assert!(column(db.conn(), "task_card_drafts", "batch_id"));
         let (title, stage): (String, String) = db
             .conn()
-            .query_row("SELECT title, stage FROM tasks WHERE id = 'old-task'", [], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            .query_row(
+                "SELECT title, stage FROM tasks WHERE id = 'old-task'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .unwrap();
         assert_eq!(title, "Fix");
         assert_eq!(stage, "person/accept");

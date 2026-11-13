@@ -15,9 +15,8 @@ import { useTranslation } from "react-i18next";
 import { installRendererApi } from "../../capture/renderer-api";
 import { StartupSplash } from "../../components/StartupSplash";
 import { api } from "../../lib/api";
-import { scheduledWorkspaceCache } from "../scheduled/scheduled-workspace-cache";
-import { subscribeRemoteInteractions } from "../../lib/remote-interactions";
 import { playNotificationChime } from "../../lib/notification-sound";
+import { subscribeRemoteInteractions } from "../../lib/remote-interactions";
 import {
   clampSidebarWidth,
   loadSidebarWidth,
@@ -33,10 +32,11 @@ import {
 import { browserPluginTab, browserPluginTabForReveal } from "../../lib/work-panel-tabs";
 import { useAppStore } from "../../stores/app-store";
 import { startTaskWaitingRuntime } from "../../stores/runtime/task-waiting-runtime";
+import { scheduledWorkspaceCache } from "../scheduled/scheduled-workspace-cache";
+import { runLiveVoiceShortcut } from "../voice/live/live-voice-shortcuts";
 import { useSidebarTransition } from "./useSidebarTransition";
 import { useStartupWatchdog } from "./useStartupWatchdog";
 import { useTraySessions } from "./useTraySessions";
-import { runLiveVoiceShortcut } from "../voice/live/live-voice-shortcuts";
 
 const MODIFIER_ONLY_KEYS = new Set([
   "Alt",

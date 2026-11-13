@@ -117,10 +117,7 @@ pub async fn execute_report(
     // Two reports share this tool: the work stopped, or the work is done. What
     // the model is told to do next differs, so the status is read back from
     // what the host actually stored rather than from the argument.
-    let ready = value
-        .pointer("/result/status")
-        .and_then(Value::as_str)
-        == Some("ready");
+    let ready = value.pointer("/result/status").and_then(Value::as_str) == Some("ready");
     tracing::info!(
         session_id = %p.session_id,
         turn_id = p.turn_id.as_deref().unwrap_or(""),

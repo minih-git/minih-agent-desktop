@@ -13,9 +13,9 @@ use serde_json::json;
 use tokio::sync::Mutex;
 
 use crate::session_worktrees::git::GitRunner;
+use crate::session_worktrees::lifecycle::SharedState;
 use crate::session_worktrees::registry::{self, NewWorktree};
 use crate::session_worktrees::test_support::{git_cmd, init_repo};
-use crate::session_worktrees::lifecycle::SharedState;
 use crate::state::AppState;
 use crate::task_delivery::{self, GhRunner};
 use crate::tasks;
@@ -32,7 +32,7 @@ impl GhRunner for ScriptedGh {
         if args.first() != Some(&"pr") {
             return Err(format!("unexpected gh call: {args:?}"));
         }
-        let all = args.iter().any(|arg| *arg == "all");
+        let all = args.contains(&"all");
         if all {
             return Ok(json!([{ "state": "MERGED" }]).to_string());
         }
@@ -91,8 +91,14 @@ async fn fixture(mode: &str) -> Fixture {
     let gitea = dir.path().join("gitea.git");
     bare(&origin);
     bare(&gitea);
-    git_cmd(&project, &["remote", "add", "origin", origin.to_str().unwrap()]);
-    git_cmd(&project, &["remote", "add", "gitea", gitea.to_str().unwrap()]);
+    git_cmd(
+        &project,
+        &["remote", "add", "origin", origin.to_str().unwrap()],
+    );
+    git_cmd(
+        &project,
+        &["remote", "add", "gitea", gitea.to_str().unwrap()],
+    );
     git_cmd(&project, &["push", "-q", "origin", "main"]);
     git_cmd(&project, &["push", "-q", "gitea", "main"]);
 
@@ -155,7 +161,10 @@ async fn fixture(mode: &str) -> Fixture {
     );
     std::fs::write(worktree.join("login.txt"), "timeout=30s\n").unwrap();
     git_cmd(&worktree, &["add", "login.txt"]);
-    git_cmd(&worktree, &["commit", "-q", "-m", "fix(bot): raise the timeout"]);
+    git_cmd(
+        &worktree,
+        &["commit", "-q", "-m", "fix(bot): raise the timeout"],
+    );
     git_cmd(&worktree, &["push", "-q", "origin", branch]);
     git_cmd(&worktree, &["push", "-q", "gitea", branch]);
 
@@ -246,12 +255,19 @@ async fn a_pull_request_task_is_fast_forwarded_to_every_remote_and_cleaned_up() 
     assert_eq!(result["merged"], json!(true), "{result}");
 
     assert_eq!(head_of(&fixture.origin), head, "origin did not move");
-    assert_eq!(head_of(&fixture.gitea), head, "the second remote did not move");
+    assert_eq!(
+        head_of(&fixture.gitea),
+        head,
+        "the second remote did not move"
+    );
     assert!(
         !head_of(&fixture.project).is_empty(),
         "the project checkout still exists"
     );
-    let merge_commits = git_cmd(&fixture.project, &["rev-list", "--merges", "HEAD", "--count"]);
+    let merge_commits = git_cmd(
+        &fixture.project,
+        &["rev-list", "--merges", "HEAD", "--count"],
+    );
     assert_eq!(merge_commits.trim(), "0", "a merge commit was created");
     assert_eq!(
         head_of(&fixture.project),
@@ -487,13 +503,10 @@ async fn a_task_without_a_project_refuses_to_merge() {
         .unwrap()
     };
     let task_id = created["task"]["id"].as_str().unwrap().to_string();
-    let checked = task_delivery::check(
-        &state,
-        &GitRunner::default(),
-        &BrokenGh,
-        &task_id,
-    )
-    .await;
+    let checked = task_delivery::check(&state, &GitRunner::default(), &BrokenGh, &task_id).await;
     // The workspace was never prepared, so the card cannot offer a merge at all.
-    assert!(checked.is_err(), "a task without a workspace has no merge path");
+    assert!(
+        checked.is_err(),
+        "a task without a workspace has no merge path"
+    );
 }

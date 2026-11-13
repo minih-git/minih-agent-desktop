@@ -64,12 +64,12 @@ pub(crate) use repositories::{
 pub(crate) use schema::{PLAN_APPROVALS_SCHEMA, SCHEMA_LATEST, SESSION_TODO_DDL};
 pub(crate) use session_title_source_migration::migrate_v22_to_v23;
 pub(crate) use task_card_draft_migration::TASK_CARD_DRAFT_DDL;
+pub(crate) use task_delivery_migration::{
+    migrate_v37_to_v38_tx, task_delivery_ddl, TASK_CARD_BATCH_COLUMNS, TASK_DELIVERY_COLUMNS,
+};
 pub(crate) use task_migration::{migrate_v32_to_v33_tx, TASKS_DDL};
 pub(crate) use task_waiting_migration::{
     migrate_v36_to_v37_tx, task_waiting_ddl, TASK_WAITING_COLUMNS,
-};
-pub(crate) use task_delivery_migration::{
-    migrate_v37_to_v38_tx, task_delivery_ddl, TASK_CARD_BATCH_COLUMNS, TASK_DELIVERY_COLUMNS,
 };
 pub(crate) use task_workspace_migration::{
     migrate_v33_to_v34_tx, task_workspace_ddl, TASK_WORKSPACE_COLUMNS,

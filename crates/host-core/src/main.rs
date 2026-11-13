@@ -35,11 +35,11 @@ mod session_worktrees;
 mod sessions;
 mod state;
 mod task_delivery;
+#[cfg(test)]
+mod task_delivery_tests;
 mod task_stage;
 mod task_workspace;
 mod tasks;
-#[cfg(test)]
-mod task_delivery_tests;
 #[cfg(test)]
 mod tasks_completion_tests;
 #[cfg(test)]

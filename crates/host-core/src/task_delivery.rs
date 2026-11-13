@@ -95,8 +95,6 @@ pub struct PrFacts {
     #[serde(default)]
     pub url: Option<String>,
     #[serde(default)]
-    pub state: Option<String>,
-    #[serde(default)]
     pub mergeable: Option<String>,
     #[serde(default)]
     pub review_decision: Option<String>,
@@ -597,7 +595,11 @@ fn published_index(steps: &[&str]) -> usize {
         .unwrap_or(0)
 }
 
-async fn load_state(state: &SharedState, task_id: &str, mode: DeliveryMode) -> Result<DeliveryState> {
+async fn load_state(
+    state: &SharedState,
+    task_id: &str,
+    mode: DeliveryMode,
+) -> Result<DeliveryState> {
     let st = state.lock().await;
     let raw: Option<String> = st
         .db
@@ -662,8 +664,16 @@ impl Stop {
         }
     }
 
-    fn of(step: &'static str, error: crate::session_worktrees::WorktreeError, published: bool) -> Self {
-        Self::new(step, format!("{}: {}", error.code, error.message), published)
+    fn of(
+        step: &'static str,
+        error: crate::session_worktrees::WorktreeError,
+        published: bool,
+    ) -> Self {
+        Self::new(
+            step,
+            format!("{}: {}", error.code, error.message),
+            published,
+        )
     }
 }
 
@@ -715,7 +725,6 @@ async fn merge_pr(
     // one place the order and the bookkeeping live, so no step can be skipped
     // and none can run twice.
     let mut facts: Option<PrFacts> = None;
-    let mut remotes: Vec<(String, String)> = Vec::new();
     let mut pushed_to: Option<String> = None;
 
     for (index, name) in steps.iter().enumerate() {
@@ -730,9 +739,6 @@ async fn merge_pr(
             }
             if name == "push-main" {
                 pushed_to = Some(primary_remote(git, &target.project).await);
-            }
-            if name == "land" || name == "push-main" || name == "push-remotes" {
-                remotes = remotes_of(git, &target.project).await;
             }
             continue;
         }
@@ -763,7 +769,7 @@ async fn merge_pr(
             "head" => head_step(git, target, facts.as_ref()).await.map(|_| None),
             "land" => land_step(git, target).await.map(|_| None),
             "push-main" => {
-                remotes = remotes_of(git, &target.project).await;
+                let remotes = remotes_of(git, &target.project).await;
                 let primary = primary_remote_of(&remotes);
                 match push_main(git, target, primary.as_str()).await {
                     Ok(()) => {
@@ -774,7 +780,7 @@ async fn merge_pr(
                 }
             }
             "push-remotes" => {
-                remotes = remotes_of(git, &target.project).await;
+                let remotes = remotes_of(git, &target.project).await;
                 let primary = pushed_to
                     .clone()
                     .unwrap_or_else(|| primary_remote_of(&remotes));
@@ -786,13 +792,17 @@ async fn merge_pr(
                 .await
                 .map(Some),
             "delete-branches" => {
-                remotes = remotes_of(git, &target.project).await;
+                let remotes = remotes_of(git, &target.project).await;
                 delete_remote_branches(git, target, &remotes)
                     .await
                     .map(|_| None)
             }
             "cleanup" => cleanup_step(state, git, target).await.map(|_| None),
-            other => Err(Stop::new("cleanup", format!("unknown step {other}"), published)),
+            other => Err(Stop::new(
+                "cleanup",
+                format!("unknown step {other}"),
+                published,
+            )),
         };
         match outcome {
             Ok(detail) => {
@@ -832,16 +842,18 @@ async fn merge_local(state: &SharedState, git: &GitRunner, target: &Target) -> R
         }
         let published = index > cut;
         let outcome: std::result::Result<Option<String>, Stop> = match *name {
-            "preview" => match lifecycle::preview_session(state, git, &target.task.session_id).await {
-                Ok(preview) if preview.conflict => {
-                    Err(Stop::new(name, "conflict-local", published))
+            "preview" => {
+                match lifecycle::preview_session(state, git, &target.task.session_id).await {
+                    Ok(preview) if preview.conflict => {
+                        Err(Stop::new(name, "conflict-local", published))
+                    }
+                    Ok(preview) if preview.is_empty() => {
+                        Err(Stop::new(name, "nothing-to-merge", published))
+                    }
+                    Ok(preview) => Ok(Some(format!("{} commit(s)", preview.commits.len()))),
+                    Err(error) => Err(Stop::of(name, error, published)),
                 }
-                Ok(preview) if preview.is_empty() => {
-                    Err(Stop::new(name, "nothing-to-merge", published))
-                }
-                Ok(preview) => Ok(Some(format!("{} commit(s)", preview.commits.len()))),
-                Err(error) => Err(Stop::of(name, error, published)),
-            },
+            }
             "merge" => {
                 let preview = lifecycle::preview_session(state, git, &target.task.session_id)
                     .await
@@ -869,7 +881,11 @@ async fn merge_local(state: &SharedState, git: &GitRunner, target: &Target) -> R
                 }
             }
             "cleanup" => cleanup_step(state, git, target).await.map(|_| None),
-            other => Err(Stop::new("cleanup", format!("unknown step {other}"), published)),
+            other => Err(Stop::new(
+                "cleanup",
+                format!("unknown step {other}"),
+                published,
+            )),
         };
         match outcome {
             Ok(detail) => {
@@ -993,10 +1009,7 @@ async fn head_step(
 }
 
 /// Fast-forward the project's `main` to the task branch, with no merge commit.
-async fn land_step(
-    git: &GitRunner,
-    target: &Target,
-) -> std::result::Result<(), Stop> {
+async fn land_step(git: &GitRunner, target: &Target) -> std::result::Result<(), Stop> {
     // Fetch first: a `main` that is behind its remote would be fast-forwarded to
     // a commit the remote does not have, and the push would be refused after the
     // local branch had already moved.
@@ -1107,7 +1120,9 @@ async fn verify_merged(
         .ok_or_else(|| Stop::new("verify-merged", "the pull request has no head commit", true))?;
     let remotes = remotes_of(git, &target.project).await;
     let primary = primary_remote_blocking(git, &target.project, &remotes);
-    let _ = git.output(&target.project, &["fetch", "--quiet", &primary]).await;
+    let _ = git
+        .output(&target.project, &["fetch", "--quiet", &primary])
+        .await;
     let contained = git
         .output(
             &target.project,
@@ -1146,14 +1161,20 @@ async fn delete_remote_branches(
 ) -> std::result::Result<(), Stop> {
     for (name, _) in remotes {
         let heads = git
-            .output(&target.project, &["ls-remote", "--heads", name, &target.row.branch])
+            .output(
+                &target.project,
+                &["ls-remote", "--heads", name, &target.row.branch],
+            )
             .await
             .map_err(|error| Stop::new("delete-branches", error.to_string(), true))?;
         if !heads.success() || heads.stdout.trim().is_empty() {
             continue;
         }
         let output = git
-            .output(&target.project, &["push", name, "--delete", &target.row.branch])
+            .output(
+                &target.project,
+                &["push", name, "--delete", &target.row.branch],
+            )
             .await
             .map_err(|error| Stop::new("delete-branches", error.to_string(), true))?;
         if !output.success() {
@@ -1255,14 +1276,9 @@ mod tests {
         }
     }
 
-    fn facts(
-        mergeable: &str,
-        review: &str,
-        checks: Vec<CheckRun>,
-    ) -> PrFacts {
+    fn facts(mergeable: &str, review: &str, checks: Vec<CheckRun>) -> PrFacts {
         PrFacts {
             url: Some("https://github.com/o/r/pull/7".to_string()),
-            state: Some("OPEN".to_string()),
             mergeable: Some(mergeable.to_string()),
             review_decision: Some(review.to_string()),
             head_ref_oid: Some("abc123".to_string()),
@@ -1286,12 +1302,17 @@ mod tests {
 
         // No CI result yet (an empty rollup, and a null one).
         assert_eq!(
-            gate_for(Some(&facts("MERGEABLE", "", vec![]))).reason.as_deref(),
+            gate_for(Some(&facts("MERGEABLE", "", vec![])))
+                .reason
+                .as_deref(),
             Some("ci-missing")
         );
         let mut no_rollup = facts("MERGEABLE", "", vec![]);
         no_rollup.status_check_rollup = None;
-        assert_eq!(gate_for(Some(&no_rollup)).reason.as_deref(), Some("ci-missing"));
+        assert_eq!(
+            gate_for(Some(&no_rollup)).reason.as_deref(),
+            Some("ci-missing")
+        );
 
         // A check still running.
         let running = facts(
@@ -1336,11 +1357,15 @@ mod tests {
 
         // A conflict, and GitHub still computing.
         assert_eq!(
-            gate_for(Some(&facts("CONFLICTING", "", green()))).reason.as_deref(),
+            gate_for(Some(&facts("CONFLICTING", "", green())))
+                .reason
+                .as_deref(),
             Some("conflict")
         );
         assert_eq!(
-            gate_for(Some(&facts("UNKNOWN", "", green()))).reason.as_deref(),
+            gate_for(Some(&facts("UNKNOWN", "", green())))
+                .reason
+                .as_deref(),
             Some("mergeable-unknown")
         );
 

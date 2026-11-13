@@ -839,7 +839,9 @@ pub fn report_ready(db: &Database, input: &Value) -> Result<Value> {
     let leftovers = leftover_items(input)?;
     let tx = db.conn().unchecked_transaction()?;
     let Some(task_id) = open_task_for_session(&tx, &session_id)? else {
-        return Err(anyhow!("INVALID_ARGUMENT: task.report needs a task session"));
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: task.report needs a task session"
+        ));
     };
     let result = json!({
         "status": "ready",
