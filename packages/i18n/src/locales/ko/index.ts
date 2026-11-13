@@ -919,6 +919,7 @@ export const ko = {
       startFailed: "전달했지만 작업이 시작되지 않았습니다: {{reason}}",
       project: "프로젝트",
       projectUnbound: "연결된 프로젝트 없음 — 이 직원은 아직 저장소를 읽을 수 없습니다",
+      projectUnknownTarget: "담당자를 먼저 선택하세요 — 아직 읽을 저장소가 없습니다",
       loadFailed: "작업 카드를 불러오지 못했습니다: {{reason}}",
       retry: "다시 불러오기",
       riskLow: "낮은 위험",

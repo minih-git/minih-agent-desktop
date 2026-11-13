@@ -909,6 +909,7 @@ export const ptBR = {
       startFailed: "Enviado, mas a tarefa não iniciou: {{reason}}",
       project: "Projeto",
       projectUnbound: "Nenhum projeto vinculado — este funcionário ainda não consegue ler nenhum repositório",
+      "projectUnknownTarget": "Escolha um responsável primeiro — ainda não há repositório",
       loadFailed: "Não foi possível carregar os cartões de tarefa: {{reason}}",
       retry: "Recarregar",
       riskLow: "Risco baixo",

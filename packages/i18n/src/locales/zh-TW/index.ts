@@ -915,6 +915,7 @@ export const zhTW = {
       startFailed: "已派出，但任務沒有啟動：{{reason}}",
       project: "專案",
       projectUnbound: "未綁定專案——這個員工還讀不到任何儲存庫",
+      projectUnknownTarget: "先選崗位 —— 現在還沒有要讀的倉庫",
       loadFailed: "無法載入任務卡：{{reason}}",
       retry: "重新載入",
       riskLow: "低風險",

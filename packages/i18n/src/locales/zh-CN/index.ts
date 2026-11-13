@@ -920,6 +920,7 @@ export const zhCN = {
       startFailed: "已派出，但任务没有启动：{{reason}}",
       project: "项目",
       projectUnbound: "未绑定项目——这个员工还读不到任何仓库",
+      projectUnknownTarget: "先选岗位 —— 现在还没有要读的仓库",
       conflict: "卡片已更新，请重新查看后确认。",
       confirmFailed: "开工失败：{{reason}}",
       dropFailed: "放弃卡片失败：{{reason}}",

@@ -929,6 +929,7 @@ export const en = {
       startFailed: "Dispatched, but the task did not start: {{reason}}",
       project: "Project",
       projectUnbound: "No project bound — this employee cannot read any repository yet",
+      projectUnknownTarget: "Pick an assignee first — no repository is read yet",
       conflict: "The card changed. Review the latest version, then confirm again.",
       confirmFailed: "Could not start the task: {{reason}}",
       dropFailed: "Could not discard the card: {{reason}}",

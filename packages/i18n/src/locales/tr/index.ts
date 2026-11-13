@@ -919,6 +919,7 @@ export const tr = {
       startFailed: "Gönderildi ama görev başlamadı: {{reason}}",
       project: "Proje",
       projectUnbound: "Bağlı proje yok — bu çalışan henüz hiçbir depoyu okuyamıyor",
+      "projectUnknownTarget": "Önce bir sorumlu seç — henüz okunacak depo yok",
       loadFailed: "Görev kartları yüklenemedi: {{reason}}",
       retry: "Yeniden yükle",
       riskLow: "Düşük risk",

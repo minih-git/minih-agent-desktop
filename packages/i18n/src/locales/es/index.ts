@@ -910,6 +910,7 @@ export const es = {
       "startFailed": "Enviado, pero la tarea no se inició: {{reason}}",
       "project": "Proyecto",
       "projectUnbound": "Sin proyecto asignado — este empleado aún no puede leer ningún repositorio",
+      "projectUnknownTarget": "Elige primero un responsable: aún no hay repositorio",
       "loadFailed": "No se pudieron cargar las tarjetas de tarea: {{reason}}",
       "retry": "Recargar",
       "riskLow": "Riesgo bajo",

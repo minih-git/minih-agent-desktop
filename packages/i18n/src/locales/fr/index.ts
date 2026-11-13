@@ -910,6 +910,7 @@ export const fr = {
       "startFailed": "Envoyé, mais la tâche n'a pas démarré : {{reason}}",
       "project": "Projet",
       "projectUnbound": "Aucun projet associé — cet employé ne peut encore lire aucun dépôt",
+      "projectUnknownTarget": "Choisissez d'abord un assigné : aucun dépôt pour l'instant",
       "loadFailed": "Impossible de charger les cartes de tâche : {{reason}}",
       "retry": "Recharger",
       "riskLow": "Risque faible",

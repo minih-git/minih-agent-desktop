@@ -910,6 +910,7 @@ export const de = {
       "startFailed": "Gesendet, aber die Aufgabe wurde nicht gestartet: {{reason}}",
       "project": "Projekt",
       "projectUnbound": "Kein Projekt zugeordnet — dieser Mitarbeiter kann noch kein Repository lesen",
+      "projectUnknownTarget": "Zuerst eine zuständige Person wählen — noch kein Repository",
       "loadFailed": "Aufgabenkarten konnten nicht geladen werden: {{reason}}",
       "retry": "Neu laden",
       "riskLow": "Geringes Risiko",
