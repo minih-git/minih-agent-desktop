@@ -16,7 +16,7 @@ use super::{create_migration_backup, Connection, Context, Path, Result};
 pub(crate) const LEARNED_MEMORY_DDL: &str = r#"
 CREATE TABLE IF NOT EXISTS memory_entries (
   id                 TEXT PRIMARY KEY,
-  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user', 'bot')),
   scope_key          TEXT,
   kind               TEXT NOT NULL CHECK (kind IN ('preference', 'feedback', 'fact', 'reference')),
   content            TEXT NOT NULL CHECK (length(content) > 0),
@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_entries_recent
 
 CREATE TABLE IF NOT EXISTS memory_tombstones (
   id                 INTEGER PRIMARY KEY,
-  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user', 'bot')),
   scope_key          TEXT,
   fingerprint        TEXT NOT NULL,
   source_session_id  TEXT,

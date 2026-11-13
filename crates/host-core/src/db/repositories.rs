@@ -166,6 +166,10 @@ impl Database {
                 // the delivery steps the host ran (schema v38): the same DDL
                 // the v37 -> v38 step applies.
                 tx.execute_batch(&task_delivery_ddl())?;
+                // An employee's lessons from its finished tasks, and when a
+                // task's current stage was written (schema v39): the same DDL
+                // the v38 -> v39 step applies.
+                tx.execute_batch(&bot_memory_ddl())?;
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -354,6 +358,14 @@ impl Database {
             // the host executes (employee mode 0.5 slice 4b). Additive, and the
             // step is idempotent, so a v36 file takes both in one open.
             super::task_delivery_migration::migrate(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version <= 38 {
+            // The `bot` learned-memory scope, plus the extraction state and the
+            // stage timestamp a task needs (employee mode 0.5 slice 5). The two
+            // memory tables are rebuilt; the step refuses only *new* dangling
+            // references, so a long-lived file still opens.
+            super::bot_memory_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;
