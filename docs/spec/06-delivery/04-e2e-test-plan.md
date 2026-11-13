@@ -21325,3 +21325,95 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Milestone:** Maintenance.
 - **Status:** Automated (isolated React/Electron, fixture IPC); live UI scenario
   Draft.
+
+#### E2E-BOT-task-question-shows-in-four-places: One question, four surfaces, and answering it anywhere closes it everywhere
+
+- **Preconditions**: A steward-dispatched task runs in its own session. The
+  employee calls AskTool with one question and two concrete options.
+- **Steps**: 1) Read the task session's own card and its header chip. 2) Read the
+  steward's dock. 3) Read the sidebar group's header and the employee's row.
+  4) Read the system notification. 5) Answer the question in the steward's dock,
+  then repeat the whole run answering in the task session instead.
+- **Expected**: Steps 1–4 show the *same* question, taken from the request's
+  structured fields: the card in the task, an orange row in the dock
+  (employee @ repository · task · question) with the request's own options inline,
+  「等你 1 件」 in the sidebar header plus a red dot on that employee, and a
+  notification whose body is the question. Step 5 closes the record everywhere at
+  once: the task's card goes, the dock row collapses to one quiet line with
+  nothing added to the transcript, the sidebar count returns to zero, and the
+  pinned reminder closes. The task returns to `working` while its turn is still
+  running, `person/accept` after it ends. A request this screen cannot read keeps
+  its row and says 「去任务里回答」 instead of hiding. Nothing times out: an
+  unanswered question stays.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Waiting channel and blocked
+  card"), `03-runtime/06-host-rpc-protocol.md` (`task.waiting.open` /
+  `task.waiting.close`), `03-runtime/17-asktool-questions.md`,
+  `04-ux/11-asktool-question-card.md`
+- **Acceptance**: C (conversation & stream), F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 4a
+- **Status**: Partial. `crates/host-core/src/tasks_waiting_tests.rs` proves the
+  host half (stage, stored question, the steward's notice, closing by request id,
+  the restart clearing every request, a direct task never waking the steward);
+  `apps/desktop/test/bot-waiting-channel-user-path.test.mjs` drives the dock, the
+  blocked card and the sidebar in a real Electron window with real clicks and
+  asserts the IPC calls and the collapsed row; the system notification is covered
+  by the existing ask/permission notification tests, whose body is already the
+  question. The full four-surface run against a live host and a real OS
+  notification is not claimed.
+
+#### E2E-BOT-blocked-task-card-actions: A stuck task says where, and the four decisions all work
+
+- **Preconditions**: A task's turn calls `TaskReport` with `where`, `tried` and
+  `suggestion`.
+- **Steps**: 1) Read the task session and the steward's dock. 2) Click 重试.
+  3) Click 改派给… and look at the steward's dock. 4) Click 放弃 and read the
+  confirmation. 5) Click 我来说两句 6) Close the application during a turn instead
+  and read the same card.
+- **Expected**: Step 1 shows the three fields verbatim and the stage stays
+  `blocked` after the turn ends (settlement does not turn it into
+  `person/accept`). Step 2 sends one fixed message into that task's session and
+  starts a turn — the stage returns to `working`. Step 3 proposes one **new**
+  card on the steward's conversation, carrying the original goal with nobody
+  assigned, and the original task stays where it is. Step 4 asks once ("Drop this
+  task?") and archives only on the second click. Step 5 opens the task's session
+  with its composer focused. Step 6 shows 「Interrupted」 with 「重新开工」 *inside*
+  the same card — one card, one set of buttons — and a restart returns the task to
+  `queued` with one new delivery.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Waiting channel and blocked
+  card"), `03-runtime/06-host-rpc-protocol.md` (`task.report`, `task.reassign`,
+  `task.restart`)
+- **Acceptance**: C (conversation & stream), F (persistence), Quality
+- **Milestone**: Employee mode 0.5, slice 4a
+- **Status**: Partial. `crates/host-core/src/tasks_waiting_tests.rs` covers the
+  report, the blocked-stays-blocked settlement, the stop-with-reason and the
+  reassignment card; `apps/desktop/test/bot-waiting-channel-user-path.test.mjs`
+  clicks all four buttons in a real Electron window and asserts what reached
+  Main; `apps/desktop/test/bot-waiting-visual.test.mjs` captures the card in both
+  themes at 1440 and 1024. The restart-inside-the-card path reuses slice 3's
+  covered button and is not re-run end to end here.
+
+#### E2E-BOT-direct-task-stage-follows-turns: A task the person started follows its own turns
+
+- **Preconditions**: An employee exists with no task. The person types a task into
+  the employee's own workbench (origin `direct`, no delivery).
+- **Steps**: 1) Read the sidebar row and the session header before the first turn.
+  2) Start the turn. 3) Let it finish. 4) Send a follow-up message. 5) Stop a
+  third turn with the Stop button.
+- **Expected**: Step 1 reads `queued`. Step 2 reads `working` — not `queued`, and
+  not only after settlement. Step 3 reads `person/accept`. Step 4 reads `working`
+  again, so the header follows the conversation rather than the first dispatch.
+  Step 5 reads `blocked` with `reason: "stopped"`, and **no** message reaches the
+  steward: a stop is not news. A steward-dispatched task behaves the same way, and
+  each change wakes the steward exactly once, keyed by (task, stage, `stage_seq`),
+  however many settlements reach the same task.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Waiting channel and blocked
+  card"), `03-runtime/06-host-rpc-protocol.md` (stage notices),
+  `03-runtime/04-data-storage.md` (schema v37)
+- **Acceptance**: C (conversation & stream), F (persistence)
+- **Milestone**: Employee mode 0.5, slice 4a
+- **Status**: Partial. `crates/host-core/src/tasks_waiting_tests.rs` drives
+  `sessions::begin_turn` / `end_turn` on a directly dispatched task and on a
+  steward's, and asserts the stage after each edge, the single notice per change
+  and the silence of a stop. The renderer half (the header chip following the
+  turns) is covered by the existing task-header tests and is not re-run against a
+  live host here.

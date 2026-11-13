@@ -796,11 +796,39 @@ or general MCP operations:
   host writes one new delivery from the same sender with the same Mandate,
   re-points `tasks.delivery_id` at it and leaves it `queued`; the operation is
   idempotent per interrupted delivery, so a double click is one restart.
+- `task.waiting.open` — a **task session** is blocked on one structured request.
+  `sessionId`, `requestId`, `kind` (`ask` | `permission`), and the request's own
+  words: the AskTool `question` with its `options`, or the permission's `toolName`
+  and `reason`. Bounded (question 500 characters, options 4 x 160), appended to
+  `tasks.waiting_json` (at most 8, newest kept), and the stage becomes
+  `person/answer` in the same transaction. Electron main calls it from the one
+  funnel every interactive runtime event passes through, so a subagent's question
+  is included; the host ignores a session that is not a task's.
+- `task.waiting.close` — one request is no longer open. Named by `requestId`
+  alone (`sessionId` is a hint), so a handler that only knows the id — a phone
+  reply over RACP, an MCP client, the task session itself — closes the same entry.
+  Closing the last request of a turn that is still running returns the task to
+  `working`; after the turn ended the stage stays what the turn wrote. Idempotent,
+  and silent: the person already acted.
+- `task.report` — the task's own structured "I am stuck":
+  `{ sessionId, status: "blocked", where, tried, suggestion }`, each field at most
+  600 characters. `sessionId` is filled from the transport, never from the model's
+  arguments; a session that is not a task's is refused. Writes `blocker_json` and
+  moves the stage to `blocked` in one transaction, and the turn that reported it
+  ends by holding that stage.
+- `task.reassign` — the same work, as a fresh card: the host proposes a card on
+  the steward's conversation with the original goal (the mandate's goal, else the
+  person's words, else the title), `targetUnknown` (nobody assigned), and the
+  reason the caller rendered. The original task is untouched and is not archived;
+  only the person's later confirmation dispatches anything.
 - Stage notices — a task that stops making progress on its own wakes its steward
   with one `kind = stage` delivery (payload: `taskId`, employee, stage, reason,
-  delivery id, sequence). Written in the same transaction that moved the stage,
-  under an idempotency key of (task, delivery, stage, report sequence), and only
-  for `origin = steward`; `origin = direct` tasks never wake the steward.
+  the question when the stage is `person/answer`, the blocker when it is
+  `blocked`). Written in the same transaction that moved the stage, under an
+  idempotency key of (task, stage, `tasks.stage_seq`), and only for
+  `origin = steward`; `origin = direct` tasks never wake the steward. A person's
+  own stop leaves the task `blocked` with `reason: "stopped"` and is announced to
+  nobody.
 - `taskCard.confirm` — the person's click: it checks the `cardHash` the caller
   displayed, freezes the card, records `confirmedBy`, dispatches the work and
   notifies the steward, all in one transaction. The task session it creates runs
@@ -814,6 +842,14 @@ or general MCP operations:
   monotonic `seq` and the derived `stage`. A `seq` that is not greater than the
   stored one is answered `applied: false` instead of moving the task backwards.
   The stage is reported beside the delivery `status`, never in place of it.
+
+A task's stage is written by the host alone, in one function
+(`tasks::move_stage`), from facts the host owns: a turn of the task's own session
+beginning (`working`) or ending (`person/accept`, `failed`, or `blocked` for a
+stop), a structured report, a request opening or closing, and a `TaskReport`. The
+turn edges are hooked in `sessions::begin_turn` / `end_turn_settling`, so a task
+the person started directly follows its turns exactly like one a card dispatched —
+it needs no delivery to move.
 
 The ledger is durable across a host restart. A queued entry with its
 `turn_queue.session_message_id` remains held for a new Agent Host controller;

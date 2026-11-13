@@ -642,3 +642,155 @@ no other table references this one.
 | An interrupted task is visible and restartable | **Yes** — `delivery_status`, fence notice, `task.restart` | `session_collaboration/restart.rs`, `settlement.rs` |
 | `SessionSend` addresses a task, not a session title | **Yes** — `taskId` resolved by the host; archived or missing refused | `services/session-collaboration.ts` |
 | The model cannot reach `bot.*` / `task.*` | **Yes** — not in `HOST_PROXY_ALLOWED`; Main's tools call them | `packages/host-runtime` test |
+
+## Waiting channel and blocked card (employee mode 0.5, schema v37)
+
+Three rules the person had confirmed before this slice:
+
+1. **every decision goes through one channel** — an employee must write the
+   question it needs answered as *structured fields*, and the steward repeats it
+   verbatim instead of guessing from prose whether the employee is waiting;
+2. **one record, four surfaces** — the task session's card, the steward's dock
+   row, the sidebar count and the system notification are the same record, and
+   answering it anywhere makes it disappear everywhere; nothing times out;
+3. **a stuck card** — an employee that cannot continue says where, what it tried
+   and what it suggests, and the person chooses retry, reassign, drop, or to say
+   something.
+
+### 1. One stage writer, moved by a task's own turns
+
+`tasks::move_stage` is the only place a stage is written. Four facts reach it,
+and no fifth:
+
+| Fact | Stage |
+| --- | --- |
+| a turn of the task's own session begins | `working` |
+| that turn ends `completed` | `person/accept` (or `blocked`, if it reported being stuck) |
+| that turn ends `error` | `failed`, with the runtime's error code in `blocker_json` |
+| that turn ends `aborted` (the person stopped it) | `blocked`, `reason: "stopped"`, announced to nobody |
+
+A delivery's `progress::report` and settlement keep writing through the same
+function, so a delivery-bound task and a directly dispatched one cannot disagree.
+This is what fixed the defect that opened the slice: a task the person started in
+the employee's own workbench stayed `queued` for ever, because the only writers
+were `progress::report` (which Main never called) and settlement (which needs a
+delivery a direct task does not have).
+
+`tasks.stage_seq` counts *changes*: a repeated write of the stage a task already
+holds leaves it alone, which is what makes a notice exactly-once per change
+without depending on a delivery existing. The notice key is
+(task, stage, `stage_seq`); the startup fence's `interrupted` notice names its
+delivery instead, because an interruption is not a stage.
+
+### 2. The waiting record: what opens and closes it
+
+`tasks.waiting_json` holds the requests the task's session has open right now, in
+the employee's own structured words — a question with its options, or the tool a
+permission was asked for. At most eight, newest kept. The stage is
+`person/answer` while that array is not empty.
+
+| Where | Opens | Closes |
+| --- | --- | --- |
+| Main, `runtime/sidecar.ts` (`emitAgentEvent`) | `task.waiting.open` for every `asktool_request` / `tool_permission_request`, including a subagent's | — |
+| Main, `ipc/agent-ipc.ts` (`toolResolvePermission`, `askToolResolve`) | — | `task.waiting.close` by request id |
+| `packages/agent-host` (`respondApproval`, `respondInput`) | — | `onInteractiveResolved` → the same `task.waiting.close`, which is the phone (RACP) and MCP path |
+| host (`tasks::turn_began`, `tasks::turn_ended`) | — | a new turn or the end of the current one clears the array |
+| host (`settlement::recover`) | — | the startup fence clears every array: the sidecar that held them is gone |
+
+Closing is idempotent and names the request alone, so a handler that knows only
+the id (a phone reply, an MCP client) does not need the session. A request that is
+closed while its turn still runs returns the task to `working`; one closed after
+the turn ended leaves the stage the turn wrote.
+
+The question text is bounded (500 characters) and travels *with* the notice to
+the steward, whose brief says to quote it exactly, say where the person answers
+it, and never answer it herself.
+
+### 3. `TaskReport`: the employee's one structured exit
+
+A task session has no employee definition, so nothing told it how to give up. Two
+pieces fix that:
+
+- `TaskReport` is declared for **Agent turns of a task session only**
+  (`declaresTaskReport(mode, taskReporter)`; Main sets `taskReporter` from
+  `sessions.role === "task"`). The tool's schema is
+  `{ status: "blocked", where, tried, suggestion }`, and the host refuses a call
+  from any other session or from a delegate;
+- a per-turn rule block (`TASK_SESSION_BRIEFING`) rides with the request and is
+  never written to the transcript, the same mechanism the steward's brief uses.
+
+`task.report` writes `tasks.blocker_json` and moves the stage to `blocked` in one
+transaction. The turn that reported it ends by holding that stage: settlement
+reads the blocker and keeps `blocked` instead of overwriting it with
+`person/accept`. The tool result tells the model to end the turn.
+
+### 4. The blocked card
+
+One card, three sources, four decisions:
+
+- `blocked` → the report's own `where` / `tried` / `suggestion`;
+- `failed` → the error code the runtime settled (`blocker_json.reason = "error"`);
+- `interrupted` → the startup fence, and the card says the app restarted.
+
+Buttons: **retry** (a fixed message in the person's language, sent into the task
+session; for an interrupted task it *is* 「重新开工」, so one card has one set of
+buttons), **hand to…** (`task.reassign` proposes a new card on the steward's
+conversation with the original goal and nobody assigned; the original task is
+left alone), **drop** (a second click, then `task.archive`), **say something**
+(open the task session and focus its composer).
+
+### 5. Four surfaces, one record
+
+| Surface | Shows |
+| --- | --- |
+| the task session | the question card the runtime raised, and the blocked card |
+| the steward's dock | an orange row per open request (employee @ repository · task · question), answerable in place with the request's own options; the blocked card; the fallback 「去任务里回答」 when the request cannot be read here |
+| the sidebar | 「等你 N 件」 over every source, a list whose rows go to the task or to the steward's conversation, and a red dot on an employee with anything waiting |
+| the system notification | unchanged plumbing; the question and the tool name are already in its body |
+
+Dock order is the ADR's: questions and approvals, then stuck tasks, then start
+cards. A row the person answered collapses to one quiet line and **adds nothing
+to the transcript**: the record is the dock's, not the conversation's.
+
+The steward's model has no tool that answers a request. `bot.*`, `taskCard.*`
+and `task.*` stay out of the sidecar proxy allowlist, so the only way a request is
+resolved is a person's click.
+
+### 6. The rule that changed: a stuck task counts as waiting
+
+Until this slice only `person/*` disturbed the person, and `blocked` / `failed`
+were the employee's own quieter business. That is precisely why a stuck task could
+sit there unnoticed. The rule is now: **a task the person has to act on counts**,
+whether it waits for an answer, waits for acceptance, or got stuck.
+`tasks::task_status_point` and the renderer's `bot-status.ts` changed together,
+and `taskCountsAsWaiting` is the one predicate the sidebar, the dock and the tests
+use.
+
+### 7. Schema v37
+
+Three additive columns on `tasks`: `waiting_json`, `blocker_json`,
+`stage_seq INTEGER NOT NULL DEFAULT 0`. No table is rebuilt, no row rewritten, and
+the step must run on a file that already carries historical foreign-key
+violations — the v32 → v33 rebuild once refused a real user's file over one orphan
+row, so every later step to this table stayed additive. A column that already
+exists is completed, not restarted, and `user_version` is stamped only after the
+last statement.
+
+### Enforcement status after this section
+
+| Rule | Enforced | Where |
+| --- | --- | --- |
+| One stage writer; a repeated stage write is not a change | **Yes** — every path goes through `tasks::move_stage`, `stage_seq` counts changes | `crates/host-core/src/tasks.rs` |
+| A task's stage follows its own turns, delivery or not | **Yes** — `turn_began` / `turn_ended` are called from `sessions::begin_turn` / `end_turn_settling` | `crates/host-core/src/sessions.rs` |
+| A repeated or replayed settlement wakes nobody twice | **Yes** — notice keyed by (task, stage, `stage_seq`) | `session_collaboration/notices.rs` |
+| A directly dispatched task never wakes the steward | **Yes** — `origin = steward` only | `session_collaboration/notices.rs` |
+| A stopped turn is stuck and silent | **Yes** — `blocked` + `reason: "stopped"`, written with `silent` | `tasks::turn_ended` |
+| A question is stored from structured fields only | **Yes** — `task.waiting.open` takes the AskTool question/options or the tool and reason | `electron/main/runtime/task-waiting.ts` |
+| A request closes from any surface | **Yes** — by request id, from Main's IPC, agent-host's RACP hook, or the turn's end | `task-waiting.ts`, `agent-host.ts`, `tasks::waiting_close` |
+| A restart holds no requests | **Yes** — the fence clears every array | `session_collaboration/settlement.rs` |
+| Only a task session may declare `TaskReport` | **Yes** — `declaresTaskReport`; host refuses other sessions and delegates | `packages/agent-runtime/src/task-report.ts`, `rpc/task_tools.rs` |
+| A stuck report survives its own turn's settlement | **Yes** — settlement keeps `blocked` when a blocker is present | `tasks::turn_ended` |
+| The rules a task runs under never enter the transcript | **Yes** — per-turn briefing only | `electron/main/services/task-status.ts` |
+| The steward relays, and cannot answer | **Yes** — her brief says so; no tool answers a request | `task-status.ts`, `HOST_PROXY_ALLOWED` |
+| A blocked or failed task counts as waiting | **Yes** — `taskCountsAsWaiting`, `task_status_point` | `packages/shared/src/task.ts`, `tasks.rs` |
+| Schema v37 is additive and idempotent | **Yes** — three `ADD COLUMN`s, orphan-safe, pinned by migration tests | `db/task_waiting_migration.rs` |

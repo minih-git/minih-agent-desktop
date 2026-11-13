@@ -1247,6 +1247,16 @@ idempotent — a file whose table already accepts `stage` is stamped without a
 rebuild — and no other table references this one, so the `DROP` cannot cascade.
 The four indexes are recreated under their original names.
 
+**Schema v36 -> v37.** Three additive columns on `tasks` (ADR
+bot-sessions-and-steward, waiting channel): `waiting_json` (the requests the
+task's session is blocked on, as structured entries), `blocker_json` (what a
+stuck task reported, or the reason it stopped / the code it failed with) and
+`stage_seq INTEGER NOT NULL DEFAULT 0` (how many times the stage has moved — the
+notice key). Nothing is rebuilt and no row is rewritten, so the step runs on a
+file that already carries historical foreign-key violations; a column that already
+exists is completed rather than restarted, and `user_version` is stamped only
+after the last statement.
+
 ### 4.7 messages — transcript index
 
 The transcript itself is the per-session JSONL file (§2.1); this table is its
