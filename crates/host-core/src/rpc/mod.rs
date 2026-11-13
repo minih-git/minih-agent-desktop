@@ -10,6 +10,7 @@ mod scheduled_rpc;
 mod scheduled_tools;
 mod side_notes_rpc;
 mod task_rpc;
+mod task_tools;
 mod todos;
 mod window_corner_rpc;
 mod worktree_rpc;
@@ -5015,7 +5016,12 @@ async fn handle_request(
                     });
                 }
 
-                let mut result = if p.tool_name == "TodoWrite" {
+                let mut result = if p.tool_name == "TaskReport" {
+                    // A task's own structured "I am stuck" (employee mode 0.5
+                    // slice 4a): the session comes from the transport, and the
+                    // write owns its stage and its refusal codes.
+                    task_tools::execute_report(&state, &p, call_started).await?
+                } else if p.tool_name == "TodoWrite" {
                     // The checklist body owns its own trusted-transport checks,
                     // the atomic write, and the after-commit notification.
                     todos::execute_write(&state, &tx, &p, call_started).await?
@@ -6265,13 +6271,18 @@ mod tests {
     /// Every `task.*` method the desktop calls, spelled exactly as it sends it.
     ///
     /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts`.
-    const DESKTOP_TASK_METHODS: [&str; 6] = [
+    const DESKTOP_TASK_METHODS: [&str; 10] = [
         "task.create",
         "task.list",
         "task.get",
         "task.archive",
         "task.workspace.retry",
         "task.restart",
+        // The waiting channel and the blocked card (employee mode 0.5 slice 4a).
+        "task.waiting.open",
+        "task.waiting.close",
+        "task.report",
+        "task.reassign",
     ];
 
     /// Tasks answer on the real RPC route, with real arguments.

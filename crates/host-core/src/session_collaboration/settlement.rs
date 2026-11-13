@@ -100,21 +100,6 @@ pub(super) fn callback(db: &Database, message: &Message) -> Result<Option<Messag
     Ok(Some(receipt))
 }
 
-/// The task stage a settled delivery leaves behind.
-///
-/// Only the machine's own outcome is inferred here; anything a worker reports
-/// still arrives through `progress::report`, which wins because it is written
-/// by a sequence the settlement does not touch.
-fn task_stage_for(outcome: &str) -> &'static str {
-    match outcome {
-        "failed" => "failed",
-        // Cancelled work is not the person's turn either: nothing is running.
-        "cancelled" => "queued",
-        // Finished: the person still has to accept it.
-        _ => "person/accept",
-    }
-}
-
 /// Must be called after the transcript outbox and durable turn have settled.
 /// Repeated terminal notifications return the same receipt, never a new one.
 pub fn settle_turn(db: &Database, turn_id: &str) -> Result<Option<Message>> {
@@ -146,18 +131,20 @@ pub fn settle_turn(db: &Database, turn_id: &str) -> Result<Option<Message>> {
     };
     let tx = db.conn().unchecked_transaction()?;
     db.conn().execute("UPDATE session_collaboration_messages SET status=?2,result=?3,error=?4,updated_at=?5 WHERE id=?1",
-        params![message.id,outcome,report,error,now_ms()])?;
-    // A settled turn is the host's own evidence about the task's stage: a failed
-    // or cancelled delivery is the machine's outcome, and a completed one is
-    // finished work waiting for the person to accept it.
-    let stage = task_stage_for(outcome);
-    let moved = crate::tasks::sync_stage(&tx, &message.id, stage)?;
-    // A failure is the one settled outcome the steward has to hear about: the
-    // completion receipt below covers finished work, and nothing else will tell
-    // her that the task stopped (employee mode 0.5 slice 3).
-    if moved {
-        super::notices::stage_change(db, &tx, &message.id, stage, message.report_seq)?;
-    }
+        params![message.id,outcome,report,error.clone(),now_ms()])?;
+    // A settled turn is the host's own evidence about the task's stage, and it
+    // moves it through the same function a turn of a task session uses: a
+    // completed turn is finished work waiting for the person, an error is the
+    // machine's own failure, and a cancelled turn is a stop the task keeps as
+    // "stuck". A report written during the turn wins, because the blocker it
+    // left is what the person has to read.
+    crate::tasks::turn_ended(
+        db,
+        &tx,
+        &message.target_session_id,
+        &status,
+        error.as_deref(),
+    )?;
     let updated =
         repository::get(db, &message.id)?.ok_or_else(|| anyhow!("NOT_FOUND: settled message"))?;
     let receipt = callback(db, &updated)?;
@@ -239,6 +226,10 @@ pub(super) fn cancel(db: &Database, input: &Value) -> Result<Value> {
 ///   had, with nobody told; the person now sees "已中断" and can start it again.
 pub fn recover(db: &Database) -> Result<()> {
     let tx = db.conn().unchecked_transaction()?;
+    // The sidecar restarted, so no request it was holding can still be answered:
+    // a question that survived the restart would send the person to a card that
+    // no longer exists. The stage is left to the fence below.
+    crate::tasks::clear_waiting(&tx)?;
     let interrupted: Vec<(String, i64)> = {
         let mut statement = tx.prepare(
             "SELECT id, report_seq FROM session_collaboration_messages
@@ -257,8 +248,8 @@ pub fn recover(db: &Database) -> Result<()> {
         OR (status='queued' AND NOT EXISTS(SELECT 1 FROM turn_queue q WHERE q.session_message_id=session_collaboration_messages.id))",
         params![now_ms()],
     )?;
-    for (id, seq) in &interrupted {
-        super::notices::stage_change(db, &tx, id, "interrupted", *seq)?;
+    for (id, _seq) in &interrupted {
+        super::notices::delivery_interrupted(db, &tx, id)?;
     }
     tx.commit()?;
     Ok(())

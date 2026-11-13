@@ -36,6 +36,8 @@ mod sessions;
 mod state;
 mod task_workspace;
 mod tasks;
+#[cfg(test)]
+mod tasks_waiting_tests;
 mod todos;
 mod tool_budget;
 mod tool_cancellation;

@@ -13,7 +13,7 @@ pub mod bots;
 pub mod task_api;
 pub(crate) use crate::tasks;
 pub mod drafts;
-mod notices;
+pub(crate) mod notices;
 mod permissions;
 pub mod progress;
 mod projections;

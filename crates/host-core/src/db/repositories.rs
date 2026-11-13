@@ -158,6 +158,10 @@ impl Database {
                 // the migration chain does.
                 tx.execute_batch(TASKS_DDL)?;
                 tx.execute_batch(&task_workspace_ddl())?;
+                // What a task is waiting on, why it is stuck, and how often its
+                // stage moved (schema v37): the same DDL the v36 -> v37 step
+                // applies, so a new file ends up where the chain does.
+                tx.execute_batch(&task_waiting_ddl())?;
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -334,6 +338,12 @@ impl Database {
             // The steward's default name is `Super Agent`; a row that still
             // carries the previous default is renamed, a chosen name is not.
             super::steward_name_migration::migrate(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version == 36 {
+            // The waiting channel, the blocked card's own words, and the stage
+            // counter the notices are keyed by (employee mode 0.5 slice 4a).
+            super::task_waiting_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

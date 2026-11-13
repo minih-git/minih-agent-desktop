@@ -13,7 +13,11 @@ impl super::PermissionManager {
             "Read" | "Glob" | "Grep" | "ScheduledTaskList" | "TodoWrite" | "SessionList"
             | "SessionResult" | "SessionHistorySearch" | "MemorySearch"
             // Reads change nothing; Stop ends a process and keeps Medium.
-            | "BackgroundTaskList" | "BackgroundTaskOutput" => Risk::Low,
+            | "BackgroundTaskList" | "BackgroundTaskOutput"
+            // A `TaskReport` writes the reporting task's own row and nothing else:
+            // it is how a task says it is stuck, which is not an action on the
+            // person's files or accounts (employee mode 0.5 slice 4a).
+            | "TaskReport" => Risk::Low,
             // Sending starts another session's Agent and spends its quota;
             // creating one brings a durable session into the user's list.
             "Write" | "Edit" | "Bash" | "GenerateImages" | "SessionSend" | "SessionCreate" => {

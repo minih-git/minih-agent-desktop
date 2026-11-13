@@ -4225,6 +4225,11 @@ pub fn begin_turn(
         }
         return Err(anyhow!("AGENT_BUSY"));
     }
+    // A task's own turn is the host's fact that the work is running (employee
+    // mode 0.5 slice 4a). It is written here, at the one place every turn of
+    // every session goes through, so a task follows its turns whether or not a
+    // steward dispatched it and whether or not a delivery exists.
+    crate::tasks::turn_began(db, db.conn(), session_id)?;
     Ok(id)
 }
 
@@ -4335,6 +4340,15 @@ pub fn end_turn_settling(
         None
     };
     tx.commit()?;
+    // The task a turn of this session belongs to follows the turn (employee mode
+    // 0.5 slice 4a): a finished turn is work waiting for the person, a failed one
+    // is the machine's own failure, and a stopped one is stuck. Written after the
+    // commit, because the durable turn is what the stage is derived from, and the
+    // write is idempotent: a settlement reaching the same task afterwards writes
+    // the same stage and moves nothing.
+    if let Some(session_id) = session_id.as_deref() {
+        crate::tasks::turn_ended(db, db.conn(), session_id, status, error_code)?;
+    }
     // Settle the in-flight checkpoint (D299, D327). A caller that knows the
     // reply can never finish (sidecar gone) asks for recovery. A completed or
     // error turn drops the checkpoint only once its final row is indexed —

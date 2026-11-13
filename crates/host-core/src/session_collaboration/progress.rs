@@ -183,10 +183,11 @@ pub fn report(
     // work. A stage that actually moved wakes the steward once, in this same
     // transaction (employee mode 0.5 slice 3).
     if applied > 0 {
-        let moved = crate::tasks::sync_stage(&tx, message_id, stage)?;
-        if moved {
-            super::notices::stage_change(db, &tx, message_id, stage, seq)?;
-        }
+        // A task bound to this delivery moves with it, in the same transaction:
+        // the task list must never disagree with the ledger about who is holding
+        // the work. A stage that actually moved wakes the steward once, from that
+        // same function (employee mode 0.5 slice 3, slice 4a).
+        crate::tasks::sync_stage(db, &tx, message_id, stage)?;
     }
     tx.commit()?;
     Ok(json!({

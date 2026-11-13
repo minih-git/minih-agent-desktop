@@ -3340,6 +3340,25 @@ pub fn builtin_tool_defs() -> Value {
             }
         },
         {
+            "name": "TaskReport",
+            "description": "Report that this task is stuck, in three structured fields, and end the turn. \
+                 `{ status: \"blocked\", where, tried, suggestion }` — where it stopped, what was already attempted, and what you suggest the person do. \
+                 The owner session comes from the transport, so any other argument is rejected. \
+                 Only a task session may call this; the person sees the card it writes and can retry, reassign, drop or answer.",
+            "risk": "low",
+            "parameters": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "status": { "type": "string", "enum": ["blocked"] },
+                    "where": { "type": "string", "minLength": 1, "maxLength": 600, "description": "Where it got stuck, in one or two sentences" },
+                    "tried": { "type": "string", "minLength": 1, "maxLength": 600, "description": "What was already tried" },
+                    "suggestion": { "type": "string", "minLength": 1, "maxLength": 600, "description": "What you suggest the person do" }
+                },
+                "required": ["status", "where", "tried", "suggestion"]
+            }
+        },
+        {
             "name": "Write",
             "description": "Create or overwrite a file inside the workspace or the session scratch directory. Strips a pasted `[path#TAG]` header and `N:` line prefixes. Returns the post-write `tag` so a following Edit needs no extra Read.",
             "risk": "high",
