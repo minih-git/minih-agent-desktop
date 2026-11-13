@@ -34,9 +34,12 @@ mod session_search;
 mod session_worktrees;
 mod sessions;
 mod state;
+mod task_delivery;
 mod task_stage;
 mod task_workspace;
 mod tasks;
+#[cfg(test)]
+mod tasks_completion_tests;
 #[cfg(test)]
 mod tasks_waiting_tests;
 mod todos;

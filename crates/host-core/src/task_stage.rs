@@ -257,6 +257,16 @@ pub fn turn_began(
     let Some(task_id) = open_task_for_session(conn, session_id)? else {
         return Ok(None);
     };
+    // A new turn is a new attempt. Whatever the previous one delivered — and
+    // whether the person had accepted it — no longer describes this task, so
+    // both are cleared here rather than by each of the callers. This is also
+    // what makes 「打回」 and 「追加要求」 restart the acceptance: both send a
+    // user message, and a message starts a turn.
+    conn.execute(
+        "UPDATE tasks SET accepted_at=NULL, result_json=NULL
+          WHERE id=?1 AND (accepted_at IS NOT NULL OR result_json IS NOT NULL)",
+        params![task_id],
+    )?;
     move_stage(
         db,
         conn,
@@ -718,4 +728,208 @@ pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
         "created": proposed.get("created").cloned().unwrap_or(Value::Bool(false)),
         "task": task,
     }))
+}
+
+// ---- the completion report and the person's acceptance ----------------------
+//
+// Slice 4b. A turn ending was already enough to move a task to `person/accept`,
+// but the person was then asked to accept work described only by whatever prose
+// the employee happened to end with. Two structured facts make the completion
+// card worth reading, and both are written here because both are about the same
+// row: what the employee delivered (`TaskReport { status: "ready" }`), and
+// whether the person accepted it.
+
+/// One line of the employee's own acceptance check.
+///
+/// `criterion` is the goal, quoted from the card the person confirmed; `met` is
+/// the employee's own ✓/✗; `note` says why, when a bare ✓ would not.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskAcceptance {
+    pub criterion: String,
+    pub met: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// What `TaskReport { status: "ready" }` delivered, as `tasks.result_json`
+/// stores it.
+///
+/// The status is stored rather than implied so a later slice can add another
+/// kind of report without re-reading every row; today the only value is
+/// `ready`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskResult {
+    pub status: String,
+    pub summary: String,
+    #[serde(default)]
+    pub acceptance: Vec<TaskAcceptance>,
+    #[serde(default)]
+    pub leftovers: Vec<String>,
+    pub reported_at: String,
+}
+
+const MAX_RESULT_SUMMARY_CHARS: usize = 1_200;
+const MAX_ACCEPTANCE_ITEMS: usize = 12;
+const MAX_ACCEPTANCE_CRITERION_CHARS: usize = 240;
+const MAX_ACCEPTANCE_NOTE_CHARS: usize = 300;
+const MAX_LEFTOVERS: usize = 10;
+const MAX_LEFTOVER_CHARS: usize = 240;
+
+/// The acceptance lines, bounded in count and in length rather than refused:
+/// a person reading the card needs the list, not an error about its size.
+fn acceptance_items(input: &Value) -> Result<Vec<TaskAcceptance>> {
+    let Some(items) = input.get("acceptance") else {
+        return Ok(Vec::new());
+    };
+    let items = items
+        .as_array()
+        .ok_or_else(|| anyhow!("INVALID_ARGUMENT: acceptance must be an array"))?;
+    let mut out = Vec::new();
+    for item in items.iter().take(MAX_ACCEPTANCE_ITEMS) {
+        let criterion = required_text(item, "criterion", MAX_ACCEPTANCE_CRITERION_CHARS)?;
+        let met = item
+            .get("met")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| anyhow!("INVALID_ARGUMENT: acceptance.met must be a boolean"))?;
+        out.push(TaskAcceptance {
+            criterion: criterion.to_owned(),
+            met,
+            note: bounded(item, "note", MAX_ACCEPTANCE_NOTE_CHARS),
+        });
+    }
+    Ok(out)
+}
+
+fn leftover_items(input: &Value) -> Result<Vec<String>> {
+    let Some(items) = input.get("leftovers") else {
+        return Ok(Vec::new());
+    };
+    // A single sentence is accepted as a one-line list: the shape a model can
+    // produce most reliably must not cost the person the card.
+    if items.as_str().is_some() {
+        return Ok(bounded(input, "leftovers", MAX_LEFTOVER_CHARS)
+            .into_iter()
+            .collect());
+    }
+    let items = items
+        .as_array()
+        .ok_or_else(|| anyhow!("INVALID_ARGUMENT: leftovers must be an array of strings"))?;
+    let mut out = Vec::new();
+    for item in items.iter().take(MAX_LEFTOVERS) {
+        if let Some(text) = bounded(&json!({ "leftover": item }), "leftover", MAX_LEFTOVER_CHARS) {
+            out.push(text);
+        }
+    }
+    Ok(out)
+}
+
+/// `TaskReport { status: "ready" }`: the work is done, in the employee's own
+/// structured words.
+///
+/// It writes `result_json` and **nothing else**. The stage stays whatever the
+/// turn writes when it ends (`person/accept`), because a report does not decide
+/// what the person is holding — the turn ending does. Writing it here would let
+/// a task claim `person/accept` while its turn was still running.
+pub fn report_ready(db: &Database, input: &Value) -> Result<Value> {
+    let session_id = required_text(input, "sessionId", 256)?.to_owned();
+    let summary = required_text(input, "summary", MAX_RESULT_SUMMARY_CHARS)?.to_owned();
+    let acceptance = acceptance_items(input)?;
+    let leftovers = leftover_items(input)?;
+    let tx = db.conn().unchecked_transaction()?;
+    let Some(task_id) = open_task_for_session(&tx, &session_id)? else {
+        return Err(anyhow!("INVALID_ARGUMENT: task.report needs a task session"));
+    };
+    let result = json!({
+        "status": "ready",
+        "summary": summary,
+        "acceptance": acceptance,
+        "leftovers": leftovers,
+        "reportedAt": ms_to_ts(now_ms()),
+    });
+    tx.execute(
+        "UPDATE tasks SET result_json=?2 WHERE id=?1",
+        params![task_id, result.to_string()],
+    )?;
+    tx.commit()?;
+    Ok(json!({
+        "task": get_task(db, &task_id)?,
+        "result": result,
+    }))
+}
+
+/// `task.report`, in both of its shapes: `blocked` when the work stopped,
+/// `ready` when it is done.
+///
+/// One entry point because the tool has one name: the model picks a status, and
+/// the host decides what that status is allowed to write.
+pub fn report(db: &Database, input: &Value) -> Result<Value> {
+    match required_text(input, "status", 32)? {
+        "blocked" => report_blocked(db, input),
+        "ready" => report_ready(db, input),
+        other => Err(anyhow!(
+            "INVALID_ARGUMENT: status must be blocked or ready, got '{other}'"
+        )),
+    }
+}
+
+/// `task.accept`: the person says the work is acceptable.
+///
+/// Accepting is **not** archiving. The row stays, its completion card stays
+/// reachable so the merge can still be done later, and the only thing that
+/// changes is `accepted_at` — which is what takes the task out of the sidebar's
+/// "waiting for you" count. A second click keeps the first timestamp, because
+/// asking twice is not a mistake the person should have to understand.
+pub fn accept(db: &Database, input: &Value) -> Result<Value> {
+    let task_id = required_text(input, "taskId", 256)?.to_owned();
+    let tx = db.conn().unchecked_transaction()?;
+    let existing: Option<Option<i64>> = tx
+        .query_row(
+            "SELECT accepted_at FROM tasks WHERE id=?1 AND archived_at IS NULL",
+            params![task_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(existing) = existing else {
+        return Err(anyhow!("NOT_FOUND: task"));
+    };
+    if existing.is_none() {
+        tx.execute(
+            "UPDATE tasks SET accepted_at=?2 WHERE id=?1 AND accepted_at IS NULL",
+            params![task_id, now_ms()],
+        )?;
+    }
+    tx.commit()?;
+    Ok(json!({ "task": get_task(db, &task_id)? }))
+}
+
+/// The stage a failed delivery leaves behind: the task is blocked, and the
+/// blocker names the step rather than describing it in prose.
+///
+/// It goes through [`move_stage`] like every other stage write, so the notice
+/// keyed by `stage_seq` is written once and the sidebar's count follows without
+/// a second rule.
+pub fn block_delivery(
+    db: &Database,
+    task_id: &str,
+    step: &str,
+    detail: &str,
+) -> Result<Option<StageMove>> {
+    let detail: String = detail.chars().take(MAX_BLOCKER_FIELD_CHARS).collect();
+    let blocker = json!({
+        "reason": "delivery",
+        "step": step,
+        "detail": detail,
+    })
+    .to_string();
+    move_stage(
+        db,
+        db.conn(),
+        task_id,
+        Some("blocked"),
+        Column::Set(&blocker),
+        Column::Keep,
+        false,
+    )
 }

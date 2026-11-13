@@ -105,6 +105,24 @@ pub(super) async fn handle(
             let st = state.lock().await;
             crate::tasks::archive(&st.db, &params).map_err(session_collaboration_rpc_err)
         }
+        // The completion card (employee mode 0.5 slice 4b): what the card shows
+        // and whether it may merge, then the merge itself, in the host's fixed
+        // steps. `gh` is constructed here so the domain keeps its injectable
+        // reader and every test drives a scripted one.
+        "task.delivery.check" => {
+            let task_id = param(&params, "taskId")?;
+            let gh = crate::task_delivery::GhCli::default();
+            crate::task_delivery::check(state, &git, &gh, task_id)
+                .await
+                .map_err(session_collaboration_rpc_err)
+        }
+        "task.delivery.merge" => {
+            let task_id = param(&params, "taskId")?;
+            let gh = crate::task_delivery::GhCli::default();
+            crate::task_delivery::merge(state, &git, &gh, task_id)
+                .await
+                .map_err(session_collaboration_rpc_err)
+        }
         _ => {
             let st = state.lock().await;
             crate::session_collaboration::handle_task(&st.db, method, &params)

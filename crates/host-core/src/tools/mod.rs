@@ -3341,21 +3341,44 @@ pub fn builtin_tool_defs() -> Value {
         },
         {
             "name": "TaskReport",
-            "description": "Report that this task is stuck, in three structured fields, and end the turn. \
-                 `{ status: \"blocked\", where, tried, suggestion }` — where it stopped, what was already attempted, and what you suggest the person do. \
+            "description": "Report how this task ended, in one structured shape, and end the turn. \
+                 `{ status: \"ready\", summary, acceptance: [{ criterion, met, note? }], leftovers? }` when the work is done — one line per acceptance criterion, each marked with whether you met it. \
+                 `{ status: \"blocked\", where, tried, suggestion }` when it is stuck — where it stopped, what was already attempted, and what you suggest the person do. \
                  The owner session comes from the transport, so any other argument is rejected. \
-                 Only a task session may call this; the person sees the card it writes and can retry, reassign, drop or answer.",
+                 Only a task session may call this; the person sees the completion card or the blocked card it writes. A `ready` report does not need the host to do anything else: the turn ending is what asks the person to accept.",
             "risk": "low",
             "parameters": {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "status": { "type": "string", "enum": ["blocked"] },
-                    "where": { "type": "string", "minLength": 1, "maxLength": 600, "description": "Where it got stuck, in one or two sentences" },
-                    "tried": { "type": "string", "minLength": 1, "maxLength": 600, "description": "What was already tried" },
-                    "suggestion": { "type": "string", "minLength": 1, "maxLength": 600, "description": "What you suggest the person do" }
+                    "status": { "type": "string", "enum": ["blocked", "ready"] },
+                    "summary": { "type": "string", "minLength": 1, "maxLength": 1200, "description": "For `ready`: what changed, in two or three sentences" },
+                    "acceptance": {
+                        "type": "array",
+                        "maxItems": 12,
+                        "description": "For `ready`: one entry per acceptance criterion of the task, in the same order",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "criterion": { "type": "string", "minLength": 1, "maxLength": 240 },
+                                "met": { "type": "boolean" },
+                                "note": { "type": "string", "maxLength": 300, "description": "Why, when a bare yes or no would not be enough" }
+                            },
+                            "required": ["criterion", "met"]
+                        }
+                    },
+                    "leftovers": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "description": "For `ready`: what is deliberately left undone, one line each. Omit when there is nothing",
+                        "items": { "type": "string", "minLength": 1, "maxLength": 240 }
+                    },
+                    "where": { "type": "string", "minLength": 1, "maxLength": 600, "description": "For `blocked`: where it got stuck, in one or two sentences" },
+                    "tried": { "type": "string", "minLength": 1, "maxLength": 600, "description": "For `blocked`: what was already tried" },
+                    "suggestion": { "type": "string", "minLength": 1, "maxLength": 600, "description": "For `blocked`: what you suggest the person do" }
                 },
-                "required": ["status", "where", "tried", "suggestion"]
+                "required": ["status"]
             }
         },
         {

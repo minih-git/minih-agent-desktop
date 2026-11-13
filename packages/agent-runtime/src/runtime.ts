@@ -3814,9 +3814,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       if (backgroundTaskToolDescriptions[toolName]) return backgroundTaskToolDescriptions[toolName];
       switch (toolName) {
         case "TaskReport":
-          // Only a task session sees this, and it is the one structured way out
-          // of an empty turn: the person gets where it stopped, not prose.
-          return "Report that this task is stuck and end the turn: `{ status: \"blocked\", where, tried, suggestion }`. The person sees the card it writes and can retry, reassign, drop or answer. Never end a turn stuck silently.";
+          // Only a task session sees this, and it is the one structured way to
+          // say how the work ended: the person gets the completion card or the
+          // blocked card, never a paragraph of prose they cannot act on.
+          return "Report how this task ended, in one structured shape, and end the turn. Done: `{ status: \"ready\", summary, acceptance: [{ criterion, met, note? }], leftovers? }` — one entry per acceptance criterion, each marked with whether you met it. Stuck: `{ status: \"blocked\", where, tried, suggestion }`. The person sees the card it writes and can accept, merge, retry, reassign, drop or answer. Never end a turn stuck silently, and never describe finished work only in prose.";
         case "BrowserPreview":
           return "Open an HTML file in Minih-Agent-Desktop's built-in browser panel. `path` may be relative to a project folder or this session's scratch directory, or an absolute path inside those roots. No project is required for scratch previews. The preview live-reloads on later edits to the file or its sibling assets, so call once per page.";
         case "Read":
@@ -3871,11 +3872,26 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const parameters: Record<string, Parameters<typeof Type.Object>[0]> = {
       GenerateImages: imageGenerationParameters,
       TodoWrite: todoWriteParameters,
+      // Two shapes, one object: a top-level `oneOf` is refused by some
+      // providers, so `status` selects the shape and the host enforces which
+      // fields that status needs (the schema is a description, not the guard).
       TaskReport: {
-        status: Type.Literal("blocked"),
-        where: Type.String({ minLength: 1, maxLength: 600 }),
-        tried: Type.String({ minLength: 1, maxLength: 600 }),
-        suggestion: Type.String({ minLength: 1, maxLength: 600 }),
+        status: Type.Union([Type.Literal("blocked"), Type.Literal("ready")]),
+        summary: Type.Optional(Type.String({ minLength: 1, maxLength: 1200 })),
+        acceptance: Type.Optional(
+          Type.Array(
+            Type.Object({
+              criterion: Type.String({ minLength: 1, maxLength: 240 }),
+              met: Type.Boolean(),
+              note: Type.Optional(Type.String({ maxLength: 300 })),
+            }),
+            { maxItems: 12 },
+          ),
+        ),
+        leftovers: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { maxItems: 10 })),
+        where: Type.Optional(Type.String({ minLength: 1, maxLength: 600 })),
+        tried: Type.Optional(Type.String({ minLength: 1, maxLength: 600 })),
+        suggestion: Type.Optional(Type.String({ minLength: 1, maxLength: 600 })),
       },
       Read: {
         path: pathParam(

@@ -114,26 +114,47 @@ pub async fn execute_report(
         .pointer("/task/stage")
         .and_then(Value::as_str)
         .unwrap_or("blocked");
+    // Two reports share this tool: the work stopped, or the work is done. What
+    // the model is told to do next differs, so the status is read back from
+    // what the host actually stored rather than from the argument.
+    let ready = value
+        .pointer("/result/status")
+        .and_then(Value::as_str)
+        == Some("ready");
     tracing::info!(
         session_id = %p.session_id,
         turn_id = p.turn_id.as_deref().unwrap_or(""),
         stage,
-        "task reported blocked"
+        ready,
+        "task reported its outcome"
     );
     Ok(ToolsExecuteResult {
         tool_call_id: p.tool_call_id.clone(),
         ok: true,
         is_error: None,
-        content: json!({
-            // The instruction the model has to follow is in the result, not only
-            // in the tool description: a report is the end of the turn, and
-            // carrying on would turn "stuck" into work nobody asked for.
-            "text": format!(
-                "Reported blocked; the person now sees where this task stopped. Stage is {stage}. End this turn now."
-            ),
-            "stage": stage,
-            "blocker": value.get("blocker").cloned().unwrap_or(Value::Null),
-        }),
+        content: if ready {
+            json!({
+                // Same rule for the other outcome: the report is the end of the
+                // turn, and carrying on would turn a finished task into work
+                // nobody asked for.
+                "text": format!(
+                    "Reported ready; the person now sees the completion card and decides whether to accept. Stage is {stage}. End this turn now."
+                ),
+                "stage": stage,
+                "result": value.get("result").cloned().unwrap_or(Value::Null),
+            })
+        } else {
+            json!({
+                // The instruction the model has to follow is in the result, not
+                // only in the tool description: a report is the end of the turn,
+                // and carrying on would turn "stuck" into work nobody asked for.
+                "text": format!(
+                    "Reported blocked; the person now sees where this task stopped. Stage is {stage}. End this turn now."
+                ),
+                "stage": stage,
+                "blocker": value.get("blocker").cloned().unwrap_or(Value::Null),
+            })
+        },
         duration_ms: started.elapsed().as_millis() as u64,
         denied: None,
         error_code: None,

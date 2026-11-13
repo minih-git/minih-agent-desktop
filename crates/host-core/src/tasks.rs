@@ -128,6 +128,27 @@ pub struct Task {
     /// not by a delivery: a directly dispatched task has no delivery, and a
     /// task keeps its stage across several turns.
     pub stage_seq: i64,
+    /// When the person accepted this work, if they did.
+    ///
+    /// Accepting is not archiving: the task stays open, its completion card
+    /// stays reachable so the merge can still be done later, and this stamp is
+    /// what takes it out of the sidebar's "waiting for you" count.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted_at: Option<String>,
+    /// What the employee delivered, as `TaskReport { status: "ready" }` wrote
+    /// it: a summary, one line per acceptance criterion with ✓/✗, and the
+    /// leftovers. Absent means the employee ended the turn without a report,
+    /// and the card then shows only what the host itself can prove.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<crate::task_stage::TaskResult>,
+    /// The fixed steps the host ran to land this work, and where they stopped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<crate::task_delivery::DeliveryState>,
+    /// The batch the card that created this task belonged to, when the steward
+    /// proposed several cards in one turn. Read from the draft, never copied:
+    /// one sentence split into three tasks is one batch by construction.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<String>,
 }
 
 const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title, t.origin,
@@ -140,7 +161,9 @@ const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title,
     t.workspace_status, t.workspace_error, t.base_ref, t.base_remote, t.delivery_mode,
     (SELECT m.status FROM session_collaboration_messages m WHERE m.id = t.delivery_id),
     (SELECT m.updated_at FROM session_collaboration_messages m WHERE m.id = t.delivery_id),
-    t.waiting_json, t.blocker_json, t.stage_seq
+    t.waiting_json, t.blocker_json, t.stage_seq,
+    t.accepted_at, t.result_json, t.delivery_json,
+    (SELECT d.batch_id FROM task_card_drafts d WHERE d.delivery_id = t.delivery_id)
  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
@@ -181,6 +204,18 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
             .as_deref()
             .and_then(|encoded| serde_json::from_str(encoded).ok()),
         stage_seq: row.get(23)?,
+        accepted_at: row.get::<_, Option<i64>>(24)?.map(ms_to_ts),
+        // Written by the host alone, so a value that does not parse is not one
+        // a person can act on: the card then shows what the host can prove.
+        result: row
+            .get::<_, Option<String>>(25)?
+            .as_deref()
+            .and_then(|encoded| serde_json::from_str(encoded).ok()),
+        delivery: row
+            .get::<_, Option<String>>(26)?
+            .as_deref()
+            .and_then(|encoded| serde_json::from_str(encoded).ok()),
+        batch_id: row.get(27)?,
     })
 }
 
@@ -989,6 +1024,7 @@ mod tests {
 // The waiting channel moved to its own module when this file passed the module
 // budget; the names stay here so a caller reads `tasks::turn_ended`.
 pub use crate::task_stage::{
-    clear_waiting, reassign, recover_interrupted, report_blocked, sync_stage, turn_began,
-    turn_ended, waiting_close, waiting_open, TaskWaiting,
+    accept, clear_waiting, reassign, recover_interrupted, report, report_blocked, report_ready,
+    sync_stage, turn_began, turn_ended, waiting_close, waiting_open, TaskAcceptance, TaskResult,
+    TaskWaiting,
 };

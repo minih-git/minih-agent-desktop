@@ -22,8 +22,12 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
         // and closed by whichever surface answered it.
         "task.waiting.open" => tasks::waiting_open(db, input),
         "task.waiting.close" => tasks::waiting_close(db, input),
-        // The employee's own structured report that it is stuck.
-        "task.report" => tasks::report_blocked(db, input),
+        // The employee's own structured report: stuck, or finished and ready
+        // for the person to accept (employee mode 0.5 slice 4b).
+        "task.report" => tasks::report(db, input),
+        // The person accepted the work. Accepting is not archiving: the task
+        // stays open so the merge can still be done from its card.
+        "task.accept" => tasks::accept(db, input),
         // The same work, as a new card the person can hand to somebody else.
         "task.reassign" => tasks::reassign(db, input),
         // Start a task the startup fence interrupted, again (slice 3). It writes

@@ -6271,7 +6271,7 @@ mod tests {
     /// Every `task.*` method the desktop calls, spelled exactly as it sends it.
     ///
     /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts`.
-    const DESKTOP_TASK_METHODS: [&str; 10] = [
+    const DESKTOP_TASK_METHODS: [&str; 13] = [
         "task.create",
         "task.list",
         "task.get",
@@ -6283,6 +6283,10 @@ mod tests {
         "task.waiting.close",
         "task.report",
         "task.reassign",
+        // The completion card (employee mode 0.5 slice 4b).
+        "task.accept",
+        "task.delivery.check",
+        "task.delivery.merge",
     ];
 
     /// Tasks answer on the real RPC route, with real arguments.

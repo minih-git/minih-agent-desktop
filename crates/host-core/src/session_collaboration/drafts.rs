@@ -55,12 +55,17 @@ pub struct Draft {
     pub confirmed_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_id: Option<String>,
+    /// The turn's batch, when the steward proposed several cards at once
+    /// (employee mode 0.5 slice 4b). Main fills it from the turn id; a card
+    /// proposed on its own has none, and is never grouped into a summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
 const SELECT: &str = "SELECT id,session_id,status,card_json,card_hash,source_utterance,
- target_session_id,confirmed_by,confirmed_at,delivery_id,created_at,updated_at
+ target_session_id,confirmed_by,confirmed_at,delivery_id,batch_id,created_at,updated_at
  FROM task_card_drafts";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Draft> {
@@ -75,8 +80,9 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Draft> {
         confirmed_by: row.get(7)?,
         confirmed_at: row.get::<_, Option<i64>>(8)?.map(ms_to_ts),
         delivery_id: row.get(9)?,
-        created_at: ms_to_ts(row.get(10)?),
-        updated_at: ms_to_ts(row.get(11)?),
+        batch_id: row.get(10)?,
+        created_at: ms_to_ts(row.get(11)?),
+        updated_at: ms_to_ts(row.get(12)?),
     })
 }
 
@@ -252,6 +258,14 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
         card["permissionMode"] = json!(granted_mode(db, &target, requested)?);
     }
     let hash = card_hash(&card);
+    // The batch is Main's fact, not the model's: one turn that proposed three
+    // cards is one batch, and a card proposed alone carries nothing.
+    let batch_id = input
+        .get("batchId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(128).collect::<String>());
     let now = now_ms();
     let id = Uuid::new_v4().to_string();
     // The same card proposed again is the same draft: re-proposing must not
@@ -270,8 +284,8 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
     tx.execute(
         "INSERT INTO task_card_drafts
          (id,session_id,status,card_json,card_hash,source_utterance,target_session_id,
-          created_at,updated_at)
-         VALUES (?1,?2,'proposed',?3,?4,?5,?6,?7,?7)",
+          batch_id,created_at,updated_at)
+         VALUES (?1,?2,'proposed',?3,?4,?5,?6,?7,?8,?8)",
         params![
             id,
             session_id,
@@ -279,6 +293,7 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
             hash,
             source_utterance,
             target,
+            batch_id,
             now
         ],
     )?;
