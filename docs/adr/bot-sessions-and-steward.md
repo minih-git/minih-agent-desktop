@@ -902,6 +902,15 @@ Every step writes `{name, status, at, detail}` into `tasks.delivery_json` before
 the next one starts, which is what makes a retry safe: **重试 resumes at the first
 step that is not `done`**, and a completed step is never executed twice.
 
+**Only a published attempt is resumable.** `read-pr`, `gate`, `head` and `land`
+(and `local`'s `preview`) are *preconditions*, not work: the pull request's head,
+its checks and its conflicts can all change between two attempts, so a retry that
+skipped them could merge a commit whose CI it never saw. A record that never
+reached `push-main` / `merge` is therefore discarded — every precondition runs
+again — and a new turn of the task's own session clears it too (打回 and 追加要求
+both start one). A record that *did* publish is kept across that turn, so the
+remaining pushes are not repeated.
+
 Failure is a blocked card, never a half-merged silence:
 
 - **before `push-main`** (or before `merge` on the local path) nothing left this
@@ -928,7 +937,7 @@ timer over `gh` is a cost nobody asked for.
 | a check still running | `ci-running` |
 | a check failed | `ci-failed` (the names) |
 | `mergeable = CONFLICTING` | `conflict` |
-| `mergeable = UNKNOWN` | `mergeable-unknown` |
+| `mergeable` anything but `MERGEABLE` (including `UNKNOWN`, a value GitHub adds later, or none at all — the value is reported) | `mergeable-unknown` |
 | `reviewDecision` = `REVIEW_REQUIRED` / `CHANGES_REQUESTED` | `review-required` |
 | empty `reviewDecision`, or `APPROVED` | *passes* |
 | `local` preview shows a conflict | `conflict-local` |
@@ -980,7 +989,10 @@ restarted, and `user_version` is stamped last.
 | The merge gate is a table, and an unreadable fact refuses | **Yes** — `gate_for` is pure, `gate_unreadable` covers the error row, each row has a test | `task_delivery.rs` |
 | The card reads once and on 刷新, never on a timer | **Yes** — one `check` per mount plus one per click | `features/bots/TaskCompletionCard.tsx` |
 | The merge runs the host's own steps, in order | **Yes** — one fixed list per delivery mode, one loop that cannot skip a step | `task_delivery.rs` |
-| A retry never repeats a completed step | **Yes** — `delivery_json.steps` is consulted per step; pinned by a real-git retry test | `task_delivery.rs`, `task_delivery_tests.rs` |
+| A retry never repeats a completed step | **Yes** — `delivery_json.steps` is consulted per step; pinned by a real-git retry test | `task_delivery/steps.rs`, `task_delivery_tests.rs` |
+| A retry re-checks every precondition | **Yes** — only a record that published is resumable, and a new turn drops an unpublished one | `task_delivery/mod.rs::load_state`, `task_stage.rs::turn_began` |
+| Only `MERGEABLE` passes the mergeable row | **Yes** — every other value is `mergeable-unknown` with the value | `task_delivery/gate.rs` |
+| A remote that cannot be read fails the delete step | **Yes** — a failed `ls-remote` is a refusal naming the remote, not a pass | `task_delivery/steps.rs::delete_remote_branches` |
 | No merge commit is created | **Yes** — the branch must be a descendant of `main`, then `land` fast-forwards | `task_delivery.rs::head_step` |
 | A push is never forced | **Yes** — plain `git push`, and a refusal is a failure | `task_delivery.rs::push_main` |
 | A partial failure is a blocked card, not a silent half-merge | **Yes** — `reason: "delivery"` with the step and the detail; the task is not archived | `task_delivery.rs::stop_with_card` |

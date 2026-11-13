@@ -840,7 +840,11 @@ or general MCP operations:
   `push-main`, `push-remotes`, `verify-merged`, `delete-branches`, `cleanup`;
   `local`: `preview`, `merge`, `cleanup`), records each one in
   `tasks.delivery_json` before starting the next, and resumes at the first step
-  that is not `done` when it is called again. Answers `{ merged, task?,
+  that is not `done` when it is called again — **but only if the previous attempt
+  published** (`push-main`, or `merge` on the local path). Everything before that
+  is a precondition (the PR's head, its checks, its conflicts) and runs again on
+  every attempt; a record that never published is discarded, and a new turn of the
+  task's own session clears it as well. Answers `{ merged, task?,
   failedStep?, detail?, published? }` — a failure is a blocked task with
   `blocker.reason = "delivery"`, not an RPC error, because the person's next action
   is that card's 重试. No force-push, no merge commit, no request body ever
