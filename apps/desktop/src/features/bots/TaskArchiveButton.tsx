@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TaskView } from "@minih-agent/shared";
-import { Button } from "../../components/ui";
+import { IconArchive } from "../../components/icons";
+import { TooltipButton } from "../../components/ui";
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
 import { asksBeforeDiscarding } from "./task-workspace";
 
 /**
- * Archiving a task, as one labelled control beside the header's other actions.
+ * Archiving a task, as one icon in the header's action group.
  *
- * It used to sit inside the chip row, where it read as one more chip and made a
- * row that did not fit. Archiving is an action on the task, so it belongs in the
- * action group.
+ * It used to sit inside the chip row, where it read as one more chip and took
+ * the width the chips needed. Archiving is an action on the task, so it belongs
+ * with the other actions — and as a 28px icon, because a label there is 90px the
+ * chip row cannot spare on a narrow window.
  *
  * The refusal "this workspace still holds work" is a question, not a failure: the
  * person's second click is what passes `discard`, and it is the only path to it.
@@ -47,15 +49,16 @@ export function TaskArchiveButton({ task }: { task: TaskView }) {
   };
 
   return (
-    <Button
+    <TooltipButton
       type="button"
-      variant="ghost"
-      size="sm"
+      className="ct-icon-btn"
+      tooltip={t("bots.tasks.archive")}
+      ariaLabel={t("bots.tasks.archive")}
       disabled={busy}
       data-task-archive=""
       onClick={() => void archive()}
     >
-      {t("bots.tasks.archive")}
-    </Button>
+      <IconArchive size={15} />
+    </TooltipButton>
   );
 }

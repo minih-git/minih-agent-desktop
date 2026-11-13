@@ -76,7 +76,7 @@ const employee = {
 
 const waiting = {
   id: "task-0037", shortId: "37", employeeSessionId: "router", sessionId: "sess-0037",
-  title: "修 E2E 超时", origin: "steward", stage: "person/accept",
+  title: "修 E2E 超时", origin: "steward", stage: "person/answer",
   projectPath: "/repo/Minih-Agent-Desktop", branch: "fix/e2e-timeout",
   workspaceStatus: "ready", baseRef: "refs/remotes/origin/main", baseRemote: true,
   deliveryMode: "pr", latestProgress: "审批：推送分支到 GitHub（3 个提交）",
@@ -248,6 +248,23 @@ const box = (element) => {
 const words = (element) => (element ? element.textContent.replace(/\s+/g, " ").trim() : null);
 const ink = (element) => (element ? getComputedStyle(element).color : null);
 
+/**
+ * Finish every animation that has an end, so a capture never catches a surface
+ * mid-fade. Purely decorative loops (a breathing status dot) are left alone:
+ * they never finish and nothing about them is being measured.
+ */
+function finishAnimations() {
+  for (const animation of document.getAnimations()) {
+    const timing = animation.effect && animation.effect.getTiming ? animation.effect.getTiming() : null;
+    if (timing && timing.iterations === Infinity) continue;
+    try {
+      animation.finish();
+    } catch {
+      // An idle or infinite effect: nothing to finish.
+    }
+  }
+}
+
 window.shot = {
   async render(kind, theme) {
     document.documentElement.dataset.theme = theme;
@@ -272,6 +289,14 @@ window.shot = {
       document.querySelector('[data-action="toggle-bot-task-history"]').click();
       await settle();
     }
+    /*
+     * A route surface fades in over ~200ms. Capturing mid-fade paints the whole
+     * pane under a veil (a text at #ffffff measured #a2a2a2), which read as "the
+     * workbench got darker" in review. Finish every finite animation and let the
+     * compositor settle before the window is captured.
+     */
+    finishAnimations();
+    await settle(2);
     return true;
   },
 
@@ -312,6 +337,8 @@ window.shot = {
           text: words(document.querySelector(".employee-workbench-title h1")),
           size: parseFloat(getComputedStyle(document.querySelector(".employee-workbench-title h1")).fontSize),
           weight: getComputedStyle(document.querySelector(".employee-workbench-title h1")).fontWeight,
+          opacity: getComputedStyle(document.querySelector(".employee-workbench-title h1")).opacity,
+          color: ink(document.querySelector(".employee-workbench-title h1")),
         },
         sub: words(document.querySelector(".employee-workbench-sub")),
         waiting: {
@@ -430,6 +457,7 @@ window.shot = {
         meta: box(band.querySelector(".ct-task-meta")),
         chips: visibleChips.map((chip) => ({
           text: words(chip),
+          title: chip.getAttribute("title"),
           color: ink(chip),
           border: getComputedStyle(chip).borderTopColor,
           radius: getComputedStyle(chip).borderTopLeftRadius,
@@ -439,8 +467,10 @@ window.shot = {
         carriesError: Boolean(band.querySelector("[data-task-workspace-error]")),
         carriesRetry: Boolean(band.querySelector("[data-task-workspace-retry]")),
         archive: Boolean(band.querySelector("[data-task-archive]")),
-        archiveText: words(band.querySelector("[data-task-archive]")),
+        archiveLabel: band.querySelector("[data-task-archive]")?.getAttribute("aria-label") ?? null,
         archiveBox: box(band.querySelector("[data-task-archive]")),
+        // The action group the chip row must never run into.
+        actions: box(band.querySelector(".ct-actions")),
       };
     }
 
@@ -552,12 +582,13 @@ async function runCaptures(stylesheet) {
     const shots = ["workbench-tasks", "workbench-done", "sidebar-history", "task-session", "task-session-failed"];
     const themes = ["dark", "light"];
     /*
-     * Two widths: the desktop reference, and a narrow one where the task header
-     * has to shed chips instead of growing a second row.
+     * Three widths: the desktop reference, and two narrow ones where the task
+     * header has to shed chips instead of growing a second row.
      */
     const plan = themes.flatMap((theme) => [
       ...shots.map((shot) => ({ theme, shot, width: 1440 })),
       { theme, shot: "task-session-failed", width: 1024 },
+      { theme, shot: "task-session-failed", width: 900 },
     ]);
     await writeFile(
       join(workDir, "main.cjs"),
@@ -582,7 +613,7 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript("window.shot.render(" + JSON.stringify(entry.shot) + ", " + JSON.stringify(entry.theme) + ")");
       await new Promise((resolve) => setTimeout(resolve, 150));
       const image = await win.webContents.capturePage();
-      const file = path.join(outDir, entry.theme + "-" + entry.shot + (entry.width === 1440 ? "" : "-" + entry.width) + "-v2.png");
+      const file = path.join(outDir, entry.theme + "-" + entry.shot + (entry.width === 1440 ? "" : "-" + entry.width) + "-v3.png");
       writeFileSync(file, image.toPNG());
       const pixels = histogram(image);
       const report = await win.webContents.executeJavaScript("window.shot.measure(" + JSON.stringify(entry.shot) + ")");
@@ -645,6 +676,35 @@ test(
       return hit;
     };
 
+
+    /**
+     * The two layout facts a fixed-height chip row has to hold at every width:
+     * no two chips paint over each other, and the row never reaches past the
+     * action group on its right. Containment alone did not catch a chip that
+     * shrank and let its neighbour land on top of it.
+     */
+    const assertChipsFit = (band, label) => {
+      assert.ok(band, `${label}: the header did not mount`);
+      assert.ok(band.chips.length >= 2, `${label}: the header lost its chips`);
+      for (let left = 0; left < band.chips.length; left += 1) {
+        for (let right = left + 1; right < band.chips.length; right += 1) {
+          const a = band.chips[left].box;
+          const b = band.chips[right].box;
+          const across = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+          const down = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+          assert.ok(
+            across <= 1 || down <= 1,
+            `${label}: "${band.chips[left].text}" and "${band.chips[right].text}" overlap by ${across}x${down}px`,
+          );
+        }
+      }
+      const chipsRight = Math.max(...band.chips.map((chip) => chip.box.x + chip.box.w));
+      assert.ok(band.actions, `${label}: the header has no action group`);
+      assert.ok(
+        chipsRight <= band.actions.x + 1,
+        `${label}: the chips run into the action group (${chipsRight} > ${band.actions.x})`,
+      );
+    };
     await t.test("every capture is a full frame with a rendered page", () => {
       for (const entry of captures) {
         const { width, height } = entry.pixels;
@@ -680,6 +740,11 @@ test(
         assert.ok(bench.avatar && bench.avatar.w >= 36, "the header shows no avatar");
         assert.ok(bench.name.size >= 16, `the employee name is not the larger size (${bench.name.size}px)`);
         assert.equal(bench.name.weight, "600", "the employee name is not bold");
+        // The pane is captured after its entrance animation finished: a capture
+        // taken mid-fade paints every ink under a veil (this read as "the
+        // workbench got darker" once).
+        assert.equal(bench.name.opacity, "1", "the captured pane is still translucent");
+        assert.equal(bench.name.color, report.tokens.textPrimary, "the employee name is not the primary ink");
         assert.match(
           bench.sub,
           /网关、数据面与远端接入·minih-router\/gemini-3\.8-pro·免确认改文件·全部仓库/,
@@ -734,9 +799,9 @@ test(
           assert.ok(row.meta.x > row.title.x + row.title.w - 6, "the stage column is not on the right");
           assert.ok(row.progress, "a task row lost its latest step");
         }
-        const waitingRow = bench.rows.find((row) => row.stage === "person/accept");
+        const waitingRow = bench.rows.find((row) => row.stage === "person/answer");
         const workingRow = bench.rows.find((row) => row.stage === "working");
-        assert.equal(waitingRow.stageText, "待验收", "a task waiting for review does not say so");
+        assert.equal(waitingRow.stageText, "等你回答", "a task waiting on the person does not say so");
         assert.equal(waitingRow.stageColor, report.tokens.warning, "the waiting stage is not orange");
         assert.equal(workingRow.stageText, "进行中", "a working task reads as the employee, not the task");
         assert.equal(workingRow.stageColor, report.tokens.busy, "the in-progress stage is not blue");
@@ -797,7 +862,7 @@ test(
           "the header does not name the employee and repository",
         );
         // The task's own vocabulary, not the employee's status words.
-        assert.ok(texts.includes("待验收"), `the header lost the task's stage word: ${texts.join(" | ")}`);
+        assert.ok(texts.includes("等你回答"), `the header lost the task's stage word: ${texts.join(" | ")}`);
         assert.ok(!texts.includes("等你处理"), "the header reads the employee's status, not the task's stage");
         const tops = band.chips.map((chip) => chip.box.y);
         assert.ok(Math.max(...tops) - Math.min(...tops) <= 2, "the chips are not one row");
@@ -807,7 +872,7 @@ test(
           assert.notEqual(chip.radius, "0px", "a chip has no rounding");
           assert.notEqual(chip.color, report.tokens.textPrimary, "a chip is shouting in primary ink");
         }
-        const stageChip = band.chips.find((chip) => chip.text === "待验收");
+        const stageChip = band.chips.find((chip) => chip.text === "等你回答");
         assert.equal(stageChip.color, report.tokens.warning, "the waiting stage chip is not orange");
 
         // A ready workspace puts nothing but chips in the band, and nothing the
@@ -819,13 +884,14 @@ test(
 
         // Archiving is an action beside the other actions, not a chip.
         assert.equal(band.archive, true, "the task header lost its archive control");
-        assert.match(band.archiveText, /归档任务/, "the archive control is not labelled");
+        assert.match(band.archiveLabel, /归档任务/, "the archive action is not labelled for screen readers");
         assert.ok(
           band.archiveBox.y >= band.box.y - 1 &&
             band.archiveBox.y + band.archiveBox.h <= band.box.y + band.box.h + 1,
           "the archive action hangs outside the band",
         );
         assert.ok(!texts.includes("归档任务"), "the archive action still reads as one more chip");
+        assertChipsFit(band, `${theme}/1440`);
       });
 
       await t.test(`a failed workspace keeps one red chip and says the rest below the band (${theme})`, () => {
@@ -857,26 +923,39 @@ test(
         );
       });
 
-      await t.test(`a narrow window sheds chips instead of overflowing (${theme})`, () => {
-        const narrow = captures.find(
-          (entry) => entry.theme === theme && entry.shot === "task-session-failed" && entry.width === 1024,
-        );
-        assert.ok(narrow, `missing the 1024 capture for ${theme}`);
-        assert.equal(narrow.report.page.innerWidth, 1024, "the narrow frame is not 1024 wide");
-        const band = narrow.report.band;
-        const texts = band.chips.map((chip) => chip.text);
-        assert.deepEqual(band.leaking, [], "something in the narrow band hangs outside it");
-        // The two chips the person must not lose, and nothing that made it wrap.
-        assert.ok(texts.some((text) => /Router 后端 @ Minih-Agent-Desktop/.test(text)), "the narrow band lost who and where");
-        assert.ok(texts.includes("待验收"), "the narrow band lost the task's stage");
-        assert.ok(!texts.includes("fix/e2e-timeout"), "the narrow band kept the branch");
-        assert.ok(!texts.includes("#37"), "the narrow band kept the short id");
-        assert.ok(band.titleBox.w >= 90, `the task title kept only ${band.titleBox.w}px`);
-        const banner = narrow.report.banner;
-        assert.ok(banner, "the narrow frame lost the banner");
-        assert.ok(banner.box.y >= band.box.y + band.box.h - 1, "the narrow banner overlaps the band");
-        assert.ok(banner.box.x >= -1 && banner.box.x + banner.box.w <= 1025, "the narrow banner runs past the window");
-      });
+      for (const width of [1024, 900]) {
+        await t.test(`at ${width} the header sheds chips instead of overlapping them (${theme})`, () => {
+          const narrow = captures.find(
+            (entry) => entry.theme === theme && entry.shot === "task-session-failed" && entry.width === width,
+          );
+          assert.ok(narrow, `missing the ${width} capture for ${theme}`);
+          assert.equal(narrow.report.page.innerWidth, width, `the ${width} frame is not ${width} wide`);
+          const band = narrow.report.band;
+          assert.deepEqual(band.leaking, [], `${width}: something in the band hangs outside it`);
+          assertChipsFit(band, `${theme}/${width}`);
+          const texts = band.chips.map((chip) => chip.text);
+          // What must survive: who and where, the stage, and the failure.
+          const origin = band.chips.find((chip) => chip.title);
+          assert.ok(origin, `${width}: the band lost who and where`);
+          assert.equal(
+            origin.title,
+            "Router 后端 @ Minih-Agent-Desktop",
+            `${width}: a truncated chip does not keep its full text for the hover`,
+          );
+          assert.ok(texts.includes("等你回答"), `${width}: the band lost the task's stage`);
+          assert.ok(texts.includes("工作区准备失败"), `${width}: the band lost the failed-workspace chip`);
+          assert.ok(!texts.includes("fix/e2e-timeout"), `${width}: the band kept the branch`);
+          assert.ok(!texts.includes("#37"), `${width}: the band kept the short id`);
+          assert.ok(band.titleBox.w >= 90, `${width}: the task title kept only ${band.titleBox.w}px`);
+          const banner = narrow.report.banner;
+          assert.ok(banner, `${width}: the frame lost the banner`);
+          assert.ok(banner.box.y >= band.box.y + band.box.h - 1, `${width}: the banner overlaps the band`);
+          assert.ok(
+            banner.box.x >= -1 && banner.box.x + banner.box.w <= width + 1,
+            `${width}: the banner runs past the window`,
+          );
+        });
+      }
     }
   },
 );

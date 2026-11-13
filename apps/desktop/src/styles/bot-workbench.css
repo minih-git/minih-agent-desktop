@@ -87,6 +87,28 @@
   overflow: hidden;
 }
 
+/* No chip may shrink into its neighbour. A shrunken flex item keeps its own
+   nowrap content, so the content spills sideways and the next chip is laid out
+   on top of it — that is how "工作区准备失败" and "待验收" once painted over each
+   other at 1024. The employee @ repository chip is the single exception: it is
+   the one with text long enough to truncate, and it carries the full text as a
+   tooltip. */
+.ct-task-meta > *,
+.ct-task-meta .task-workspace,
+.ct-task-meta .task-workspace > * {
+  flex: 0 0 auto;
+}
+
+.ct-task-meta > .ct-chip[data-task-origin] {
+  display: inline-block;
+  min-width: 6em;
+  max-width: 18em;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A task title keeps about a dozen characters before it ellipsises, so the
    chips give way before the reader loses what the session is about. */
 .conversation-topbar .ct-title {
@@ -148,6 +170,15 @@
 
 @container (max-width: 1100px) {
   .ct-task-meta .ct-chip[data-task-optional="late"] {
+    display: none;
+  }
+}
+
+/* Below 1000 the project crumb is the widest thing the header can spare: the
+   employee @ repository chip already says where the work happens. */
+@container (max-width: 1000px) {
+  .conversation-topbar .ct-project,
+  .conversation-topbar .ct-sep {
     display: none;
   }
 }

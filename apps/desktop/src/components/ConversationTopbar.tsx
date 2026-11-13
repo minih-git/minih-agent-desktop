@@ -345,7 +345,16 @@ export function ConversationTopbar({
           {remoteSession && <span className="thread-item-source">{t("remote:remote")} · {activeSession?.remoteHostLabel}</span>}
           {task ? (
             <div className="ct-task-meta" data-task-header={task.id}>
-              <span className="ct-chip" data-task-origin={task.origin}>
+              {/* The only chip a narrow header keeps is this one, so it is also
+                  the one that truncates: the full "employee @ repository" stays
+                  available as the chip's own tooltip. */}
+              <span
+                className="ct-chip"
+                data-task-origin={task.origin}
+                title={[taskEmployee?.profile.name ?? task.employeeSessionId, taskRepoName(task)]
+                  .filter(Boolean)
+                  .join(" @ ")}
+              >
                 {taskEmployee?.profile.name ?? task.employeeSessionId}
                 {taskRepoName(task) ? ` @ ${taskRepoName(task)}` : ""}
               </span>

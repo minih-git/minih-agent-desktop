@@ -9230,9 +9230,11 @@ selection already in place shows it without waiting for another event.
   waiting one is orange, and the history row is faint with its count. The task
   header is one fixed-height row of chips and never wraps or leaves the window:
   employee @ repository and the stage always show, the branch, base, delivery,
-  origin and short id drop out as the pane narrows, and the task title keeps about
-  a dozen characters before it ellipsises (1440 and 1024 both checked). Archiving
-  is an action beside the header's other actions, not a chip. A failed workspace
+  origin and short id drop out as the pane narrows, no two chips may overlap and
+  the row never reaches the action group, the employee chip truncates with its
+  full text on hover, and the task title keeps about a dozen characters before it
+  ellipsises (1440, 1024 and 900 all checked). Archiving is an icon in the
+  header's action group, not a chip. A failed workspace
   keeps one red "workspace failed" chip in the header; its words and "retry
   preparing" sit in a red-bordered banner directly below the header, never
   overlapping it. While the workbench owns the pane the title bar names that
