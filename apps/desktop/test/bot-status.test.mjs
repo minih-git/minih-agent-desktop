@@ -72,7 +72,7 @@ test("equal tones keep the host's order", () => {
 });
 
 test("the avatar falls back to the first character of the name", () => {
-  assert.equal(botInitials("管家"), "管");
+  assert.equal(botInitials("阿福"), "阿");
   assert.equal(botInitials("  fixer "), "F");
   assert.equal(botInitials(""), "?");
 });

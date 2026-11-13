@@ -290,3 +290,31 @@ test("inline review cards expose localized accessible labels", () => {
     "该文件在此消息之后又发生了变化，已跳过回退。",
   );
 });
+
+test("every label about the steward interpolates the person's name", () => {
+  /*
+   * The role's display name is the employee's own profile name, which the person
+   * can change in Settings → Employees. Copy that writes 管家 / 秘书 / a role word
+   * into the string is copy that keeps showing the old name after a rename, so
+   * the four labels that point at that employee are interpolation-only.
+   */
+  const roleWord =
+    /管家|秘书|秘書|steward|secretary|butler|majordome|mayordomo|mordomo|kâhya|intendant|비서/i;
+  const named = [
+    ["bots.card.title", (catalog) => catalog.bots.card.title],
+    ["bots.workbench.originSteward", (catalog) => catalog.bots.workbench.originSteward],
+    ["bots.settings.seedHint", (catalog) => catalog.bots.settings.seedHint],
+  ];
+  for (const [locale, catalog] of Object.entries(catalogs)) {
+    for (const [key, read] of named) {
+      const value = read(catalog);
+      assert.equal(typeof value, "string", `${locale}: ${key} is missing`);
+      assert.match(value, /{{name}}/, `${locale}: ${key} does not name the employee — ${value}`);
+      assert.doesNotMatch(value, roleWord, `${locale}: ${key} hard-codes a role word — ${value}`);
+    }
+    // The task composer names the employee it writes to and the agent beside it.
+    const composer = catalog.bots.tasks.composerPlaceholder;
+    assert.match(composer, /{{agent}}/, `${locale}: composer does not name the agent — ${composer}`);
+    assert.doesNotMatch(composer, roleWord, `${locale}: composer hard-codes a role word — ${composer}`);
+  }
+});

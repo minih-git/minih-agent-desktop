@@ -469,6 +469,15 @@ fn the_employee_surface_lists_status_and_keeps_the_conversation_on_dismiss() {
         .find(|bot| bot["profile"]["definition"] == json!("steward"))
         .unwrap();
     assert_eq!(steward["profile"]["observe"], json!(false));
+    // The default name is only a default; every label reads this value.
+    assert_eq!(
+        steward["profile"]["name"],
+        json!(crate::session_collaboration::bots::STEWARD_DEFAULT_NAME)
+    );
+    assert_eq!(
+        steward["title"],
+        json!(crate::session_collaboration::bots::STEWARD_DEFAULT_NAME)
+    );
     assert_eq!(steward["status"], json!({"kind": "idle"}));
     for bot in bots
         .iter()
@@ -833,4 +842,43 @@ fn a_read_only_card_must_ask_before_acting() {
         refused.to_string().contains("INVALID_ARGUMENT"),
         "{refused}"
     );
+}
+
+/// Renaming the steward keeps the two places the name is stored in step.
+///
+/// The profile name is what every surface shows, and the session title is the
+/// same label: a rename that changed one and not the other would show two names
+/// for one employee. Nothing else about the employee changes, because a rename
+/// is only a rename.
+#[test]
+fn renaming_the_steward_keeps_its_title_and_profile_name_in_step() {
+    let db = database();
+    crate::session_collaboration::bots::seed_defaults(&db).unwrap();
+    let listed = crate::session_collaboration::bots::list(&db).unwrap();
+    let steward = listed["bots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|bot| bot["profile"]["definition"] == json!("steward"))
+        .cloned()
+        .unwrap();
+    let id = steward["sessionId"].as_str().unwrap().to_string();
+    let updated = crate::session_collaboration::bots::update(
+        &db,
+        &json!({"sessionId": id, "profile": {"name": "阿福"}}),
+    )
+    .unwrap();
+    assert_eq!(updated["session"]["title"], json!("阿福"));
+    let after = crate::session_collaboration::bots::list(&db).unwrap();
+    let renamed = after["bots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|bot| bot["sessionId"] == json!(id))
+        .cloned()
+        .unwrap();
+    assert_eq!(renamed["profile"]["name"], json!("阿福"));
+    assert_eq!(renamed["profile"]["definition"], json!("steward"));
+    assert_eq!(renamed["profile"]["permissionMode"], json!("ask"));
+    assert_eq!(renamed["profile"]["observe"], json!(false));
 }

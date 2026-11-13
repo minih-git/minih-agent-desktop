@@ -33,7 +33,7 @@ function steward(): SubagentDefinition {
 }
 
 const profile = (overrides: Record<string, unknown> = {}) => ({
-  name: "管家",
+  name: "阿福",
   permissionMode: "auto" as const,
   mustAsk: ["push" as const],
   observe: false,

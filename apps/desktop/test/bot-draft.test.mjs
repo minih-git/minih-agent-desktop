@@ -27,7 +27,7 @@ test("a new employee asks, records, and cannot be less careful than the host", (
   // Nothing about a fresh draft is valid until it has a name.
   assert.equal(draftIsValid(EMPTY_BOT_DRAFT), false);
   assert.equal(draftIsValid({ ...EMPTY_BOT_DRAFT, name: "  " }), false);
-  assert.equal(draftIsValid({ ...EMPTY_BOT_DRAFT, name: "管家" }), true);
+  assert.equal(draftIsValid({ ...EMPTY_BOT_DRAFT, name: "阿福" }), true);
 });
 
 test("deploy, delete and spend are locked and always selected", () => {
@@ -65,9 +65,9 @@ test("a stored profile that omitted a locked action still shows it", () => {
 test("editing an employee keeps what it stored, except the session-only mode", () => {
   const draft = draftFromBot({
     sessionId: "s1",
-    title: "管家",
+    title: "阿福",
     profile: {
-      name: "管家",
+      name: "阿福",
       duty: "派活",
       permissionMode: "inherit",
       mustAsk: ["merge"],
@@ -86,18 +86,18 @@ test("editing an employee keeps what it stored, except the session-only mode", (
 
 test("the payload trims the name and omits an empty duty or definition", () => {
   assert.deepEqual(
-    botProfileInput({ ...EMPTY_BOT_DRAFT, name: " 管家 ", duty: "  ", definition: "" }),
+    botProfileInput({ ...EMPTY_BOT_DRAFT, name: " 阿福 ", duty: "  ", definition: "" }),
     {
-      name: "管家",
+      name: "阿福",
       permissionMode: "ask",
       mustAsk: ["deploy", "delete", "spend"],
       observe: true,
     },
   );
   assert.deepEqual(
-    botProfileInput({ ...EMPTY_BOT_DRAFT, name: "管家", duty: "派活", definition: "steward" }),
+    botProfileInput({ ...EMPTY_BOT_DRAFT, name: "阿福", duty: "派活", definition: "steward" }),
     {
-      name: "管家",
+      name: "阿福",
       duty: "派活",
       permissionMode: "ask",
       mustAsk: ["deploy", "delete", "spend"],

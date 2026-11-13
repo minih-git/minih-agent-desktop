@@ -65,7 +65,7 @@ function ledgerRow(overrides = {}) {
     id: "delivery-1",
     pluginId: "minih-agent-desktop",
     sourceSessionId: "steward-session",
-    sourceTitle: "管家",
+    sourceTitle: "阿福",
     targetSessionId: "router-backend",
     targetTitle: "Router 后端",
     kind: "task",
