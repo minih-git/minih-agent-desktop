@@ -178,6 +178,16 @@ window.waitingProbe = async () => {
   await until(() => document.querySelector("[data-task-waiting='task-1']"), "the waiting row");
   await until(() => document.querySelector("[data-task-blocked='task-2']"), "the blocked card");
   const row = document.querySelector("[data-task-waiting='task-1']");
+  // The row appears as soon as the task list lands; whether it can be *answered*
+  // here depends on a second read (pendingInteractive), which is a separate
+  // round trip. Waiting for it is the assertion's own precondition — the row is
+  // briefly in its "answer it in the task" fallback while that read is in flight.
+  await until(
+    () =>
+      document.querySelector("[data-task-waiting='task-1']")
+        ?.getAttribute("data-waiting-can-answer") === "true",
+    "the readable request",
+  );
   report.rowQuestion = textOf(row.querySelector(".task-waiting-question"));
   report.rowMeta = textOf(row.querySelector(".task-waiting-meta"));
   report.canAnswer = row.getAttribute("data-waiting-can-answer");
@@ -406,7 +416,7 @@ test(
   options,
   async () => {
     const report = await probe();
-    assert.equal(report.passed, true);
+    assert.equal(report.passed, true, JSON.stringify(report));
     assert.equal(report.rowQuestion, "要保留旧的登录接口吗？");
     assert.match(report.rowMeta, /Router 后端 · router · 修一下登录超时/);
     assert.equal(report.canAnswer, "true");
