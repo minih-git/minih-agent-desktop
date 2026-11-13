@@ -42,6 +42,16 @@ export type BotMustAsk = (typeof BOT_MUST_ASK)[number];
  */
 export const ALWAYS_MUST_ASK: readonly BotMustAsk[] = ["deploy", "delete", "spend"];
 
+/**
+ * The steward's default display name, and the fallback when no steward exists.
+ *
+ * Only a default: the name a person sees is the employee's own
+ * `bot_profile_json.name`, which they change in Settings → Employees, and every
+ * label about that role interpolates it. The host's `DEFAULT_CREW` seeds this
+ * string, so a fresh install and a renamed one read the same until someone edits
+ * it.
+ */
+export const STEWARD_DEFAULT_NAME = "Super Agent";
 /** A bot profile is a bounded operating identity, so every field is bounded. */
 export const MAX_BOT_NAME_CHARS = 80;
 export const MAX_BOT_AVATAR_CHARS = 2_048;

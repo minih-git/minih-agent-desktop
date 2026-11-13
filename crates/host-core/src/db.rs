@@ -7,7 +7,7 @@ pub(crate) use serde_json::Value;
 pub(crate) use std::path::{Path, PathBuf};
 
 /// Current SQLite schema version.
-pub const SCHEMA_VERSION: i64 = 35;
+pub const SCHEMA_VERSION: i64 = 36;
 
 /// Absolute approval deadline for a newly submitted Plan or Goal proposal.
 pub const PLAN_APPROVAL_TIMEOUT_MS: i64 = 30 * 60 * 1000;
@@ -30,6 +30,7 @@ mod repositories;
 mod schema;
 mod session_collaboration_migration;
 mod session_title_source_migration;
+mod steward_name_migration;
 mod task_card_draft_migration;
 mod task_migration;
 mod task_workspace_migration;

@@ -13,12 +13,22 @@ use anyhow::{anyhow, Result};
 use rusqlite::params;
 use serde_json::{json, Value};
 
+/// The name the default crew gives the steward, and the name a person sees
+/// before one exists.
+///
+/// It is only a default: the name lives in the employee's own
+/// `bot_profile_json.name` (with `sessions.title` kept equal), the person can
+/// change it in Settings → Employees, and every label that refers to this role
+/// interpolates that value. `steward_name_migration` moves rows that still carry
+/// the previous default to this one.
+pub const STEWARD_DEFAULT_NAME: &str = "Super Agent";
+
 /// The crew a person gets when they explicitly ask for defaults. The steward is
 /// the only one allowed to dispatch, and it is the only one that starts without
 /// asking; every other employee begins in `observe`.
 pub const DEFAULT_CREW: [(&str, Option<&str>, &str); 4] = [
     (
-        "管家",
+        STEWARD_DEFAULT_NAME,
         Some("steward"),
         "Dispatch work, track it, and report back in chat.",
     ),
@@ -163,11 +173,21 @@ pub fn update(db: &Database, input: &Value) -> Result<Value> {
             merged[key] = value.clone();
         }
     }
-    let profile_json = serde_json::to_string(&sessions::normalize_bot_profile(&merged)?)?;
+    let normalized = sessions::normalize_bot_profile(&merged)?;
+    let profile_json = serde_json::to_string(&normalized)?;
+    // The name is the label every surface shows, and the session title is the
+    // same label: renaming the employee must not leave the sidebar and the task
+    // card showing two different names for one person.
+    let name = normalized
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let tx = db.conn().unchecked_transaction()?;
     tx.execute(
-        "UPDATE sessions SET bot_profile_json=?2, updated_at=?3 WHERE id=?1 AND role='bot'",
-        params![session_id, profile_json, now_ms()],
+        "UPDATE sessions SET bot_profile_json=?2, title=?3, updated_at=?4
+         WHERE id=?1 AND role='bot'",
+        params![session_id, profile_json, name, now_ms()],
     )?;
     // The project is what the employee reads when it runs, so binding one is
     // part of editing the employee. `null` or blank clears the binding; an

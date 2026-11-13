@@ -328,6 +328,12 @@ impl Database {
             // Employee mode 0.5 slice 3 adds one ledger kind; the check on
             // `kind` cannot be altered, so this step rebuilds that table.
             super::ledger_kind_migration::migrate(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version == 35 {
+            // The steward's default name is `Super Agent`; a row that still
+            // carries the previous default is renamed, a chosen name is not.
+            super::steward_name_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

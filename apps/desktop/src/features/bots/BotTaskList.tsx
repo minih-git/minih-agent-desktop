@@ -96,11 +96,13 @@ function BotTaskRow({
   archived?: boolean;
 }) {
   const { t } = useTranslation();
-  const tone = taskStatusTone(task);
-  const repo = taskRepoName(task);
   // The startup fence is not a stage, so the row says what happened in its own
-  // words instead of borrowing the stage the task was left in.
+  // words instead of borrowing the stage the task was left in. The dot follows
+  // those words: an interrupted task is left at `working`, and painting its dot
+  // in the busy colour made one state read two ways in one row.
   const interrupted = isTaskInterrupted(task);
+  const tone = interrupted ? "attention" : taskStatusTone(task);
+  const repo = taskRepoName(task);
   const stage = t(taskStageLabelKey(task.stage, { interrupted }));
   const label = repo
     ? t("bots.tasks.openTaskInRepo", { title: task.title, repo, stage })

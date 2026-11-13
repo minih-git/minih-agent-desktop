@@ -10,6 +10,7 @@ import { EMPTY_BOT_DRAFT, draftFromBot, type BotDraft } from "./bot-draft";
 import { useBots } from "./use-bots";
 import { BotFormCard } from "./BotFormCard";
 import { useBotDefinitions } from "./use-bot-definitions";
+import { stewardNameOf } from "./steward-name";
 
 /**
  * Settings → Employees (ADR bot-sessions-and-steward §5).
@@ -28,6 +29,9 @@ export function BotsSettingsPage({
   const { t } = useTranslation();
   const loaded = useBots();
   const bots = providedBots ?? loaded.bots;
+  // The seed hint names the steward the crew will create, and reads the current
+  // name when one already exists.
+  const stewardName = stewardNameOf(bots);
   const { loading, error, reload } = loaded;
   const definitions = useBotDefinitions();
   /** `null` = closed, `"new"` = create, otherwise the session being edited. */
@@ -124,7 +128,10 @@ export function BotsSettingsPage({
   return (
     <div className="settings-stack bot-settings">
       {bots.length === 0 ? (
-        <SettingsCard title={t("bots.settings.seed")} description={t("bots.settings.seedHint")}>
+        <SettingsCard
+          title={t("bots.settings.seed")}
+          description={t("bots.settings.seedHint", { name: stewardName })}
+        >
           <div className="bot-seed-row">
             <p className="bot-form-note">{t("bots.settings.empty")}</p>
             <Button variant="primary" disabled={seeding} onClick={() => void seed()}>
@@ -263,7 +270,10 @@ export function BotsSettingsPage({
       ) : null}
 
       {bots.length > 0 ? (
-        <SettingsCard title={t("bots.settings.seed")} description={t("bots.settings.seedHint")}>
+        <SettingsCard
+          title={t("bots.settings.seed")}
+          description={t("bots.settings.seedHint", { name: stewardName })}
+        >
           <div className="bot-seed-row">
             <Button variant="secondary" disabled={seeding} onClick={() => void seed()}>
               {t("bots.settings.seed")}

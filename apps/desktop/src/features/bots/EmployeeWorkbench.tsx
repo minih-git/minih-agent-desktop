@@ -12,6 +12,8 @@ import { botInitials, taskStatusTone } from "./bot-status";
 import { taskRepoName } from "./BotTaskList";
 import { TaskWorkspaceStatus } from "./TaskWorkspaceStatus";
 import { useTasks } from "./use-tasks";
+import { useBots } from "./use-bots";
+import { stewardNameOf } from "./steward-name";
 
 /**
  * One employee's workbench (ADR bot-sessions-and-steward §7, prototype ②).
@@ -191,6 +193,8 @@ function TaskGroup({
   empty: string;
 }) {
   const { t, i18n } = useTranslation();
+  // The row says who sent the work, by the name that employee has today.
+  const stewardName = stewardNameOf(useBots().bots);
   return (
     <section className="employee-task-group">
       <h2>{title}</h2>
@@ -236,7 +240,7 @@ function TaskGroup({
                     </span>
                     <span>
                       {task.origin === "steward"
-                        ? t("bots.workbench.originSteward")
+                        ? t("bots.workbench.originSteward", { name: stewardName })
                         : t("bots.workbench.originDirect")}
                     </span>
                     <span>{when.toLocaleDateString(i18n.language)}</span>

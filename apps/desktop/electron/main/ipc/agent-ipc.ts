@@ -563,7 +563,12 @@ export function registerAgentIpc({
     const briefingHost = host;
     const turnBriefing =
       briefingHost && session.role === "bot" && session.botProfile?.definition?.trim() === "steward"
-        ? await buildStewardBriefing((method, params) => briefingHost.call(method, params))
+        ? await buildStewardBriefing(
+            (method, params) => briefingHost.call(method, params),
+            // The name the person gave this employee, from its own profile: the
+            // brief is where the model learns what to answer to.
+            session.botProfile?.name,
+          )
         : undefined;
     try {
       result = await sidecar.call<{ accepted: boolean; turnId: string }>(

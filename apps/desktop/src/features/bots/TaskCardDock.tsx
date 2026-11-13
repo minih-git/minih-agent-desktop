@@ -10,6 +10,7 @@ import {
   dispatchedLine,
   visibleCards,
 } from "./task-card-dock";
+import { DEFAULT_STEWARD_NAME, stewardNameOf } from "./steward-name";
 
 /**
  * The steward's task cards, docked above the composer (ADR
@@ -58,7 +59,11 @@ export function TaskCardDock({
   const [targetProjects, setTargetProjects] = useState<Record<string, string>>({});
   /** The employees the dropdown offers, as the sidebar's roster read returns them. */
   const [employees, setEmployees] = useState<readonly { sessionId: string; name: string }[]>([]);
-  /** Why a dispatched card never started, keyed by draft. */
+  /**
+   * The steward's current name, read from its own employee profile: every label
+   * about that role interpolates it, so a rename shows up here too.
+   */
+  const [stewardName, setStewardName] = useState(DEFAULT_STEWARD_NAME);
   const [startErrors, setStartErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -93,6 +98,7 @@ export function TaskCardDock({
             name: bot.profile?.name?.trim() || bot.title,
           })),
         );
+        setStewardName(stewardNameOf(roster.bots));
       } catch {
         // A failed read only costs the project line, never the card itself.
       }
@@ -220,7 +226,7 @@ export function TaskCardDock({
   return (
     <div className="task-card-dock" data-testid="task-card-dock">
       {loadError ? (
-        <section className="task-card" role="region" aria-label={t("bots.card.title")}>
+        <section className="task-card" role="region" aria-label={t("bots.card.title", { name: stewardName })}>
           <p className="task-card-error" role="alert">
             {t("bots.card.loadFailed", { reason: loadError })}
           </p>
@@ -270,6 +276,7 @@ export function TaskCardDock({
             draft={draft}
             busy={busyId === draft.id}
             error={errors[draft.id] ?? null}
+            stewardName={stewardName}
             onConfirm={() => void confirm(draft)}
             onAssign={(targetSessionId) => void assign(draft, targetSessionId)}
             employees={employees}
@@ -287,6 +294,7 @@ function TaskCard({
   busy,
   error,
   project,
+  stewardName,
   employees = [],
   onAssign,
   onConfirm,
@@ -297,6 +305,8 @@ function TaskCard({
   error: string | null;
   /** The target employee's project; empty or absent means unbound. */
   project?: string;
+  /** The steward's current name; the card's heading names it. */
+  stewardName: string;
   /** The roster the dropdown offers (slice 3). */
   employees?: readonly { sessionId: string; name: string }[];
   /** The person's pick; the host re-narrows and re-hashes the card. */
@@ -316,13 +326,13 @@ function TaskCard({
     <section
       className="task-card"
       role="region"
-      aria-label={t("bots.card.title")}
+      aria-label={t("bots.card.title", { name: stewardName })}
       aria-busy={busy || undefined}
       data-draft-id={draft.id}
       data-card-hash={draft.cardHash}
     >
       <div className="task-card-header">
-        <span>{t("bots.card.title")}</span>
+        <span>{t("bots.card.title", { name: stewardName })}</span>
         <span aria-hidden>·</span>
         <span>{t(riskKey(card.risk))}</span>
       </div>
@@ -398,7 +408,7 @@ function TaskCard({
             {t("bots.card.readOnly")}
           </span>
         ) : null}
-        {card.mustAsk.length > 0 ? <span>{t("bots.card.mustAsk")}</span> : null}
+
         <span className={hasTarget && project ? undefined : "task-card-warning"}>
           {t("bots.card.project")}:{" "}
           {!hasTarget

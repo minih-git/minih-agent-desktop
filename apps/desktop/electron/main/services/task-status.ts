@@ -1,4 +1,9 @@
-import { isTaskInterrupted, type BotListItem, type TaskView } from "@minih-agent/shared";
+import {
+  STEWARD_DEFAULT_NAME,
+  isTaskInterrupted,
+  type BotListItem,
+  type TaskView,
+} from "@minih-agent/shared";
 
 /**
  * The board of tasks, as the secretary reads it (employee mode 0.5 slice 3).
@@ -161,7 +166,7 @@ export function describeTaskBoard(
  * The block is delimited and states what it is, so a model cannot mistake it for
  * a message from the person.
  */
-export function stewardBriefing(board: TaskBoard, now: number = Date.now()): string {
+export function stewardBriefing(board: TaskBoard, name: string, now: number = Date.now()): string {
   const groups = groupTasks(board, now);
   const byKey = Object.fromEntries(groups.map((group) => [group.key, group])) as Record<
     TaskGroupKey,
@@ -170,6 +175,11 @@ export function stewardBriefing(board: TaskBoard, now: number = Date.now()): str
   const total = groups.reduce((sum, group) => sum + group.tasks.length, 0);
   const header = [
     `[Host briefing · generated for this turn, not a message from the person]`,
+    // The person may have renamed this employee, and neither the prompt nor the
+    // labels hard-code a name: this line is where the model learns what to
+    // answer to. It rides with the turn, so a rename applies on the next turn
+    // without rewriting any history.
+    `The person calls you «${name}».`,
     `Open tasks: ${total} (${groups
       .map((group) => `${group.tasks.length} ${group.label}`)
       .join(", ")}).`,
@@ -238,10 +248,15 @@ export async function readTaskBoard(call: BoardReader): Promise<TaskBoard> {
  *
  * A failure never blocks the turn: the person's message is answered either way,
  * and the block states what is missing so the model does not invent a board.
+ *
+ * `name` is the employee's own name, which the person can change; the default is
+ * only what a steward that was never renamed is called. The brief is generated
+ * per turn and never persisted, so a rename applies on the next turn.
  */
-export async function buildStewardBriefing(call: BoardReader): Promise<string> {
+export async function buildStewardBriefing(call: BoardReader, name?: string): Promise<string> {
+  const label = name?.trim() || STEWARD_DEFAULT_NAME;
   try {
-    return stewardBriefing(await readTaskBoard(call));
+    return stewardBriefing(await readTaskBoard(call), label);
   } catch (error) {
     return unreadableBriefing(error instanceof Error ? error.message : String(error));
   }
