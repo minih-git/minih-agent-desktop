@@ -43,6 +43,7 @@ import { ConversationTopbar } from "../../apps/desktop/src/components/Conversati
 import { AskToolCard } from "../../apps/desktop/src/components/AskToolCard";
 import { StewardTaskDock, TaskBlockedCardForSession } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
 import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
+import { Composer } from "../../apps/desktop/src/components/Composer";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 
 await i18n.use(initReactI18next).init({ lng: "zh-CN", keySeparator: false,
@@ -103,7 +104,31 @@ window.minihAgent = {
     if (channel === IPC.invoke.botList) return { ok: true, data: { bots: [steward, employee] } };
     if (channel === IPC.invoke.taskList) return { ok: true, data: { tasks } };
     if (channel === IPC.invoke.taskCardList) {
-      return { ok: true, data: { drafts: [{ id: "draft-1", sessionId: "steward", status: "proposed" }] } };
+      // A real proposed card, so the steward's dock shows the card row the person
+      // actually sees next to the waiting rows.
+      return {
+        ok: true,
+        data: {
+          drafts: [{
+            id: "draft-1",
+            sessionId: "steward",
+            status: "proposed",
+            cardHash: "hash-1",
+            targetSessionId: "",
+            sourceUtterance: "慢查询也顺手看一下。",
+            createdAt: "2026-11-13T02:10:00.000Z",
+            updatedAt: "2026-11-13T02:10:00.000Z",
+            card: {
+              goal: "把慢查询的索引补齐",
+              criteria: [{ id: "c1", text: "慢查询降到 200ms 以内" }],
+              boundaries: [],
+              permissionMode: "accept-edits",
+              mustAsk: [],
+              risk: "low",
+            },
+          }],
+        },
+      };
     }
     if (channel === IPC.invoke.pendingInteractive) {
       if (input?.sessionId === "sess-unreadable") {
@@ -120,6 +145,7 @@ window.minihAgent = {
 
 const sessions = [
   { id: "steward", title: "Super Agent", role: "bot", projectPath: "/repo/Minih-Agent-Desktop",
+    botProfile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
     createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-13T02:00:00.000Z" },
   { id: "sess-question", title: "修一下登录超时", role: "task", projectPath: "/repo/Minih-Agent-Desktop",
     createdAt: "2026-11-13T01:00:00.000Z", updatedAt: "2026-11-13T01:40:00.000Z" },
@@ -136,6 +162,17 @@ useAppStore.setState({
   setAskDraft: () => undefined,
   askDrafts: {},
   showToast: () => undefined,
+  steerPrompt: async () => true,
+  removeQueuedPrompt: () => undefined,
+  moveQueuedPrompt: () => undefined,
+  editQueuedPrompt: () => undefined,
+  sendQueuedNow: async () => true,
+  abort: async () => undefined,
+  isRunning: false,
+  queuedPrompts: [],
+  pendingAsks: [],
+  pendingPermissions: [],
+  plugins: [],
   projectMeta: {},
   workspace: { path: "/repo/Minih-Agent-Desktop", name: "Minih-Agent-Desktop" },
   setPage: () => undefined,
@@ -153,6 +190,14 @@ useAppStore.setState({
 });
 
 const noop = () => undefined;
+/** The last error the page saw: a scene that throws renders nothing at all. */
+let lastError = null;
+window.addEventListener("error", (event) => {
+  lastError = String((event.error && (event.error.stack || event.error.message)) || event.message);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  lastError = String(event.reason && event.reason.message ? event.reason.message : event.reason);
+});
 const frame = () => new Promise(requestAnimationFrame);
 async function settle(count = 3) { for (let n = 0; n < count; n += 1) await frame(); }
 async function until(predicate, label) {
@@ -160,7 +205,9 @@ async function until(predicate, label) {
     if (predicate()) return;
     await frame();
   }
-  throw new Error("timed out waiting for " + label + ": " + document.body.textContent);
+  throw new Error(
+    "timed out waiting for " + label + ": " + document.body.textContent + " | lastError=" + lastError,
+  );
 }
 
 /**
@@ -192,6 +239,42 @@ const topbar = () => React.createElement(ConversationTopbar, {
   onOpenSearch: noop,
 });
 
+/**
+ * The conversation a dock scene sits in: the real sidebar, the real topbar, a
+ * short exchange, and the real composer — which is what renders the dock above
+ * its input, so the picture shows where the row actually appears.
+ */
+function shell({ sessionId, conversation, dock }) {
+  useAppStore.setState({ activeSessionId: sessionId });
+  return React.createElement("div", { className: "app-shell" },
+    React.createElement("aside", { className: "sidebar sidebar-surface" },
+      React.createElement("div", { className: "shot-sidebar-body" },
+        React.createElement(BotSidebarGroup, {
+          activeSessionId: sessionId,
+          onOpenBot: noop,
+          onOpenTask: noop,
+        }))),
+    React.createElement("section", { className: "main-pane" },
+      React.createElement(ConversationTopbar, {
+        sidebarCollapsed: false,
+        workPanelOpen: false,
+        onToggleSidebar: noop,
+        onNewTask: noop,
+        onOpenSearch: noop,
+      }),
+      React.createElement("div", { className: "route-surface route-page shot-stack" },
+        React.createElement("div", { className: "shot-turn" },
+          React.createElement("p", { className: "shot-user" }, conversation.user),
+          React.createElement("p", { className: "shot-steward" }, conversation.answer)),
+        React.createElement("div", { className: "shot-spacer" })),
+      dock
+        ? // The card a task session shows sits in the composer's own stack; the
+          // wrapper is the real one, so the position is the product's.
+          React.createElement("div", { className: "composer-dock composer-dock-docked" },
+            React.createElement("div", { className: "composer-stack" }, dock))
+        : React.createElement(Composer, { variant: "docked" })));
+}
+
 let rootNode = null;
 async function render(kind) {
   const container = document.getElementById("root");
@@ -201,29 +284,47 @@ async function render(kind) {
   }
   container.innerHTML = "";
   rootNode = createRoot(container);
-  const scene = {
+  // Every scene is the real conversation shell: the sidebar, the header, a short
+  // exchange, and the composer whose stack renders whatever waits above the
+  // input. A picture of the dock alone cannot show where the person finds it.
+  const scenes = {
     // 1. The task session: the header says 等你 and the question card is the one
     //    the runtime raised.
-    question: React.createElement("div", { className: "shot-surface" },
-      React.createElement("div", { className: "shot-topbar" }, topbar()),
-      React.createElement("div", { className: "shot-dock" },
-        React.createElement(AskToolCard, { request: askRequest })),
-    ),
-    // 2. The steward's dock: one orange row, with the question's own options.
-    "dock-question": React.createElement("div", { className: "shot-surface" },
-      React.createElement("div", { className: "shot-dock" },
-        React.createElement(StewardTaskDock, { sessionId: "steward" }))),
+    question: () => shell({
+      sessionId: "sess-question",
+      conversation: {
+        user: "登录超时今天修掉。",
+        answer: "在改。有个接口要问一下再动。",
+      },
+      dock: React.createElement(AskToolCard, { request: askRequest }),
+    }),
+    // 2. The steward's conversation: one orange row per open question.
+    "dock-question": () => shell({
+      sessionId: "steward",
+      conversation: {
+        user: "Desktop 的登录超时要今天修掉。",
+        answer: "已派给 Router 后端，她在改；有结果我叫你。",
+      },
+    }),
     // 3. The task session of a stuck task.
-    blocked: React.createElement("div", { className: "shot-surface" },
-      React.createElement("div", { className: "shot-topbar" }, topbar()),
-      React.createElement("div", { className: "shot-dock" },
-        React.createElement(TaskBlockedCardForSession, { sessionId: "sess-blocked" }))),
-    // 4. The steward's dock holding that card.
-    "dock-blocked": React.createElement("div", { className: "shot-surface" },
-      React.createElement("div", { className: "shot-dock" },
-        React.createElement(StewardTaskDock, { sessionId: "steward" }))),
+    blocked: () => shell({
+      sessionId: "sess-blocked",
+      conversation: {
+        user: "补一下 remote_gateway 的单测。",
+        answer: "写了一半，迁移脚本这边过不去，我先报给你。",
+      },
+      dock: React.createElement(TaskBlockedCardForSession, { sessionId: "sess-blocked" }),
+    }),
+    // 4. The steward's conversation holding that card.
+    "dock-blocked": () => shell({
+      sessionId: "steward",
+      conversation: {
+        user: "remote_gateway 那批单测也补上。",
+        answer: "交给 Router 后端了；有一项卡在 staging 权限上。",
+      },
+    }),
     // 5. The sidebar's count and the list it opens.
-    sidebar: React.createElement("div", { className: "shot-sidebar" },
+    sidebar: () => React.createElement("div", { className: "shot-sidebar" },
       React.createElement(BotSidebarGroup, {
         activeSessionId: "sess-question",
         onOpenBot: noop,
@@ -232,13 +333,20 @@ async function render(kind) {
         tasks,
       })),
     // 6. The dock when this screen cannot read the request.
-    "dock-fallback": React.createElement("div", { className: "shot-surface" },
-      React.createElement("div", { className: "shot-dock" },
-        React.createElement(StewardTaskDock, { sessionId: "steward" }))),
-  }[kind];
+    "dock-fallback": () => shell({
+      sessionId: "steward",
+      conversation: {
+        user: "缓存命中率也看一下。",
+        answer: "在查；有个预热的问题要你定。",
+      },
+    }),
+  };
+  const scene = scenes[kind]();
+  // A task's own question is the card the runtime raised, so it rides in the
+  // store exactly as an incoming asktool_request puts it there.
+  useAppStore.setState({ pendingAsks: kind === "question" ? [askRequest] : [] });
   flushSync(() => rootNode.render(scene));
   if (kind === "question") {
-    useAppStore.setState({ activeSessionId: "sess-question" });
     await until(() => document.querySelector("[data-task-stage='person/answer']"), "the 等你 chip");
     await until(
       () => document.body.textContent.includes("要保留旧的登录接口吗？"),
@@ -246,8 +354,10 @@ async function render(kind) {
     );
   }
   if (kind === "blocked") {
-    useAppStore.setState({ activeSessionId: "sess-blocked" });
     await until(() => document.querySelector("[data-task-blocked]"), "the blocked card");
+  }
+  if (kind === "question" || kind === "blocked") {
+    await until(() => document.querySelector(".composer-dock"), "the composer slot");
   }
   if (kind === "dock-question" || kind === "dock-blocked" || kind === "dock-fallback") {
     await until(() => document.querySelector("[data-testid='task-waiting-dock']"), "the dock");
@@ -270,8 +380,14 @@ window.shot = {
   async render(kind, theme) {
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.platform = "darwin";
-    await render(kind);
-    return true;
+    try {
+      await render(kind);
+      return { ok: true };
+    } catch (error) {
+      // A scene that fails must fail loudly with its reason, not with a blank
+      // picture: the capture below is rejected on this.
+      return { ok: false, error: String((error && error.message) || error) };
+    }
   },
 };
 `;
@@ -323,6 +439,11 @@ test(
     await mkdir(artifactRoot, { recursive: true });
     const workDir = await mkdtemp(join(tmpdir(), "pi-bot-waiting-shot-"));
     try {
+      // The real composer mounts the live-voice controller, whose only Vite-ism is
+      // `?url` on a worklet file. One stub keeps the composer real in a picture
+      // (the worklet itself never runs here).
+      const workletStub = join(workDir, "pcm-worklet-stub.js");
+      await writeFile(workletStub, 'export default "";\n');
       await bundle({
         stdin: { contents: fixture, resolveDir: join(root, "scripts/e2e"), loader: "tsx" },
         outfile: join(workDir, "renderer.js"),
@@ -330,7 +451,22 @@ test(
         platform: "browser",
         format: "esm",
         jsx: "automatic",
-        define: { "process.env.NODE_ENV": '"production"' },
+        define: {
+          "process.env.NODE_ENV": '"production"',
+          // One bundled dependency reads `process.env.DEV` directly; a browser
+          // build has no `process` at all.
+          "process.env": '{"NODE_ENV":"production","DEV":false}',
+          // Vite's own flag, read by one bundled dependency.
+          "import.meta.env": '{"DEV":false,"PROD":true,"MODE":"production"}',
+        },
+        plugins: [
+          {
+            name: "vite-url-import-stub",
+            setup(build) {
+              build.onResolve({ filter: /\?url$/ }, () => ({ path: workletStub }));
+            },
+          },
+        ],
         alias: {
           "@minih-agent/i18n": join(root, "packages/i18n/src"),
           "@minih-agent/shared": join(root, "packages/shared/src"),
@@ -377,7 +513,10 @@ app.whenReady().then(async () => {
     );
     for (const entry of plan) {
       win.setContentSize(entry.width, 900);
-      await win.webContents.executeJavaScript("window.shot.render(" + JSON.stringify(entry.scene) + "," + JSON.stringify(entry.theme) + ")");
+      const rendered = await win.webContents.executeJavaScript("window.shot.render(" + JSON.stringify(entry.scene) + "," + JSON.stringify(entry.theme) + ")");
+      if (!rendered || rendered.ok !== true) {
+        throw new Error("scene " + entry.scene + " did not render: " + JSON.stringify(rendered));
+      }
       await new Promise((resolve) => setTimeout(resolve, 150));
       const image = await win.webContents.capturePage();
       const file = path.join(outDir, entry.theme + "-" + entry.scene + "-" + entry.width + ".png");
