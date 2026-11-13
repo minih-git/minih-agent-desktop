@@ -303,7 +303,12 @@ export type TaskRestartResult = { task: TaskView };
 export type TasksChangedEvent = {
   employeeSessionId: string;
   taskId?: string;
-  reason: "created" | "stage" | "archived";
+  /**
+   * `waiting` is the record's own news: a question opened or closed while the
+   * stage stayed `person/answer`, so nothing moved but the surfaces have to
+   * repaint (employee mode 0.5 slice 4a).
+   */
+  reason: "created" | "stage" | "waiting" | "archived";
 };
 
 /**

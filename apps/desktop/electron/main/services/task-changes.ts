@@ -17,7 +17,7 @@ import { IPC, type TaskList, type TaskView, type TasksChangedEvent } from "@mini
  */
 export type TaskChangeAnnouncer = {
   /** Announce a task the caller already holds; news only, by stage. */
-  announce: (task: TaskView, reason: "created" | "stage" | "archived") => void;
+  announce: (task: TaskView, reason: "created" | "stage" | "waiting" | "archived") => void;
   /**
    * Read the open tasks back and announce the stages that moved.
    *
@@ -52,17 +52,45 @@ export function createTaskChangeAnnouncer({
   getHost: () => Host | null;
   log: (message: string, data: Record<string, unknown>) => void;
 }): TaskChangeAnnouncer {
-  /** The stage last announced per task, so one move is one event. */
-  const lastKnownStage = new Map<string, string>();
+  /**
+   * What was last announced per task: the stage **and** the requests it waits on.
+   *
+   * The stage alone was not enough: a second question opens while the task is
+   * already `person/answer`, and a task's surfaces (the dock row, the sidebar
+   * count) have to repaint even though nothing moved. The waiting set is the
+   * other half of "what the person sees".
+   */
+  const lastKnown = new Map<string, string>();
 
-  function announce(task: TaskView, reason: "created" | "stage" | "archived"): void {
-    const previous = lastKnownStage.get(task.id);
-    lastKnownStage.set(task.id, task.stage);
-    if (reason === "stage" && previous === task.stage) return;
+  /** What one task's announcement is compared by: honest, and cheap. */
+  function fingerprint(task: TaskView): string {
+    const waiting = (task.waiting ?? []).map((entry) => entry.requestId).join(",");
+    return `${task.stage}|${waiting}`;
+  }
+
+  function announce(
+    task: TaskView,
+    reason: "created" | "stage" | "waiting" | "archived",
+  ): void {
+    const previous = lastKnown.get(task.id);
+    const current = fingerprint(task);
+    lastKnown.set(task.id, current);
+    if (reason !== "created" && reason !== "archived" && previous === current) return;
+    // A caller says *that* the task changed, not which half of it: the stage is
+    // the first field of the fingerprint, so this reports what actually moved.
+    // "waiting" therefore means "the same stage, different requests" — which is
+    // what a second question on the same task looks like.
+    const previousStage = previous?.split("|")[0];
+    const reported =
+      reason === "created" || reason === "archived"
+        ? reason
+        : previousStage !== undefined && previousStage === task.stage
+          ? "waiting"
+          : "stage";
     sendToRenderer(IPC.event.tasksChanged, {
       employeeSessionId: task.employeeSessionId,
       taskId: task.id,
-      reason,
+      reason: reported,
     } satisfies TasksChangedEvent);
   }
 
@@ -85,8 +113,8 @@ export function createTaskChangeAnnouncer({
     for (const task of tasks) announce(task, "stage");
     // A task that left the open list (archived elsewhere, or gone) stops being
     // tracked, so its id cannot be reused by a later announcement.
-    for (const id of [...lastKnownStage.keys()]) {
-      if (!open.has(id)) lastKnownStage.delete(id);
+    for (const id of [...lastKnown.keys()]) {
+      if (!open.has(id)) lastKnown.delete(id);
     }
   }
 

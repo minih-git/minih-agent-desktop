@@ -33,6 +33,7 @@ import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { StewardTaskDock, TaskBlockedCardForSession } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
 import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
+import { AskToolCard } from "../../apps/desktop/src/components/AskToolCard";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 
 await i18n.use(initReactI18next).init({ lng: "zh-CN", keySeparator: false,
@@ -109,6 +110,17 @@ window.minihAgent = {
 };
 
 useAppStore.setState({
+  askDrafts: {},
+  setAskDraft: () => undefined,
+  resolveAsk: async () => {
+    // The answer goes through the same path the task session uses: Main closes
+    // the waiting record, and the surfaces repaint from tasksChanged.
+    tasks = tasks.map((task) =>
+      task.id === "task-1" ? { ...task, stage: "working", waiting: [] } : task,
+    );
+    emit(IPC.event.tasksChanged, { employeeSessionId: "router", taskId: "task-1", reason: "stage" });
+    return { ok: true };
+  },
   selectSession: async (sessionId) => {
     selected.push(sessionId);
     useAppStore.setState({ activeSessionId: sessionId });
@@ -241,12 +253,75 @@ window.waitingProbe = async () => {
   report.passed = true;
   return report;
 };
+
+/**
+ * The same record, but arriving while the surfaces are already on screen.
+ *
+ * The probe above hands the dock a task that is *already* waiting. In the app the
+ * question arrives mid-turn, so the dock, the sidebar count and the task's own
+ * card all have to appear and then collapse from events — which is exactly what
+ * was broken before task.waiting.open announced its task.
+ */
+window.waitingLiveProbe = async () => {
+  const report = { passed: false };
+  tasks = [
+    { id: "task-1", employeeSessionId: "router", sessionId: "task-1-session",
+      title: "修一下登录超时", origin: "steward", stage: "working",
+      projectPath: "/repo/router", shortId: "task1",
+      createdAt: "2026-11-13T00:00:00.000Z", workspaceStatus: "none", stageSeq: 2 },
+  ];
+  mount(React.createElement("div", null,
+    React.createElement(BotSidebarGroup, {
+      activeSessionId: "task-1-session",
+      onOpenBot: () => {},
+      onOpenTask: () => {},
+    }),
+    React.createElement(StewardTaskDock, { sessionId: "steward" }),
+    React.createElement(AskToolCard, { request: {
+      requestId: "req-1", sessionId: "task-1-session", toolCallId: "call-1", turnId: "turn-1",
+      questions: [{ question: "要保留旧的登录接口吗？", options: ["保留", "直接删掉"] }],
+    } }),
+  ));
+  await until(() => document.querySelector("[data-sidebar-bot-row='router']"), "the employee row");
+  report.countBefore = document.querySelector("[data-sidebar-waiting]")?.getAttribute("data-sidebar-waiting") ?? "0";
+  report.dockBefore = Boolean(document.querySelector("[data-task-waiting='task-1']"));
+
+  // The runtime asks mid-turn: the host opens the record and announces the task.
+  tasks = [{
+    ...tasks[0], stage: "person/answer", stageSeq: 3,
+    waiting: [{ requestId: "req-1", kind: "ask", question: "要保留旧的登录接口吗？",
+      options: ["保留", "直接删掉"], openedAt: "2026-11-13T01:00:00.000Z" }],
+  }];
+  emit(IPC.event.tasksChanged, { employeeSessionId: "router", taskId: "task-1", reason: "waiting" });
+  await until(() => document.querySelector("[data-task-waiting='task-1']"), "the live waiting row");
+  await until(() => document.querySelector("[data-sidebar-waiting]"), "the live sidebar count");
+  report.dockAfter = true;
+  report.countAfter = document.querySelector("[data-sidebar-waiting]").getAttribute("data-sidebar-waiting");
+  report.rowQuestion = textOf(document.querySelector("[data-task-waiting='task-1'] .task-waiting-question"));
+
+  // Answering in the task session's own card closes it everywhere.
+  await until(() => button("保留"), "the option in the task's card");
+  flushSync(() => button("保留").click());
+  await until(() => button("提交答案"), "the submit button");
+  flushSync(() => button("提交答案").click());
+  await until(() => !document.querySelector("[data-task-waiting='task-1']"), "the row to collapse");
+  report.countAfterAnswer = document.querySelector("[data-sidebar-waiting]")
+    ? document.querySelector("[data-sidebar-waiting]").getAttribute("data-sidebar-waiting")
+    : "0";
+
+  flushSync(() => mounted.unmount());
+  mounted = null;
+  report.passed = true;
+  return report;
+};
 `;
 
-let cached;
-async function probe() {
-  if (cached) return cached;
-  const temp = await mkdtemp(join(tmpdir(), "pi-bot-waiting-"));
+const probeCache = new Map();
+
+/** One Electron run per probe expression: each is a real window and real clicks. */
+async function runProbe(expression, label) {
+  if (probeCache.has(label)) return probeCache.get(label);
+  const temp = await mkdtemp(join(tmpdir(), `pi-bot-waiting-${label}-`));
   try {
     await build({
       stdin: { contents: fixture, resolveDir: join(root, "scripts/e2e"), loader: "tsx" },
@@ -281,7 +356,7 @@ app.whenReady().then(async () => {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   try {
     await win.loadFile(path.join(__dirname, "index.html"));
-    console.log("WAITING_PROBE " + JSON.stringify(await win.webContents.executeJavaScript("window.waitingProbe()")));
+    console.log("WAITING_PROBE " + JSON.stringify(await win.webContents.executeJavaScript(${JSON.stringify(expression)})));
     app.exit(0);
   } catch (error) { console.error(error?.stack ?? error); app.exit(1); }
 });`,
@@ -312,12 +387,16 @@ app.whenReady().then(async () => {
     assert.equal(code, 0, output.slice(-6000));
     const line = output.split(/\r?\n/).find((item) => item.startsWith("WAITING_PROBE "));
     assert.ok(line, output.slice(-6000));
-    cached = JSON.parse(line.slice("WAITING_PROBE ".length));
-    return cached;
+    const report = JSON.parse(line.slice("WAITING_PROBE ".length));
+    probeCache.set(label, report);
+    return report;
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
 }
+
+const probe = () => runProbe("window.waitingProbe()", "waiting");
+const liveProbe = () => runProbe("window.waitingLiveProbe()", "live");
 
 const displayMissing = process.platform === "linux" && !process.env.DISPLAY;
 const options = { skip: displayMissing ? "Electron requires a display" : false };
@@ -380,4 +459,14 @@ test("sidebar: one number for every source, and every row in its list goes somew
   assert.equal(report.employeeTone, "attention");
   assert.deepEqual(report.waitingRows.sort(), ["task-1", "task-2", "task-3"]);
   assert.equal(report.listOpenedTask, "task:task-2-session");
+});
+test("waiting: a question that arrives mid-turn appears and collapses without a reload", options, async () => {
+  const report = await liveProbe();
+  assert.equal(report.passed, true);
+  assert.equal(report.dockBefore, false, "nothing waits before the question");
+  assert.equal(report.countBefore, "0");
+  assert.equal(report.dockAfter, true, "the dock row appears on tasksChanged");
+  assert.equal(report.countAfter, "1");
+  assert.equal(report.rowQuestion, "要保留旧的登录接口吗？");
+  assert.equal(report.countAfterAnswer, "0", "answering in the task collapses every surface");
 });

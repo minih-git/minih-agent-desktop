@@ -92,6 +92,7 @@ import { createPluginServices } from "./services/plugin-services";
 import { wirePluginThemeRuntimeServices } from "./plugin-theme-services";
 import { createSessionCollaborationService } from "./services/session-collaboration";
 import { createTaskChangeAnnouncer } from "./services/task-changes";
+import { registerTaskWaitingChanges } from "./runtime/task-waiting";
 import {
   createApplicationLifecycle,
 } from "./bootstrap/app-lifecycle";
@@ -737,6 +738,9 @@ const taskChanges = createTaskChangeAnnouncer({
   getHost,
   log: (message, data) => logger.app("runtime", "warn", message, { data }),
 });
+// The waiting channel reports through the same announcer: a question opening or
+// closing is task news even when the stage did not move (slice 4a).
+registerTaskWaitingChanges(taskChanges);
 
 const sessionCollaboration = createSessionCollaborationService({
   getHost,

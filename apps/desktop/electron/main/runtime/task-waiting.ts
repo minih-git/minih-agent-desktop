@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope } from "@minih-agent/shared";
+import type { AgentEventEnvelope, TaskView } from "@minih-agent/shared";
 
 /**
  * The waiting channel's Main-side hooks (employee mode 0.5 slice 4a).
@@ -18,6 +18,41 @@ import type { AgentEventEnvelope } from "@minih-agent/shared";
  *   answering from the task's card, the steward's dock, the phone (RACP) or an
  *   MCP client all close the same entry.
  */
+
+/**
+ * Where a waiting record's news goes.
+ *
+ * The record is written here, but the *surfaces* repaint on `tasksChanged`, and
+ * that event is Main's to send (`services/task-changes.ts`). This module is
+ * therefore the one place that says "the waiting set changed", so a question that
+ * opens or closes reaches the sidebar, the dock and the header without waiting
+ * for the turn to end.
+ */
+export type TaskWaitingChanges = {
+  announce: (task: TaskView, reason: "stage" | "waiting") => void;
+  reconcileStages: () => Promise<void>;
+};
+
+let changes: TaskWaitingChanges | null = null;
+
+/**
+ * Wire the announcer this module reports through. Called once at startup; a
+ * `null` disconnects it (tests, and a host that is going away).
+ */
+export function registerTaskWaitingChanges(next: TaskWaitingChanges | null): void {
+  changes = next;
+}
+
+/**
+ * Ask Main to re-read the open tasks and announce what moved.
+ *
+ * Used after a turn starts, where the stage moved without any IPC of its own:
+ * the host wrote `working` in `session.beginTurn`, and only a read-back can see
+ * it.
+ */
+export function requestTaskStageReconcile(): void {
+  void changes?.reconcileStages().catch(() => undefined);
+}
 
 /** What this module needs from the host transport. */
 export type TaskWaitingHost = {
@@ -127,7 +162,13 @@ export async function openTaskWaiting(
   const entry = taskWaitingEntry(envelope);
   if (!host || !entry) return;
   try {
-    await host.call("task.waiting.open", entry);
+    const result = await host.call<{ opened?: boolean; task?: TaskView }>(
+      "task.waiting.open",
+      entry,
+    );
+    // The host answers with the task as it now stands; announcing it is what
+    // turns "the runtime asked" into a sidebar count and a dock row.
+    if (result?.task) changes?.announce(result.task, "waiting");
   } catch (error) {
     log?.("task.waiting.open failed", error);
   }
@@ -149,10 +190,16 @@ export async function closeTaskWaiting(
   const id = typeof requestId === "string" ? requestId.trim() : "";
   if (!host || !id) return;
   try {
-    await host.call("task.waiting.close", {
-      requestId: id,
-      ...(sessionId && sessionId.trim() ? { sessionId: sessionId.trim() } : {}),
-    });
+    const result = await host.call<{ closed?: boolean; task?: TaskView }>(
+      "task.waiting.close",
+      {
+        requestId: id,
+        ...(sessionId && sessionId.trim() ? { sessionId: sessionId.trim() } : {}),
+      },
+    );
+    // Answering anywhere collapses the row everywhere, so the news travels from
+    // this one place whatever resolved the request.
+    if (result?.closed && result.task) changes?.announce(result.task, "waiting");
   } catch (error) {
     log?.("task.waiting.close failed", error);
   }

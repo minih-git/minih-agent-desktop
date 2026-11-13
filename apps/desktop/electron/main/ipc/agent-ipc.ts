@@ -15,7 +15,7 @@ import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import type { PersistenceOutbox } from "../persistence-outbox";
 import { buildStewardBriefing, TASK_SESSION_BRIEFING } from "../services/task-status";
-import { closeTaskWaiting } from "../runtime/task-waiting";
+import { closeTaskWaiting, requestTaskStageReconcile } from "../runtime/task-waiting";
 import type { ComposerCommandService } from "./composer-ipc";
 import type { IpcRegistrar } from "./types";
 
@@ -354,6 +354,12 @@ export function registerAgentIpc({
     activeTurns.set(req.sessionId, durableTurnId);
     recordTurnStart(req.sessionId, durableTurnId);
     activeTurnUsages.delete(req.sessionId);
+    if (session.role === "task") {
+      // `session.beginTurn` moved the task's stage to `working` on the host, and
+      // that write has no IPC of its own: one read-back is what puts "in
+      // progress" on the header and the sidebar while the turn runs.
+      requestTaskStageReconcile();
+    }
 
     // Slash expansion (D123, ADR 0024): templates expand before persistence
     // so reseed replays exactly what the model saw; the typed form rides along
