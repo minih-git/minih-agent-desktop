@@ -826,7 +826,7 @@ last statement.
 | A stage write failing does not fail the turn | **Yes** — logged, the turn stays settled | `sessions.rs` |
 | Schema v37 is additive and idempotent | **Yes** — three `ADD COLUMN`s, orphan-safe, pinned by migration tests | `db/task_waiting_migration.rs` |
 
-## Employee mode 0.5, slice 4b: the completion card, and merging as a host step
+## Completion card and accept-and-merge (employee mode 0.5, slice 4b)
 
 A turn ended and the task became `person/accept`, but there was nothing to accept:
 no card, no summary, no way to merge. The person had to open the conversation,
