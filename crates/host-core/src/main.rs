@@ -43,6 +43,8 @@ mod tasks;
 #[cfg(test)]
 mod tasks_completion_tests;
 #[cfg(test)]
+mod tasks_tests;
+#[cfg(test)]
 mod tasks_waiting_tests;
 mod todos;
 mod tool_budget;
