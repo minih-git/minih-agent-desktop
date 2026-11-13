@@ -865,7 +865,7 @@ export const en = {
       retryBusy: "This task is busy; stop the current turn first.",
       reassign: "Hand to…",
       reassignReason: "Reassigned from task #{{shortId}}",
-      reassigned: "A new card is waiting in the steward's conversation.",
+      reassigned: "A new card is waiting in {{agent}}'s conversation.",
       drop: "Drop it",
       dropConfirm: "Drop this task?",
       dropYes: "Drop",
@@ -3505,6 +3505,11 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "Context compacted. Earlier detail is lost over long threads; start a new session for unrelated tasks.",
   },
   notifications: {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    taskWaitingTitle: "{{employee}} · {{task}} is waiting for you",
+    permissionBodyWithReason: "Permission required to run {{toolName}}: {{reason}}",
+    taskStuckTitle: "{{employee}} is stuck",
+    taskStuckInterrupted: "The app restarted while this task was running",
     title: "Notifications",
     open: "Open notifications",
     openUnread: "Open notifications, {{count}} unread",

@@ -843,7 +843,7 @@ export const es = {
       retryBusy: "Esta tarea está ocupada; detén primero el turno actual.",
       reassign: "Asignar a…",
       reassignReason: "Reasignada desde la tarea #{{shortId}}",
-      reassigned: "Hay una tarjeta nueva esperando en la conversación del asistente.",
+      reassigned: "Hay una tarjeta nueva esperando en la conversación de {{agent}}.",
       drop: "Abandonar",
       dropConfirm: "¿Abandonar esta tarea?",
       dropYes: "Abandonar",
@@ -3448,6 +3448,11 @@ sklm: {
     "longThreadWarning": "Contexto compactado. Los hilos largos pierden detalles anteriores con cada compactación: inicie una nueva sesión para trabajos no relacionados."
   },
   "notifications": {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    "taskWaitingTitle": "{{employee}} · {{task}} te está esperando",
+    "permissionBodyWithReason": "Se requiere permiso para ejecutar {{toolName}}: {{reason}}",
+    "taskStuckTitle": "{{employee}} está atascado",
+    "taskStuckInterrupted": "La aplicación se reinició mientras esta tarea se ejecutaba",
     "title": "Notificaciones",
     "open": "Notificaciones abiertas",
     "openUnread": "Notificaciones abiertas, {{count}} no leídos",

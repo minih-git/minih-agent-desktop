@@ -852,7 +852,7 @@ export const tr = {
       retryBusy: "Bu görev meşgul; önce geçerli turu durdurun.",
       reassign: "Devret…",
       reassignReason: "#{{shortId}} görevinden devredildi",
-      reassigned: "Yeni kart sekreterin konuşmasında onayınızı bekliyor.",
+      reassigned: "Yeni kart {{agent}} konuşmasında onayınızı bekliyor.",
       drop: "Vazgeç",
       dropConfirm: "Bu görevden vazgeçilsin mi?",
       dropYes: "Vazgeç",
@@ -3478,6 +3478,11 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "Bağlam sıkıştırıldı. Uzun diziler her sıkıştırmada erken ayrıntıyı kaybeder — ilgisiz iş için yeni oturum açın.",
   },
   notifications: {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    taskWaitingTitle: "{{employee}} · {{task}} sizi bekliyor",
+    permissionBodyWithReason: "{{toolName}} çalıştırmak için izin gerekiyor: {{reason}}",
+    taskStuckTitle: "{{employee}} takıldı",
+    taskStuckInterrupted: "Uygulama yeniden başlarken bu görev çalışıyordu",
     title: "Bildirimler",
     open: "Bildirimleri aç",
     openUnread: "Bildirimleri aç, {{count}} okunmamış",

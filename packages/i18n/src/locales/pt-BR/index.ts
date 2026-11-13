@@ -842,7 +842,7 @@ export const ptBR = {
       retryBusy: "Esta tarefa está ocupada; pare o turno atual primeiro.",
       reassign: "Passar para…",
       reassignReason: "Reatribuída da tarefa #{{shortId}}",
-      reassigned: "Um novo cartão está esperando na conversa do assistente.",
+      reassigned: "Um novo cartão está esperando na conversa de {{agent}}.",
       drop: "Desistir",
       dropConfirm: "Desistir desta tarefa?",
       dropYes: "Desistir",
@@ -3417,6 +3417,11 @@ export const ptBR = {
     longThreadWarning: "O contexto foi compactado. Conversas longas perdem detalhes anteriores a cada compactação — inicie uma nova sessão para tarefas não relacionadas.",
   },
   notifications: {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    taskWaitingTitle: "{{employee}} · {{task}} esperando por você",
+    permissionBodyWithReason: "Permissão necessária para executar {{toolName}}: {{reason}}",
+    taskStuckTitle: "{{employee}} travou",
+    taskStuckInterrupted: "O aplicativo reiniciou enquanto esta tarefa rodava",
     title: "Notificações",
     open: "Abrir notificações",
     openUnread: "Abrir notificações, {{count}} não lidas",

@@ -856,7 +856,7 @@ export const zhCN = {
       retryBusy: "这个任务正忙，先停掉当前回合。",
       reassign: "改派给…",
       reassignReason: "从任务 #{{shortId}} 改派",
-      reassigned: "新卡片已经在秘书的对话里等你确认。",
+      reassigned: "新卡片已经在 {{agent}} 的对话里等你确认。",
       drop: "放弃",
       dropConfirm: "确定放弃这个任务？",
       dropYes: "放弃",
@@ -3450,6 +3450,11 @@ sklm: {
     longThreadWarning: "上下文已压缩。长会话会丢失早期细节，无关任务建议开启新会话。",
   },
   notifications: {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    taskWaitingTitle: "{{employee}} · {{task}} 在等你",
+    permissionBodyWithReason: "运行 {{toolName}} 需要你同意：{{reason}}",
+    taskStuckTitle: "{{employee}} 卡住了",
+    taskStuckInterrupted: "应用重启时这项任务正在运行",
     title: "通知",
     open: "打开通知中心",
     openUnread: "打开通知中心，{{count}} 条未读",

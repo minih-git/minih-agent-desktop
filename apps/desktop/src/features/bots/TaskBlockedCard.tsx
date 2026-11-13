@@ -28,12 +28,15 @@ import { blockedFields } from "./task-waiting";
 export function TaskBlockedCard({
   task,
   employeeName,
+  stewardName,
   stewardSessionId,
   onChanged,
 }: {
   task: TaskView;
   /** The employee's name; the card's heading names who got stuck. */
   employeeName?: string;
+  /** The steward's current name; the reassignment note names its conversation. */
+  stewardName?: string;
   /** Where 「改派给…」 proposes its card; the host resolves its own if absent. */
   stewardSessionId?: string | null;
   /** Called after the host answered, so the caller can refetch its own rows. */
@@ -159,7 +162,7 @@ export function TaskBlockedCard({
 
       {reassignedTo ? (
         <p className="task-blocked-note" data-blocked-reassigned="" role="status">
-          {t("bots.blocked.reassigned")}
+          {t("bots.blocked.reassigned", { agent: stewardName || t("bots.card.targetUnknown") })}
         </p>
       ) : null}
       {error ? (

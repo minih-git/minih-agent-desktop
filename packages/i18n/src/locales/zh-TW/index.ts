@@ -848,7 +848,7 @@ export const zhTW = {
       retryBusy: "這個任務正忙，先停掉目前回合。",
       reassign: "改派給…",
       reassignReason: "從任務 #{{shortId}} 改派",
-      reassigned: "新卡片已經在秘書的對話裡等你確認。",
+      reassigned: "新卡片已經在 {{agent}} 的對話裡等你確認。",
       drop: "放棄",
       dropConfirm: "確定放棄這個任務？",
       dropYes: "放棄",
@@ -3440,6 +3440,11 @@ sklm: {
     longThreadWarning: "上下文已壓縮。每壓縮一次都會丟掉更早的細節，無關的新任務建議開新會話。",
   },
   notifications: {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    taskWaitingTitle: "{{employee}} · {{task}} 在等你",
+    permissionBodyWithReason: "執行 {{toolName}} 需要你同意：{{reason}}",
+    taskStuckTitle: "{{employee}} 卡住了",
+    taskStuckInterrupted: "應用程式重新啟動時這項任務正在執行",
     title: "通知",
     open: "開啟通知中心",
     openUnread: "開啟通知中心，{{count}} 條未讀",

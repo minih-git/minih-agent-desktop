@@ -843,7 +843,7 @@ export const fr = {
       retryBusy: "Cette tâche est occupée ; arrêtez d'abord le tour en cours.",
       reassign: "Confier à…",
       reassignReason: "Réaffectée depuis la tâche #{{shortId}}",
-      reassigned: "Une nouvelle carte attend dans la conversation de l'assistant.",
+      reassigned: "Une nouvelle carte attend dans la conversation de {{agent}}.",
       drop: "Abandonner",
       dropConfirm: "Abandonner cette tâche ?",
       dropYes: "Abandonner",
@@ -3449,6 +3449,11 @@ sklm: {
     "longThreadWarning": "Contexte compacté. Les threads longs perdent les détails antérieurs à chaque compactage : démarrez une nouvelle session pour un travail sans rapport."
   },
   "notifications": {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    "taskWaitingTitle": "{{employee}} · {{task}} vous attend",
+    "permissionBodyWithReason": "Autorisation requise pour exécuter {{toolName}} : {{reason}}",
+    "taskStuckTitle": "{{employee}} est bloqué",
+    "taskStuckInterrupted": "L'application a redémarré pendant que cette tâche tournait",
     "title": "Notifications",
     "open": "Notifications ouvertes",
     "openUnread": "Notifications ouvertes, {{count}} non lues",

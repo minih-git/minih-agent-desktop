@@ -10,7 +10,7 @@ import {
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
 import { Button } from "../../components/ui";
-import { stewardSessionIdOf } from "./steward-name";
+import { stewardNameOf, stewardSessionIdOf } from "./steward-name";
 import { useBots } from "./use-bots";
 import { useTasks } from "./use-tasks";
 import { TaskBlockedCard } from "./TaskBlockedCard";
@@ -51,6 +51,7 @@ export function StewardTaskDock({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const stewardSessionId = stewardSessionIdOf(bots);
+  const stewardName = stewardNameOf(bots);
   const entries = useMemo(
     () => stewardDockEntries(tasks, { stewardSessionId }),
     [tasks, stewardSessionId],
@@ -248,6 +249,7 @@ export function StewardTaskDock({ sessionId }: { sessionId: string }) {
           key={`stuck:${task.id}`}
           task={task}
           employeeName={names[task.employeeSessionId]}
+          stewardName={stewardName}
           stewardSessionId={stewardSessionId}
           onChanged={() => void reload()}
         />
@@ -275,6 +277,7 @@ export function TaskBlockedCardForSession({ sessionId }: { sessionId: string }) 
     <TaskBlockedCard
       task={task}
       employeeName={employee?.profile?.name?.trim() || employee?.title}
+      stewardName={stewardNameOf(bots)}
       stewardSessionId={stewardSessionIdOf(bots)}
       onChanged={() => void reload()}
     />

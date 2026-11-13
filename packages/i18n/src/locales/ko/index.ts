@@ -852,7 +852,7 @@ export const ko = {
       retryBusy: "이 작업이 사용 중입니다. 현재 턴을 먼저 중지하세요.",
       reassign: "다른 사람에게…",
       reassignReason: "작업 #{{shortId}}에서 재배정됨",
-      reassigned: "새 카드가 비서 대화에서 확인을 기다리고 있습니다.",
+      reassigned: "새 카드가 {{agent}} 대화에서 확인을 기다리고 있습니다.",
       drop: "포기",
       dropConfirm: "이 작업을 포기할까요?",
       dropYes: "포기",
@@ -3483,6 +3483,11 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "컨텍스트가 압축되었습니다. 긴 대화는 압축할 때마다 이전 세부 정보가 줄어드니 관련 없는 작업은 새 세션을 시작하세요.",
   },
   notifications: {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    taskWaitingTitle: "{{employee}} · {{task}} 확인 대기 중",
+    permissionBodyWithReason: "{{toolName}} 실행 권한이 필요합니다: {{reason}}",
+    taskStuckTitle: "{{employee}} 작업이 막혔습니다",
+    taskStuckInterrupted: "앱이 다시 시작되는 동안 이 작업이 실행 중이었습니다",
     title: "알림",
     open: "알림 열기",
     openUnread: "알림 열기, 읽지 않은 알림 {{count}}개",

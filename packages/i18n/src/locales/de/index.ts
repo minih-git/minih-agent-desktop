@@ -843,7 +843,7 @@ export const de = {
       retryBusy: "Diese Aufgabe ist beschäftigt; stoppen Sie zuerst den laufenden Durchlauf.",
       reassign: "Übergeben an…",
       reassignReason: "Weitergegeben von Aufgabe #{{shortId}}",
-      reassigned: "Eine neue Karte wartet im Gespräch des Assistenten.",
+      reassigned: "Eine neue Karte wartet im Gespräch von {{agent}}.",
       drop: "Aufgeben",
       dropConfirm: "Diese Aufgabe aufgeben?",
       dropYes: "Aufgeben",
@@ -3449,6 +3449,11 @@ sklm: {
     "longThreadWarning": "Kontext komprimiert. Lange Threads verlieren mit jeder Komprimierung frühere Details. Starten Sie eine neue Sitzung für nicht zusammenhängende Arbeiten."
   },
   "notifications": {
+    // Waiting channel and blocked task (employee mode 0.5 slice 4a).
+    "taskWaitingTitle": "{{employee}} · {{task}} wartet auf Sie",
+    "permissionBodyWithReason": "Berechtigung zum Ausführen von {{toolName}} erforderlich: {{reason}}",
+    "taskStuckTitle": "{{employee}} steckt fest",
+    "taskStuckInterrupted": "Die App wurde neu gestartet, während diese Aufgabe lief",
     "title": "Benachrichtigungen",
     "open": "Offene Benachrichtigungen",
     "openUnread": "Offene Benachrichtigungen, {{count}} ungelesen",
