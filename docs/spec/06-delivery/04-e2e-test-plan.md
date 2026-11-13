@@ -21356,10 +21356,12 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   the restart clearing every request, a direct task never waking the steward);
   `apps/desktop/test/bot-waiting-channel-user-path.test.mjs` drives the dock, the
   blocked card and the sidebar in a real Electron window with real clicks and
-  asserts the IPC calls and the collapsed row; the system notification is covered
-  by the existing ask/permission notification tests, whose body is already the
-  question. The full four-surface run against a live host and a real OS
-  notification is not claimed.
+  asserts the IPC calls and the collapsed row; `apps/desktop/test/task-waiting-notifications.test.mjs`
+  asserts the notification's title ("<employee> · <task> 在等你"), its body (the
+  question, or the tool and its reason) and that a stuck task is announced once
+  per `stage_seq`, never for the person's own stop, with the task session as the
+  click target. A real OS banner is not raised in CI; the native call and Main's
+  viewing/focus rule are covered by the existing notification-policy tests.
 
 #### E2E-BOT-blocked-task-card-actions: A stuck task says where, and the four decisions all work
 

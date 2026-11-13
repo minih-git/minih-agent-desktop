@@ -51,7 +51,8 @@ test("a task session is told how to ask, how to report being stuck, and how to f
 
 test("the rules are attached as this turn's briefing and never appended to the transcript", async () => {
   const source = await read("apps/desktop/electron/main/ipc/agent-ipc.ts");
-  const at = source.indexOf('session.role === "task"');
+  // The last occurrence: an earlier one reconciles the stage after beginTurn.
+  const at = source.lastIndexOf('session.role === "task"');
   assert.ok(at > 0, "a task session no longer gets its own rules");
   const near = source.slice(at, at + 260);
   assert.match(near, /TASK_SESSION_BRIEFING/);
@@ -82,8 +83,13 @@ test("TaskReport is declared only for a task session's Agent turn", async () => 
 
 test("a task's stage is written from its own turns, not only from a delivery", async () => {
   const sessions = await read("crates/host-core/src/sessions.rs");
-  assert.match(sessions, /crate::tasks::turn_began\(db, db\.conn\(\), session_id\)\?/);
-  assert.match(sessions, /crate::tasks::turn_ended\(db, db\.conn\(\), session_id, status, error_code\)\?/);
+  // Both writes are logged, never raised: a settled turn must not report a
+  // failed RPC because a display column could not be updated.
+  assert.match(sessions, /if let Err\(error\) = crate::tasks::turn_began\(db, db\.conn\(\), session_id\)/);
+  assert.match(
+    sessions,
+    /if let Err\(error\) = crate::tasks::turn_ended\(db, db\.conn\(\), session_id, status, error_code\)/,
+  );
   // One writer: every stage path goes through it. It lives beside `tasks.rs`
   // rather than inside it, because the module budget is 1000 lines and the task
   // row's own CRUD took it close.

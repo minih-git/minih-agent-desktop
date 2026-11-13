@@ -695,7 +695,7 @@ permission was asked for. At most eight, newest kept. The stage is
 | Main, `ipc/agent-ipc.ts` (`toolResolvePermission`, `askToolResolve`) | — | `task.waiting.close` by request id |
 | `packages/agent-host` (`respondApproval`, `respondInput`) | — | `onInteractiveResolved` → the same `task.waiting.close`, which is the phone (RACP) and MCP path |
 | host (`tasks::turn_began`, `tasks::turn_ended`) | — | a new turn or the end of the current one clears the array |
-| host (`settlement::recover`) | — | the startup fence clears every array: the sidecar that held them is gone |
+| host (`settlement::recover`) | — | the startup fence clears every array: the sidecar that held them is gone, and it stops the task itself (below) |
 
 Closing is idempotent and names the request alone, so a handler that knows only
 the id (a phone reply, an MCP client) does not need the session. A request that is
@@ -705,6 +705,25 @@ the turn ended leaves the stage the turn wrote.
 The question text is bounded (500 characters) and travels *with* the notice to
 the steward, whose brief says to quote it exactly, say where the person answers
 it, and never answer it herself.
+
+**Everything that opens or closes a record is announced.** The record is written
+by Main (`runtime/task-waiting.ts`) but every surface repaints on `tasksChanged`,
+so an open or a close hands the task the host returned to the same announcer
+(`services/task-changes.ts`). Its de-duplication covers the stage **and** the
+request set, so a second question on a task already in `person/answer` still
+repaints — reported as `reason: "waiting"`, because nothing about the stage
+moved. A task session's `session.beginTurn` has no IPC of its own either, so
+Main re-reads the open tasks once after it.
+
+**A restart does not leave a task claiming work is happening.** The fence aborts
+every `running` turn with plain SQL and marks its delivery `interrupted`; neither
+goes through `end_turn_settling`, so `tasks::recover_interrupted` (in the same
+recovery transaction) moves every open task whose stage is `working` or
+`person/answer` and whose session has no running turn to `blocked` with
+`reason: "interrupted"`. It is silent: a steward's task was already announced by
+`delivery_interrupted`, and a directly dispatched task wakes nobody ever. The
+blocked card then says the app restarted, and its retry is 「重新开工」 when the
+task has a delivery, the fixed message when it does not.
 
 ### 3. `TaskReport`: the employee's one structured exit
 
@@ -746,11 +765,19 @@ left alone), **drop** (a second click, then `task.archive`), **say something**
 | the task session | the question card the runtime raised, and the blocked card |
 | the steward's dock | an orange row per open request (employee @ repository · task · question), answerable in place with the request's own options; the blocked card; the fallback 「去任务里回答」 when the request cannot be read here |
 | the sidebar | 「等你 N 件」 over every source, a list whose rows go to the task or to the steward's conversation, and a red dot on an employee with anything waiting |
-| the system notification | unchanged plumbing; the question and the tool name are already in its body |
+| the system notification | "<employee> · <task> 在等你" with the question (or the tool and its reason) as the body; for a stuck task "<employee> 卡住了: <where>" once per `stage_seq`, skipping a task the person is already reading |
 
 Dock order is the ADR's: questions and approvals, then stuck tasks, then start
 cards. A row the person answered collapses to one quiet line and **adds nothing
 to the transcript**: the record is the dock's, not the conversation's.
+
+The notification for a task is composed in the renderer
+(`stores/runtime/task-waiting-runtime.ts`), not in Main: its two halves live
+there — the pinned reminder is the store's toast, the OS banner goes through
+`api.showNativeNotification`, and the "do not pop while they are reading it"
+rule already sits in Main's `shouldShowNativeNotification` handler. Main would
+have had to duplicate the banner and the toast. What Main keeps is the decision
+about *whether* a banner is shown at all.
 
 The steward's model has no tool that answers a request. `bot.*`, `taskCard.*`
 and `task.*` stay out of the sidecar proxy allowlist, so the only way a request is
@@ -792,5 +819,9 @@ last statement.
 | A stuck report survives its own turn's settlement | **Yes** — settlement keeps `blocked` when a blocker is present | `tasks::turn_ended` |
 | The rules a task runs under never enter the transcript | **Yes** — per-turn briefing only | `electron/main/services/task-status.ts` |
 | The steward relays, and cannot answer | **Yes** — her brief says so; no tool answers a request | `task-status.ts`, `HOST_PROXY_ALLOWED` |
-| A blocked or failed task counts as waiting | **Yes** — `taskCountsAsWaiting`, `task_status_point` | `packages/shared/src/task.ts`, `tasks.rs` |
+| A blocked or failed task counts as waiting | **Yes** — `taskCountsAsWaiting`, `task_status_point`, and `taskTone` for the row and the chip | `packages/shared/src/task.ts`, `task_stage.rs` |
+| A restart stops every task that claimed work was happening | **Yes** — `recover_interrupted`, silent, in the recovery transaction | `task_stage.rs`, `settlement.rs` |
+| Opening or closing a record repaints every surface | **Yes** — announced from `task-waiting.ts`, keyed by stage + request set | `services/task-changes.ts` |
+| A question or a stuck task is announced once, and a stop is not | **Yes** — title/body per state, `stage_seq` de-dupe, `stopped` skipped | `stores/runtime/task-waiting-runtime.ts` |
+| A stage write failing does not fail the turn | **Yes** — logged, the turn stays settled | `sessions.rs` |
 | Schema v37 is additive and idempotent | **Yes** — three `ADD COLUMN`s, orphan-safe, pinned by migration tests | `db/task_waiting_migration.rs` |
