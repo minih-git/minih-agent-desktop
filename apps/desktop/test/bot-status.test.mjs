@@ -3,24 +3,30 @@ import { register } from "node:module";
 import test from "node:test";
 
 /*
- * The two rules a supervisor can observe (ADR bot-sessions-and-steward §4):
- * which dot an employee's stage paints, and that only `person/*` is loud.
- * Plain data and pure functions, so no renderer or host is involved.
+ * The two rules a supervisor can observe (ADR bot-sessions-and-steward §4, and
+ * the amendment in "Waiting channel and blocked card"): which dot an employee's
+ * stage paints, and that a task the person has to act on is loud — a question,
+ * finished work, or a task that got stuck. Plain data and pure functions, so no
+ * renderer or host is involved.
  */
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
-const { botStatusView, sortBots, botInitials, isStewardSession } = await import(
+const { botStatusView, botStatusFromTasks, sortBots, botInitials, isStewardSession } = await import(
   "../src/features/bots/bot-status.ts"
 );
 
-test("person stages are the only attention dot", () => {
-  for (const stage of ["person/answer", "person/accept"]) {
+test("a task the person has to act on is the attention dot", () => {
+  // `person/*` was the whole list until slice 4a. A blocked or failed task joined
+  // it: "the employee's own quieter business" is exactly why a stuck task could
+  // sit in the sidebar unnoticed.
+  for (const stage of ["person/answer", "person/accept", "blocked", "failed"]) {
     const view = botStatusView({ kind: "stage", stage });
     assert.equal(view.tone, "attention", stage);
     assert.equal(view.labelKey, "bots.status.attention");
     assert.equal(view.attention, true);
   }
-  for (const stage of ["working", "queued", "waiting", "blocked", "failed"]) {
+  // Nothing is wrong and nobody is waiting: these stay quiet.
+  for (const stage of ["working", "queued", "waiting"]) {
     const view = botStatusView({ kind: "stage", stage });
     assert.notEqual(view.tone, "attention", stage);
     assert.equal(view.attention, false, stage);
@@ -31,8 +37,9 @@ test("every stage maps to its own readable word", () => {
   assert.equal(botStatusView({ kind: "stage", stage: "working" }).labelKey, "bots.status.busy");
   assert.equal(botStatusView({ kind: "stage", stage: "queued" }).labelKey, "bots.status.queued");
   assert.equal(botStatusView({ kind: "stage", stage: "waiting" }).labelKey, "bots.status.queued");
-  assert.equal(botStatusView({ kind: "stage", stage: "blocked" }).labelKey, "bots.status.blocked");
-  assert.equal(botStatusView({ kind: "stage", stage: "failed" }).labelKey, "bots.status.blocked");
+  // A stuck task reads as the person's turn, because it is one.
+  assert.equal(botStatusView({ kind: "stage", stage: "blocked" }).labelKey, "bots.status.attention");
+  assert.equal(botStatusView({ kind: "stage", stage: "failed" }).labelKey, "bots.status.attention");
 });
 
 test("idle, offline and a missing status each render", () => {
@@ -84,4 +91,22 @@ test("only a steward bot offers the task-card dock", () => {
   assert.equal(isStewardSession({ role: "bot", botProfile: { definition: "steward" } }), true);
   assert.equal(isStewardSession({ botProfile: { definition: "steward" } }), false);
   assert.equal(isStewardSession(undefined), false);
+});
+
+test("a stuck task makes its employee the one to look at first", () => {
+  // The same order the host's `task_status_point` uses: whatever the person has
+  // to act on wins over merely being busy, however it stopped.
+  assert.deepEqual(botStatusFromTasks([{ stage: "blocked" }]), {
+    kind: "stage",
+    stage: "blocked",
+  });
+  assert.deepEqual(botStatusFromTasks([{ stage: "working" }, { stage: "failed" }]), {
+    kind: "stage",
+    stage: "failed",
+  });
+  assert.deepEqual(botStatusFromTasks([{ stage: "working" }]), {
+    kind: "stage",
+    stage: "working",
+  });
+  assert.deepEqual(botStatusFromTasks([]), { kind: "idle" });
 });
