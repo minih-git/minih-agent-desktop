@@ -940,6 +940,7 @@ export const ko = {
       archiveDiscardConfirm: "{{detail}}\n\n그래도 보관하고 이 작업을 버릴까요?",
     },
     workbench: {
+      title: "작업대",
       tabs: "직원 섹션",
       noDuty: "아직 직무가 없습니다",
       modelInherited: "모델은 이 직원을 따릅니다",

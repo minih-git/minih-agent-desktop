@@ -940,6 +940,7 @@ export const tr = {
       archiveDiscardConfirm: "{{detail}}\n\nYine de arşivleyip bu çalışma atılsın mı?",
     },
     workbench: {
+      title: "Çalışma masası",
       tabs: "Çalışan bölümleri",
       noDuty: "Henüz görev tanımı yok",
       modelInherited: "Model bu çalışanı izler",

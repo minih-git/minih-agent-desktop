@@ -931,6 +931,7 @@ export const de = {
       "archiveDiscardConfirm": "{{detail}}\n\nTrotzdem archivieren und diese Arbeit verwerfen?",
     },
     "workbench": {
+      "title": "Arbeitsplatz",
       "tabs": "Bereiche des Mitarbeiters",
       "noDuty": "Noch keine Aufgabe beschrieben",
       "modelInherited": "Modell folgt diesem Mitarbeiter",

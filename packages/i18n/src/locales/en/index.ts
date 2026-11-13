@@ -953,6 +953,7 @@ export const en = {
       archiveDiscardConfirm: "{{detail}}\n\nArchive anyway and discard that work?",
     },
     workbench: {
+      title: "Workbench",
       tabs: "Employee sections",
       noDuty: "No duty written yet",
       modelInherited: "Model follows this employee",

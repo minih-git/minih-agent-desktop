@@ -1,0 +1,586 @@
+/*
+  Employee workbench, task-session header, and the sidebar's task rows
+  (ADR bot-sessions-and-steward §7, prototype ② employee workbench and
+  ③ task session).
+
+  These surfaces were reviewed as styled but shipped with no rules at all, so
+  the workbench rendered as bare stacked elements: tabs on one line, a header
+  with only a count, and an unstyled input beside an unstyled button. The
+  classes are unchanged; this file is where they are painted. Every colour is
+  an existing `--ds-*` token so both themes follow without an override here.
+
+  Order inside this file is the cascade: the shared `ct-chip` vocabulary first
+  (the task header and a task's workspace status both use it), then the task
+  header's chip row, then the sidebar's task rows, then the workbench page.
+*/
+
+/* ── Chips ────────────────────────────────────────────────────────────────
+   One chip vocabulary for a task header and a task's workspace state. The
+   stage tone rides on the chip's modifier class; anything else stays quiet. */
+
+.ct-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-3xs);
+  background: var(--ds-tile);
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+  white-space: nowrap;
+}
+
+/* Waiting on the person is the only stage that raises its voice. */
+.ct-chip.attention {
+  border-color: color-mix(in oklab, var(--ds-warning) 42%, transparent);
+  color: var(--ds-warning);
+}
+
+/* In progress: the design system's per-theme blue (the one TaskTone §103 calls
+   "blue means it is being worked on"). */
+.ct-chip.busy {
+  border-color: color-mix(in oklab, var(--ds-prose-accent) 42%, transparent);
+  color: var(--ds-prose-accent);
+}
+
+.ct-chip.archived {
+  border-color: color-mix(in oklab, var(--ds-success) 38%, transparent);
+  color: var(--ds-success);
+}
+
+.ct-chip[data-task-workspace-state="failed"] {
+  border-color: color-mix(in oklab, var(--ds-error) 42%, transparent);
+  color: var(--ds-error);
+}
+
+.ct-chip[data-task-workspace-state="preparing"] {
+  color: var(--ds-text-secondary);
+}
+
+/* ── Task session header ──────────────────────────────────────────────────
+   One row of small chips beside the task title: who works on it and where,
+   its branch and base, its stage, how it will be delivered, from where, and
+   its short id. */
+
+.ct-task-meta {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  /* The title is the authority in this row; the chips are looked at second. */
+  margin-left: 4px;
+}
+
+/* A remote session's source label sits in the same row, equally quiet. */
+.thread-item-source {
+  flex: 0 0 auto;
+  color: var(--ds-text-faint);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+  white-space: nowrap;
+}
+
+/* ── A task's workspace state ─────────────────────────────────────────────
+   Used twice on purpose: on the workbench row inside the task title, and in
+   the task session header. It is one line of chips that may wrap, with the
+   failure text as the loud element when preparation did not finish. */
+
+.task-workspace {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+}
+
+.task-workspace-error {
+  color: var(--ds-error);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-normal);
+}
+
+/* ── Sidebar: an employee's tasks ─────────────────────────────────────────
+   The employee row says who is working; these rows say on what. They are one
+   indent step in, one pitch shorter, and only "waiting for you" changes ink. */
+
+.sidebar-bot-entry {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-bot-open-count {
+  flex: 0 0 auto;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-none);
+}
+
+.bot-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 1px 0 3px 20px;
+}
+
+.sidebar-bot-task {
+  display: flex;
+  width: 100%;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: var(--radius-2xs);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  text-align: left;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.sidebar-bot-task:hover,
+.sidebar-bot-task.active {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+
+.sidebar-bot-task.active {
+  background: var(--ds-bg-active);
+}
+
+.sidebar-bot-task-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+  background: var(--ds-text-faint);
+}
+
+.sidebar-bot-task-dot[data-tone="busy"] {
+  background: var(--ds-prose-accent);
+}
+
+.sidebar-bot-task-dot[data-tone="attention"] {
+  background: var(--ds-warning);
+}
+
+/* History is not a state to act on: an empty ring reads as "past". */
+.sidebar-bot-task-dot[data-tone="archived"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ds-border-strong);
+}
+
+.sidebar-bot-task-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-bot-task-repo {
+  color: var(--ds-text-faint);
+}
+
+.sidebar-bot-task-stage {
+  flex: 0 0 auto;
+  color: var(--ds-text-faint);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.sidebar-bot-task[data-task-tone="attention"] .sidebar-bot-task-stage {
+  color: var(--ds-warning);
+}
+
+.sidebar-bot-task.archived,
+.sidebar-bot-task.history-toggle {
+  color: var(--ds-text-faint);
+}
+
+/* ── Workbench page ───────────────────────────────────────────────────────
+   The page is its own scroller, framed the way a destination page is: clears
+   the floating titlebar band, caps the reading measure, and centres the
+   column. `.employee-workbench` is the only child of `route-surface
+   route-page`, so it owns all three. */
+
+.employee-workbench {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-top: calc(var(--ds-toolbar-height) + 8px);
+  padding-inline: max(24px, calc((100% - 980px) / 2));
+  padding-bottom: 48px;
+  color: var(--ds-text-primary);
+}
+
+/* ── Header: who this is, and whether it is holding work ───────────────── */
+
+.employee-workbench-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.employee-workbench-avatar {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-active);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-lg-plus);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-none);
+}
+
+.employee-workbench-title {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.employee-workbench-title h1 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+}
+
+.employee-workbench-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-normal);
+}
+
+/* The separators between duty, model, permission and scope. */
+.employee-workbench-sub > [aria-hidden] {
+  color: var(--ds-text-faint);
+}
+
+.employee-workbench-waiting {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-normal);
+  white-space: nowrap;
+}
+
+.employee-workbench-waiting::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+  background: var(--ds-text-faint);
+}
+
+.employee-workbench-waiting.attention {
+  color: var(--ds-warning);
+  font-weight: var(--font-weight-medium);
+}
+
+.employee-workbench-waiting.attention::before {
+  background: var(--ds-warning);
+}
+
+/* ── New task: one dashed row, left to right ─────────────────────────────
+   Typing here is the whole confirmation, so the block is a frame around one
+   line — field, repository, start — with the hint underneath it. */
+
+.employee-workbench-new {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px dashed var(--ds-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.employee-workbench-new-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The shared field vocabulary fills its container; inside this row the field
+   takes the room that is left and the two controls keep their own width. */
+.employee-workbench-new-row > .field-input {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.employee-workbench-new-row > .field-select {
+  width: auto;
+  max-width: 220px;
+  flex: 0 0 auto;
+}
+
+.employee-workbench-new-row > .btn {
+  flex: 0 0 auto;
+}
+
+.employee-workbench-preparing,
+.employee-workbench-new-hint {
+  color: var(--ds-text-faint);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-normal);
+}
+
+.employee-workbench-new[data-workbench-new-error] .employee-workbench-new-hint {
+  color: var(--ds-error);
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────
+   A hairline rule with one underlined selection; counts stay quiet. */
+
+.employee-workbench-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--ds-border-default);
+  margin-bottom: 2px;
+}
+
+.employee-workbench-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-normal);
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.employee-workbench-tab:hover {
+  color: var(--ds-text-primary);
+}
+
+.employee-workbench-tab.active {
+  border-bottom-color: var(--ds-accent);
+  color: var(--ds-text-primary);
+}
+
+.employee-workbench-tab-count {
+  color: var(--ds-text-faint);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.employee-workbench-tab.active .employee-workbench-tab-count {
+  color: var(--ds-text-muted);
+}
+
+/* ── Task groups and rows ─────────────────────────────────────────────────
+   Group titles are the quietest type on the page; a task is a card with the
+   title and its latest step on the left and the stage on the right. */
+
+.employee-workbench-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.employee-task-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.employee-task-group h2 {
+  margin: 16px 0 8px;
+  color: var(--ds-text-faint);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--tracking-wide);
+  line-height: var(--leading-none);
+  text-transform: uppercase;
+}
+
+.employee-workbench-empty {
+  padding: 10px 12px;
+  color: var(--ds-text-faint);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-normal);
+}
+
+.employee-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.employee-task-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ds-tile);
+  text-align: left;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.employee-task-row:hover {
+  border-color: var(--ds-border-default);
+  background: var(--ds-tile-hover);
+}
+
+.employee-task-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.employee-task-repo {
+  color: var(--ds-text-faint);
+  font-weight: var(--font-weight-normal);
+}
+
+.employee-task-progress {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-task-meta {
+  display: flex;
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  color: var(--ds-text-faint);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-normal);
+  white-space: nowrap;
+}
+
+.employee-task-stage {
+  color: var(--ds-text-secondary);
+}
+
+.employee-task-stage.attention {
+  color: var(--ds-warning);
+}
+
+.employee-task-stage.busy {
+  color: var(--ds-prose-accent);
+}
+
+/* A finished task reads as finished whatever stage it stopped in, and a broken
+   one has to be visible: both facts live on the row, not on the stage word. */
+.employee-task-row[data-task-stage="failed"] .employee-task-stage,
+.employee-task-row[data-task-stage="blocked"] .employee-task-stage {
+  color: var(--ds-error);
+}
+
+.employee-task-row[data-task-archived] .employee-task-stage {
+  color: var(--ds-success);
+}
+
+.employee-task-row[data-task-archived] .employee-task-title {
+  color: var(--ds-text-secondary);
+}
+
+/* ── Workbench titlebar ───────────────────────────────────────────────────
+   The employee's own band instead of a conversation's breadcrumb: the pane is
+   showing its workbench, so the header names the employee and the surface. */
+
+.main-titlebar-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  margin-left: max(0px, calc(var(--ds-window-lead-inset) - 12px));
+  padding-left: 4px;
+}
+
+.main-titlebar-avatar {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-active);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-none);
+}
+
+.main-titlebar-title {
+  overflow: hidden;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-row);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main-titlebar-sub {
+  flex: 0 0 auto;
+  color: var(--ds-text-faint);
+  font-size: var(--text-sm);
+  line-height: var(--leading-row);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-bot-task,
+  .employee-workbench-tab,
+  .employee-task-row {
+    transition: none;
+  }
+}

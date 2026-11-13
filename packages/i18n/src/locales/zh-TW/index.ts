@@ -936,6 +936,7 @@ export const zhTW = {
       archiveDiscardConfirm: "{{detail}}\n\n仍要封存並捨棄這些變更？",
     },
     workbench: {
+      title: "工作台",
       tabs: "員工分區",
       noDuty: "尚未填寫職務",
       modelInherited: "模型沿用該員工",

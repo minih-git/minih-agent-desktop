@@ -930,6 +930,7 @@ export const ptBR = {
       archiveDiscardConfirm: "{{detail}}\n\nArquivar mesmo assim e descartar esse trabalho?",
     },
     workbench: {
+      title: "Área de trabalho",
       tabs: "Seções do funcionário",
       noDuty: "Nenhuma função escrita ainda",
       modelInherited: "O modelo segue este funcionário",

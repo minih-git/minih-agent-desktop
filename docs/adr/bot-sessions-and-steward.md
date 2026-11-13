@@ -393,7 +393,11 @@ from it would always say idle — a bug this rule makes impossible.
   shows the open count, and folds archived ones into one "history (N)" row.
 - Clicking an employee name opens its **workbench**: header (duty, model,
   permission, scope), a direct-dispatch field (repository + text, Enter starts),
-  and tabs for tasks / done / profile / memory.
+  and tabs for tasks / done / profile / memory. While the workbench owns the
+  center pane the titlebar band names that employee and the surface; it must not
+  keep the previous conversation's breadcrumb, rename control, or session
+  actions, because every one of them would act on something that is not on
+  screen.
 - Clicking a task opens its **session**, which shows a header with the task's
   name, employee @ repository, branch, stage, origin and short id. An archived
   task's composer is closed and says so.

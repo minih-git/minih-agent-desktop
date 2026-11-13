@@ -931,6 +931,7 @@ export const fr = {
       "archiveDiscardConfirm": "{{detail}}\n\nArchiver quand même et abandonner ce travail ?",
     },
     "workbench": {
+      "title": "Espace de travail",
       "tabs": "Sections de l'employé",
       "noDuty": "Aucune fonction définie",
       "modelInherited": "Le modèle suit cet employé",

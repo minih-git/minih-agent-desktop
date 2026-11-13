@@ -7,7 +7,7 @@ import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
 import { BotFormCard } from "./BotFormCard";
 import { draftFromBot } from "./bot-draft";
-import { taskStageLabelKey, taskStatusTone } from "./bot-status";
+import { botInitials, taskStageLabelKey, taskStatusTone } from "./bot-status";
 import { taskRepoName } from "./BotTaskList";
 import { TaskWorkspaceStatus } from "./TaskWorkspaceStatus";
 import { useTasks } from "./use-tasks";
@@ -58,6 +58,9 @@ export function EmployeeWorkbench({
   return (
     <div className="employee-workbench" data-testid="employee-workbench" data-employee={employee.sessionId}>
       <header className="employee-workbench-head">
+        <span className="employee-workbench-avatar" aria-hidden>
+          {employee.profile.avatar?.trim() || botInitials(name)}
+        </span>
         <div className="employee-workbench-title">
           <h1>{name}</h1>
           <div className="employee-workbench-sub">
@@ -205,6 +208,8 @@ function TaskGroup({
                   className={`employee-task-row ${tone}`}
                   data-employee-task={task.id}
                   data-task-tone={tone}
+                  data-task-stage={task.stage}
+                  data-task-archived={task.archivedAt ? "" : undefined}
                   onClick={() => onOpenTask(task)}
                 >
                   <span className="employee-task-title">
@@ -299,7 +304,7 @@ function NewTaskField({ employee }: { employee: BotListItem }) {
   }, [busy, employee.sessionId, projectPath, selectSession, sendPrompt, t, text]);
 
   return (
-    <div className="employee-workbench-new">
+    <div className="employee-workbench-new" data-workbench-new-error={error ? "" : undefined}>
       <div className="employee-workbench-new-row">
         <Input
           value={text}

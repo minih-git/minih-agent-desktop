@@ -944,6 +944,7 @@ export const zhCN = {
       archiveDiscardConfirm: "{{detail}}\n\n仍要归档并丢弃这些改动？",
     },
     workbench: {
+      title: "工作台",
       tabs: "员工分区",
       noDuty: "还没有写岗位",
       modelInherited: "模型跟随该员工",
