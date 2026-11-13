@@ -928,6 +928,7 @@ export const zhCN = {
       failed: "失败",
       personAnswer: "等你回答",
       personAccept: "待验收",
+      acceptedPendingMerge: "已接受，待合并",
       interrupted: "已中断",
     },
     group: {
@@ -3509,6 +3510,11 @@ sklm: {
   notifications: {
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     taskWaitingTitle: "{{employee}} · {{task}} 在等你",
+    inspectionTitle: "{{employee}} 的 {{task}}",
+    inspectionAnswer: "已经等你 {{hours}} 小时",
+    inspectionAccept: "已完成，等你确认 {{hours}} 小时",
+    inspectionStuck: "卡住 {{hours}} 小时",
+    inspectionRunning: "一个回合已经跑了 {{hours}} 小时",
     permissionBodyWithReason: "运行 {{toolName}} 需要你同意：{{reason}}",
     taskStuckTitle: "{{employee}} 卡住了",
     taskStuckInterrupted: "应用重启时这项任务正在运行",

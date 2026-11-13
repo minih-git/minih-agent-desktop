@@ -914,6 +914,7 @@ export const ptBR = {
       failed: "Falhou",
       personAnswer: "Aguardando sua resposta",
       personAccept: "Pronta para revisão",
+      acceptedPendingMerge: "Aceita, aguardando merge",
       "interrupted": "Interrompida",
     },
     group: {
@@ -3476,6 +3477,11 @@ export const ptBR = {
   notifications: {
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     taskWaitingTitle: "{{employee}} · {{task}} esperando por você",
+    inspectionTitle: "{{employee}} · {{task}}",
+    inspectionAnswer: "Esperando por você há {{hours}} horas",
+    inspectionAccept: "Concluído — aguardando sua revisão há {{hours}} horas",
+    inspectionStuck: "Parado há {{hours}} horas",
+    inspectionRunning: "Um turno está em execução há {{hours}} horas",
     permissionBodyWithReason: "Permissão necessária para executar {{toolName}}: {{reason}}",
     taskStuckTitle: "{{employee}} travou",
     taskStuckInterrupted: "O aplicativo reiniciou enquanto esta tarefa rodava",

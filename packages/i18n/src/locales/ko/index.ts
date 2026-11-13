@@ -924,6 +924,7 @@ export const ko = {
       failed: "실패",
       personAnswer: "답변 대기",
       personAccept: "검토 대기",
+      acceptedPendingMerge: "수락됨, 병합 대기",
       interrupted: "중단됨",
     },
     group: {
@@ -3542,6 +3543,11 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
   notifications: {
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     taskWaitingTitle: "{{employee}} · {{task}} 확인 대기 중",
+    inspectionTitle: "{{employee}} · {{task}}",
+    inspectionAnswer: "{{hours}}시간째 답변을 기다리는 중",
+    inspectionAccept: "완료됨 — {{hours}}시간째 확인을 기다리는 중",
+    inspectionStuck: "{{hours}}시간째 막혀 있음",
+    inspectionRunning: "한 턴이 {{hours}}시간째 실행 중",
     permissionBodyWithReason: "{{toolName}} 실행 권한이 필요합니다: {{reason}}",
     taskStuckTitle: "{{employee}} 작업이 막혔습니다",
     taskStuckInterrupted: "앱이 다시 시작되는 동안 이 작업이 실행 중이었습니다",

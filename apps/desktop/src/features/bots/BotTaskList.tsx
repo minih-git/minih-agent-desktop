@@ -103,7 +103,9 @@ function BotTaskRow({
   const interrupted = isTaskInterrupted(task);
   const tone = interrupted ? "attention" : taskStatusTone(task);
   const repo = taskRepoName(task);
-  const stage = t(taskStageLabelKey(task.stage, { interrupted }));
+  const stage = t(
+    taskStageLabelKey(task.stage, { interrupted, accepted: Boolean(task.acceptedAt) }),
+  );
   const label = repo
     ? t("bots.tasks.openTaskInRepo", { title: task.title, repo, stage })
     : t("bots.tasks.openTask", { title: task.title, stage });

@@ -269,3 +269,84 @@ fn notice(
     super::repository::insert_on(conn, &message, &key)?;
     Ok(Some(message.id))
 }
+
+/// One merged inspection notice for the steward (employee mode 0.5 slice 5).
+///
+/// The hourly inspection is a *deterministic* host check: it calls no model and
+/// writes nothing while every task is making progress. When at least one task has
+/// been stuck for longer than its threshold, this writes exactly one ledger row
+/// of `kind = 'stage'` carrying every new anomaly, because waking the steward
+/// once with a list is calmer and cheaper than waking her once per task.
+///
+/// `batch` is the millisecond stamp shared by every anomaly in this batch and the
+/// idempotency suffix, so a retried inspection cannot duplicate the notice it
+/// already wrote. Direct tasks are included here — unlike a stage notice — and
+/// marked `direct: true`: the person still has to hear about a task they started
+/// themselves, and the prompt tells the steward to report those without
+/// intervening.
+pub(crate) fn inspection(
+    db: &Database,
+    conn: &rusqlite::Connection,
+    entries: &Value,
+    batch: i64,
+) -> Result<Option<String>> {
+    let steward: Option<String> = conn
+        .query_row(
+            "SELECT id FROM sessions
+              WHERE role = 'bot' AND deleted_at IS NULL
+                AND json_extract(bot_profile_json, '$.definition') = 'steward'
+              ORDER BY updated_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    // No steward means nobody to tell; the person still sees the task itself.
+    let Some(steward) = steward else {
+        return Ok(None);
+    };
+    let key = format!("inspection:{steward}:{batch}");
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM session_collaboration_messages
+          WHERE plugin_id = ?1 AND source_session_id = ?2 AND idempotency_key = ?3)",
+        params![CARD_DELIVERY_OWNER, steward, key],
+        |row| row.get(0),
+    )?;
+    if exists {
+        return Ok(None);
+    }
+    let content = json!({
+        "reason": "inspection",
+        "batch": batch,
+        "entries": entries,
+    })
+    .to_string();
+    let title = super::repository::title(db, &steward)?;
+    let at = ms_to_ts(now_ms());
+    let message = Message {
+        id: Uuid::new_v4().to_string(),
+        plugin_id: CARD_DELIVERY_OWNER.into(),
+        source_session_id: steward.clone(),
+        source_title: title.clone(),
+        target_session_id: steward.clone(),
+        target_title: title,
+        kind: "stage".into(),
+        content,
+        // Queued like every other notice: Main starts the steward's turn.
+        status: "queued".into(),
+        notify_on_completion: false,
+        turn_id: None,
+        reply_to_message_id: None,
+        result: None,
+        error: None,
+        created_at: at.clone(),
+        updated_at: at,
+        // A report asks for nothing, so it may never be relayed onward.
+        remaining_hops: 1,
+        permission_ceiling: permissions::effective_mode(db, &steward)?,
+        mandate_json: None,
+        stage: None,
+        report_seq: 0,
+    };
+    super::repository::insert_on(conn, &message, &key)?;
+    Ok(Some(message.id))
+}

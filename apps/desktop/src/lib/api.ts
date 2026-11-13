@@ -206,6 +206,7 @@ import type {
   TaskReassignResult,
   TaskView,
   TaskWorkspaceRetryResult,
+  TaskInspectionEvent,
   TasksChangedEvent,
 } from "@minih-agent/shared";
 import {
@@ -1707,6 +1708,17 @@ export const api = {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.tasksChanged, (payload) =>
       listener((payload ?? { employeeSessionId: "", reason: "stage" }) as TasksChangedEvent),
+    );
+  },
+  /**
+   * The hourly inspection's findings (employee mode 0.5 slice 5). One event per
+   * batch, and only when something is actually wrong: a quiet hour sends
+   * nothing at all, which is the whole point of inspecting in the host.
+   */
+  onTaskInspection: (listener: (event: TaskInspectionEvent) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.taskInspection, (payload) =>
+      listener((payload ?? { findings: [] }) as TaskInspectionEvent),
     );
   },
   onBotsChanged: (listener: (event: BotsChangedEvent) => void) => {

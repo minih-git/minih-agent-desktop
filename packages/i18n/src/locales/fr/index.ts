@@ -915,6 +915,7 @@ export const fr = {
       "failed": "Échouée",
       "personAnswer": "En attente de votre réponse",
       "personAccept": "Prête à relire",
+      "acceptedPendingMerge": "Acceptée, en attente de fusion",
       "interrupted": "Interrompue",
     },
     "group": {
@@ -3508,6 +3509,11 @@ sklm: {
   "notifications": {
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     "taskWaitingTitle": "{{employee}} · {{task}} vous attend",
+    "inspectionTitle": "{{employee}} · {{task}}",
+    "inspectionAnswer": "Vous attend depuis {{hours}} heures",
+    "inspectionAccept": "Terminé — en attente de votre validation depuis {{hours}} heures",
+    "inspectionStuck": "Bloqué depuis {{hours}} heures",
+    "inspectionRunning": "Un tour dure depuis {{hours}} heures",
     "permissionBodyWithReason": "Autorisation requise pour exécuter {{toolName}} : {{reason}}",
     "taskStuckTitle": "{{employee}} est bloqué",
     "taskStuckInterrupted": "L'application a redémarré pendant que cette tâche tournait",

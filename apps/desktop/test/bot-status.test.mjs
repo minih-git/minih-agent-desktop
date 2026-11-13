@@ -11,9 +11,8 @@ import test from "node:test";
  */
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
-const { botStatusView, botStatusFromTasks, sortBots, botInitials, isStewardSession } = await import(
-  "../src/features/bots/bot-status.ts"
-);
+const { botStatusView, botStatusFromTasks, sortBots, botInitials, isStewardSession, taskStatusTone } =
+  await import("../src/features/bots/bot-status.ts");
 
 test("a task the person has to act on is the attention dot", () => {
   // `person/*` was the whole list until slice 4a. A blocked or failed task joined
@@ -109,4 +108,24 @@ test("a stuck task makes its employee the one to look at first", () => {
     stage: "working",
   });
   assert.deepEqual(botStatusFromTasks([]), { kind: "idle" });
+});
+
+test("an accepted task stops making its employee look like it is waiting", () => {
+  // Slice 4b: the person already said the work is fine. Counting it kept the row
+  // orange with a red dot after the one click that ended the wait.
+  const accepted = { stage: "person/accept", acceptedAt: "2026-11-14T02:00:00.000Z" };
+  assert.deepEqual(botStatusFromTasks([accepted]), { kind: "idle" });
+  // A task that has not been accepted still is the person's.
+  assert.deepEqual(botStatusFromTasks([{ stage: "person/accept" }]), {
+    kind: "stage",
+    stage: "person/accept",
+  });
+  // Accepting one task does not hide a second one that is still waiting.
+  assert.deepEqual(botStatusFromTasks([accepted, { stage: "person/answer" }]), {
+    kind: "stage",
+    stage: "person/answer",
+  });
+  // And its own row is no longer painted as attention.
+  assert.equal(taskStatusTone(accepted), "idle");
+  assert.equal(taskStatusTone({ stage: "person/accept" }), "attention");
 });

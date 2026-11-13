@@ -136,6 +136,13 @@ pub(super) async fn handle(
             let st = state.lock().await;
             experience(&st.db, method, &params)
         }
+        // The hourly inspection (employee mode 0.5 slice 5). Deterministic, and
+        // it calls no model: progress must cost nothing, and only an anomaly is
+        // worth the steward's attention.
+        "task.inspect" => {
+            let st = state.lock().await;
+            crate::task_inspection::inspect(&st.db, crate::db::now_ms()).map_err(internal)
+        }
         _ => {
             let st = state.lock().await;
             crate::session_collaboration::handle_task(&st.db, method, &params)

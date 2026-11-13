@@ -34,12 +34,22 @@ const TASK_STAGE_KEYS: Record<TaskStage, string> = {
  */
 export const TASK_INTERRUPTED_KEY = "bots.taskStage.interrupted";
 
+/**
+ * The word an accepted-but-not-merged task shows (employee mode 0.5 slice 4b).
+ *
+ * Accepting is not archiving: the work is fine, the merge has not happened, and
+ * the row says exactly that instead of going back to "待验收" (which would read
+ * as "still waiting for you") or to nothing at all.
+ */
+export const TASK_ACCEPTED_KEY = "bots.taskStage.acceptedPendingMerge";
+
 /** The i18n key for a task stage, e.g. `bots.taskStage.personAccept`. */
 export function taskStageLabelKey(
   stage: TaskStage,
-  options: { interrupted?: boolean } = {},
+  options: { interrupted?: boolean; accepted?: boolean } = {},
 ): string {
   if (options.interrupted) return TASK_INTERRUPTED_KEY;
+  if (stage === "person/accept" && options.accepted) return TASK_ACCEPTED_KEY;
   // A stage the host reports but this build does not know yet still needs a
   // word; "queued" is the truth for "nothing has happened yet".
   return TASK_STAGE_KEYS[stage] ?? "bots.taskStage.queued";

@@ -37,6 +37,7 @@ mod state;
 mod task_delivery;
 #[cfg(test)]
 mod task_delivery_tests;
+mod task_inspection;
 mod task_stage;
 mod task_workspace;
 mod tasks;

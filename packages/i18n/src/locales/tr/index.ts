@@ -924,6 +924,7 @@ export const tr = {
       failed: "Başarısız",
       personAnswer: "Yanıtınızı bekliyor",
       personAccept: "İncelemeye hazır",
+      acceptedPendingMerge: "Kabul edildi, birleştirme bekliyor",
       "interrupted": "Kesildi",
     },
     group: {
@@ -3537,6 +3538,11 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
   notifications: {
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     taskWaitingTitle: "{{employee}} · {{task}} sizi bekliyor",
+    inspectionTitle: "{{employee}} · {{task}}",
+    inspectionAnswer: "{{hours}} saattir sizi bekliyor",
+    inspectionAccept: "Tamamlandı — {{hours}} saattir onayınızı bekliyor",
+    inspectionStuck: "{{hours}} saattir takılı",
+    inspectionRunning: "Bir tur {{hours}} saattir çalışıyor",
     permissionBodyWithReason: "{{toolName}} çalıştırmak için izin gerekiyor: {{reason}}",
     taskStuckTitle: "{{employee}} takıldı",
     taskStuckInterrupted: "Uygulama yeniden başlarken bu görev çalışıyordu",

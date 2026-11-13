@@ -352,8 +352,15 @@ const ACTIVE_STAGES: ReadonlySet<TaskStage> = new Set<TaskStage>([
   "waiting",
 ]);
 
-export function taskTone(stage: TaskStage | null | undefined): TaskTone {
+export function taskTone(
+  stage: TaskStage | null | undefined,
+  options: { accepted?: boolean } = {},
+): TaskTone {
   if (!stage) return "idle";
+  // Accepted work is no longer waiting on the person (employee mode 0.5 slice
+  // 4b): they already said it is fine, and the merge is a later, deliberate
+  // step. Leaving it orange kept a finished task looking like a demand.
+  if (stage === "person/accept" && options.accepted) return "idle";
   if (PERSON_STAGES.has(stage)) return "attention";
   // A stuck task is the person's problem, not the employee's quiet business
   // (employee mode 0.5 slice 4a): it reads as attention here so the sidebar row,
@@ -532,4 +539,48 @@ export type TaskReassignResult = {
   draft: TaskCardDraftView;
   created?: boolean;
   task: TaskView;
+};
+
+/**
+ * What the hourly inspection found (employee mode 0.5 slice 5).
+ *
+ * The host decides, deterministically and without a model: a task that is
+ * moving is never in this list. Main turns each entry into one system
+ * notification, and the steward is woken once with all of them.
+ */
+export const TASK_INSPECTION_CONDITIONS = [
+  "answer-wait",
+  "accept-wait",
+  "stuck",
+  "running-long",
+] as const;
+
+export type TaskInspectionCondition = (typeof TASK_INSPECTION_CONDITIONS)[number];
+
+export type TaskInspectionFinding = {
+  taskId: string;
+  /** Short identifier shown in the task header, e.g. `#37`. */
+  shortId: string;
+  title: string;
+  employeeSessionId: string;
+  employeeName: string;
+  /** The task's own session, for the viewing-session check before popping. */
+  sessionId: string;
+  stage: TaskStage;
+  condition: TaskInspectionCondition;
+  /** How long the task has been in this state, in milliseconds. */
+  waitedMs: number;
+  /**
+   * True for a task the person started in the employee's own workbench: worth
+   * telling them about, but not something the steward should intervene in.
+   */
+  direct: boolean;
+  /** When the current state began, RFC3339. */
+  since?: string;
+};
+
+export type TaskInspectionEvent = {
+  findings: TaskInspectionFinding[];
+  /** The batch stamp of the inspection that produced them. */
+  batch?: number;
 };

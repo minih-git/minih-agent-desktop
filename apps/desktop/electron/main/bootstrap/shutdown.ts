@@ -64,6 +64,8 @@ export type ShutdownDependencies = {
   disposeMemoryExtraction?: () => void;
   /** The lesson extractor's timer: quitting stops it from starting a run. */
   disposeTaskExperience?: () => void;
+  /** The hourly inspection's timer: nothing pops after the window is gone. */
+  disposeTaskInspection?: () => void;
   /**
    * The conversation summary generator: same rule as the extractor, one more
    * idle clock that must not start a model call behind the quit
@@ -104,6 +106,7 @@ export function registerShutdownHandlers({
   disposeSystemProxyRelay,
   disposeMemoryExtraction,
   disposeTaskExperience,
+  disposeTaskInspection,
   disposeConversationSummary,
 }: ShutdownDependencies): void {
   app.on("window-all-closed", () => {
@@ -162,6 +165,7 @@ export function registerShutdownHandlers({
     disposeMemoryExtraction?.();
     disposeConversationSummary?.();
     disposeTaskExperience?.();
+    disposeTaskInspection?.();
     disposePowerSaveBlockers();
     // Stop the Agent Host's housekeeping timer before the ordered shutdown: it
     // must not fire a sweep against a host that is being torn down.

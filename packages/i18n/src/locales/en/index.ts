@@ -937,6 +937,7 @@ export const en = {
       failed: "Failed",
       personAnswer: "Waiting for your answer",
       personAccept: "Ready for review",
+      acceptedPendingMerge: "Accepted, waiting to merge",
       interrupted: "Interrupted",
     },
     group: {
@@ -3564,6 +3565,11 @@ importConfirm: "Imported extensions run inside the agent process with the same a
   notifications: {
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     taskWaitingTitle: "{{employee}} · {{task}} is waiting for you",
+    inspectionTitle: "{{employee}} · {{task}}",
+    inspectionAnswer: "Has been waiting for you for {{hours}} hours",
+    inspectionAccept: "Finished — waiting for your review for {{hours}} hours",
+    inspectionStuck: "Stuck for {{hours}} hours",
+    inspectionRunning: "One turn has been running for {{hours}} hours",
     permissionBodyWithReason: "Permission required to run {{toolName}}: {{reason}}",
     taskStuckTitle: "{{employee}} is stuck",
     taskStuckInterrupted: "The app restarted while this task was running",

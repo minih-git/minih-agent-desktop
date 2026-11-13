@@ -62,3 +62,14 @@ describe("taskTitleFromUtterance", () => {
     expect(taskTitleFromUtterance("   ")).toBe("");
   });
 });
+
+describe("taskTone", () => {
+  it("treats accepted work as no longer the person's to act on", () => {
+    // Slice 4b: accepting is not archiving, but it does end the wait.
+    expect(taskTone("person/accept")).toBe("attention");
+    expect(taskTone("person/accept", { accepted: true })).toBe("idle");
+    // Every other stage reads the same whether or not the flag is passed.
+    expect(taskTone("working", { accepted: true })).toBe("busy");
+    expect(taskTone("blocked", { accepted: true })).toBe("attention");
+  });
+});

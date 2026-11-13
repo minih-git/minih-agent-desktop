@@ -215,13 +215,20 @@ fn move_stage(
     let changed = next_stage != stored;
     let next_seq = if changed { seq + 1 } else { seq };
     conn.execute(
-        "UPDATE tasks SET stage=?2, stage_seq=?3, blocker_json=?4, waiting_json=?5 WHERE id=?1",
+        // `stage_changed_at` is what the hourly inspection measures a wait from,
+        // so it moves only when the stage does (employee mode 0.5 slice 5).
+        "UPDATE tasks
+            SET stage=?2, stage_seq=?3, blocker_json=?4, waiting_json=?5,
+                stage_changed_at=CASE WHEN ?2 = ?6 THEN stage_changed_at ELSE ?7 END
+          WHERE id=?1",
         params![
             task_id,
             next_stage,
             next_seq,
             resolve(blocker, blocker_now),
-            resolve(waiting, waiting_now)
+            resolve(waiting, waiting_now),
+            stored,
+            crate::db::now_ms()
         ],
     )?;
     if !changed {

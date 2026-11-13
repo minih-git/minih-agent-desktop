@@ -1,4 +1,4 @@
-import type { BotListItem, TaskView } from "@minih-agent/shared";
+import type { BotListItem, TaskInspectionFinding, TaskView } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import type { ToastOptions } from "../app-state";
 
@@ -107,11 +107,71 @@ export function startTaskWaitingRuntime({
   // fills the directory before any question can need a name.
   const stopTasks = api.onTasksChanged(() => void refresh());
   const stopBots = api.onBotsChanged(() => void refresh());
+  // The hourly inspection is the one trigger that does not come from a task
+  // change: the host looked, decided something has waited too long, and named it
+  // (employee mode 0.5 slice 5). One native notification per finding; a quiet
+  // hour sends nothing at all.
+  const stopInspection = api.onTaskInspection((event) => {
+    announceInspection(event.findings, { translate, notifyNative });
+  });
   return () => {
     cancelled = true;
     stopTasks?.();
     stopBots?.();
+    stopInspection?.();
   };
+}
+
+/**
+ * What one finding says, in the person's own language.
+ *
+ * The waiting time is rounded to whole hours with a floor of one, because "0
+ * hours" is not something anyone would say; the thresholds guarantee at least
+ * two for the two-hour conditions anyway.
+ */
+export function inspectionBody(
+  finding: Pick<TaskInspectionFinding, "condition" | "waitedMs">,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const hours = Math.max(1, Math.round(finding.waitedMs / 3_600_000));
+  switch (finding.condition) {
+    case "answer-wait":
+      return translate("notifications.inspectionAnswer", { hours });
+    case "accept-wait":
+      return translate("notifications.inspectionAccept", { hours });
+    case "stuck":
+      return translate("notifications.inspectionStuck", { hours });
+    default:
+      return translate("notifications.inspectionRunning", { hours });
+  }
+}
+
+function announceInspection(
+  findings: readonly TaskInspectionFinding[],
+  {
+    translate,
+    notifyNative,
+  }: {
+    translate: (key: string, options?: Record<string, unknown>) => string;
+    notifyNative: typeof api.showNativeNotification;
+  },
+): void {
+  for (const finding of findings) {
+    const title = translate("notifications.inspectionTitle", {
+      employee: finding.employeeName,
+      task: finding.title,
+    });
+    void notifyNative({
+      // One id per (task, condition): the host already refuses a repeat inside a
+      // day, and this keeps a replayed batch from stacking up.
+      id: `${finding.taskId}:${finding.condition}`,
+      sessionId: finding.sessionId,
+      kind: "task",
+      title,
+      body: inspectionBody(finding, translate),
+      ...(finding.since ? { createdAt: finding.since } : {}),
+    });
+  }
 }
 
 /**

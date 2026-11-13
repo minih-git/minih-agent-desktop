@@ -128,8 +128,8 @@ export function botInitials(name: string): string {
 }
 
 /** Where a task sits in a list, as one of three tones (ADR §7). */
-export function taskStatusTone(task: Pick<TaskView, "stage">): TaskTone {
-  return taskTone(task.stage);
+export function taskStatusTone(task: Pick<TaskView, "stage" | "acceptedAt">): TaskTone {
+  return taskTone(task.stage, { accepted: Boolean(task.acceptedAt) });
 }
 
 /**
@@ -140,9 +140,15 @@ export function taskStatusTone(task: Pick<TaskView, "stage">): TaskTone {
  * open tasks are doing. Waiting on the person wins over being busy, being busy
  * wins over everything else, and no open task means idle.
  */
-export function botStatusFromTasks(tasks: readonly Pick<TaskView, "stage">[]): BotStatusPoint {
+export function botStatusFromTasks(
+  tasks: readonly Pick<TaskView, "stage" | "acceptedAt">[],
+): BotStatusPoint {
+  // An accepted task is not something the person has to act on: they already did
+  // (0.5 slice 4b). Counting it kept the employee row orange with a red dot after
+  // the one click that ended the wait.
+  const open = tasks.filter((task) => !(task.stage === "person/accept" && task.acceptedAt));
   const first = (wanted: readonly TaskStage[]) =>
-    tasks.find((task) => wanted.includes(task.stage))?.stage;
+    open.find((task) => wanted.includes(task.stage))?.stage;
   // The same order the host's `task_status_point` uses, and for the same reason:
   // whatever the person has to act on comes first, however it stopped. A blocked
   // or failed task joined this group in slice 4a.

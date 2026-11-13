@@ -77,6 +77,7 @@ import { generateFollowUpSuggestion as generateFollowUpSuggestionImpl } from "./
 import { createSessionChangeNotifier } from "./session-change-notifier";
 import { createMemoryExtractionService } from "./memory/memory-extraction-service";
 import { createTaskExperienceService } from "./memory/task-experience-service";
+import { createTaskInspectionService } from "./services/task-inspection-service";
 import { createConversationSummaryService } from "./memory/conversation-summary-service";
 import { createEventPersistence } from "./runtime/event-persistence";
 import { createPlanRuntime } from "./runtime/plans";
@@ -861,6 +862,17 @@ const taskExperienceService = createTaskExperienceService({
 });
 
 /**
+ * The hourly inspection (employee mode 0.5 slice 5). It asks the host a
+ * deterministic question and, when the answer is not empty, hands the findings
+ * to the renderer, which owns the wording and the native notification.
+ */
+const taskInspectionService = createTaskInspectionService({
+  getHost,
+  notify: (event) => sendToRenderer(IPC.event.taskInspection, event),
+  logger,
+});
+
+/**
  * The conversation summary generator (ADR conversation-archive §6). It shares
  * the extractor's triggers, its idle window, and its daily budget: one switch in
  * Settings, one promise about what learning costs a day.
@@ -1234,6 +1246,7 @@ void app.whenReady().then(() => {
   // now; until then nothing had asked for it, and the service keeps looking once
   // a minute after that.
   taskExperienceService.start();
+  taskInspectionService.start();
 });
 
 // The widget is chrome for a call this window owns; it must never outlive the app.
@@ -1301,6 +1314,7 @@ registerShutdownHandlers({
   confirmQuitDialog,
   disposePowerSaveBlockers,
   disposeTaskExperience: () => taskExperienceService.dispose(),
+  disposeTaskInspection: () => taskInspectionService.dispose(),
   liveCallService,
   disposeSystemProxyRelay,
   disposeMemoryExtraction: () => memoryExtractionService.dispose(),

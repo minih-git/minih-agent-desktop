@@ -624,6 +624,12 @@ export const IPC = {
     taskCardsChanged: "minih-agent-desktop/taskCard/event/changed",
     /** A task under an employee was created, moved, or archived. */
     tasksChanged: "minih-agent-desktop/task/event/changed",
+    /**
+     * The hourly inspection found something (employee mode 0.5 slice 5). Main
+     * sends it once per batch, and the renderer turns each finding into one
+     * system notification, because the wording is localized there.
+     */
+    taskInspection: "minih-agent-desktop/task/event/inspection",
     remoteInteractions: "minih-agent-desktop/remote/event/interactions",
     notificationActivated: "minih-agent-desktop/notification/event/activated",
     notificationSound: "minih-agent-desktop/notification/event/sound",

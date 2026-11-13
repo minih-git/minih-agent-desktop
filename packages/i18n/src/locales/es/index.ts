@@ -915,6 +915,7 @@ export const es = {
       "failed": "Falló",
       "personAnswer": "Esperando tu respuesta",
       "personAccept": "Lista para revisar",
+      "acceptedPendingMerge": "Aceptada, pendiente de fusionar",
       "interrupted": "Interrumpida",
     },
     "group": {
@@ -3507,6 +3508,11 @@ sklm: {
   "notifications": {
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     "taskWaitingTitle": "{{employee}} · {{task}} te está esperando",
+    "inspectionTitle": "{{employee}} · {{task}}",
+    "inspectionAnswer": "Te está esperando desde hace {{hours}} horas",
+    "inspectionAccept": "Terminado — esperando tu revisión desde hace {{hours}} horas",
+    "inspectionStuck": "Atascado desde hace {{hours}} horas",
+    "inspectionRunning": "Un turno lleva {{hours}} horas en ejecución",
     "permissionBodyWithReason": "Se requiere permiso para ejecutar {{toolName}}: {{reason}}",
     "taskStuckTitle": "{{employee}} está atascado",
     "taskStuckInterrupted": "La aplicación se reinició mientras esta tarea se ejecutaba",
