@@ -263,6 +263,80 @@ pub fn seed_defaults(db: &Database) -> Result<Value> {
     Ok(json!({ "created": created, "skipped": skipped }))
 }
 
+/// The crew a steward may hand work to (employee mode 0.5 slice 3).
+///
+/// This is the read the steward's `Roster` tool stands on, and it exists because
+/// picking an employee by guessing a session title is how the old
+/// `SessionList`-based steward went wrong. One row per employee, carrying
+/// exactly what a choice needs: who they are, what they are for, which model and
+/// permission they run at, which repository they read, how much work they hold,
+/// whether any of it is waiting on the person, and whether they are idle.
+///
+/// Two employees are never offered:
+///
+/// - the caller itself, because a card must name someone else;
+/// - every other `steward` — the secretary is the one asking, not a candidate.
+pub fn roster(db: &Database, input: &Value) -> Result<Value> {
+    let caller = input.get("sessionId").and_then(Value::as_str);
+    let mut statement = db.conn().prepare_cached(
+        "SELECT id, title FROM sessions
+             WHERE role='bot' AND deleted_at IS NULL
+             ORDER BY updated_at DESC, id DESC LIMIT 200",
+    )?;
+    let rows = statement
+        .query_map([], bot_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut employees = Vec::new();
+    for (id, title) in rows {
+        if caller == Some(id.as_str()) {
+            continue;
+        }
+        let Some(summary) = sessions::session_summary(db, &id)? else {
+            continue;
+        };
+        let Some(profile) = summary.bot_profile else {
+            // A bot row with no usable profile is not an employee anybody can
+            // dispatch to, and inventing a name would offer a choice the host
+            // then refuses.
+            continue;
+        };
+        if profile.get("definition").and_then(Value::as_str) == Some("steward") {
+            continue;
+        }
+        let tasks = crate::tasks::employee_tasks(db, &id)?;
+        let waiting = tasks
+            .iter()
+            .filter(|task| task.stage.starts_with("person/"))
+            .count();
+        let mut entry = json!({
+            "sessionId": id,
+            "name": profile.get("name").cloned().unwrap_or_else(|| json!(title)),
+            "duty": profile.get("duty").cloned().unwrap_or(Value::Null),
+            "permissionMode": profile.get("permissionMode").cloned().unwrap_or(Value::Null),
+            "observe": profile.get("observe").cloned().unwrap_or(json!(true)),
+            // Reserved for the repositories an employee is responsible for. One
+            // employee reads one repository today; a list here is what a later
+            // multi-repository crew needs, and an empty array is the honest
+            // answer until then.
+            "repos": json!([]),
+            "openTaskCount": tasks.len(),
+            "waitingCount": waiting,
+            // Idle means "holding nothing open", not "not running a turn": an
+            // employee no longer runs turns of its own (ADR §7).
+            "idle": tasks.is_empty(),
+            "status": crate::tasks::task_status_point(&tasks),
+        });
+        if let Some(path) = summary.project_path {
+            entry["projectPath"] = json!(path);
+        }
+        if let (Some(provider), Some(model)) = (summary.provider_id, summary.model_id) {
+            entry["modelKey"] = json!(format!("{provider}/{model}"));
+        }
+        employees.push(entry);
+    }
+    Ok(json!({ "employees": employees }))
+}
+
 /// The drafts of one steward session, with the target's title for display.
 pub fn list_drafts(db: &Database, session_id: &str) -> Result<Value> {
     let drafts = drafts::list(db, session_id)?;

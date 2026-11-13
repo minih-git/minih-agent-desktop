@@ -156,6 +156,8 @@ export const IPC = {
     taskCardList: "minih-agent-desktop/taskCard/list",
     taskCardConfirm: "minih-agent-desktop/taskCard/confirm",
     taskCardDrop: "minih-agent-desktop/taskCard/drop",
+    /** The person's reassignment of one proposed card to another employee. */
+    taskCardReassign: "minih-agent-desktop/taskCard/reassign",
     /**
      * Tasks under an employee (ADR bot-sessions-and-steward §7). A task is one
      * piece of work the employee holds; it owns a session, so opening a task is
@@ -167,6 +169,12 @@ export const IPC = {
     taskArchive: "minih-agent-desktop/task/archive",
     // Re-run a failed workspace preparation before the first turn (slice 2).
     taskWorkspaceRetry: "minih-agent-desktop/task/workspaceRetry",
+    /**
+     * Start a task again after the startup fence interrupted it (slice 3): the
+     * host writes a new delivery from the same sender and mandate, and Main
+     * starts it through the ordinary dispatch.
+     */
+    taskRestart: "minih-agent-desktop/task/restart",
     sessionCreate: "minih-agent-desktop/session/create",
     sessionFork: "minih-agent-desktop/session/fork",
     sessionMoveProject: "minih-agent-desktop/session/moveProject",

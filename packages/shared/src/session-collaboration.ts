@@ -1,5 +1,5 @@
 /** Host-owned provenance and delivery projections for durable session collaboration. */
-export type SessionMessageKind = "task" | "message" | "completion";
+export type SessionMessageKind = "task" | "message" | "completion" | "stage";
 export type SessionMessageStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
 
 export type SessionMessageOrigin = {

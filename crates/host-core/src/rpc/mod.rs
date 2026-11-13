@@ -6190,8 +6190,9 @@ mod tests {
     ///
     /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts` and
     /// `apps/desktop/electron/main/services/session-collaboration.ts`.
-    const DESKTOP_BOT_METHODS: [&str; 12] = [
+    const DESKTOP_BOT_METHODS: [&str; 14] = [
         "bot.list",
+        "bot.roster",
         "bot.create",
         "bot.update",
         "bot.dismiss",
@@ -6201,6 +6202,7 @@ mod tests {
         "taskCard.propose",
         "taskCard.revise",
         "taskCard.drop",
+        "taskCard.reassign",
         "taskCard.autoStart",
         "taskCard.confirm",
     ];
@@ -6260,12 +6262,13 @@ mod tests {
     /// Every `task.*` method the desktop calls, spelled exactly as it sends it.
     ///
     /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts`.
-    const DESKTOP_TASK_METHODS: [&str; 5] = [
+    const DESKTOP_TASK_METHODS: [&str; 6] = [
         "task.create",
         "task.list",
         "task.get",
         "task.archive",
         "task.workspace.retry",
+        "task.restart",
     ];
 
     /// Tasks answer on the real RPC route, with real arguments.

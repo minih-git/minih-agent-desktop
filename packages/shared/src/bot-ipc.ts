@@ -106,6 +106,8 @@ export type TaskCardDraftView = {
     permissionMode: "auto" | "accept-edits" | "ask";
     mustAsk: BotMustAsk[];
     risk: "low" | "medium" | "high";
+    /** Why the steward named this employee; shown on the card, never frozen. */
+    reason?: string;
   };
   cardHash: string;
   sourceUtterance: string;
@@ -142,3 +144,31 @@ export type TaskCardConfirmResult = {
 
 export type BotsChangedEvent = { reason: "created" | "updated" | "dismissed" | "seeded" | "status" };
 export type TaskCardsChangedEvent = { sessionId: string; draftId?: string };
+
+/**
+ * The person's reassignment of a proposed card to another employee.
+ *
+ * It is a click, like confirming, and it re-asks nothing: the host narrows the
+ * card's permission to `min(card, sender, new employee)`, recomputes the hash
+ * and leaves the card **proposed**, so the person still has to start it. A
+ * reassigned card that dispatched itself would be a second, unread approval.
+ */
+export type TaskCardReassignRequest = {
+  draftId: string;
+  /** The employee the person picked from the roster. */
+  targetSessionId: string;
+};
+
+export type TaskCardReassignResult = {
+  draft: TaskCardDraftView;
+  /** The employee's bound repository at the time of the reassignment. */
+  projectPath?: string;
+  /**
+   * Whether the card's repository can be reached from the new employee.
+   *
+   * `false` is a warning the dock shows before the person starts the card; the
+   * confirmation refuses it with `REPO_NOT_ON_THIS_COMPUTER` when nothing on
+   * this computer matches.
+   */
+  repoAvailable: boolean;
+};

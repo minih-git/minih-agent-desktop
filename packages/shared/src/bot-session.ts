@@ -102,6 +102,13 @@ export const MAX_MANDATE_ID_CHARS = 128;
 export const MAX_MANDATE_REPO_ORIGIN_CHARS = 512;
 export const MAX_MANDATE_REPO_REF_CHARS = 256;
 export const MAX_MANDATE_POLICY_VERSION_CHARS = 64;
+/**
+ * Upper bound on a card's `reason`: why this employee, in one sentence.
+ *
+ * It is a card field and never part of the frozen Mandate: it explains the
+ * steward's choice to the person, and nothing authorizes from it.
+ */
+export const MAX_TASK_CARD_REASON_CHARS = 300;
 
 export const MANDATE_PERMISSION_MODES = ["auto", "accept-edits", "ask"] as const;
 export type MandatePermissionMode = (typeof MANDATE_PERMISSION_MODES)[number];

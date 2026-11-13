@@ -322,6 +322,12 @@ impl Database {
         }
         if migrated_version == 33 {
             super::task_workspace_migration::migrate(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version == 34 {
+            // Employee mode 0.5 slice 3 adds one ledger kind; the check on
+            // `kind` cannot be altered, so this step rebuilds that table.
+            super::ledger_kind_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

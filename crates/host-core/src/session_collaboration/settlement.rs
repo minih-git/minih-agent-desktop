@@ -150,7 +150,14 @@ pub fn settle_turn(db: &Database, turn_id: &str) -> Result<Option<Message>> {
     // A settled turn is the host's own evidence about the task's stage: a failed
     // or cancelled delivery is the machine's outcome, and a completed one is
     // finished work waiting for the person to accept it.
-    crate::tasks::sync_stage(&tx, &message.id, task_stage_for(outcome))?;
+    let stage = task_stage_for(outcome);
+    let moved = crate::tasks::sync_stage(&tx, &message.id, stage)?;
+    // A failure is the one settled outcome the steward has to hear about: the
+    // completion receipt below covers finished work, and nothing else will tell
+    // her that the task stopped (employee mode 0.5 slice 3).
+    if moved {
+        super::notices::stage_change(db, &tx, &message.id, stage, message.report_seq)?;
+    }
     let updated =
         repository::get(db, &message.id)?.ok_or_else(|| anyhow!("NOT_FOUND: settled message"))?;
     let receipt = callback(db, &updated)?;
@@ -221,10 +228,38 @@ pub(super) fn cancel(db: &Database, input: &Value) -> Result<Value> {
 
 /// The startup fence keeps received data but never replays an unclaimed or
 /// interrupted operation. Existing turn_queue rows are restored held by Agent Host.
+///
+/// Two things happen in one transaction, and the second is why the first is
+/// visible (employee mode 0.5 slice 3):
+///
+/// - a delivery that was running, or queued with no turn to run it, becomes
+///   `interrupted` — the ADR 0239 fence, unchanged;
+/// - each of those deliveries' tasks tells its steward once, with stage
+///   `interrupted`. A task cut off by a restart used to sit at whatever stage it
+///   had, with nobody told; the person now sees "已中断" and can start it again.
 pub fn recover(db: &Database) -> Result<()> {
-    db.conn().execute("UPDATE session_collaboration_messages SET status='interrupted',
+    let tx = db.conn().unchecked_transaction()?;
+    let interrupted: Vec<(String, i64)> = {
+        let mut statement = tx.prepare(
+            "SELECT id, report_seq FROM session_collaboration_messages
+             WHERE status='running'
+                OR (status='queued' AND NOT EXISTS(SELECT 1 FROM turn_queue q
+                     WHERE q.session_message_id=session_collaboration_messages.id))",
+        )?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows
+    };
+    tx.execute(
+        "UPDATE session_collaboration_messages SET status='interrupted',
         error='Execution interrupted by application restart',updated_at=?1 WHERE status='running'
         OR (status='queued' AND NOT EXISTS(SELECT 1 FROM turn_queue q WHERE q.session_message_id=session_collaboration_messages.id))",
-        params![now_ms()])?;
+        params![now_ms()],
+    )?;
+    for (id, seq) in &interrupted {
+        super::notices::stage_change(db, &tx, id, "interrupted", *seq)?;
+    }
+    tx.commit()?;
     Ok(())
 }

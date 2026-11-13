@@ -249,6 +249,73 @@ pub fn revise(db: &Database, input: &Value) -> Result<Value> {
     Ok(json!({"draft": get(db, draft_id)?}))
 }
 
+/// Move a proposed card to another employee (employee mode 0.5 slice 3).
+///
+/// Reassigning is the person's click, and it re-narrows authority: the card may
+/// only ask for the narrower of what it asked for, what the steward may grant,
+/// and what the new employee may do. The card's hash is recomputed because the
+/// card itself changed, and the card stays **proposed** — the person still has
+/// to start it, so a reassignment can never become a second, unread approval.
+pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
+    let draft_id = require_text(input, "draftId", 256)?;
+    let target = require_text(input, "targetSessionId", 256)?;
+    let existing = get(db, draft_id)?.ok_or_else(|| anyhow!("NOT_FOUND: task card draft"))?;
+    if existing.status != "proposed" {
+        return Err(anyhow!(
+            "CONFLICT: only a proposed card can be reassigned; a confirmed authorization is never moved"
+        ));
+    }
+    if target == existing.session_id {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: a card cannot target its own session"
+        ));
+    }
+    if sessions::session_role(db, &target)?.as_deref() != Some("bot") {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: a task card targets an employee session"
+        ));
+    }
+    let requested = existing
+        .card
+        .get("permissionMode")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("INVALID_ARGUMENT: the card states no permission mode"))?;
+    let sender = super::permissions::effective_mode(db, &existing.session_id)?;
+    let employee = super::permissions::effective_mode(db, &target)?;
+    let narrowed = super::permissions::narrower(
+        &super::permissions::narrower(requested, &sender),
+        &employee,
+    );
+    let mut card = existing.card.clone();
+    card["permissionMode"] = json!(narrowed);
+    let hash = card_hash(&card);
+    db.conn().execute(
+        "UPDATE task_card_drafts
+         SET target_session_id=?2, card_json=?3, card_hash=?4, updated_at=?5
+         WHERE id=?1 AND status='proposed'",
+        params![draft_id, target, serde_json::to_string(&card)?, hash, now_ms()],
+    )?;
+    // The repository the new employee reads, and whether the card's own remote
+    // can be carried there. The resolution to a real checkout runs git and
+    // belongs to the RPC layer, so this only reports the warning the dock needs:
+    // an employee with no repository cannot work a card that names one.
+    let project_path = match super::tasks::employee_project_id(db, &target)? {
+        Some(id) => db.project_path(id)?,
+        None => None,
+    };
+    let repo_available = existing
+        .card
+        .pointer("/repo/origin")
+        .and_then(Value::as_str)
+        .is_none()
+        || project_path.is_some();
+    Ok(json!({
+        "draft": get(db, draft_id)?,
+        "projectPath": project_path,
+        "repoAvailable": repo_available,
+    }))
+}
+
 pub fn drop(db: &Database, input: &Value) -> Result<Value> {
     let draft_id = require_text(input, "draftId", 256)?;
     let existing = get(db, draft_id)?.ok_or_else(|| anyhow!("NOT_FOUND: task card draft"))?;
@@ -267,16 +334,26 @@ pub fn drop(db: &Database, input: &Value) -> Result<Value> {
 /// Whether the host may confirm this card by itself.
 ///
 /// The decision is the host's, from stored facts — never from the `risk` a model
-/// typed into the card. Three conditions must all hold, and each one is a
-/// refusal to guess:
+/// typed into the card. Every condition is a refusal to guess:
 ///
 /// - the target is an employee (`role = bot`), because a person hands work to an
 ///   employee and nobody else;
 /// - that employee has `observe` switched off, because `observe` is the
 ///   person's consent and a proposal alone never expresses it;
-/// - the card's ceiling is `ask` or `accept-edits`. An `auto` card always waits
-///   for a click: the widest tier is exactly the one a person should not be able
-///   to acquire by accident.
+/// - the card is **read-only**: `auto` is the mode the steward asks for
+///   research, reading and review, and it is the only mode that does not change
+///   the workspace. A card that changes files (`accept-edits`) or that asks for
+///   everything (`ask`) waits for a click, because a person starting it is the
+///   only thing that makes it reviewed;
+/// - the card asks for no gate beyond `deploy` / `delete` / `spend`.
+///
+/// That last rule needs its construction explained, because the merged card
+/// *always* carries `deploy`, `delete` and `spend`: `unionMustAsk` adds them to
+/// every card so nobody can switch them off. A literal "mustAsk contains none of
+/// the three" test therefore never fires, and a rule that never fires is not a
+/// rule. What this checks is the part a steward can vary: an `auto` card that
+/// also asked for `push`, `merge` or `criteria-change` is not read-only, and it
+/// waits for the person like the rest.
 ///
 /// Returns the reason when it must not auto-start, so the caller can record it
 /// rather than silently leaving the card open.
@@ -301,8 +378,21 @@ pub fn auto_start_refusal(
         .get("permissionMode")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if !matches!(mode, "ask" | "accept-edits") {
-        return Ok(Some("card-too-wide"));
+    if mode != "auto" {
+        return Ok(Some("card-changes-files"));
+    }
+    let asked = card
+        .get("mustAsk")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|action| !crate::session_collaboration::progress::ALWAYS_ASKED.contains(&action))
+        })
+        .unwrap_or(false);
+    if asked {
+        return Ok(Some("card-asks-before-acting"));
     }
     Ok(None)
 }

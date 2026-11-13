@@ -96,6 +96,14 @@ pub struct Task {
     /// `pr`, `local`, or `none`: how this task's work will be delivered.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_mode: Option<String>,
+    /// The status of the ledger delivery bound to this task, when it has one.
+    ///
+    /// Read from the same row the host settles, never copied: `interrupted` is
+    /// the startup fence's mark on the delivery, and it is the only answer to
+    /// "did the application stop while this was running" (ADR 0239). A restart
+    /// writes a new delivery, so this value cannot go stale.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_status: Option<String>,
 }
 
 const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title, t.origin,
@@ -105,7 +113,8 @@ const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title,
       WHERE m.session_id = t.session_id AND m.role = 'assistant'
         AND m.text IS NOT NULL AND trim(m.text) != ''
       ORDER BY m.seq DESC LIMIT 1),
-    t.workspace_status, t.workspace_error, t.base_ref, t.base_remote, t.delivery_mode
+    t.workspace_status, t.workspace_error, t.base_ref, t.base_remote, t.delivery_mode,
+    (SELECT m.status FROM session_collaboration_messages m WHERE m.id = t.delivery_id)
  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
@@ -131,6 +140,7 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         base_ref: row.get(16)?,
         base_remote: row.get::<_, i64>(17)? != 0,
         delivery_mode: row.get(18)?,
+        delivery_status: row.get(19)?,
     })
 }
 
@@ -427,16 +437,20 @@ pub fn archive(db: &Database, input: &Value) -> Result<Value> {
 /// Called from the same transaction that accepts a report or settles a turn, so
 /// a task can never show a stage the ledger does not have. A delivery with no
 /// task is the ordinary case (a worker, a plain message) and does nothing.
-pub fn sync_stage(conn: &rusqlite::Connection, delivery_id: &str, stage: &str) -> Result<()> {
+///
+/// Returns whether the stage actually moved: a repeated write of the stage the
+/// task already holds is not a change, and only a change may wake the steward
+/// (`session_collaboration::notices`).
+pub fn sync_stage(conn: &rusqlite::Connection, delivery_id: &str, stage: &str) -> Result<bool> {
     if !is_valid_stage(stage) {
         return Err(anyhow!("INVALID_ARGUMENT: unknown task stage '{stage}'"));
     }
-    conn.execute(
+    let changed = conn.execute(
         "UPDATE tasks SET stage=?2
          WHERE delivery_id=?1 AND archived_at IS NULL AND stage <> ?2",
         params![delivery_id, stage],
     )?;
-    Ok(())
+    Ok(changed > 0)
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@
  */
 
 import type { TaskStage } from "./bot-session.js";
+import type { SessionMessageStatus } from "./session-collaboration.js";
 
 /** Who started the task. */
 export const TASK_ORIGINS = ["steward", "direct"] as const;
@@ -68,6 +69,16 @@ export type TaskView = {
   baseRemote?: boolean;
   /** How its work will reach the project. Decided by the host, not the client. */
   deliveryMode?: TaskDeliveryMode;
+  /**
+   * The status of the ledger delivery bound to this task, read from the same
+   * row the host settles (ADR 0239).
+   *
+   * The stage answers "who is holding this"; the delivery status answers "did
+   * the turn finish". `interrupted` is the one status the stage vocabulary has
+   * no word for, because it is not a stage at all: the application stopped
+   * while the work was in flight, and nothing will resume it on its own.
+   */
+  deliveryStatus?: SessionMessageStatus;
 };
 
 /**
@@ -186,6 +197,29 @@ export type TaskArchiveResult = { task: TaskView; archivedAt: string };
 /** Re-run a failed workspace preparation; the host answers with the row. */
 export type TaskWorkspaceRetryRequest = { taskId: string };
 export type TaskWorkspaceRetryResult = { task: TaskView };
+
+/**
+ * Whether the task's work was cut off by the application stopping (ADR 0239's
+ * startup fence).
+ *
+ * It is read from the delivery, never stored on the task: the fence marks the
+ * delivery once, and a person who starts the task again gets a *new* delivery,
+ * so the answer cannot go stale.
+ */
+export function isTaskInterrupted(task: Pick<TaskView, "deliveryStatus"> | null | undefined): boolean {
+  return task?.deliveryStatus === "interrupted";
+}
+
+/**
+ * Start an interrupted task again.
+ *
+ * Restarting is the person's decision, taken with the same authority as the
+ * click that first dispatched the work: the host writes a new delivery from the
+ * same sender with the same mandate, re-points the task at it and leaves it
+ * `queued`, and Main starts it through the ordinary dispatch.
+ */
+export type TaskRestartRequest = { taskId: string };
+export type TaskRestartResult = { task: TaskView };
 
 /** Exactly what changed, and for whom: every surface refetches on this alone. */
 export type TasksChangedEvent = {

@@ -37,6 +37,13 @@ pub const REPORTS: [&str; 6] = [
     "progress", "waiting", "ready", "blocked", "failed", "dropped",
 ];
 
+/// The `mustAsk` actions every card carries, whatever the model wrote.
+///
+/// The shared codec merges them into every card (`unionMustAsk`), so they are
+/// the one part of `mustAsk` a card cannot vary — which is why the auto-start
+/// rule compares against them rather than testing for their absence.
+pub const ALWAYS_ASKED: [&str; 3] = ["deploy", "delete", "spend"];
+
 pub fn is_valid_stage(stage: &str) -> bool {
     STAGES.contains(&stage)
 }
@@ -173,9 +180,13 @@ pub fn report(
     )?;
     // A task bound to this delivery moves with it, in the same transaction: the
     // task list must never disagree with the ledger about who is holding the
-    // work.
+    // work. A stage that actually moved wakes the steward once, in this same
+    // transaction (employee mode 0.5 slice 3).
     if applied > 0 {
-        crate::tasks::sync_stage(&tx, message_id, stage)?;
+        let moved = crate::tasks::sync_stage(&tx, message_id, stage)?;
+        if moved {
+            super::notices::stage_change(db, &tx, message_id, stage, seq)?;
+        }
     }
     tx.commit()?;
     Ok(json!({

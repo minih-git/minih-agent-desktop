@@ -230,12 +230,20 @@ pub fn pending_callbacks(db: &Database, session_id: Option<&str>) -> Result<Vec<
 
 /// Queued deliveries that still need a turn started in the target session.
 ///
-/// Two kinds qualify, and both are work waiting to be started:
+/// Three kinds qualify, and all are work waiting to be started:
 ///
 /// - `completion`: a finished task telling its requester the result.
-/// - `task`: a confirmed card. Confirming only writes the row, so a crash, a
-///   failed start, or an app restart between confirm and start otherwise leaves
-///   it queued forever — the card said "dispatched" and nothing ever ran.
+/// - `stage`: a task stopped making progress (failed, blocked, waiting for an
+///   answer, or interrupted by the startup fence) and its steward has to hear it
+///   (employee mode 0.5 slice 3).
+/// - `task`: a confirmed card. Confirming only writes the row, so a failed
+///   start, or a crash between confirm and start in the *same* run, otherwise
+///   leaves it queued forever — the card said "dispatched" and nothing ever ran.
+///   This arm is not a restart recovery: `settlement::recover` fences every
+///   queued row without a turn at startup as `interrupted`, so a card that is
+///   still `queued` here always belongs to the current run. A task interrupted
+///   by a restart comes back only when the person clicks "重新开工"
+///   (`task.restart`), which writes a new delivery from the same mandate.
 ///
 /// A row that already holds a `turn_id` is never returned: starting it twice
 /// would run the same work twice, and `settlement` owns the once-only claim.
@@ -245,7 +253,8 @@ pub fn pending_dispatch(db: &Database) -> Result<Vec<Message>> {
     let mut statement = db.conn().prepare_cached(&format!(
         "{SELECT}
         WHERE status='queued' AND turn_id IS NULL
-          AND (kind='completion' OR (kind='task' AND mandate_json IS NOT NULL))
+          AND (kind='completion' OR kind='stage'
+               OR (kind='task' AND mandate_json IS NOT NULL))
         ORDER BY created_at LIMIT 64"
     ))?;
     let values = statement

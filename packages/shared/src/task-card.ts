@@ -31,6 +31,7 @@ import {
   MAX_MANDATE_POLICY_VERSION_CHARS,
   MAX_MANDATE_REPO_REF_CHARS,
   MAX_MANDATE_SOURCE_UTTERANCE_CHARS,
+  MAX_TASK_CARD_REASON_CHARS,
   MANDATE_PERMISSION_MODES,
   MANDATE_RISKS,
   MANDATE_VERSION,
@@ -53,12 +54,22 @@ export type TaskCardDraft = {
   permissionMode?: MandatePermissionMode;
   mustAsk?: BotMustAsk[];
   risk?: MandateRisk;
+  /**
+   * Why this employee, in one sentence ("the task is pages and interaction; you
+   * mentioned Desktop; it is idle right now").
+   *
+   * Required, because a card that names an employee without saying why turns
+   * the person's confirmation into a guess. It is shown on the card and is
+   * never part of the frozen Mandate.
+   */
+  reason?: string;
 };
 
 export type TaskCardDecision = "proposed" | "confirmed";
 
 export type TaskCardError =
   | "goal"
+  | "reason"
   | "criteria"
   | "boundaries"
   | "permission-mode"
@@ -80,6 +91,8 @@ export type TaskCardFields = {
   permissionMode: MandatePermissionMode;
   mustAsk: BotMustAsk[];
   risk: MandateRisk;
+  /** Why this employee; shown on the card, never part of the Mandate. */
+  reason: string;
 };
 
 const DEFAULT_RISK: MandateRisk = "medium";
@@ -103,6 +116,17 @@ export function normalizeTaskCard(draft: TaskCardDraft): TaskCardResult {
   const goal = clampText(draft.goal, MAX_MANDATE_GOAL_CHARS);
   if (!goal) {
     return { ok: false, error: "goal", message: "A task card needs a one-sentence goal." };
+  }
+  // Why this employee is required too: a card names a person, and the person
+  // confirming it has to be able to see that the choice was made for a stated
+  // reason rather than guessed.
+  const reason = clampText(draft.reason, MAX_TASK_CARD_REASON_CHARS);
+  if (!reason) {
+    return {
+      ok: false,
+      error: "reason",
+      message: "A task card must say why it names this employee, in one sentence.",
+    };
   }
   if (draft.permissionMode === undefined) {
     return {
@@ -211,6 +235,10 @@ export function normalizeTaskCard(draft: TaskCardDraft): TaskCardResult {
     // reads the card — the card states what will happen, not what was asked.
     mustAsk: unionMustAsk(rawMustAsk),
     risk,
+    // The reason is carried on the card so the person reads it beside the goal;
+    // it is deliberately absent from `freezeTaskCard`'s Mandate, which records
+    // what was authorized and not why an employee was picked.
+    reason,
     ...(repo ? { repo } : {}),
   };
   return { ok: true, draft, card: fields };
@@ -328,6 +356,9 @@ export function describeTaskCard(card: TaskCardFields): string {
     `permission: ${card.permissionMode}`,
     `must ask: ${card.mustAsk.join(", ") || "—"}${ALWAYS_MUST_ASK.every((item) => card.mustAsk.includes(item)) ? "" : " (unexpected)"}`,
     `risk: ${card.risk}`,
+    // The reason the steward gave for naming this employee, so the model sees
+    // the same card the person does.
+    `why this employee: ${card.reason}`,
     ...(card.repo ? [`repo: ${card.repo.origin}${card.repo.ref ? `@${card.repo.ref}` : ""}`] : []),
   ];
   return lines.join("\n");

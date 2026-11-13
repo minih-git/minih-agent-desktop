@@ -335,27 +335,37 @@ fn auto_start_needs_an_observing_off_employee_and_a_narrow_card() {
     let observing = bot(&db, "Observing", "accept-edits", true);
     let plain = session(&db, "Just a chat", None, "auto");
 
-    // All three conditions hold.
+    // A read-only card for an employee that is not observing starts by itself
+    // (slice 3: the person's rule is "read-only starts, changing waits"). Every
+    // card carries the three nobody can switch off and nothing else.
+    let mut read_only = card("auto");
+    read_only["mustAsk"] = json!(["deploy", "delete", "spend"]);
+    assert_eq!(auto_start_refusal(&db, &wide, &read_only).unwrap(), None);
+
+    // A card that changes files waits for a click.
     assert_eq!(
         auto_start_refusal(&db, &wide, &card("accept-edits")).unwrap(),
-        None
+        Some("card-changes-files")
     );
-    assert_eq!(auto_start_refusal(&db, &wide, &card("ask")).unwrap(), None);
-
-    // An `auto` card always waits for a click.
     assert_eq!(
-        auto_start_refusal(&db, &wide, &card("auto")).unwrap(),
-        Some("card-too-wide")
+        auto_start_refusal(&db, &wide, &card("ask")).unwrap(),
+        Some("card-changes-files")
     );
     // An observing employee never auto-starts.
     assert_eq!(
-        auto_start_refusal(&db, &observing, &card("ask")).unwrap(),
+        auto_start_refusal(&db, &observing, &read_only).unwrap(),
         Some("employee-observing")
     );
     // A target that is not an employee never auto-starts.
     assert_eq!(
-        auto_start_refusal(&db, &plain, &card("ask")).unwrap(),
+        auto_start_refusal(&db, &plain, &read_only).unwrap(),
         Some("target-not-an-employee")
+    );
+    // A read-only card that also asked for a gate beyond the three nobody can
+    // switch off is not read-only: it waits like the rest.
+    assert_eq!(
+        auto_start_refusal(&db, &wide, &card("auto")).unwrap(),
+        Some("card-asks-before-acting")
     );
 }
 

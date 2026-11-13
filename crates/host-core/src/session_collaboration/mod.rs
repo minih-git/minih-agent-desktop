@@ -13,11 +13,13 @@ pub mod bots;
 pub mod task_api;
 pub(crate) use crate::tasks;
 pub mod drafts;
+mod notices;
 mod permissions;
 pub mod progress;
 mod projections;
 mod provenance;
 pub(crate) mod repository;
+mod restart;
 mod settlement;
 pub use provenance::{prepare_append, validate_replacement};
 pub use repository::{get, Message};
@@ -376,6 +378,11 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
         // The employee surface (ADR bot-sessions-and-steward §5): every row is a
         // session with a role and a profile, so there is no second lifecycle.
         "bot.list" => bots::list(db),
+        // The steward's roster: employees worth dispatching to, with the facts a
+        // choice needs (employee mode 0.5 slice 3). Not `bot.list`: the
+        // secretary must not see herself, and must see repos, busyness and how
+        // much is waiting on the person.
+        "bot.roster" => bots::roster(db, input),
         "bot.create" => bots::create(db, input),
         "bot.update" => bots::update(db, input),
         "bot.dismiss" => bots::dismiss(db, input),
@@ -386,6 +393,10 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
         })),
         "taskCard.propose" => drafts::propose(db, input),
         "taskCard.revise" => drafts::revise(db, input),
+        // The person changes the employee on a proposed card. It narrows the
+        // card to what the new employee may do, recomputes its hash, and leaves
+        // it proposed: starting it is still a separate click.
+        "taskCard.reassign" => drafts::reassign(db, input),
         "taskCard.drop" => drafts::drop(db, input),
         // Whether the host may start this card by itself, from stored facts.
         "taskCard.autoStart" => {

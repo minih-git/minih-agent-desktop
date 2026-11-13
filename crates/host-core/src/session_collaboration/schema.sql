@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS session_collaboration_messages (
   source_title TEXT NOT NULL,
   target_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   target_title TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK(kind IN ('task', 'message', 'completion')),
+  kind TEXT NOT NULL CHECK(kind IN ('task', 'message', 'completion', 'stage')),
   content TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted')),
   notify_on_completion INTEGER NOT NULL DEFAULT 0,

@@ -395,3 +395,189 @@ fn a_data_directory_is_reusable_after_its_host_exits() {
     assert_eq!(health["result"]["ok"], serde_json::json!(true), "{health}");
     second.shutdown();
 }
+
+/// Put a steward-dispatched task in the database the way the application leaves
+/// it while the work is running: a `running` delivery, a task bound to it, and
+/// the employee and steward sessions around them.
+fn seed_running_task(data_dir: &Path) {
+    let conn = open_db(data_dir);
+    let mandate = serde_json::json!({
+        "version": 1,
+        "taskId": "mandate-1",
+        "goal": "Fix the login timeout",
+        "criteria": [{"id": "c1", "text": "A failing repro exists"}],
+        "boundaries": [],
+        "permissionMode": "accept-edits",
+        "mustAsk": ["deploy", "delete", "spend"],
+        "risk": "low",
+        "requestedBy": {"kind": "user", "hostId": "mac-mini"},
+        "sourceUtterance": "登录超时今天修掉",
+        "createdAt": "2026-11-12T09:00:00.000Z",
+        "policyVersion": "steward-1",
+    })
+    .to_string();
+    conn.execute(
+        "INSERT INTO sessions (id, title, role, bot_profile_json, permission_mode, created_at, updated_at)
+         VALUES ('steward-1', '秘书', 'bot',
+                 '{\"name\":\"秘书\",\"permissionMode\":\"ask\",\"mustAsk\":[],\"observe\":false,\"definition\":\"steward\"}',
+                 'ask', 1, 1)",
+        [],
+    )
+    .expect("insert steward");
+    conn.execute(
+        "INSERT INTO sessions (id, title, role, bot_profile_json, permission_mode, created_at, updated_at)
+         VALUES ('employee-1', 'Router 后端', 'bot',
+                 '{\"name\":\"Router 后端\",\"permissionMode\":\"accept-edits\",\"mustAsk\":[],\"observe\":false}',
+                 'accept-edits', 1, 1)",
+        [],
+    )
+    .expect("insert employee");
+    conn.execute(
+        "INSERT INTO sessions (id, title, role, owner_session_id, permission_mode, created_at, updated_at)
+         VALUES ('task-session-1', 'Fix the login timeout', 'task', 'employee-1', 'accept-edits', 1, 1)",
+        [],
+    )
+    .expect("insert task session");
+    conn.execute(
+        "INSERT INTO session_collaboration_messages
+         (id, plugin_id, source_session_id, source_title, target_session_id, target_title,
+          kind, content, status, notify_on_completion, idempotency_key, remaining_hops,
+          permission_ceiling, mandate_json, report_seq, created_at, updated_at)
+         VALUES ('delivery-1', 'builtin:session-messaging', 'steward-1', '秘书',
+                 'task-session-1', 'Fix the login timeout', 'task', 'Fix the login timeout',
+                 'running', 1, 'card-1', 32, 'accept-edits', ?1, 0, 1, 1)",
+        rusqlite::params![mandate],
+    )
+    .expect("insert delivery");
+    conn.execute(
+        "INSERT INTO tasks
+         (id, employee_session_id, session_id, title, origin, stage, delivery_id, created_at)
+         VALUES ('task-1', 'employee-1', 'task-session-1', 'Fix the login timeout', 'steward',
+                 'working', 'delivery-1', 1)",
+        [],
+    )
+    .expect("insert task");
+}
+
+fn text_column(data_dir: &Path, sql: &str, id: &str) -> Option<String> {
+    open_db(data_dir)
+        .query_row(sql, [id], |row| row.get(0))
+        .ok()
+}
+
+fn count_rows(data_dir: &Path, sql: &str, id: &str) -> i64 {
+    open_db(data_dir)
+        .query_row(sql, [id], |row| row.get(0))
+        .unwrap_or(-1)
+}
+
+/// A restart is visible: the delivery and the task say it was interrupted, the
+/// steward is told once, and a person's click starts the work again.
+///
+/// This runs the real binary twice on one data directory — closed, then opened
+/// again with the single-instance lock released in between — because the failure
+/// being fixed is what the *startup fence* does, and an in-process test cannot
+/// reproduce it.
+#[test]
+fn an_interrupted_task_is_visible_and_restarts_when_the_host_restarts() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let data_dir = root.path().join("data");
+    std::fs::create_dir_all(&data_dir).expect("data dir");
+
+    // First run: create the schema, then go away and leave the work running.
+    let mut host = Host::start(&data_dir);
+    host.handshake();
+    host.shutdown();
+    seed_running_task(&data_dir);
+    assert_eq!(
+        text_column(
+            &data_dir,
+            "SELECT status FROM session_collaboration_messages WHERE id = ?1",
+            "delivery-1"
+        )
+        .as_deref(),
+        Some("running")
+    );
+
+    // Second run: the startup fence, on the same directory, with the lock free.
+    let mut host = Host::start(&data_dir);
+    host.handshake();
+    let task = host.call(
+        "task.get",
+        serde_json::json!({ "taskId": "task-1" }),
+    );
+    assert_eq!(
+        task["result"]["task"]["deliveryStatus"],
+        serde_json::json!("interrupted"),
+        "the task does not say it was interrupted: {task}"
+    );
+    let pending = host.call("session.collaboration.pendingDispatch", serde_json::json!({}));
+    let notices: Vec<&serde_json::Value> = pending["result"]["messages"]
+        .as_array()
+        .expect("pendingDispatch returns messages")
+        .iter()
+        .filter(|message| message["kind"] == serde_json::json!("stage"))
+        .collect();
+    assert_eq!(notices.len(), 1, "the steward was not told: {pending}");
+    assert_eq!(notices[0]["targetSessionId"], serde_json::json!("steward-1"));
+    let payload: serde_json::Value =
+        serde_json::from_str(notices[0]["content"].as_str().expect("content")).expect("json");
+    assert_eq!(payload["taskId"], serde_json::json!("task-1"));
+    assert_eq!(payload["stage"], serde_json::json!("interrupted"));
+    assert_eq!(payload["employee"], serde_json::json!("Router 后端"));
+
+    // The person clicks "重新开工": one new delivery from the same mandate.
+    let restarted = host.call("task.restart", serde_json::json!({ "taskId": "task-1" }));
+    assert_eq!(
+        restarted["result"]["delivery"]["status"],
+        serde_json::json!("queued"),
+        "{restarted}"
+    );
+    assert_eq!(
+        restarted["result"]["delivery"]["targetSessionId"],
+        serde_json::json!("task-session-1")
+    );
+    assert_ne!(
+        restarted["result"]["delivery"]["id"],
+        serde_json::json!("delivery-1")
+    );
+    assert_eq!(
+        restarted["result"]["task"]["stage"],
+        serde_json::json!("queued")
+    );
+    host.shutdown();
+
+    // Third run: the restarted delivery was never started (this host serves
+    // RPC only), so the fence marks it again — and the steward hears about that
+    // interruption once, under its own delivery, not twice for the first one.
+    let mut host = Host::start(&data_dir);
+    host.handshake();
+    let task = host.call("task.get", serde_json::json!({ "taskId": "task-1" }));
+    assert_eq!(
+        task["result"]["task"]["deliveryStatus"],
+        serde_json::json!("interrupted"),
+        "a queued delivery with no turn is fenced at the next start: {task}"
+    );
+    host.shutdown();
+    assert_eq!(
+        count_rows(
+            &data_dir,
+            "SELECT COUNT(*) FROM session_collaboration_messages
+              WHERE kind = 'stage'
+                AND content LIKE '%\"deliveryId\":\"' || ?1 || '\"%'",
+            "delivery-1"
+        ),
+        1,
+        "the steward heard the same interruption twice"
+    );
+    assert_eq!(
+        count_rows(
+            &data_dir,
+            "SELECT COUNT(*) FROM session_collaboration_messages
+              WHERE kind = 'stage' AND content LIKE '%\"taskId\":\"' || ?1 || '\"%'",
+            "task-1"
+        ),
+        2,
+        "one notice per interruption, and there were two"
+    );
+}
