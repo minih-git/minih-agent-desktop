@@ -316,6 +316,7 @@ app.whenReady().then(async () => {
     await step("steward-cards-dark", "window.stewardScreens.cards('dark')");
     await step("steward-cards-light", "window.stewardScreens.cards('light')");
     await step("steward-auto-started-dark", "window.stewardScreens.autoStarted('dark')");
+    await step("steward-auto-started-light", "window.stewardScreens.autoStarted('light')");
     await step("task-interrupted-dark", "window.stewardScreens.interrupted('dark')");
     await step("task-interrupted-light", "window.stewardScreens.interrupted('light')");
     console.log("STEWARD_SLICE3_SCREENS " + JSON.stringify(shots));
