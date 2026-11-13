@@ -34,6 +34,7 @@ mod session_search;
 mod session_worktrees;
 mod sessions;
 mod state;
+mod task_stage;
 mod task_workspace;
 mod tasks;
 #[cfg(test)]
