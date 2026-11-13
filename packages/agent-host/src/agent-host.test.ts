@@ -154,6 +154,7 @@ function build(
     queueStore?: MemoryQueueStore;
     allowRemoteSessionGrants?: boolean;
     onNotifyEvent?: (event: NotifyEvent) => void;
+    onInteractiveResolved?: (event: { sessionId: string; requestId: string }) => void;
   } = {},
 ) {
   const runtime = new FakeRuntime();
@@ -171,6 +172,9 @@ function build(
     limits: { maxQueuedTurnsPerSession: 2 },
     allowRemoteSessionGrants: options.allowRemoteSessionGrants,
     ...(options.onNotifyEvent ? { onNotifyEvent: options.onNotifyEvent } : {}),
+    ...(options.onInteractiveResolved
+      ? { onInteractiveResolved: options.onInteractiveResolved }
+      : {}),
   });
   const received: RacpEventEnvelope[] = [];
   const sub = host.subscribe(viewer, { scope: "session", sessionId: "s1" }, { deliver: (event) => received.push(event), close: () => {} });
@@ -1646,5 +1650,92 @@ describe("session checklist (RACP §5.8)", () => {
     host.applyTodosChanged(snapshot(4, rows.slice(0, 1)));
     expect(received.length).toBe(marks);
     expect((await host.snapshot("s1")).session.todos).toEqual(list(5));
+  });
+});
+
+/**
+ * The waiting channel's phone and MCP path (employee mode 0.5 slice 4a).
+ *
+ * The desktop's own cards resolve a request through Main's IPC, which tells the
+ * host to close its waiting record itself. A phone (RACP) or an MCP client never
+ * touches that code: it answers the Host, so the Host has to say which runtime
+ * request was settled — otherwise the task keeps showing `person/answer` until
+ * its turn ends. These tests pin the id that is reported, which is the only thing
+ * the waiting record can be closed by.
+ */
+describe("AgentHost interactive resolutions", () => {
+  const permission = (requestId = "req_1") => ({
+    type: "tool_permission_request" as const,
+    request: {
+      requestId,
+      sessionId: "s1",
+      toolCallId: "c1",
+      toolName: "Bash",
+      argsPreview: { command: "ls" },
+      risk: "high" as const,
+      reason: "high risk",
+    },
+  });
+
+  it("reports an approval by the runtime request id, once", async () => {
+    const resolved: Array<{ sessionId: string; requestId: string }> = [];
+    const { host } = build({ onInteractiveResolved: (event) => resolved.push(event) });
+    host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
+    host.ingest(envelope("s1", "rt_1", permission()));
+
+    await host.respondApproval(approver, {
+      approvalId: "req_1",
+      decision: "allow-once",
+      context: { requestId: "r" },
+    });
+    expect(resolved).toEqual([{ sessionId: "s1", requestId: "req_1" }]);
+
+    // An answer that arrives after the fact is not a second resolution: the
+    // record was closed by the first one.
+    await host.respondApproval(owner, {
+      approvalId: "req_1",
+      decision: "deny",
+      context: { requestId: "r2" },
+    });
+    expect(resolved).toHaveLength(1);
+  });
+
+  it("reports an ask answer by the runtime request id, once", async () => {
+    const resolved: Array<{ sessionId: string; requestId: string }> = [];
+    const { host, runtime } = build({ onInteractiveResolved: (event) => resolved.push(event) });
+    host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
+    host.ingest(
+      envelope("s1", "rt_1", {
+        type: "asktool_request",
+        request: {
+          requestId: "ask_1",
+          sessionId: "s1",
+          toolCallId: "c1",
+          questions: [{ question: "Which branch?", options: ["main", "release"] }],
+        },
+      }),
+    );
+    const [pending] = (await host.snapshot("s1")).pendingInputs;
+    expect(pending).toBeDefined();
+
+    await host.respondInput(owner, {
+      inputId: pending!.id,
+      answers: [["main"]],
+      context: { requestId: "r" },
+    });
+    // The runtime's own id, not the Host's input id: that is what the waiting
+    // record was opened with.
+    expect(resolved).toEqual([{ sessionId: "s1", requestId: "ask_1" }]);
+    expect(runtime.inputs.at(-1)).toMatchObject({ requestId: "ask_1" });
+
+    // A second answer for the same input is refused and reports nothing.
+    await expect(
+      host.respondInput(owner, {
+        inputId: pending!.id,
+        answers: [["main"]],
+        context: { requestId: "r2" },
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(resolved).toHaveLength(1);
   });
 });
