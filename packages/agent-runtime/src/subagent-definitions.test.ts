@@ -139,6 +139,14 @@ describe("builtin subagent documents", () => {
       expect(prompt).toContain(anchor);
     }
 
+    // 8. A follow-up requirement is a scope question, and the answer decides
+    //    which tool carries it (slice 4b).
+    expect(prompt).toContain("## A follow-up requirement is a scope question");
+    expect(prompt).toContain("Inside the task's original goal");
+    expect(prompt).toContain("Beyond the goal");
+    expect(prompt).toContain("`SessionSend` and that task's `taskId`");
+    expect(prompt).toContain("propose a new card instead");
+
     // 7. The paragraphs that described the old flow are gone: SessionSend no
     //    longer hands out new work, nobody picks a session id, and there is no
     //    per-employee project check before proposing.

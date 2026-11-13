@@ -148,6 +148,11 @@ export type TaskCardDraftView = {
   confirmedBy?: "user" | "policy";
   confirmedAt?: string;
   deliveryId?: string;
+  /**
+   * The turn that proposed this card, when it proposed several at once
+   * (employee mode 0.5 slice 4b). One batch is one summary card.
+   */
+  batchId?: string;
   createdAt: string;
   updatedAt: string;
 };

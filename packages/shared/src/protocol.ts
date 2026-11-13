@@ -181,6 +181,17 @@ export const IPC = {
      * nobody assigned, and the person confirms it like any first dispatch.
      */
     taskReassign: "minih-agent-desktop/task/reassign",
+    /**
+     * The completion card (slice 4b): the person accepts the work, asks whether
+     * it can be merged, and lets the host land it.
+     *
+     * Accepting is not archiving — the task stays open so the merge can still be
+     * done from its card — and merging runs the host's own fixed steps, so no
+     * model and no client ever names a git command.
+     */
+    taskAccept: "minih-agent-desktop/task/accept",
+    taskDeliveryCheck: "minih-agent-desktop/task/deliveryCheck",
+    taskDeliveryMerge: "minih-agent-desktop/task/deliveryMerge",
     sessionCreate: "minih-agent-desktop/session/create",
     sessionFork: "minih-agent-desktop/session/fork",
     sessionMoveProject: "minih-agent-desktop/session/moveProject",

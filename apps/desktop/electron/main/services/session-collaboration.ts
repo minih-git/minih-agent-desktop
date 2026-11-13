@@ -743,6 +743,9 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
               targetSessionId,
               sourceUtterance: text(input.args, "sourceUtterance"),
               card: input.args.card,
+              // The turn, not the card: one sentence split into three cards is
+              // one batch, and the summary card appears when all three finish.
+              batchId: sourceTurnId,
             },
           );
           // Auto-start is the host's own rule, never the model's judgement: a

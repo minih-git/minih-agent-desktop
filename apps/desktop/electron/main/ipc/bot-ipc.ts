@@ -6,6 +6,7 @@ import {
   type TaskCardConfirmResult,
   type TaskCardDraftView,
   type TaskCreateResult,
+  type TaskDeliveryMergeResult,
   type TaskView,
 } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
@@ -236,6 +237,42 @@ export function registerBotIpc({
       sessionId: result.draft?.sessionId ?? "",
       draftId: result.draft?.id ?? "",
     });
+    return result;
+  });
+
+  // The completion card (employee mode 0.5 slice 4b). Accepting is the person's
+  // own click and nothing else: the host writes `accepted_at`, which is what
+  // takes the task out of the sidebar's count without archiving it.
+  handle(IPC.invoke.taskAccept, async (request) => {
+    const { taskId } = (request ?? {}) as { taskId?: string };
+    if (!taskId) throw new Error("taskId is required");
+    const result = (await host().call("task.accept", { taskId })) as { task?: TaskView };
+    if (result?.task) announceTask(result.task, "stage");
+    return result;
+  });
+
+  // What the card shows, read once when it opens and again when the person
+  // clicks 刷新. There is no poll: `gh` costs a round trip nobody asked for.
+  handle(IPC.invoke.taskDeliveryCheck, async (request) => {
+    const { taskId } = (request ?? {}) as { taskId?: string };
+    if (!taskId) throw new Error("taskId is required");
+    return host().call("task.delivery.check", { taskId });
+  });
+
+  // 「接受并合并」: the click is the confirmation, so the host runs its own fixed
+  // steps and no permission card interrupts them. A failure comes back as a
+  // blocked task rather than as a thrown error, because the person's next
+  // action is the blocked card's own 重试.
+  handle(IPC.invoke.taskDeliveryMerge, async (request) => {
+    const { taskId } = (request ?? {}) as { taskId?: string };
+    if (!taskId) throw new Error("taskId is required");
+    const result = (await host().call(
+      "task.delivery.merge",
+      { taskId },
+    )) as TaskDeliveryMergeResult;
+    if (result?.task) announceTask(result.task, result.merged ? "archived" : "stage");
+    await reconcileTaskStages();
+    sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
     return result;
   });
 

@@ -193,9 +193,12 @@ import type {
   RemoteGatewayDeviceNotice,
   RemoteGatewayDeviceRequest,
   RacpModelSummary,
+  TaskAcceptResult,
   TaskArchiveResult,
   TaskCreateRequest,
   TaskCreateResult,
+  TaskDeliveryCheck,
+  TaskDeliveryMergeResult,
   TaskList,
   TaskListRequest,
   TaskRestartResult,
@@ -1675,6 +1678,22 @@ export const api = {
    */
   reassignTask: (request: TaskReassignRequest) =>
     invoke<TaskReassignResult>(IPC.invoke.taskReassign, request),
+  /**
+   * The completion card (employee mode 0.5 slice 4b).
+   *
+   * `acceptTask` is 只接受: the work is acceptable, the task stays open so the
+   * merge can still be done from its card, and it stops counting as "waiting for
+   * you". `checkTaskDelivery` is the one read the card renders, refreshed only
+   * when the person asks. `mergeTaskDelivery` is 「接受并合并」: the click is the
+   * confirmation, the host runs its fixed steps, and a failure comes back as a
+   * blocked task rather than as an exception.
+   */
+  acceptTask: (taskId: string) =>
+    invoke<TaskAcceptResult>(IPC.invoke.taskAccept, { taskId }),
+  checkTaskDelivery: (taskId: string) =>
+    invoke<TaskDeliveryCheck>(IPC.invoke.taskDeliveryCheck, { taskId }),
+  mergeTaskDelivery: (taskId: string) =>
+    invoke<TaskDeliveryMergeResult>(IPC.invoke.taskDeliveryMerge, { taskId }),
   /**
    * Move a proposed card to another employee (employee mode 0.5 slice 3).
    *

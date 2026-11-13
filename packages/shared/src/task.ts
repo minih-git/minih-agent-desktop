@@ -75,7 +75,14 @@ export type TaskBlocker = {
    * `interrupted` the startup fence: the app died while this task's turn was
    * running, so nothing is running now and nothing will resume by itself.
    */
-  reason?: "stopped" | "error" | "interrupted";
+  reason?: "stopped" | "error" | "interrupted" | "delivery";
+  /**
+   * For `delivery`: which fixed step stopped, and what it said. The card
+   * composes the sentence from `reason` and the remote's name, so the words the
+   * person reads are translated rather than stored.
+   */
+  step?: string;
+  detail?: string;
   /** The error code of a failed turn, as the runtime settled it. */
   code?: string;
   /** Where it got stuck, in the employee's words. */
@@ -85,6 +92,138 @@ export type TaskBlocker = {
   /** What it suggests the person do. */
   suggestion?: string;
   reportedAt?: string;
+};
+
+/** One line of the employee's own acceptance check. */
+export type TaskAcceptance = {
+  /** The criterion, quoted from the card the person confirmed. */
+  criterion: string;
+  met: boolean;
+  /** Why, when a bare ✓ or ✗ would not be enough. */
+  note?: string;
+};
+
+/**
+ * What `TaskReport { status: "ready" }` delivered (employee mode 0.5 slice 4b).
+ *
+ * It is the employee's own account of the work, which is why it is shown as its
+ * own section: the commits and the file count are the host's facts, and the two
+ * must not be confused when the person decides whether to accept.
+ */
+export type TaskResult = {
+  status: "ready";
+  summary: string;
+  acceptance: TaskAcceptance[];
+  leftovers: string[];
+  reportedAt: string;
+};
+
+/** One fixed step of a delivery, and what happened to it. */
+export type TaskDeliveryStep = {
+  name: string;
+  status: "done" | "failed";
+  at: string;
+  detail?: string;
+};
+
+/**
+ * What the host did to land the work, in the order it did it.
+ *
+ * Stored on the task, not inferred: a retry continues at the first step that is
+ * not `done`, so the record is also the reason an irreversible command is never
+ * run twice.
+ */
+export type TaskDeliveryState = {
+  mode: TaskDeliveryMode;
+  steps: TaskDeliveryStep[];
+  finishedAt?: string;
+  archivedAt?: string;
+};
+
+/**
+ * Why the merge button is grey.
+ *
+ * Codes, not sentences: the card translates them, so the same verdict reads in
+ * the person's own language. `reasonDetail` carries the one name that matters —
+ * which check failed, which remote refused, what `gh` said.
+ */
+export type TaskDeliveryReason =
+  | "pr-unreadable"
+  | "pr-missing"
+  | "ci-missing"
+  | "ci-running"
+  | "ci-failed"
+  | "conflict"
+  | "mergeable-unknown"
+  | "review-required"
+  | "no-project"
+  | "conflict-local"
+  | "nothing-to-merge"
+  | "preview-failed";
+
+/** The CI summary the card shows beside the verdict. */
+export type TaskCheckSummary = {
+  total: number;
+  passed: number;
+  pending: number;
+  failed: string[];
+};
+
+/** One commit of the task's own work. */
+export type TaskChangeCommit = { sha: string; subject: string };
+
+/** What the host itself can prove about the work: its commits and its size. */
+export type TaskChanges = {
+  commits: TaskChangeCommit[];
+  files: number;
+  /** True when the list was cut at the card's limit. */
+  truncated: boolean;
+};
+
+/** What one task's turns cost, when the ledger has it. */
+export type TaskUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  turns: number;
+  costUsd?: number;
+};
+
+/**
+ * `task.delivery.check`: everything the completion card renders, read once.
+ *
+ * The renderer asks again only when the person clicks 刷新 — there is no poll,
+ * because a timer over `gh` is a cost nobody asked for.
+ */
+export type TaskDeliveryCheck = {
+  canMerge: boolean;
+  reason?: TaskDeliveryReason;
+  reasonDetail?: string;
+  prUrl?: string;
+  checks?: TaskCheckSummary | null;
+  changes?: TaskChanges | null;
+  elapsedMs?: number;
+  usage?: TaskUsage | null;
+};
+
+export type TaskAcceptRequest = { taskId: string };
+export type TaskAcceptResult = { task: TaskView };
+
+export type TaskDeliveryMergeRequest = { taskId: string };
+/**
+ * The outcome of one "accept and merge" click.
+ *
+ * A failure is not an error the renderer throws: the task has become a blocked
+ * card with its own words, so the answer carries it and the card is what the
+ * person acts on. `published` says whether the work already left this machine,
+ * which is the difference between "nothing happened" and "GitHub has it but
+ * another remote does not".
+ */
+export type TaskDeliveryMergeResult = {
+  merged: boolean;
+  task?: TaskView;
+  failedStep?: string;
+  detail?: string;
+  published?: boolean;
 };
 
 /** One task row as the host stores and returns it. */
@@ -157,6 +296,14 @@ export type TaskView = {
   blocker?: TaskBlocker;
   /** How many times this task's stage has moved (the notice key). */
   stageSeq?: number;
+  /** When the person accepted the work, if they did. Accepting is not archiving. */
+  acceptedAt?: string;
+  /** What the employee delivered, in its own words, when it reported `ready`. */
+  result?: TaskResult;
+  /** The fixed steps the host ran to land this work, and where they stopped. */
+  delivery?: TaskDeliveryState;
+  /** The card batch this task came from, when one turn proposed several cards. */
+  batchId?: string;
 };
 
 /**
@@ -350,15 +497,20 @@ export function isTaskWaitingForAnswer(
  * tests, so the surfaces cannot disagree about how much is waiting.
  */
 export function taskCountsAsWaiting(
-  task: Pick<TaskView, "stage" | "deliveryStatus" | "archivedAt">,
+  task: Pick<TaskView, "stage" | "deliveryStatus" | "archivedAt" | "acceptedAt">,
 ): boolean {
   if (task.archivedAt) return false;
+  // Accepting is the person's answer to "person/accept": the work is acceptable,
+  // so it stops being something they have to act on. The task stays open — its
+  // completion card still offers the merge — but the number the sidebar shows is
+  // about what needs them now.
+  if (task.acceptedAt) return false;
   return task.stage === "person/answer" || task.stage === "person/accept" || isTaskStuck(task);
 }
 
 /** How many tasks are waiting on the person, across every employee. */
 export function waitingTaskCount(
-  tasks: readonly Pick<TaskView, "stage" | "deliveryStatus" | "archivedAt">[],
+  tasks: readonly Pick<TaskView, "stage" | "deliveryStatus" | "archivedAt" | "acceptedAt">[],
 ): number {
   return tasks.filter(taskCountsAsWaiting).length;
 }
