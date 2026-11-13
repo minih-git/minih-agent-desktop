@@ -1,5 +1,6 @@
 import type { BotListItem, TaskView } from "@minih-agent/shared";
 import { api } from "../../lib/api";
+import type { ToastOptions } from "../app-state";
 
 /**
  * The waiting channel's renderer half (employee mode 0.5 slice 4a).
@@ -71,7 +72,7 @@ export function startTaskWaitingRuntime({
   notifyNative,
 }: {
   translate: (key: string, options?: Record<string, unknown>) => string;
-  showToast: (message: string, options: Record<string, unknown>) => void;
+  showToast: (message: string, options: ToastOptions) => void;
   notifyNative: typeof api.showNativeNotification;
 }): () => void {
   // The store module is imported by SSR too (extension E2E, docs), where there is
@@ -128,7 +129,7 @@ function announceStopped(
     notifyNative,
   }: {
     translate: (key: string, options?: Record<string, unknown>) => string;
-    showToast: (message: string, options: Record<string, unknown>) => void;
+    showToast: (message: string, options: ToastOptions) => void;
     notifyNative: typeof api.showNativeNotification;
   },
 ): void {

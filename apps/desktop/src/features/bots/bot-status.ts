@@ -84,11 +84,27 @@ const TONE_ORDER: Record<BotStatusTone, number> = {
   offline: 5,
 };
 
+/**
+ * Whether this employee is the steward — the person's default entry point.
+ *
+ * Read from the definition, never from the name: the person can rename her.
+ */
+export function isStewardBot(bot: BotListItem): boolean {
+  return bot.profile?.definition === "steward";
+}
+
 export function sortBots(bots: readonly BotListItem[]): BotListItem[] {
-  return [...bots].sort(
-    (left, right) =>
-      TONE_ORDER[botStatusView(left.status).tone] - TONE_ORDER[botStatusView(right.status).tone],
-  );
+  return [...bots].sort((left, right) => {
+    // The steward is always the first row. Her status is "what the board is
+    // doing", not "an employee waiting for work", so ordering her by tone put an
+    // idle steward under three busy employees and hid the door the person came
+    // in through. Everyone else is still ordered by tone.
+    const stewardOrder = Number(isStewardBot(right)) - Number(isStewardBot(left));
+    if (stewardOrder !== 0) return stewardOrder;
+    return (
+      TONE_ORDER[botStatusView(left.status).tone] - TONE_ORDER[botStatusView(right.status).tone]
+    );
+  });
 }
 
 /**

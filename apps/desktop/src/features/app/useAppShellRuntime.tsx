@@ -32,6 +32,7 @@ import {
 } from "../../lib/work-panel-resize";
 import { browserPluginTab, browserPluginTabForReveal } from "../../lib/work-panel-tabs";
 import { useAppStore } from "../../stores/app-store";
+import { startTaskWaitingRuntime } from "../../stores/runtime/task-waiting-runtime";
 import { useSidebarTransition } from "./useSidebarTransition";
 import { useStartupWatchdog } from "./useStartupWatchdog";
 import { useTraySessions } from "./useTraySessions";
@@ -917,6 +918,27 @@ export function useAppShellRuntime() {
   ]);
 
   useEffect(() => installRendererApi(), []);
+
+  // The waiting channel's renderer half (employee mode 0.5 slice 4a): a task is
+  // named by its employee and its title in a notification, and a task that
+  // stopped gets one pinned reminder plus one system notification per stage.
+  //
+  // It lives here rather than at the store's module scope for two reasons: the
+  // subscription is a long-lived resource and this is the component that owns
+  // long-lived resources, so it now has a cleanup; and importing the store must
+  // not subscribe anything, because the extension E2E and the docs import it
+  // outside a window.
+  useEffect(
+    () =>
+      startTaskWaitingRuntime({
+        translate: (key, options) => t(key, options),
+        showToast,
+        notifyNative: api.showNativeNotification,
+      }),
+    // `t` changes identity when the language does, which is exactly when the
+    // wording of a notification has to change with it.
+    [showToast, t],
+  );
 
   useEffect(() => {
     if (!ready) return;
