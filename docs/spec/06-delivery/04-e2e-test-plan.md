@@ -21543,8 +21543,15 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   `apps/desktop/test/task-experience-extraction.test.mjs` (one extraction per
   archive, switch off costs nothing, restart resumes, failure keeps the task
   archived) and `apps/desktop/test/learned-memory-launch.test.mjs` (the index read
-  names the session; lessons alone compose the section). The real-click user path
-  through the settings section is **not written yet**.
+  names the session; lessons alone compose the section). Step 4's delete is now
+  a real click: `apps/desktop/test/bot-experience-user-path.test.mjs` opens
+  Settings → Employees in a real Electron window, clicks the row's delete
+  button, and asserts the row leaves the list, that the host received exactly one
+  `memory.delete` carrying that lesson's id, and that a fresh read of the section
+  does not bring it back; the same file fails when the delete call is removed.
+  The rest of the path (extraction, the next task's prompt) is still covered at
+  module level only, and the system notification in this scenario has not been
+  exercised in a real window.
 
 #### E2E-BOT-inspection-speaks-only-on-anomaly: An hour of progress says nothing, and one stuck task says it once
 
@@ -21570,9 +21577,13 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Status**: Partial. `crates/host-core/src/task_inspection_tests.rs` covers every
   condition and both sides of its boundary, the unknown-age case, the 24-hour
   dedupe, the merged notice, the `direct` marking, and "progress says nothing".
-  The Main timer (`services/task-inspection-service.ts`) and the renderer's
-  wording are **not covered by an automated test yet**, and the system
-  notification has not been exercised in a real Electron window.
+  The renderer's side is covered at module level by
+  `apps/desktop/test/task-waiting-notifications.test.mjs`: one notification per
+  finding worded from the employee and the task, the question as the body, a stuck
+  task announced once per stage, and a task the person stopped announced by
+  nobody. The Main timer (`services/task-inspection-service.ts`) is **not covered
+  by an automated test yet**, and the system notification it ends in has not been
+  exercised in a real Electron window.
 
 #### E2E-BOT-hire-from-template: A job template pre-fills the form, and only the save creates the employee
 
