@@ -248,6 +248,20 @@ async function render(kind) {
   } else if (kind === "hiring") {
     if (button("启用 Super Agent")) throw new Error("the enable button shows with a crew present");
   }
+  // A wrapped label is a broken control: at 1024 the draft button once split into
+  // two glyph columns, so the text of every button in this page must be one line.
+  const draftButton = button("起草");
+  if (draftButton) {
+    const range = document.createRange();
+    range.selectNodeContents(draftButton);
+    const tops = new Set([...range.getClientRects()].map((rect) => Math.round(rect.top)));
+    if (tops.size !== 1) {
+      throw new Error("the draft button wraps its label onto " + tops.size + " lines");
+    }
+    if (draftButton.getBoundingClientRect().width < 40) {
+      throw new Error("the draft button is narrower than its own label");
+    }
+  }
   await settle(4);
   await finishAnimations();
   await settle(2);

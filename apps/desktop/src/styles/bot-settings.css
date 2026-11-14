@@ -421,6 +421,15 @@
   min-width: 0;
 }
 
+/* The label stays on one line and the input absorbs the squeeze: at 1024 the
+   draft button once wrapped to two glyph columns ("起/草"), which reads as a
+   broken control rather than a narrow one. */
+.bot-hire-draft-row > button {
+  flex: 0 0 auto;
+  min-width: 5em;
+  white-space: nowrap;
+}
+
 .bot-norms {
   display: flex;
   flex-direction: column;
