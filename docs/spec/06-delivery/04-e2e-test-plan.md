@@ -21573,3 +21573,73 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   The Main timer (`services/task-inspection-service.ts`) and the renderer's
   wording are **not covered by an automated test yet**, and the system
   notification has not been exercised in a real Electron window.
+
+#### E2E-BOT-hire-from-template: A job template pre-fills the form, and only the save creates the employee
+
+- **Preconditions**: Settings → Employees with no employees. The subagent catalog
+  has `code-reviewer` installed, and one project exists.
+- **Steps**: 1) Click the 审查 template. 2) Read the form. 3) Click 保存.
+  4) Return to Settings → Employees.
+- **Expected**: Step 1 creates nothing (`bot.create` is not called) and the page
+  shows 「启用 Super Agent」, because there is no dispatcher yet. Step 2 opens the
+  form pre-filled with the job's name and duty, the resolved definition
+  `code-reviewer`, the `ask` ceiling the read-only job starts at, and no model
+  suggestion (the job has no family preference). Step 3 calls `bot.create` exactly
+  once with that profile, and the employee appears in Settings, in the sidebar,
+  and in `bot.roster` with `definition: "code-reviewer"`. Step 4 shows the one
+  employee and **no** 「启用 Super Agent」 button.
+- **Specs linked**: ADR `bot-sessions-and-steward` ("Hiring, team norms and tasks
+  running as their role" §2-§3), `03-runtime/06-host-rpc-protocol.md` (`bot.create`)
+- **Acceptance**: A (function), Quality
+- **Milestone**: Employee mode 0.5, slice 6
+- **Status**: Covered. `apps/desktop/test/bot-hiring-user-path.test.mjs` drives the
+  real renderer (template click → prefilled form → save → the created profile and
+  the sidebar row); `apps/desktop/test/bot-hiring.test.mjs` pins the template data
+  and the definition resolution; `slice6_tests.rs` covers the roster field.
+
+#### E2E-BOT-draft-hire-from-one-sentence: One sentence drafts a profile, and cancelling creates nothing
+
+- **Preconditions**: A Super Agent with a model configured. Settings → Employees.
+- **Steps**: 1) Type 「招一个管 Router 计费的后端」 and click 起草. 2) Read the form.
+  3) Click 取消. 4) Repeat with a model that returns prose instead of JSON, then
+  with a sentence that names no repository.
+- **Expected**: Step 1 calls `bot.draftHire` with the sentence and opens the same
+  form, filled with the draft's name, duty, the backend template's `accept-edits`
+  ceiling, the existing project the hint named, and the draft's one-sentence
+  reason above the fields. Step 2 created nothing. Step 3 leaves no employee
+  (`bot.create` was never called). Step 4 refuses with a message the person can
+  act on and creates nothing; a draft never widens the template's permission, and
+  never creates a project.
+- **Specs linked**: ADR `bot-sessions-and-steward` §2 (one-sentence drafts),
+  `03-runtime/06-host-rpc-protocol.md` (`bot.draftHire`)
+- **Acceptance**: A (function), Quality
+- **Milestone**: Employee mode 0.5, slice 6
+- **Status**: Covered. `bot-hiring.test.mjs` covers the draft parser against a fake
+  one-shot completion (fenced JSON, unknown template, `auto` narrowed,
+  over-long fields, a hint that matches nothing, no model configured), and
+  `bot-hiring-user-path.test.mjs` covers the click path and the cancel.
+
+#### E2E-BOT-task-runs-as-its-role: A task runs under the role that owns it, with the team's rules
+
+- **Preconditions**: An employee hired from the 审查 template (`code-reviewer`,
+  `ask`), and team norms written in all three sections.
+- **Steps**: 1) Start one task under that employee. 2) Ask it to change a file.
+  3) End the turn and inspect the transcript.
+- **Expected**: Step 1 launches the task's session with the employee's definition:
+  the reviewer's tools plus `TaskReport` and `asktool`, and no `Write`, `Edit` or
+  `Bash` — the same ceiling the employee's container has, not the app's full
+  catalog. Step 2 is refused with the persona denial, which names the reason. Step
+  3 shows the task rules **and** the team norms in the per-turn brief and no
+  trace of either in the stored transcript; clearing the norms stops them being
+  injected on the next turn.
+- **Specs linked**: ADR `bot-sessions-and-steward` §1, §4,
+  `03-runtime/06-host-rpc-protocol.md` (`bot.forTaskSession`, `team.norms.*`)
+- **Acceptance**: A (function), Security, Quality
+- **Milestone**: Employee mode 0.5, slice 6
+- **Status**: Partial. `packages/agent-runtime/src/runtime.test.ts` covers the tool
+  ceiling both ways (a reviewer's task has no editing tool and does have
+  `TaskReport`/`asktool`; the employee's container has no `TaskReport`), a missing
+  definition fails the turn, and `bot-hiring.test.mjs` covers the briefing text and
+  its per-turn composition. The launch path itself (`bot.forTaskSession` →
+  `resolveTaskPersona` in `session-launch.ts`) is covered by domain tests and a
+  source anchor, **not** by an end-to-end turn against a running host.

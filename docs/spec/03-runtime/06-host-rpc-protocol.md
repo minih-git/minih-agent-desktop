@@ -765,19 +765,32 @@ or general MCP operations:
   `bot.seedDefaults` — the employee surface (§ADRs bot-sessions-and-steward).
   Each edits a session's `role` and `bot_profile_json`; `bot.list` also answers
   the status point, derived from the session's latest delivery stage. Dismissing
-  sets the role back to `user` and keeps the conversation. Seeding creates the
-  default crew — the steward's default name is `Super Agent` — and is called
-  only from an explicit user action. `bot.update` writes the profile and the
-  session title together, so a rename is one fact. It announces both
-  `botsChanged` and `sessionsChanged`, because the renderer keeps the roster and
-  the session list in separate stores and the conversation topbar reads the
+  sets the role back to `user` and keeps the conversation. `bot.create` accepts
+  an optional `modelKey` (`providerId/modelId`), which is how a hire's suggested
+  model becomes the session the employee's tasks inherit. `bot.seedDefaults`
+  creates **only the steward** (`Super Agent`), is called only from an explicit
+  user action, and never touches an existing employee. `bot.update` writes the
+  profile and the session title together, so a rename is one fact. It announces
+  both `botsChanged` and `sessionsChanged`, because the renderer keeps the roster
+  and the session list in separate stores and the conversation topbar reads the
   session title — neither learns of the rename from a poll.
+- `bot.forTaskSession` — the employee a **task session** belongs to (slice 6):
+  `{ employee: { sessionId, profile } }`, resolved through `tasks.session_id`, or
+  `{ employee: null }` when the session is not a task's own. Main reads it per
+  launch so a task runs under its role's definition.
+- `team.norms.get` / `team.norms.set` — the team norms the person writes
+  (slice 6), one versioned row in the local `kv` table (`team`/`norms`). Three
+  sections (`communication`, `scope`, `delivery`), each ≤ 1 000 characters and
+  ≤ 2 500 in total; an over-long write is refused with `LIMIT_EXCEEDED`, and an
+  all-blank write deletes the row. `{ norms: null }`-equivalent (empty sections)
+  means "the person wrote none".
 - `bot.roster` — the steward's view of the crew (slice 3): every employee except
   the caller and every other `steward`, with the facts a choice needs — name,
-  duty, model, permission mode, bound repository, open tasks, how many of those
-  wait on the person, and whether it is idle. `repos` is a reserved array (one
-  employee reads one repository today). Not in the sidecar's proxy allowlist:
-  the model reaches it only through its `Roster` tool, in Main.
+  duty, the `definition` it runs as (slice 6), model, permission mode, bound
+  repository, open tasks, how many of those wait on the person, and whether it is
+  idle. `repos` is a reserved array (one employee reads one repository today).
+  Not in the sidecar's proxy allowlist: the model reaches it only through its
+  `Roster` tool, in Main.
 - `taskCard.list` / `taskCard.propose` / `taskCard.revise` / `taskCard.drop` —
   durable task-card drafts bound to the steward session. `propose` accepts a
   card with no target at all: a steward that cannot attribute the work leaves

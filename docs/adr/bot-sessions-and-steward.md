@@ -1127,3 +1127,126 @@ violations fail the step.
 | The timer is cleaned up on quit | **Yes** — `disposeTaskInspection` in the shutdown chain | `bootstrap/shutdown.ts`, `task-inspection-service.ts` |
 | v39 is additive, idempotent, orphan-tolerant | **Yes** — row counts, FTS hits, and only-new-violations compared | `db/bot_memory_migration.rs` |
 | An accepted task is not "waiting on you" | **Yes** — `botStatusFromTasks` and `taskTone` ignore `acceptedAt` rows | `features/bots/bot-status.ts`, `packages/shared/src/task.ts` |
+
+## Hiring, team norms and tasks running as their role (employee mode 0.5, slice 6)
+
+Slice 5 taught an employee to keep what it learns. This section is about what an
+employee *is* before it works: the job it was hired for, the rules the team
+shares, and — the gap that made "role" a word without a mechanism — the fact that
+the session doing the work now runs as that job.
+
+### 1. A task runs as its employee's role
+
+Until this slice `resolveBotPersona` answered only for `role = 'bot'`, so an
+employee's definition shaped its own **container** — the session that dispatches
+nothing and runs nothing. The session that actually does the work is the task's,
+and it ran with every tool the app has. A reviewer hired to "read code and never
+edit" could write.
+
+A task session now resolves the definition of the employee it belongs to
+(`tasks.employee_session_id` → that session's profile), through
+`bot.forTaskSession` in Main:
+
+- `steward` is not a role a task runs as — the dispatcher does not hand work to
+  itself;
+- an employee with no definition keeps the previous behaviour (a task with the
+  session's full capability set), because "no role" is a real choice;
+- a definition that does **not** resolve refuses the launch with
+  `BOT_DEFINITION_MISSING`, exactly as an employee container does. Falling back to
+  "no persona" would turn a typo into a permission bug;
+- a task keeps the tools its own rules are written in terms of — `TaskReport`
+  (`TASK_SESSION_PERSONA_TOOLS`) and `asktool` (`CORE_PERSONA_TOOLS`) — and
+  nothing that writes. The runtime takes a `taskSession` flag rather than a list
+  of extra tool names, so no caller can widen a persona through it. The ceiling
+  is still `min(card, employee)`: a definition narrows, never widens.
+
+The runtime match includes `taskSession`, so a warm runtime built for the
+employee's container is not reused for the task.
+
+### 2. A template is pure data
+
+`HIRE_TEMPLATES` (`packages/shared/src/bot-hiring.ts`) is six jobs — interface,
+front-end logic, backend, design, review, research — each carrying a name/duty
+i18n key, the definitions to try **in order** (界面 prefers a person's own
+`ui-coder`, then the shipped `ui-designer`), the widest permission mode it may
+start at, its `mustAsk`, whether it binds a repository, whether it is read-only,
+and which model family suits it. Nothing in that file calls a host or a model, and
+no template creates anything: it pre-fills the form the person already confirms.
+
+One sentence can also produce a draft (`bot.draftHire`): Main asks the **Super
+Agent's own model** for a strict JSON object and validates every field — an
+unknown template is refused, the permission mode is narrowed to the template's,
+`mustAsk` comes from the template (plus the three nobody can switch off), and a
+`projectHint` only ever selects a project that already exists. With no model
+configured the call is refused with a message that says what to do. The answer is
+data: nothing in it is executed.
+
+### 3. `seedDefaults` narrows to the steward
+
+`bot.seedDefaults` keeps its name and its `created`/`skipped` reply, but creates
+**only** the Super Agent. The fixed crew — Router 后端, Desktop 前端, 调研与文档
+— is gone; those jobs are hired from templates now. The method is still called
+only from an explicit click, and it is defined by what it must not do: no existing
+employee is renamed, edited or removed, and a dismissed one stays dismissed.
+`seed_defaults` is covered by tests on an empty host (one row) and on a four-
+employee host (byte-identical profiles afterwards).
+
+The page reflects that: the old "create the default crew" button became the
+hiring area, and "启用 Super Agent" appears only while there is no steward.
+
+### 4. Team norms: three sections, one versioned row, two injection points
+
+The person writes the rules every employee follows in three bounded sections —
+communication, scope, delivery — stored in the local `kv` table under
+`team`/`norms` with a `version` field. Limits are characters: 1 000 per section,
+2 500 in total; an over-long write is refused (`LIMIT_EXCEEDED`) rather than
+truncated, because a rule cut in the middle is one the person believes they wrote
+and the employee never read. An all-blank write deletes the row, and the initial
+value is empty: placeholders show what a rule might look like and nothing is
+written for the person.
+
+Injection, and the boundary that makes it safe:
+
+- **every task turn** carries the full set, appended after
+  `TASK_SESSION_BRIEFING` and in the same channel: generated per turn, sent with
+  the request, never written to the transcript, so it cannot accumulate, go stale,
+  or be read back as something the person said in the conversation;
+- **the steward's brief** carries one line,
+  `The team norms every employee follows: …`, truncated to 600 characters;
+- the injected block states what it is not: these are team rules about how work
+  is done, they never authorize an action the host would refuse, never widen
+  permissions or tools, and the host rules win where they conflict.
+
+### 5. The roster names the job
+
+`bot.roster` rows carry the `definition` the employee runs as, and Main's `Roster`
+tool turns it into the word the person would use (`reviewer`, `researcher`,
+`coder`, `designer`, …) and marks a read-only job. The steward's prompt says so
+explicitly: research, reading and review go to a researcher or a reviewer with
+`readOnly: true`, never to the employee that writes code.
+
+### 6. What this section does not do
+
+- no multi-role relay between employees (slice 7);
+- no generated avatars;
+- no user-defined or exportable templates;
+- the three old pre-set employees are **not** migrated onto templates: they are
+  the person's rows, and a definition is theirs to change.
+
+### Enforcement status after this section
+
+| Rule | Enforced | Where |
+| --- | --- | --- |
+| A task runs as its employee's role | **Yes** — `bot.forTaskSession` drives `resolveTaskPersona` | `runtime/session-launch.ts`, `runtime/bot-persona.ts` |
+| A task keeps `TaskReport` and `asktool`, and nothing wider | **Yes** — a fixed `TASK_SESSION_PERSONA_TOOLS` set behind a `taskSession` flag | `task-report.ts`, `runtime.ts`, `runtime.test.ts` |
+| A missing role refuses the launch | **Yes** — `BOT_DEFINITION_MISSING` | `runtime.ts`, `bot-hiring.test.mjs` |
+| The steward is not a task's role | **Yes** — `resolveTaskPersona` returns `none` | `runtime/bot-persona.ts`, `bot-hiring.test.mjs` |
+| A template is data and creates nothing | **Yes** — no host or model call in `bot-hiring.ts` | `packages/shared/src/bot-hiring.ts` |
+| A draft never widens its template | **Yes** — `narrowPermission` + template `mustAsk` | `services/hire-draft.ts`, `bot-hiring.test.mjs` |
+| A draft cannot create a project | **Yes** — `projectFromHint` matches only existing projects | `services/hire-draft.ts` |
+| `seedDefaults` creates only the steward | **Yes** — single-row seed; existing crew compared byte-for-byte | `session_collaboration/bots.rs`, `slice6_tests.rs` |
+| Team norms are bounded and versioned | **Yes** — `LIMIT_EXCEEDED` before the write; `version` in the row | `session_collaboration/norms.rs`, `slice6_tests.rs` |
+| Every task turn carries the norms | **Yes** — `buildTaskSessionBriefing` | `services/task-status.ts`, `ipc/agent-ipc.ts` |
+| The norms never enter the transcript | **Yes** — per-turn `turnBriefing` only; a source test pins it | `ipc/agent-ipc.ts`, `bot-task-session-rules.test.mjs` |
+| The norms cannot act as a permission | **Yes** — the block says so; the ceiling stays `min(card, employee)` | `services/team-norms.ts` |
+| The roster names the job | **Yes** — `definition` per row, worded by `roleWordForDefinition` | `bots.rs::roster`, `session-messaging-tools.ts` |
