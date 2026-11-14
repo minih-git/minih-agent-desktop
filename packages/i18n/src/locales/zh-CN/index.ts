@@ -831,6 +831,58 @@ export const zhCN = {
   },
   // 员工：侧栏分组、设置页，以及管家的任务卡（ADR bot-sessions-and-steward §5）。
   bots: {
+    // 招聘、团队规范与招聘时的模型选择（员工模式 0.5 切片 6）。
+    hiring: {
+      title: "招聘",
+      description:
+        "点一个岗位开始，用一句话描述你要招的人，或者从空白表单开始。你保存表单之前，不会创建任何员工。",
+      templates: "可以招的岗位",
+      fromBlank: "从空白创建",
+      enableSteward: "启用 Super Agent",
+      enablingSteward: "正在启用…",
+      enableStewardHint:
+        "Super Agent 接你的话、拟卡片、回报进展。它是宿主唯一替你预置的员工。",
+      readOnly: "只读",
+      noRepository: "不绑仓库",
+      prefersUiModel: "优先 Gemini 系列",
+      avoidsUiModel: "不用 Gemini 系列",
+      draftPlaceholder: "用一句话描述你要招的人",
+      draft: "起草",
+      drafting: "正在起草…",
+      draftHint: "起草只填表单，仍要你确认；在那之前什么都不会创建。",
+      draftReason: "为什么是这个岗位：{{reason}}",
+      template: {
+        ui: { name: "界面", duty: "渲染层的页面、组件与视觉细节。" },
+        frontendLogic: { name: "前端逻辑", duty: "前端状态、数据流与行为，不做视觉设计。" },
+        backend: { name: "后端", duty: "服务端、接口、存储、协议与计费代码。" },
+        design: { name: "设计", duty: "一个屏幕该长什么样、怎么读。" },
+        review: { name: "审查", duty: "只读代码并指出问题，从不改代码。" },
+        research: { name: "研究员", duty: "调研、阅读与比较，不绑仓库。" },
+      },
+    },
+    norms: {
+      title: "团队规范",
+      description:
+        "所有员工共用的规则。它随每件任务下发，但不能放宽权限，也不能绕过安全纪律。",
+      communication: "沟通",
+      communicationHint: "怎么跟你说话：语言、长度、什么时候该问。",
+      communicationPlaceholder: "例如：用中文汇报，先给结论，不要汇报过程流水账。",
+      scope: "范围",
+      scopeHint: "接下什么，不碰什么。",
+      scopePlaceholder: "例如：不要重排你没改过的文件；动共享配置前先问。",
+      delivery: "交付",
+      deliveryHint: "它说做完时，哪些事必须已经成立。",
+      deliveryPlaceholder: "例如：每次改动要带证明它的测试，以及你跑过的命令。",
+      sectionCount: "{{used}}/{{max}}",
+      totalCount: "合计 {{used}}/{{max}} 字",
+      boundary: "这些是团队规则，不是权限：它们不能让宿主拒绝的动作变成允许。",
+      save: "保存规范",
+      saving: "正在保存…",
+      saved: "已保存。之后每件任务都会带上这些规则。",
+      cleared: "已清空。之后不再下发规范。",
+      loadFailed: "读不到团队规范（{{reason}}）。",
+      saveFailed: "团队规范没能保存（{{reason}}）。",
+    },
     // Waiting channel and blocked card (employee mode 0.5 slice 4a).
     waiting: {
       title: "等你 {{count}} 件",
@@ -974,6 +1026,9 @@ export const zhCN = {
       definition: "按定义",
       definitionNone: "无",
       definitionHint: "子代理定义决定它的提示词，以及它可用的工具范围。",
+      model: "模型",
+      modelHint: "这个员工的任务跑在哪个模型上。由招它的岗位给出建议，你可以改。",
+      modelNone: "跟随应用默认",
       project: "项目",
       projectNone: "不绑定项目",
       projectHint: "这个员工在哪个仓库里干活。没有项目就读不到代码，也就答不了关于仓库的问题。",

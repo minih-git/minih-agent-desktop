@@ -112,6 +112,11 @@ export type RegisterIpcDependencies = {
    */
   sessionCollaboration: SessionCollaborationService;
   /**
+   * One-sentence hiring (slice 6): turns a sentence into a **draft** profile.
+   * It writes nothing, so a failed or odd draft changes no employee.
+   */
+  draftHire: (utterance: string) => Promise<import("../services/hire-draft").HireDraftOutcome>;
+  /**
    * The one writer of the task channel (ADR bot-sessions-and-steward §7). The
    * delivery service owns it too, so a stage the host moved on settle or fail is
    * announced by the same object that announces a created task.
@@ -419,6 +424,8 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     sessionCollaboration: dependencies.sessionCollaboration,
     tasks: dependencies.taskChanges,
     onTaskArchived,
+    // One-sentence hiring (slice 6): Main writes the draft, the person saves it.
+    draftHire: dependencies.draftHire,
   });
   registerScheduledIpc({
     registrar,

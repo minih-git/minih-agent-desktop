@@ -840,6 +840,62 @@ export const en = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // Hiring, team norms and the hire model picker (employee mode 0.5 slice 6).
+    hiring: {
+      title: "Hire",
+      description:
+        "Pick a job to start from, describe it in one sentence, or start from a blank form. Nothing is hired until you save the form.",
+      templates: "Jobs you can hire for",
+      fromBlank: "Start from blank",
+      enableSteward: "Enable Super Agent",
+      enablingSteward: "Enabling…",
+      enableStewardHint:
+        "The Super Agent takes your sentences, drafts the cards and reports back. It is the one employee the host creates for you.",
+      readOnly: "Read-only",
+      noRepository: "No repository",
+      prefersUiModel: "Prefers a Gemini-family model",
+      avoidsUiModel: "Not a Gemini-family model",
+      draftPlaceholder: "Describe the person you want to hire, in one sentence",
+      draft: "Draft",
+      drafting: "Drafting…",
+      draftHint: "The draft fills the form; you still confirm it, and nothing is created before that.",
+      draftReason: "Why this job: {{reason}}",
+      template: {
+        ui: { name: "Interface", duty: "Screens, components and visual details in the renderer." },
+        frontendLogic: {
+          name: "Front-end logic",
+          duty: "Front-end state, data flow and behaviour, without the visual design.",
+        },
+        backend: { name: "Backend", duty: "Server, API, storage, protocol and billing code." },
+        design: { name: "Design", duty: "How a screen should look and read." },
+        review: { name: "Review", duty: "Reads code and reports problems; never edits." },
+        research: { name: "Researcher", duty: "Research, reading and comparisons; no repository." },
+      },
+    },
+    norms: {
+      title: "Team norms",
+      description:
+        "The rules every employee follows. They are attached to every task, and they cannot widen a permission or relax a safety rule.",
+      communication: "Communication",
+      communicationHint: "How they talk to you: language, length, when to ask.",
+      communicationPlaceholder: "Example: report in Chinese, lead with the conclusion, no progress chatter.",
+      scope: "Scope",
+      scopeHint: "What they take on, and what they leave alone.",
+      scopePlaceholder: "Example: never reformat files you did not change; ask before touching shared config.",
+      delivery: "Delivery",
+      deliveryHint: "What has to be true when they say it is done.",
+      deliveryPlaceholder: "Example: a change comes with the test that proves it and the command you ran.",
+      sectionCount: "{{used}}/{{max}}",
+      totalCount: "{{used}} of {{max}} characters in total",
+      boundary:
+        "These are team rules, not permissions: they never authorize an action the host would refuse.",
+      save: "Save norms",
+      saving: "Saving…",
+      saved: "Saved. Every task from now on carries these.",
+      cleared: "Cleared. No norms are attached from now on.",
+      loadFailed: "The team norms could not be read ({{reason}}).",
+      saveFailed: "The team norms could not be saved ({{reason}}).",
+    },
     // Waiting channel and blocked card (employee mode 0.5 slice 4a).
     waiting: {
       title: "{{count}} waiting for you",
@@ -983,6 +1039,10 @@ export const en = {
       definition: "Runs as",
       definitionNone: "No definition",
       definitionHint: "The subagent definition supplies the prompt and the tool list this employee may use.",
+      model: "Model",
+      modelHint:
+        "What this employee's tasks run on. Suggested by the job you hired for; you can change it.",
+      modelNone: "App default",
       project: "Project",
       projectNone: "No project",
       projectHint: "The repository this employee works in. Without one it cannot read code, so it also cannot answer questions about a repository.",

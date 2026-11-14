@@ -18,11 +18,14 @@ import type {
   ActivationScope,
   BotCreateRequest,
   BotList,
+  BotHireDraftResult,
   BotSeedDefaultsResult,
   BotUpdateRequest,
   BotsChangedEvent,
   TaskCardConfirmRequest,
   TaskCardConfirmResult,
+  TeamNormsSetRequest,
+  TeamNormsView,
   TaskCardDraftView,
   TaskCardReassignRequest,
   TaskCardReassignResult,
@@ -1633,6 +1636,16 @@ export const api = {
   dismissBot: (sessionId: string) =>
     invoke<{ session: SessionSummary }>(IPC.invoke.botDismiss, { sessionId }),
   seedDefaultBots: () => invoke<BotSeedDefaultsResult>(IPC.invoke.botSeedDefaults),
+  /**
+   * One-sentence hiring (slice 6): Main turns a sentence into a profile draft.
+   * Nothing is created here — the draft fills the form and the person saves it.
+   */
+  draftHire: (utterance: string) =>
+    invoke<BotHireDraftResult>(IPC.invoke.botDraftHire, { utterance }),
+  /** The team norms the person wrote; `norms: null` means none yet. */
+  getTeamNorms: () => invoke<TeamNormsView>(IPC.invoke.teamNormsGet),
+  setTeamNorms: (norms: TeamNormsSetRequest["norms"]) =>
+    invoke<TeamNormsView>(IPC.invoke.teamNormsSet, { norms }),
   /** Task-card drafts of one steward session, newest first. */
   listTaskCards: (sessionId: string) =>
     invoke<TaskCardList>(IPC.invoke.taskCardList, { sessionId }),

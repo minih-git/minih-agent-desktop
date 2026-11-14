@@ -19,6 +19,7 @@ import {
   type McpServerRecord,
   type Mode,
   type ModelBinding,
+  type BotProfile,
   normalizeBotProfile,
   normalizeMode,
   type Risk,
@@ -41,7 +42,7 @@ import type { PluginRuntime } from "../plugin-runtime";
 import { loadRemoteWorkspaceInstructions } from "../remote/remote-workspace-instructions.js";
 import type { LoadedSkillDocument } from "../skill-document";
 import type { UserMcpRuntime } from "../user-mcp";
-import { resolveBotPersona, runtimeBotPersona } from "./bot-persona";
+import { resolveBotPersona, resolveTaskPersona, runtimeBotPersona } from "./bot-persona";
 import type { RuntimeState } from "./context";
 import { createRuntimeModelResolver } from "./model-resolution";
 import type { RuntimeProvider } from "./provider-catalog";
@@ -90,6 +91,34 @@ function botPersonaFor(
 ) {
   const profile = normalizeBotProfile(session.botProfile);
   return resolveBotPersona(session.role ?? undefined, profile, definitions);
+}
+
+/**
+ * The employee a task session belongs to, as a profile (employee mode 0.5
+ * slice 6).
+ *
+ * A task's own row carries no profile — the definition is the employee's — so
+ * this is the read that makes "a task runs as its role" possible. It is one
+ * host call because `bot.*` is Main's alone, and an unavailable host is thrown
+ * rather than treated as "no employee": a task that silently lost its role
+ * would run with every tool the session has.
+ */
+async function employeeProfileOfTask(
+  host:
+    | { call: <T>(method: string, params?: Record<string, unknown>) => Promise<T> }
+    | null
+    | undefined,
+  taskSessionId: string,
+): Promise<BotProfile | null> {
+  if (!host) {
+    throw new Error(
+      "the host is unavailable, so the employee behind this task cannot be read",
+    );
+  }
+  const result = await host.call<{
+    employee?: { sessionId?: string; profile?: unknown } | null;
+  }>("bot.forTaskSession", { sessionId: taskSessionId });
+  return normalizeBotProfile(result?.employee?.profile);
 }
 
 export function createSessionLaunchRuntime({
@@ -502,9 +531,19 @@ export function createSessionLaunchRuntime({
       // A switched-off builtin is dropped from what this prompt may delegate to.
       disabledBuiltins: await disabledBuiltinSubagents(),
     });
-    const botPersona = runtimeBotPersona(
-      botPersonaFor(session, subagentCatalog.definitions),
-    );
+    // A task runs as the role that owns it (employee mode 0.5 slice 6): the
+    // definition is the employee's, read through the task row, because a task
+    // session has no profile of its own. A failed read is not "no persona":
+    // that would run the task with every tool the session has, which is exactly
+    // the permission bug the definition exists to prevent.
+    const personaResolution =
+      session.role === "task"
+        ? resolveTaskPersona(
+            await employeeProfileOfTask(runtimeState.host, sessionId),
+            subagentCatalog.definitions,
+          )
+        : botPersonaFor(session, subagentCatalog.definitions);
+    const botPersona = runtimeBotPersona(personaResolution);
     const subagentBindings = await resolveSubagentProviders({
       definitions: subagentCatalog.definitions,
       providers: providers.providers,

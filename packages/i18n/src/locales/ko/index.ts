@@ -827,6 +827,58 @@ export const ko = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // 채용, 팀 규칙, 모델 선택 (직원 모드 0.5, 6번째 조각).
+    hiring: {
+      title: "채용",
+      description:
+        "직무를 골라 시작하거나, 한 문장으로 사람을 설명하거나, 빈 양식으로 시작하세요. 양식을 저장하기 전에는 아무도 채용되지 않습니다.",
+      templates: "채용할 수 있는 직무",
+      fromBlank: "빈 양식으로 시작",
+      enableSteward: "Super Agent 켜기",
+      enablingSteward: "켜는 중…",
+      enableStewardHint:
+        "Super Agent가 문장을 받아 카드를 만들고 보고합니다. 호스트가 대신 만들어 주는 유일한 직원입니다.",
+      readOnly: "읽기 전용",
+      noRepository: "저장소 없음",
+      prefersUiModel: "Gemini 계열 모델 선호",
+      avoidsUiModel: "Gemini 계열 모델 아님",
+      draftPlaceholder: "채용하려는 사람을 한 문장으로 설명하세요",
+      draft: "초안",
+      drafting: "초안 작성 중…",
+      draftHint: "초안은 양식만 채웁니다. 확인은 여전히 직접 하며, 그 전에는 아무것도 만들어지지 않습니다.",
+      draftReason: "이 직무인 이유: {{reason}}",
+      template: {
+        ui: { name: "인터페이스", duty: "렌더러의 화면, 컴포넌트, 시각적 세부 사항." },
+        frontendLogic: { name: "프런트엔드 로직", duty: "시각 디자인 없이 프런트엔드 상태, 데이터 흐름, 동작." },
+        backend: { name: "백엔드", duty: "서버, API, 저장소, 프로토콜, 과금 코드." },
+        design: { name: "디자인", duty: "화면이 어떻게 보이고 읽혀야 하는지." },
+        review: { name: "리뷰", duty: "코드를 읽고 문제를 알린다. 절대 고치지 않는다." },
+        research: { name: "리서처", duty: "조사, 읽기, 비교. 저장소 없음." },
+      },
+    },
+    norms: {
+      title: "팀 규칙",
+      description:
+        "모든 직원이 따르는 규칙입니다. 모든 작업에 함께 전달되며, 권한을 넓히거나 안전 규칙을 완화할 수 없습니다.",
+      communication: "소통",
+      communicationHint: "어떻게 말하는지: 언어, 길이, 언제 물을지.",
+      communicationPlaceholder: "예: 한국어로 보고하고 결론부터 말하며 과정을 나열하지 않는다.",
+      scope: "범위",
+      scopeHint: "무엇을 맡고 무엇은 건드리지 않는지.",
+      scopePlaceholder: "예: 건드리지 않은 파일을 다시 정렬하지 않는다. 공용 설정을 만지기 전에 묻는다.",
+      delivery: "전달",
+      deliveryHint: "완료라고 말할 때 이미 참이어야 하는 것.",
+      deliveryPlaceholder: "예: 모든 변경은 그것을 증명하는 테스트와 실행한 명령을 함께 가져온다.",
+      sectionCount: "{{used}}/{{max}}",
+      totalCount: "합계 {{used}}/{{max}}자",
+      boundary: "이것은 팀 규칙이며 권한이 아닙니다. 호스트가 거부할 행동을 승인하지 않습니다.",
+      save: "규칙 저장",
+      saving: "저장 중…",
+      saved: "저장했습니다. 이후 모든 작업이 이 규칙을 함께 가집니다.",
+      cleared: "비웠습니다. 이후로는 규칙이 전달되지 않습니다.",
+      loadFailed: "팀 규칙을 읽지 못했습니다 ({{reason}}).",
+      saveFailed: "팀 규칙을 저장하지 못했습니다 ({{reason}}).",
+    },
     // Waiting channel and blocked card (employee mode 0.5 slice 4a).
     waiting: {
       title: "확인 대기 {{count}}건",
@@ -970,6 +1022,9 @@ export const ko = {
       definition: "실행 정의",
       definitionNone: "정의 없음",
       definitionHint: "서브에이전트 정의가 이 직원의 프롬프트와 사용할 수 있는 도구 목록을 정합니다.",
+      model: "모델",
+      modelHint: "이 직원의 작업이 실행되는 모델입니다. 채용한 직무가 제안하며, 바꿀 수 있습니다.",
+      modelNone: "앱 기본값",
       project: "프로젝트",
       projectNone: "프로젝트 없음",
       projectHint: "이 직원이 작업하는 저장소입니다. 없으면 코드를 읽을 수 없습니다.",

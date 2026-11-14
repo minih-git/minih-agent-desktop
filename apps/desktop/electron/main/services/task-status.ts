@@ -4,6 +4,7 @@ import {
   type BotListItem,
   type TaskView,
 } from "@minih-agent/shared";
+import { readTeamNorms, stewardNormsLine, teamNormsBriefing } from "./team-norms";
 
 /**
  * The board of tasks, as the secretary reads it (employee mode 0.5 slice 3).
@@ -166,7 +167,14 @@ export function describeTaskBoard(
  * The block is delimited and states what it is, so a model cannot mistake it for
  * a message from the person.
  */
-export function stewardBriefing(board: TaskBoard, name: string, now: number = Date.now()): string {
+export function stewardBriefing(
+  board: TaskBoard,
+  name: string,
+  now: number = Date.now(),
+  // What the employees she dispatches to will be following (slice 6). One line,
+  // already truncated by its builder, because her brief is bounded.
+  normsLine?: string,
+): string {
   const groups = groupTasks(board, now);
   const byKey = Object.fromEntries(groups.map((group) => [group.key, group])) as Record<
     TaskGroupKey,
@@ -180,6 +188,9 @@ export function stewardBriefing(board: TaskBoard, name: string, now: number = Da
     // answer to. It rides with the turn, so a rename applies on the next turn
     // without rewriting any history.
     `The person calls you «${name}».`,
+    // The person's own team rules, so a card she drafts is shaped like the work
+    // this team expects. It is the person's text, and it decides nothing here.
+    ...(normsLine ? [normsLine] : []),
     // The waiting channel (slice 4a): a question a task is blocked on reaches her
     // as the employee's own words. Relaying is the whole job — answering it for
     // the person would be the one thing she must never do.
@@ -283,12 +294,45 @@ export async function readTaskBoard(call: BoardReader): Promise<TaskBoard> {
  * `name` is the employee's own name, which the person can change; the default is
  * only what a steward that was never renamed is called. The brief is generated
  * per turn and never persisted, so a rename applies on the next turn.
+ *
+ * The team norms ride along as one line (slice 6). A read that fails drops the
+ * line rather than failing the brief: the board is what she has to act on, and
+ * the norms only shape the cards she drafts.
  */
 export async function buildStewardBriefing(call: BoardReader, name?: string): Promise<string> {
   const label = name?.trim() || STEWARD_DEFAULT_NAME;
   try {
-    return stewardBriefing(await readTaskBoard(call), label);
+    const board = await readTaskBoard(call);
+    const norms = await readTeamNorms(call);
+    const line = norms.kind === "norms" ? stewardNormsLine(norms.norms) : "";
+    return stewardBriefing(board, label, Date.now(), line || undefined);
   } catch (error) {
     return unreadableBriefing(error instanceof Error ? error.message : String(error));
   }
+}
+
+/**
+ * The rules a **task** turn runs under: slice 4a's rules, then the team norms
+ * the person wrote (slice 6).
+ *
+ * Same channel as the rules — attached to this request only, never written to
+ * the transcript — so a norm cannot accumulate over turns or be read back as
+ * something the person said in the conversation. A norms read that fails says
+ * so: "no team rules" and "could not read them" are different facts, and the
+ * second one must not be presented as the first.
+ */
+export async function buildTaskSessionBriefing(call: BoardReader): Promise<string> {
+  const norms = await readTeamNorms(call);
+  if (norms.kind === "norms") {
+    return [TASK_SESSION_BRIEFING, "", teamNormsBriefing(norms.norms)].join("\n");
+  }
+  if (norms.kind === "unreadable") {
+    return [
+      TASK_SESSION_BRIEFING,
+      "",
+      "[Team norms could not be read for this turn, so none are attached. Do not",
+      `assume the team has no rules; say so if it matters. (${norms.reason})]`,
+    ].join("\n");
+  }
+  return TASK_SESSION_BRIEFING;
 }

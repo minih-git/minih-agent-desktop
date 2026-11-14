@@ -1,5 +1,6 @@
 import {
   IPC,
+  type BotHireDraftResult,
   type BotsChangedEvent,
   type SessionCollaborationMessage,
   type TaskArchiveResult,
@@ -8,8 +9,10 @@ import {
   type TaskCreateResult,
   type TaskDeliveryMergeResult,
   type TaskView,
+  type TeamNormsSetRequest,
 } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
+import type { HireDraftOutcome } from "../services/hire-draft";
 import type { SessionCollaborationService } from "../services/session-collaboration";
 import type { IpcRegistrar } from "./types";
 import { taskCardsChangedSender } from "../services/task-cards-changed";
@@ -33,6 +36,7 @@ export function registerBotIpc({
   sessionCollaboration,
   onTaskArchived,
   tasks,
+  draftHire,
 }: {
   registrar: IpcRegistrar;
   getHost: () => HostProcess | null;
@@ -55,6 +59,11 @@ export function registerBotIpc({
    * the archive is simply not announced to an extractor.
    */
   onTaskArchived?: () => void;
+  /**
+   * One-sentence hiring (slice 6). It returns a draft and writes nothing, so the
+   * employee exists only after the person saves the form it filled.
+   */
+  draftHire: (utterance: string) => Promise<HireDraftOutcome>;
 }): void {
   const { handle } = registrar;
   const notifyTaskCardsChanged = taskCardsChangedSender(sendToRenderer);
@@ -94,6 +103,27 @@ export function registerBotIpc({
     const result = await host().call("bot.seedDefaults", {});
     sendToRenderer(IPC.event.botsChanged, { reason: "seeded" } satisfies BotsChangedEvent);
     return result;
+  });
+
+  // One-sentence hiring (slice 6). A draft, never a create: the renderer fills
+  // the form with it and the person still has to save it. A failure is thrown
+  // with the message Main wrote, because it is addressed to the person ("the
+  // Super Agent has no model yet"), not to a developer.
+  handle(IPC.invoke.botDraftHire, async (request) => {
+    const { utterance } = (request ?? {}) as { utterance?: string };
+    const outcome = await draftHire(utterance ?? "");
+    if (!outcome.ok) throw new Error(outcome.message);
+    return { draft: outcome.draft } satisfies BotHireDraftResult;
+  });
+
+  // The team norms the person writes (slice 6). Both directions are host calls:
+  // the rule set lives in the host's local key–value table, so the renderer
+  // never sees a stale copy of another computer's settings.
+  handle(IPC.invoke.teamNormsGet, async () => host().call("team.norms.get", {}));
+  handle(IPC.invoke.teamNormsSet, async (request) => {
+    const { norms } = (request ?? {}) as TeamNormsSetRequest;
+    if (!norms) throw new Error("norms are required");
+    return host().call("team.norms.set", { norms });
   });
 
   handle(IPC.invoke.taskCardList, async (request) => {

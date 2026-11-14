@@ -332,7 +332,10 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "bots.settings.add",
       "bots.settings.editTitle",
       "bots.settings.dismiss",
-      "bots.settings.seed",
+      "bots.hiring.title",
+      "bots.hiring.fromBlank",
+      "bots.hiring.draft",
+      "bots.norms.title",
     ],
   },
 

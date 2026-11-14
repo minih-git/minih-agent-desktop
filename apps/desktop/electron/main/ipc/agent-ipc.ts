@@ -14,7 +14,7 @@ import type { AgentSidecar } from "../agent-sidecar";
 import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import type { PersistenceOutbox } from "../persistence-outbox";
-import { buildStewardBriefing, TASK_SESSION_BRIEFING } from "../services/task-status";
+import { buildStewardBriefing, buildTaskSessionBriefing } from "../services/task-status";
 import { closeTaskWaiting, requestTaskStageReconcile } from "../runtime/task-waiting";
 import type { ComposerCommandService } from "./composer-ipc";
 import type { IpcRegistrar } from "./types";
@@ -577,11 +577,11 @@ export function registerAgentIpc({
           // brief is where the model learns what to answer to.
           session.botProfile?.name,
         )
-      : // A task session has no definition, so these rules are the only thing that
-        // tells it how to ask for a decision or to give up (slice 4a). They ride
-        // with the turn and are never written to the transcript.
+      : // A task session's rules: slice 4a's task rules, then the team norms the
+        // person wrote (slice 6). They ride with the turn and are never written to
+        // the transcript, so a norm cannot accumulate or be read back as history.
         session.role === "task"
-        ? TASK_SESSION_BRIEFING
+        ? await buildTaskSessionBriefing((method, params) => briefingHost!.call(method, params))
         : undefined;
     try {
       result = await sidecar.call<{ accepted: boolean; turnId: string }>(

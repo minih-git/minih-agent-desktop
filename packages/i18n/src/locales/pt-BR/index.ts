@@ -817,6 +817,63 @@ export const ptBR = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // Contratar, normas da equipe e escolha de modelo (modo funcionário 0.5, fatia 6).
+    hiring: {
+      title: "Contratar",
+      description:
+        "Escolha um cargo para começar, descreva a pessoa em uma frase ou comece com um formulário em branco. Nada é contratado até você salvar o formulário.",
+      templates: "Cargos para os quais você pode contratar",
+      fromBlank: "Começar em branco",
+      enableSteward: "Ativar o Super Agent",
+      enablingSteward: "Ativando…",
+      enableStewardHint:
+        "O Super Agent recebe suas frases, redige os cartões e reporta. É o único funcionário que o host cria para você.",
+      readOnly: "Somente leitura",
+      noRepository: "Sem repositório",
+      prefersUiModel: "Prefere um modelo da família Gemini",
+      avoidsUiModel: "Não é um modelo da família Gemini",
+      draftPlaceholder: "Descreva em uma frase a pessoa que você quer contratar",
+      draft: "Rascunhar",
+      drafting: "Rascunhando…",
+      draftHint:
+        "O rascunho apenas preenche o formulário; você ainda confirma, e nada é criado antes disso.",
+      draftReason: "Por que este cargo: {{reason}}",
+      template: {
+        ui: { name: "Interface", duty: "Telas, componentes e detalhes visuais do renderer." },
+        frontendLogic: { name: "Lógica de front-end", duty: "Estado, fluxo de dados e comportamento do front-end, sem o design visual." },
+        backend: { name: "Backend", duty: "Código de servidor, API, armazenamento, protocolo e cobrança." },
+        design: { name: "Design", duty: "Como uma tela deve parecer e ser lida." },
+        review: { name: "Revisão", duty: "Lê o código e aponta problemas; nunca edita." },
+        research: { name: "Pesquisa", duty: "Pesquisa, leitura e comparação; sem repositório." },
+      },
+    },
+    norms: {
+      title: "Normas da equipe",
+      description:
+        "As regras que todo funcionário segue. Acompanham cada tarefa e não podem ampliar uma permissão nem afrouxar uma regra de segurança.",
+      communication: "Comunicação",
+      communicationHint: "Como falam com você: idioma, tamanho, quando perguntar.",
+      communicationPlaceholder:
+        "Exemplo: reporte em português, comece pela conclusão, sem narrar o processo.",
+      scope: "Escopo",
+      scopeHint: "O que assumem e o que não tocam.",
+      scopePlaceholder:
+        "Exemplo: não reformate arquivos que você não alterou; pergunte antes de mexer na configuração compartilhada.",
+      delivery: "Entrega",
+      deliveryHint: "O que precisa ser verdade quando dizem que está pronto.",
+      deliveryPlaceholder:
+        "Exemplo: toda mudança traz o teste que a prova e o comando que você executou.",
+      sectionCount: "{{used}}/{{max}}",
+      totalCount: "{{used}} de {{max}} caracteres no total",
+      boundary:
+        "São regras de equipe, não permissões: nunca autorizam uma ação que o host recusaria.",
+      save: "Salvar normas",
+      saving: "Salvando…",
+      saved: "Salvo. Toda tarefa a partir de agora as carrega.",
+      cleared: "Limpo. A partir de agora nenhuma norma é anexada.",
+      loadFailed: "Não foi possível ler as normas da equipe ({{reason}}).",
+      saveFailed: "Não foi possível salvar as normas da equipe ({{reason}}).",
+    },
     // Waiting channel and blocked card (employee mode 0.5 slice 4a).
     waiting: {
       title: "{{count}} esperando por você",
@@ -960,6 +1017,9 @@ export const ptBR = {
       definition: "Executa como",
       definitionNone: "Sem definição",
       definitionHint: "A definição do subagente fornece o prompt e a lista de ferramentas que este funcionário pode usar.",
+      model: "Modelo",
+      modelHint: "Onde rodam as tarefas deste funcionário. Sugerido pelo cargo contratado; você pode mudar.",
+      modelNone: "Padrão do app",
       project: "Projeto",
       projectNone: "Sem projeto",
       projectHint: "O repositório em que este funcionário trabalha. Sem um, ele não consegue ler código.",

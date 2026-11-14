@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type {
-  BotRosterEntry,
-  SessionCollaborationDelivery,
-  SessionCollaborationList,
-  SessionCollaborationMessage,
+import {
+  isReadOnlyDefinition,
+  roleWordForDefinition,
+  type BotRosterEntry,
+  type SessionCollaborationDelivery,
+  type SessionCollaborationList,
+  type SessionCollaborationMessage,
 } from "@minih-agent/shared";
 import type { LocalToolHandler, LocalToolResult } from "../agent-sidecar";
 import type { SessionCollaborationService } from "./session-collaboration";
@@ -171,7 +173,15 @@ export function createRosterTool(service: SessionCollaborationService): LocalToo
         );
       }
       const lines = employees.map((entry) => {
+        // The job, first: a name the person invented («阿福») says nothing about
+        // whether this employee reviews, researches or writes code, and the
+        // steward chooses by job (employee mode 0.5 slice 6). A read-only job is
+        // marked here because that is what makes a card startable without a
+        // click, and the steward must not have to infer it from the duty text.
+        const role = roleWordForDefinition(entry.definition);
+        const readOnly = isReadOnlyDefinition(entry.definition);
         const facts = [
+          role ? `role=${role}${readOnly ? " (read-only)" : ""}` : undefined,
           entry.duty ? entry.duty : "no stated duty",
           entry.modelKey ? `model=${entry.modelKey}` : "no model bound",
           entry.permissionMode ? `permission=${entry.permissionMode}` : undefined,

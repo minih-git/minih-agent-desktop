@@ -77,6 +77,7 @@ import { generateFollowUpSuggestion as generateFollowUpSuggestionImpl } from "./
 import { createSessionChangeNotifier } from "./session-change-notifier";
 import { createMemoryExtractionService } from "./memory/memory-extraction-service";
 import { createTaskExperienceService } from "./memory/task-experience-service";
+import { createHireDrafter } from "./services/hire-draft";
 import { createTaskInspectionService } from "./services/task-inspection-service";
 import { createConversationSummaryService } from "./memory/conversation-summary-service";
 import { createEventPersistence } from "./runtime/event-persistence";
@@ -862,6 +863,22 @@ const taskExperienceService = createTaskExperienceService({
 });
 
 /**
+ * One-sentence hiring (employee mode 0.5 slice 6). It reads the Super Agent's
+ * model and writes a draft: no employee exists until the person saves the form.
+ */
+const hireDrafter = createHireDrafter({
+  getHost,
+  getSettings: async () =>
+    (await getHost()?.call("settings.get").catch(() => null)) as
+      | AppSettings
+      | null
+      | undefined,
+  resolveRuntimeModel,
+  vendorOAuth,
+  logger,
+});
+
+/**
  * The hourly inspection (employee mode 0.5 slice 5). It asks the host a
  * deterministic question and, when the answer is not empty, hands the findings
  * to the renderer, which owns the wording and the native notification.
@@ -1076,6 +1093,9 @@ const liveCallService = createLiveCallService({
 
 function registerIpc() {
   return registerIpcHandlers({
+    // One-sentence hiring (slice 6). Wired here because the draft needs the same
+    // model resolution and settings read the extractors use.
+    draftHire: hireDrafter.draft,
     sessionCollaboration,
     taskChanges,
     generateSessionTitle: sessionTitleGenerator.run,

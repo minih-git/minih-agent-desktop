@@ -827,6 +827,65 @@ export const tr = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // İşe alma, ekip kuralları ve model seçimi (çalışan modu 0.5, dilim 6).
+    hiring: {
+      title: "İşe al",
+      description:
+        "Bir işten başlayın, kişiyi tek cümleyle anlatın veya boş formla başlayın. Formu kaydedene kadar kimse işe alınmaz.",
+      templates: "İşe alınabilecek işler",
+      fromBlank: "Boş formla başla",
+      enableSteward: "Super Agent'ı etkinleştir",
+      enablingSteward: "Etkinleştiriliyor…",
+      enableStewardHint:
+        "Super Agent cümlelerinizi alır, kartları hazırlar ve raporlar. Ana bilgisayarın sizin için oluşturduğu tek çalışandır.",
+      readOnly: "Salt okunur",
+      noRepository: "Depo yok",
+      prefersUiModel: "Gemini ailesi modeli tercih eder",
+      avoidsUiModel: "Gemini ailesi model değil",
+      draftPlaceholder: "İşe almak istediğiniz kişiyi tek cümleyle anlatın",
+      draft: "Taslak",
+      drafting: "Taslak hazırlanıyor…",
+      draftHint:
+        "Taslak yalnızca formu doldurur; yine siz onaylarsınız ve o ana kadar hiçbir şey oluşturulmaz.",
+      draftReason: "Bu iş neden: {{reason}}",
+      template: {
+        ui: { name: "Arayüz", duty: "Renderer'daki ekranlar, bileşenler ve görsel ayrıntılar." },
+        frontendLogic: {
+          name: "Ön yüz mantığı",
+          duty: "Görsel tasarım olmadan ön yüz durumu, veri akışı ve davranış.",
+        },
+        backend: { name: "Arka uç", duty: "Sunucu, API, depolama, protokol ve faturalama kodu." },
+        design: { name: "Tasarım", duty: "Bir ekranın nasıl görünmesi ve okunması gerektiği." },
+        review: { name: "İnceleme", duty: "Kodu okur ve sorunları bildirir; asla düzenlemez." },
+        research: { name: "Araştırmacı", duty: "Araştırma, okuma ve karşılaştırma; depo yok." },
+      },
+    },
+    norms: {
+      title: "Ekip kuralları",
+      description:
+        "Her çalışanın uyduğu kurallar. Her göreve eklenir; bir izni genişletemez ve güvenlik kuralını gevşetemez.",
+      communication: "İletişim",
+      communicationHint: "Sizinle nasıl konuşurlar: dil, uzunluk, ne zaman soracakları.",
+      communicationPlaceholder: "Örnek: Türkçe raporla, sonuçla başla, süreci anlatma.",
+      scope: "Kapsam",
+      scopeHint: "Neyi üstlenirler, neye dokunmazlar.",
+      scopePlaceholder:
+        "Örnek: değiştirmediğin dosyaları yeniden biçimlendirme; ortak yapılandırmaya dokunmadan önce sor.",
+      delivery: "Teslim",
+      deliveryHint: "\"Bitti\" dediklerinde neyin doğru olması gerekir.",
+      deliveryPlaceholder:
+        "Örnek: her değişiklik, onu kanıtlayan testi ve çalıştırdığın komutu getirir.",
+      sectionCount: "{{used}}/{{max}}",
+      totalCount: "Toplam {{used}}/{{max}} karakter",
+      boundary:
+        "Bunlar ekip kurallarıdır, izin değil: ana bilgisayarın reddedeceği bir eylemi asla yetkilendirmezler.",
+      save: "Kuralları kaydet",
+      saving: "Kaydediliyor…",
+      saved: "Kaydedildi. Bundan sonraki her görev bunları taşır.",
+      cleared: "Temizlendi. Bundan sonra kural eklenmeyecek.",
+      loadFailed: "Ekip kuralları okunamadı ({{reason}}).",
+      saveFailed: "Ekip kuralları kaydedilemedi ({{reason}}).",
+    },
     // Waiting channel and blocked card (employee mode 0.5 slice 4a).
     waiting: {
       title: "Sizi bekleyen {{count}} iş",
@@ -970,6 +1029,10 @@ export const tr = {
       definition: "Şu tanımla çalışır",
       definitionNone: "Tanım yok",
       definitionHint: "Alt ajan tanımı, bu çalışanın istemini ve kullanabileceği araç listesini belirler.",
+      model: "Model",
+      modelHint:
+        "Bu çalışanın görevlerinin çalıştığı model. İşe aldığınız iş önerir; siz değiştirebilirsiniz.",
+      modelNone: "Uygulama varsayılanı",
       project: "Proje",
       projectNone: "Proje yok",
       projectHint: "Bu çalışanın çalıştığı depo. Depo olmadan kod okuyamaz.",

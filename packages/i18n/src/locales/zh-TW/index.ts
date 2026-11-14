@@ -823,6 +823,58 @@ export const zhTW = {
   // Employees: the sidebar group, the settings page, and the steward's task
   // cards (ADR bot-sessions-and-steward §5).
   bots: {
+    // 招聘、團隊規範與招聘時的模型選擇（員工模式 0.5 切片 6）。
+    hiring: {
+      title: "招聘",
+      description:
+        "點一個職位開始、用一句話描述你要招的人，或從空白表單開始。你儲存表單之前，不會建立任何員工。",
+      templates: "可以招的職位",
+      fromBlank: "從空白建立",
+      enableSteward: "啟用 Super Agent",
+      enablingSteward: "正在啟用…",
+      enableStewardHint:
+        "Super Agent 接你的話、擬卡片、回報進度。它是宿主唯一替你預置的員工。",
+      readOnly: "唯讀",
+      noRepository: "不綁儲存庫",
+      prefersUiModel: "優先 Gemini 系列",
+      avoidsUiModel: "不用 Gemini 系列",
+      draftPlaceholder: "用一句話描述你要招的人",
+      draft: "起草",
+      drafting: "正在起草…",
+      draftHint: "起草只填表單，仍要你確認；在那之前什麼都不會建立。",
+      draftReason: "為什麼是這個職位：{{reason}}",
+      template: {
+        ui: { name: "介面", duty: "渲染層的頁面、元件與視覺細節。" },
+        frontendLogic: { name: "前端邏輯", duty: "前端狀態、資料流與行為，不做視覺設計。" },
+        backend: { name: "後端", duty: "伺服器、介面、儲存、協定與計費程式碼。" },
+        design: { name: "設計", duty: "一個畫面該長什麼樣、怎麼讀。" },
+        review: { name: "審查", duty: "唯讀程式碼並指出問題，從不改程式碼。" },
+        research: { name: "研究員", duty: "調研、閱讀與比較，不綁儲存庫。" },
+      },
+    },
+    norms: {
+      title: "團隊規範",
+      description:
+        "所有員工共用的規則。它隨每件任務下發，但不能放寬權限，也不能繞過安全紀律。",
+      communication: "溝通",
+      communicationHint: "怎麼跟你說話：語言、長度、什麼時候該問。",
+      communicationPlaceholder: "例如：用中文回報，先給結論，不要過程流水帳。",
+      scope: "範圍",
+      scopeHint: "接下什麼，不碰什麼。",
+      scopePlaceholder: "例如：不要重排你沒改過的檔案；動共用設定前先問。",
+      delivery: "交付",
+      deliveryHint: "它說做完時，哪些事必須已經成立。",
+      deliveryPlaceholder: "例如：每次改動要帶證明它的測試，以及你跑過的指令。",
+      sectionCount: "{{used}}/{{max}}",
+      totalCount: "合計 {{used}}/{{max}} 字",
+      boundary: "這些是團隊規則，不是權限：它們不能讓宿主拒絕的動作變成允許。",
+      save: "儲存規範",
+      saving: "正在儲存…",
+      saved: "已儲存。之後每件任務都會帶上這些規則。",
+      cleared: "已清空。之後不再下發規範。",
+      loadFailed: "讀不到團隊規範（{{reason}}）。",
+      saveFailed: "團隊規範沒能儲存（{{reason}}）。",
+    },
     // Waiting channel and blocked card (employee mode 0.5 slice 4a).
     waiting: {
       title: "等你 {{count}} 件",
@@ -966,6 +1018,9 @@ export const zhTW = {
       definition: "執行身分",
       definitionNone: "無",
       definitionHint: "子代理定義決定它的提示詞，以及它能使用的工具清單。",
+      model: "模型",
+      modelHint: "這個員工的任務跑在哪個模型上。由招它的職位給出建議，你可以改。",
+      modelNone: "跟隨應用預設",
       project: "專案",
       projectNone: "不綁定專案",
       projectHint: "這個員工在哪個儲存庫工作。沒有專案就讀不到程式碼。",
