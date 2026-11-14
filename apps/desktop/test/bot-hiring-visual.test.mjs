@@ -262,6 +262,18 @@ async function render(kind) {
       throw new Error("the draft button is narrower than its own label");
     }
   }
+  // A text row flush against a card's clipped, rounded left edge loses the first
+  // glyph — 「起」 and 「还」 both did. Every note in a card starts inset from it.
+  for (const note of document.querySelectorAll(".settings-panel .bot-form-note")) {
+    const panel = note.closest(".settings-panel");
+    if (!panel) continue;
+    const inset = note.getBoundingClientRect().left - panel.getBoundingClientRect().left;
+    if (inset < 0.5) {
+      throw new Error(
+        "a note sits flush against the card's left edge (" + inset + "px): " + note.textContent.slice(0, 40),
+      );
+    }
+  }
   await settle(4);
   await finishAnimations();
   await settle(2);
