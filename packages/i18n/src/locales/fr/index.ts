@@ -973,6 +973,7 @@ export const fr = {
         conflictLocal: "Conflit avec la branche actuelle du projet",
         nothingToMerge: "Il n'y a rien à fusionner",
         previewFailed: "Les modifications sont illisibles : {{reason}}",
+        relayFork: "La chaîne de relais se sépare ; aucun pas n'est le dernier",
         unknown: "Impossible de fusionner pour l'instant",
         checking: "Vérification…",
       },

@@ -314,11 +314,83 @@ fn with_relay_positions(db: &Database, tasks: &mut [Task]) -> Result<()> {
     Ok(())
 }
 
+/// The step whose chain forks, if any (employee mode 0.5 slice 7 follow-up).
+///
+/// A chain is a line: a step is followed by **at most one** step. The entry
+/// points refuse a second card after the same card, but a database that is
+/// already forked — two drafts confirmed at once, or a repair that wrote a link
+/// — must not turn into a guess about which step is last. Every decision that
+/// reads a chain asks this first: `relay_chain` refuses to answer, and the
+/// delivery check, the merge and the handoff refuse with it.
+///
+/// Returns the short id of the step with more than one live successor.
+pub fn relay_fork(db: &Database, task_id: &str) -> Result<Option<String>> {
+    let mut statement = db.conn().prepare_cached(
+        "SELECT id, relay_parent_task_id, archived_at FROM tasks
+          WHERE relay_parent_task_id IS NOT NULL",
+    )?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut parent_of: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut live_children: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (id, parent, archived_at) in rows {
+        if archived_at.is_none() {
+            live_children
+                .entry(parent.clone())
+                .or_default()
+                .push(id.clone());
+        }
+        parent_of.insert(id, parent);
+    }
+    // Walk back to the head, then down the line: a fork anywhere above this step
+    // makes this step's place in the chain unknowable, so it counts as well.
+    let mut head = task_id.to_string();
+    let mut walked = 0;
+    while let Some(parent) = parent_of.get(&head) {
+        walked += 1;
+        if walked > RELAY_WALK_LIMIT {
+            return Ok(None);
+        }
+        head = parent.clone();
+    }
+    let mut cursor = head;
+    let mut walked = 0;
+    loop {
+        let children = live_children.get(&cursor).map(Vec::as_slice).unwrap_or(&[]);
+        if children.len() > 1 {
+            return Ok(Some(short_id(&cursor)));
+        }
+        let Some(next) = children.first() else {
+            return Ok(None);
+        };
+        walked += 1;
+        if walked > RELAY_WALK_LIMIT {
+            return Ok(None);
+        }
+        cursor = next.clone();
+    }
+}
+
 /// The whole chain a task belongs to, first step to last, including the task.
 ///
 /// Read for the completion card, the handoff, and the cleanup after the last
 /// step merges: all three need "every step of this chain", not just its ends.
+/// A forked chain has no such answer, and guessing one would hand the merge a
+/// list of steps it must not touch — so it is refused here instead.
 pub fn relay_chain(db: &Database, task_id: &str) -> Result<Vec<Task>> {
+    if let Some(fork) = relay_fork(db, task_id)? {
+        return Err(anyhow!(
+            "CONFLICT: the relay chain forks at #{fork}; a step can have only one next step"
+        ));
+    }
     let links = relay_links(db)?;
     let child_of: std::collections::HashMap<&str, &str> = links
         .iter()

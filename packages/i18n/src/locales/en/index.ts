@@ -1003,6 +1003,7 @@ export const en = {
         conflictLocal: "It conflicts with the project's current branch",
         nothingToMerge: "There is nothing to merge",
         previewFailed: "The changes could not be read: {{reason}}",
+        relayFork: "The relay chain forks, so no step is the last one",
         unknown: "This cannot be merged right now",
         checking: "Checking…",
       },

@@ -990,6 +990,7 @@ export const zhCN = {
         conflictLocal: "与项目当前分支有冲突",
         nothingToMerge: "没有改动可合并",
         previewFailed: "读不到可合并的内容：{{reason}}",
+        relayFork: "接力链分叉了，没法判断最后一棒",
         unknown: "现在不能合并",
         checking: "正在查…",
       },

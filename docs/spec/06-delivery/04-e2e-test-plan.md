@@ -21712,6 +21712,33 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Status**: Covered. `task_relay_tests.rs` (abandonment → orphaned → detach →
   dispatchable again) and the completion-card scene in the visual test.
 
+#### E2E-BOT-relay-chain-cannot-fork: One step has at most one next step, and a fork that exists anyway is refused
+
+- **Preconditions**: A steward conversation, one employee, a repository on this
+  computer, and a chain of two cards from one turn (`add the column` → `backfill
+  it`).
+- **Steps**: 1) Ask for a third card that also names the first card in `after`.
+  2) Write the same fork into the database directly (a repair, or an older
+  client) and reopen the second step's completion card. 3) Click accept and
+  merge on it, then on the first step. 4) Try 「接受并交给下一棒」 on the first
+  step.
+- **Expected**: Step 1 is refused with `INVALID_ARGUMENT: a step can have only one
+  next step; chain the cards in a line`; the same refusal comes from `confirm`
+  when both drafts were proposed before either was clicked. Step 2 shows the card
+  greyed out with 「接力链分叉了，没法判断最后一棒」 and no commit list. Steps 3 and
+  4 refuse with `CONFLICT: the relay chain forks at #<short id>` — no branch is
+  merged, nothing is cleaned up, and both steps keep their workspace, their branch
+  and their stage.
+- **Specs linked**: ADR `bot-sessions-and-steward` «Relay between roles» §2,
+  `03-runtime/06-host-rpc-protocol.md` (`taskCard.propose` `after`,
+  `task.delivery.check` `relay-fork`)
+- **Acceptance**: A (function), Quality
+- **Milestone**: Employee mode 0.5, slice 7 (follow-up)
+- **Status**: Covered. `task_relay_tests.rs` (propose, revise and confirm refuse
+  the second card; the readers refuse a forged fork) and
+  `task_delivery_tests.rs` (greyed check, refused merge and handoff, both steps
+  untouched).
+
 #### E2E-BOT-overlap-warning-on-start: Two tasks in one repository are told apart before anyone is surprised
 
 - **Preconditions**: Two open tasks in the same repository, both with a workspace,

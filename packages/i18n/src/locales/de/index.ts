@@ -973,6 +973,7 @@ export const de = {
         conflictLocal: "Es kollidiert mit dem aktuellen Zweig des Projekts",
         nothingToMerge: "Es gibt nichts zusammenzuführen",
         previewFailed: "Die Änderungen sind nicht lesbar: {{reason}}",
+        relayFork: "Die Relay-Kette gabelt sich; kein Schritt ist der letzte",
         unknown: "Das lässt sich gerade nicht zusammenführen",
         checking: "Wird geprüft…",
       },

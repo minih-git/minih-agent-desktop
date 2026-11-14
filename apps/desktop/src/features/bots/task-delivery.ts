@@ -108,6 +108,8 @@ export function gateReasonKey(reason: TaskDeliveryReason | undefined): string {
       return "bots.completion.reason.nothingToMerge";
     case "preview-failed":
       return "bots.completion.reason.previewFailed";
+    case "relay-fork":
+      return "bots.completion.reason.relayFork";
     default:
       return "bots.completion.reason.unknown";
   }

@@ -169,7 +169,9 @@ export type TaskDeliveryReason =
   | "no-project"
   | "conflict-local"
   | "nothing-to-merge"
-  | "preview-failed";
+  | "preview-failed"
+  /** The chain this step belongs to forks, so no step is provably the last one. */
+  | "relay-fork";
 
 /** The CI summary the card shows beside the verdict. */
 export type TaskCheckSummary = {

@@ -980,6 +980,7 @@ export const ptBR = {
         conflictLocal: "Conflito com o branch atual do projeto",
         nothingToMerge: "Não há mudanças para mesclar",
         previewFailed: "Não foi possível ler as mudanças: {{reason}}",
+        relayFork: "A cadeia de revezamento se divide; nenhum passo é o último",
         unknown: "Não é possível mesclar agora",
         checking: "Verificando…",
       },

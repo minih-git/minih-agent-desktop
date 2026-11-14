@@ -985,6 +985,7 @@ export const ko = {
         conflictLocal: "프로젝트의 현재 브랜치와 충돌합니다",
         nothingToMerge: "병합할 변경이 없습니다",
         previewFailed: "병합할 내용을 읽을 수 없습니다: {{reason}}",
+        relayFork: "릴레이 체인이 갈라져 마지막 단계를 판단할 수 없습니다",
         unknown: "지금은 병합할 수 없습니다",
         checking: "확인 중…",
       },

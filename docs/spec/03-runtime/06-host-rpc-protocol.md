@@ -802,7 +802,11 @@ or general MCP operations:
   It is refused unless the target is in the same batch, names the same
   `repo.origin`, closes no loop, and keeps the chain at five steps or fewer;
   `revise` re-checks it because either side can have moved. Absent keeps the
-  stored edge, an explicit empty value clears it.
+  stored edge, an explicit empty value clears it. **A step has at most one next
+  step**: a second card that names the same card is refused with
+  `INVALID_ARGUMENT: a step can have only one next step; chain the cards in a
+  line`, and `taskCard.confirm` refuses it too when both drafts were proposed
+  before either was clicked — the propose-time check cannot see that window.
 - `taskCard.autoStart` — whether the host may confirm a proposed card by itself.
   Never from the `risk` a model supplied, and never from the mode: `auto` is the
   widest mode the product has (Write/Edit and Bash run without asking), so a mode
@@ -851,8 +855,11 @@ or general MCP operations:
   usage? }`. `reason` is a stable code (`pr-unreadable`, `pr-missing`,
   `ci-missing`, `ci-running`, `ci-failed`, `conflict`, `mergeable-unknown`,
   `review-required`, `no-project`, `conflict-local`, `nothing-to-merge`,
-  `preview-failed`) that the renderer translates; a fact that cannot be read is a
-  refusal, never a pass. `changes` is the host's own count of the commits on the
+  `preview-failed`, `relay-fork`) that the renderer translates; a fact that cannot
+  be read is a refusal, never a pass. `relay-fork` is a chain with two steps behind
+  one: no step of it is provably last, so the card is greyed out with
+  `reasonDetail` naming the step that forks, and `task.delivery.merge` and
+  `task.relay.handoff` refuse it outright rather than pick a branch. `changes` is the host's own count of the commits on the
   task branch (at most 20) and the files it touched. The renderer calls it once
   when the card opens and again on 刷新 — never on a timer. `gh` is the only
   network read, and its credentials stay `gh`'s own.

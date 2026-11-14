@@ -744,6 +744,8 @@ struct Chain {
     project: PathBuf,
     origin: PathBuf,
     second: PathBuf,
+    first_worktree: PathBuf,
+    second_worktree: PathBuf,
     step_one: tasks::Task,
     step_two: tasks::Task,
     second_tip: String,
@@ -922,6 +924,8 @@ async fn chain() -> Chain {
         project,
         origin,
         second: gitea,
+        first_worktree: wt_one,
+        second_worktree: wt_two,
         step_one,
         step_two,
         second_tip,
@@ -992,5 +996,127 @@ async fn the_last_step_merges_the_whole_chain_and_cleans_every_step_up() {
             "step {} stayed in the open list",
             task.short_id
         );
+    }
+}
+
+/// A fork that is already in the database: the entry checks now keep it from
+/// being written, so it is forged here the way a repair or an old client would.
+async fn forge_second_step(chain: &Chain, parent: &str) -> String {
+    let employee = {
+        let st = chain.state.lock().await;
+        crate::sessions::create_session_with_options(
+            &st.db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("前端".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({"name": "前端", "permissionMode": "accept-edits", "observe": false})
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id
+    };
+    let created = {
+        let st = chain.state.lock().await;
+        tasks::create(
+            &st.db,
+            &json!({
+                "employeeSessionId": employee,
+                "title": "The other fork",
+                "origin": "direct",
+                "projectPath": chain.project.to_string_lossy(),
+            }),
+        )
+        .unwrap()
+    };
+    let task_id = created["task"]["id"].as_str().unwrap().to_string();
+    {
+        let st = chain.state.lock().await;
+        st.db
+            .conn()
+            .execute(
+                "UPDATE tasks SET relay_parent_task_id=?2, relay_state='waiting' WHERE id=?1",
+                rusqlite::params![task_id, parent],
+            )
+            .unwrap();
+    }
+    task_id
+}
+
+/// **A forked chain is refused, not guessed at.**
+///
+/// Two steps behind one step have no last step between them, so the check cannot
+/// offer a merge, the merge cannot pick a branch to land, and the handoff cannot
+/// pick a step to unlock. Nothing is cleaned up either: the cleanup is the one
+/// place that would touch work outside what was merged.
+#[tokio::test]
+async fn a_forked_chain_is_refused_and_nothing_of_it_is_cleaned() {
+    let chain = chain().await;
+    // The fork the entry checks would now refuse.
+    forge_second_step(&chain, &chain.step_one.id).await;
+    let git = GitRunner::default();
+    let gh = ScriptedGh::green(&chain.second_tip);
+    let main_before = head_of(&chain.project);
+
+    let checked = task_delivery::check(&chain.state, &git, &gh, &chain.step_two.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        checked["canMerge"],
+        json!(false),
+        "a forked chain offered a merge: {checked}"
+    );
+    assert_eq!(checked["reason"], json!("relay-fork"), "{checked}");
+    assert_eq!(
+        checked["reasonDetail"],
+        json!(tasks::short_id(&chain.step_one.id)),
+        "the card does not name the step that forks"
+    );
+
+    for id in [&chain.step_one.id, &chain.step_two.id] {
+        let error = task_delivery::merge(&chain.state, &git, &gh, id)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("forks"),
+            "a step of a forked chain was merged: {error}"
+        );
+    }
+    let error = {
+        let st = chain.state.lock().await;
+        crate::task_relay::handoff(&st.db, &json!({ "taskId": chain.step_one.id }))
+            .unwrap_err()
+            .to_string()
+    };
+    assert!(
+        error.contains("forks"),
+        "the handoff picked one of the two steps: {error}"
+    );
+
+    // Nothing moved: `main` is where it was, both branches are still there, both
+    // workspaces still hold their files, and both steps are still open.
+    assert_eq!(head_of(&chain.project), main_before);
+    let branches = git_cmd(&chain.project, &["branch", "--list", "minih-agent/*"]);
+    assert!(
+        branches.contains("minih-agent/step-1") && branches.contains("minih-agent/step-2"),
+        "a step's branch was deleted: {branches}"
+    );
+    assert!(chain.first_worktree.join("schema.txt").is_file());
+    assert!(chain.second_worktree.join("backfill.txt").is_file());
+    let st = chain.state.lock().await;
+    for step in [&chain.step_one, &chain.step_two] {
+        let task = crate::tasks::get_task(&st.db, &step.id).unwrap().unwrap();
+        assert!(
+            task.archived_at.is_none(),
+            "step {} of a forked chain was archived",
+            task.short_id
+        );
+        assert_eq!(task.stage, "person/accept", "step {} moved", task.short_id);
     }
 }

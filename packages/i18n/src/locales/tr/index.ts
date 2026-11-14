@@ -992,6 +992,7 @@ export const tr = {
         conflictLocal: "Projenin geçerli dalıyla çakışıyor",
         nothingToMerge: "Birleştirilecek değişiklik yok",
         previewFailed: "Değişiklikler okunamadı: {{reason}}",
+        relayFork: "Aktarım zinciri çatallanıyor; son adım belirlenemiyor",
         unknown: "Şu anda birleştirilemez",
         checking: "Kontrol ediliyor…",
       },

@@ -1279,6 +1279,18 @@ it — which is what 「改从 main 开工」 (`task.relay.detach`) is for.
 
 ### 2. Only the last step is merged
 
+The chain is a **line, not a tree**: `drafts::resolve_after` refuses a second card
+that names the same card, and `confirm` refuses the same thing when both drafts
+were proposed before either was clicked — the propose-time check cannot see that
+window, and two confirmations in the same instant would leave two steps behind
+one.
+
+A fork that is already in the database is not guessed at either.
+`tasks::relay_fork` finds the step with two live successors, `relay_chain`
+refuses to answer, `task.delivery.check` greys out with `relay-fork`,
+`task.delivery.merge` and `task.relay.handoff` refuse, and the cleanup never runs
+— it is the one place that would touch work outside what was merged.
+
 `tasks.relay_has_successor` refuses `task.delivery.merge` for a step that is
 followed by another: the middle step's branch is the next step's base, so
 merging it would put half a change on `main` and leave the next step building on
@@ -1359,6 +1371,8 @@ opens — the rule every step since v33 has followed.
 | A step starts where the previous branch ended | **Yes** — `Placement::RepoLocalFrom`, `base_remote = false` | `task_workspace.rs`, `lifecycle/create.rs` |
 | A missing predecessor branch blocks instead of falling back to `main` | **Yes** — `relay-base` blocker, no worktree created | `task_workspace::relay_base` |
 | A middle step cannot be merged | **Yes** — `relay_has_successor` refuses | `task_delivery/mod.rs` |
+| A step has at most one next step | **Yes** — `resolve_after` on propose and revise, and `confirm` inside the same transaction as the task it creates | `drafts.rs`, `task_relay_tests.rs` |
+| A forked chain is refused, never guessed at | **Yes** — `relay_fork` answers "no chain" to `relay_chain`, the check greys out with `relay-fork`, the merge and the handoff refuse, nothing is cleaned | `tasks::relay_fork`, `task_delivery/mod.rs`, `task_relay.rs`, `task_delivery_tests.rs` |
 | A handoff is idempotent and only from `person/accept` | **Yes** — one transaction, first timestamp wins | `task_relay::handoff` |
 | A waiting step is neither drained nor fenced as interrupted | **Yes** — both queries exclude `waiting`/`orphaned` | `repository::pending_dispatch`, `settlement::recover` |
 | Abandoning a step orphans the next one, in one transaction | **Yes** — `orphan_successors` inside `tasks::archive` | `tasks.rs`, `task_relay.rs` |

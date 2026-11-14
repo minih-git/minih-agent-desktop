@@ -407,6 +407,193 @@ fn the_chain_and_its_positions_are_read_from_the_links() {
     assert!(tasks::relay_has_successor(&db, &step_two.id).unwrap());
     assert!(!tasks::relay_has_successor(&db, &step_three.id).unwrap());
 }
+
+/// **A chain is a line: a card is followed by at most one card.**
+///
+/// Two cards that both name the same card would fork it, and then nothing
+/// downstream can answer "which step is last" — so the second one is refused
+/// where it is proposed, naming the rule rather than the fork it leaves behind.
+#[test]
+fn a_card_cannot_be_the_next_step_of_two_cards() {
+    let (_dir, db, _project) = database();
+    let steward = session(&db, "Super Agent", None, "auto");
+    let worker = session(&db, "后端", Some("bot"), "accept-edits");
+    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
+    propose(
+        &db,
+        &steward,
+        &worker,
+        "Backfill it",
+        "turn-1",
+        Some(&first.id),
+    );
+    let message = propose_fails(
+        &db,
+        &steward,
+        &worker,
+        "Switch the reader",
+        "turn-1",
+        &first.id,
+    );
+    assert!(
+        message.contains("a step can have only one next step"),
+        "the refusal does not name the rule: {message}"
+    );
+}
+
+/// The same rule on the revise path: a card cannot be moved onto a place that is
+/// already taken, even though it was legal where it stood.
+#[test]
+fn a_revise_cannot_move_a_card_onto_a_taken_place() {
+    let (_dir, db, _project) = database();
+    let steward = session(&db, "Super Agent", None, "auto");
+    let worker = session(&db, "后端", Some("bot"), "accept-edits");
+    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
+    propose(
+        &db,
+        &steward,
+        &worker,
+        "Backfill it",
+        "turn-1",
+        Some(&first.id),
+    );
+    let free = propose(&db, &steward, &worker, "Switch the reader", "turn-1", None);
+    let error = drafts::revise(
+        &db,
+        &json!({
+            "sessionId": steward,
+            "draftId": free.id,
+            "card": card("Switch the reader"),
+            "after": first.id,
+        }),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.contains("a step can have only one next step"),
+        "the revise was allowed to fork the chain: {error}"
+    );
+}
+
+/// **Two clicks cannot both take the one place.**
+///
+/// Two drafts proposed before either is confirmed are both legal, so the entry
+/// check cannot see the fork they would make at the moment of the click: the
+/// confirmation is where the second one finds the step in front of it already
+/// followed, and it refuses there.
+#[test]
+fn a_second_confirmation_cannot_fork_the_chain() {
+    let (_dir, db, project) = database();
+    let steward = session(&db, "Super Agent", None, "auto");
+    let worker = session(&db, "后端", Some("bot"), "accept-edits");
+    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
+    let second = propose(
+        &db,
+        &steward,
+        &worker,
+        "Backfill it",
+        "turn-1",
+        Some(&first.id),
+    );
+    confirm(&db, &first, "confirm-1", &project);
+    confirm(&db, &second, "confirm-2", &project);
+    // The draft a concurrent click would have confirmed: legal when it was
+    // proposed, and a fork by the time it is clicked.
+    db.conn()
+        .execute(
+            "INSERT INTO task_card_drafts
+               (id, session_id, status, card_json, card_hash, source_utterance,
+                target_session_id, batch_id, after_draft_id, created_at, updated_at)
+             SELECT 'forged-sibling', session_id, 'proposed', card_json, card_hash,
+                    source_utterance, target_session_id, batch_id, after_draft_id,
+                    created_at, updated_at
+               FROM task_card_drafts WHERE id=?1",
+            rusqlite::params![second.id],
+        )
+        .unwrap();
+    let forged = drafts::get(&db, "forged-sibling").unwrap().unwrap();
+    let error = drafts::confirm(
+        &db,
+        drafts::ConfirmRequest {
+            draft_id: &forged.id,
+            card_hash: &forged.card_hash,
+            confirmed_by: drafts::CONFIRMED_BY_USER,
+            host_id: Some("mac-mini"),
+            device_id: None,
+            policy_version: "steward-1",
+            notify_on_completion: false,
+            idempotency_key: "confirm-forged",
+            project_path: Some(&project),
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.contains("a step can have only one next step"),
+        "a second confirmation forked the chain: {error}"
+    );
+}
+
+/// **A fork that is already in the database is refused, not guessed at.**
+///
+/// The entry points now keep it from being written, but a row can arrive another
+/// way — a repair, a hand-written link. Both readers that decide anything about
+/// a chain answer "no" instead of picking one branch.
+#[test]
+fn a_forked_chain_has_no_answer_for_the_readers() {
+    let (_dir, db, project) = database();
+    let steward = session(&db, "Super Agent", None, "auto");
+    let worker = session(&db, "后端", Some("bot"), "accept-edits");
+    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
+    let second = propose(
+        &db,
+        &steward,
+        &worker,
+        "Backfill it",
+        "turn-1",
+        Some(&first.id),
+    );
+    let step_one = confirm(&db, &first, "confirm-1", &project);
+    let step_two = confirm(&db, &second, "confirm-2", &project);
+    // The fork the entry checks would refuse: a second step behind step one.
+    let created = tasks::create(
+        &db,
+        &json!({
+            "employeeSessionId": worker,
+            "title": "Another step",
+            "origin": "direct",
+            "projectPath": project,
+        }),
+    )
+    .unwrap();
+    let other = created["task"]["id"].as_str().unwrap().to_string();
+    db.conn()
+        .execute(
+            "UPDATE tasks SET relay_parent_task_id=?2, relay_state='waiting' WHERE id=?1",
+            rusqlite::params![other, step_one.id],
+        )
+        .unwrap();
+
+    assert_eq!(
+        tasks::relay_fork(&db, &step_two.id).unwrap(),
+        Some(tasks::short_id(&step_one.id)),
+        "the fork was not found from the second step"
+    );
+    let error = tasks::relay_chain(&db, &step_two.id)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("forks"),
+        "the chain was read as if it had one last step: {error}"
+    );
+    let error = task_relay::handoff(&db, &json!({ "taskId": step_one.id }))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("forks"),
+        "the handoff picked one of the two steps: {error}"
+    );
+}
 // ---- the workspace a relay step starts in -----------------------------------
 
 /// The repository a relay test works in: one base commit, a data directory, and

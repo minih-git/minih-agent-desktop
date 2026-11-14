@@ -327,6 +327,9 @@ in the cards themselves, with \`after\`:
   card from this turn's batch. A chain holds at most five steps.
 - A relay stays inside **one repository**. Two cards that name different
   repositories can never be chained, and the host refuses the second one.
+- **A chain is a line, not a tree**: each card is followed by at most one card.
+  Two cards that both name the same card in \`after\` would fork the chain, and the
+  host refuses the second one — chain them in a line instead.
 - Everything else stays parallel: if the steps do not depend on each other, leave
   \`after\` out, so the person gets the work sooner and a stuck step cannot hold
   the others.

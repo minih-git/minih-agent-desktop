@@ -128,6 +128,12 @@ describe("builtin subagent documents", () => {
     // 5. A task the person dispatched themselves is known and untouched.
     expect(prompt).toContain("## Work the person dispatched themselves");
 
+    // 9. A chain is a line: one card follows at most one other card, and a
+    //    second card after the same one is refused (slice 7 follow-up).
+    expect(prompt).toContain("## Steps that must happen in order are one chain");
+    expect(prompt).toContain("A chain is a line, not a tree");
+    expect(prompt).toContain("each card is followed by at most one card");
+
     // 6. The safety disciplines survive the rewrite, word for word.
     for (const anchor of [
       "## Act only when asked",

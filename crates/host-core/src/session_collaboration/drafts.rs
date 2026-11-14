@@ -308,6 +308,24 @@ fn resolve_after(
             "LIMIT_EXCEEDED: a relay chain holds at most {MAX_RELAY_CHAIN} steps"
         ));
     }
+    // A chain is a line: two cards cannot both follow the same one. The second
+    // would be a fork, and a fork makes "which step is last" unanswerable
+    // (slice 7 follow-up). A dropped card is not a step and does not hold the
+    // place, so dropping the next step frees the chain again.
+    let taken: Option<String> = db
+        .conn()
+        .prepare_cached(
+            "SELECT id FROM task_card_drafts
+              WHERE after_draft_id=?1 AND status<>'dropped' AND id<>?2
+              LIMIT 1",
+        )?
+        .query_row(params![after, self_id.unwrap_or("")], |row| row.get(0))
+        .optional()?;
+    if taken.is_some() {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: a step can have only one next step; chain the cards in a line"
+        ));
+    }
     Ok(after.to_string())
 }
 
@@ -835,6 +853,19 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
                     "CONFLICT: the card this one follows has not been started; start that card first"
                 ));
             };
+            // Two drafts confirmed at once would fork the chain: the second click
+            // finds the step before it already has one, and stops here. The
+            // propose-time check cannot close this window on its own, because
+            // both drafts are legal until the first one is confirmed.
+            let already_followed: bool = tx
+                .prepare_cached("SELECT EXISTS(SELECT 1 FROM tasks WHERE relay_parent_task_id=?1)")?
+                .query_row(params![parent_id], |row| row.get(0))?;
+            if already_followed {
+                return Err(anyhow!(
+                    "CONFLICT: a step can have only one next step; another card already follows #{}",
+                    super::tasks::short_id(&parent_id)
+                ));
+            }
             // Abandoned without a handoff is `orphaned`, not `waiting`: waiting
             // would leave the card waiting for a step that will never finish.
             let state = if archived.is_some() && handoff.is_none() {
