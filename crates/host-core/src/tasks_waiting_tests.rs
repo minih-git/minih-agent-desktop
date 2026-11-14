@@ -357,6 +357,56 @@ fn a_direct_task_waiting_on_the_person_does_not_wake_the_steward() {
     assert!(!steward.is_empty());
 }
 
+/// An accepted task stops holding the employee's dot: the person already acted
+/// on it (employee mode 0.5 slice 4b). Its own row says 「已接受，待合并」, so the
+/// dot turning orange was the same state told two ways.
+#[test]
+fn an_accepted_task_does_not_hold_the_employees_status_dot() {
+    let (_dir, db) = database();
+    let steward = employee(&db, "Super Agent", Some("steward"));
+    let owner = employee(&db, "Router 后端", None);
+    let task = steward_task(&db, &steward, &owner, "Fix the login timeout");
+    db.conn()
+        .execute(
+            "UPDATE tasks SET stage='person/accept' WHERE id = ?1",
+            rusqlite::params![task.id],
+        )
+        .unwrap();
+    let open = tasks::get_task(&db, &task.id).unwrap().unwrap();
+    assert_eq!(
+        tasks::task_status_point(&[open.clone()])["stage"],
+        json!("person/accept"),
+        "finished work nobody looked at is the person's"
+    );
+
+    // The click that accepts it ends the wait.
+    db.conn()
+        .execute(
+            "UPDATE tasks SET accepted_at = 1 WHERE id = ?1",
+            rusqlite::params![task.id],
+        )
+        .unwrap();
+    let accepted = tasks::get_task(&db, &task.id).unwrap().unwrap();
+    assert_eq!(
+        tasks::task_status_point(&[accepted.clone()])["kind"],
+        json!("idle")
+    );
+
+    // Accepting one task does not hide a second one that is still waiting.
+    let other = steward_task(&db, &steward, &owner, "Rotate the gateway key");
+    db.conn()
+        .execute(
+            "UPDATE tasks SET stage='person/answer' WHERE id = ?1",
+            rusqlite::params![other.id],
+        )
+        .unwrap();
+    let waiting = tasks::get_task(&db, &other.id).unwrap().unwrap();
+    assert_eq!(
+        tasks::task_status_point(&[accepted, waiting])["stage"],
+        json!("person/answer")
+    );
+}
+
 /// A report of being stuck holds the stage through the end of its own turn, and
 /// its three fields are what the card shows.
 #[test]

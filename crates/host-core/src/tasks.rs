@@ -405,7 +405,16 @@ pub fn task_status_point(tasks: &[Task]) -> Value {
     let stage_of = |wanted: &[&str]| {
         tasks
             .iter()
-            .find(|task| wanted.contains(&task.stage.as_str()))
+            .find(|task| {
+                // An accepted task is not something the person still has to act
+                // on: they already did (employee mode 0.5 slice 4b). Counting it
+                // kept the employee's dot orange after the one click that ended
+                // the wait, while its own row already read 「已接受，待合并」.
+                if task.accepted_at.is_some() && task.stage == "person/accept" {
+                    return false;
+                }
+                wanted.contains(&task.stage.as_str())
+            })
             .map(|task| task.stage.clone())
     };
     // "Waiting on the person" is not only the two `person/*` stages (employee
