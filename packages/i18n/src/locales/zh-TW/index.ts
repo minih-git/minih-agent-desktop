@@ -920,7 +920,6 @@ export const zhTW = {
       empty: "還沒有經驗。",
       disabled: "經驗提煉沒打開。",
       openSettings: "開啟記憶設定",
-      whereSettings: "在「設定 → AI → 長期記憶」裡開啟。",
       source: "任務 #{{shortId}} · {{date}}",
       deleteLabel: "刪除這條經驗",
       deleteFailed: "刪除失敗，請重試。",

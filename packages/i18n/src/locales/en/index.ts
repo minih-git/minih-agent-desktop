@@ -937,7 +937,6 @@ export const en = {
       empty: "No lessons yet.",
       disabled: "Lesson extraction is off.",
       openSettings: "Open memory settings",
-      whereSettings: "Turn it on under Settings → AI → Learned memory.",
       source: "Task #{{shortId}} · {{date}}",
       deleteLabel: "Delete this lesson",
       deleteFailed: "Could not delete the lesson. Try again.",

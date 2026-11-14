@@ -915,7 +915,6 @@ export const es = {
       empty: "Todavía no hay experiencias.",
       disabled: "La extracción de experiencias está desactivada.",
       openSettings: "Abrir ajustes de memoria",
-      whereSettings: "Actívala en Ajustes → IA → Memoria a largo plazo.",
       source: "Tarea #{{shortId}} · {{date}}",
       deleteLabel: "Borrar esta experiencia",
       deleteFailed: "No se pudo borrar. Inténtalo de nuevo.",

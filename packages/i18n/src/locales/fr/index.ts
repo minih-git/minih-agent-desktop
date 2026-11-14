@@ -915,7 +915,6 @@ export const fr = {
       empty: "Aucune expérience pour l'instant.",
       disabled: "L'extraction d'expériences est désactivée.",
       openSettings: "Ouvrir les réglages de mémoire",
-      whereSettings: "Activez-la dans Réglages → IA → Mémoire à long terme.",
       source: "Tâche #{{shortId}} · {{date}}",
       deleteLabel: "Supprimer cette expérience",
       deleteFailed: "Suppression impossible. Réessayez.",

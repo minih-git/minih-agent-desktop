@@ -924,7 +924,6 @@ export const tr = {
       empty: "Henüz deneyim yok.",
       disabled: "Deneyim çıkarımı kapalı.",
       openSettings: "Bellek ayarlarını aç",
-      whereSettings: "Ayarlar → Yapay zekâ → Uzun süreli bellek altında açın.",
       source: "Görev #{{shortId}} · {{date}}",
       deleteLabel: "Bu deneyimi sil",
       deleteFailed: "Silinemedi. Yeniden deneyin.",

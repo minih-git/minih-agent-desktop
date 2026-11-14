@@ -300,3 +300,28 @@
   cursor: default;
   opacity: 0.7;
 }
+
+/* "Lesson extraction is off" ends in a real control: it moves the settings page
+   to the tab that owns the switch, so the sentence and the fix are one click
+   apart. Styled as a link because it reads as one inside a sentence. */
+.bot-experience-settings-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ds-text-primary);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* A link inside a sentence keeps its underline, so the focus ring is what marks
+   it for keyboard users. */
+.bot-experience-settings-link:hover {
+  background: var(--ds-surface-hover);
+}
+
+.bot-experience-settings-link:focus-visible {
+  outline: 2px solid var(--ds-accent);
+  outline-offset: 2px;
+}

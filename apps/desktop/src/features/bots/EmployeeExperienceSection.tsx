@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BotListItem, EmployeeLesson } from "@minih-agent/shared";
 import { api } from "../../lib/api";
+import { useAppStore } from "../../stores/app-store";
 import { Button } from "../../components/ui";
 import { IconTrash } from "../../components/icons";
 
@@ -28,15 +29,20 @@ export function EmployeeExperienceSection({
 }: {
   bots: readonly BotListItem[];
   /**
-   * Navigate to the learned-memory settings, which own the switch. Optional: a
-   * surface that cannot navigate still names where the switch lives, because a
-   * hint without a destination is better than a button that does nothing.
+   * Navigate to the learned-memory settings, which own the switch. Defaults to
+   * the settings page's own destinations: the switch lives on the
+   * 「指令与记忆」 tab, so the hint is one click from the thing it talks about.
    */
   onOpenMemorySettings?: () => void;
   /** Open a task session; absent means the source is shown as plain text. */
   onOpenSession?: (sessionId: string) => void;
 }) {
   const { t } = useTranslation();
+  // The settings shell keeps its destination in the store, so a section nested
+  // inside it navigates exactly the way the nav rail does.
+  const setSettingsTab = useAppStore((state) => state.setSettingsTab);
+  const openMemorySettings =
+    onOpenMemorySettings ?? (() => setSettingsTab("instructions"));
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [lessons, setLessons] = useState<Record<string, EmployeeLesson[]>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -105,13 +111,16 @@ export function EmployeeExperienceSection({
     return (
       <p className="bot-form-note" role="status">
         {t("bots.experience.disabled")}{" "}
-        {onOpenMemorySettings ? (
-          <Button type="button" variant="ghost" size="sm" onClick={onOpenMemorySettings}>
-            {t("bots.experience.openSettings")}
-          </Button>
-        ) : (
-          <span>{t("bots.experience.whereSettings")}</span>
-        )}
+        {/* A real control, not a sentence that names a place: the person who
+            reads "extraction is off" is one click from turning it on. */}
+        <button
+          type="button"
+          className="bot-experience-settings-link"
+          data-action="open-learned-memory-settings"
+          onClick={openMemorySettings}
+        >
+          {t("bots.experience.openSettings")}
+        </button>
       </p>
     );
   }

@@ -914,7 +914,6 @@ export const ptBR = {
       empty: "Ainda sem experiências.",
       disabled: "A extração de experiências está desligada.",
       openSettings: "Abrir ajustes de memória",
-      whereSettings: "Ative em Ajustes → IA → Memória de longo prazo.",
       source: "Tarefa #{{shortId}} · {{date}}",
       deleteLabel: "Apagar esta experiência",
       deleteFailed: "Não foi possível apagar. Tente de novo.",

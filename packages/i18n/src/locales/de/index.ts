@@ -915,7 +915,6 @@ export const de = {
       empty: "Noch keine Erfahrungen.",
       disabled: "Erfahrungsextraktion ist aus.",
       openSettings: "Speichereinstellungen öffnen",
-      whereSettings: "Unter Einstellungen → KI → Langzeitgedächtnis einschalten.",
       source: "Aufgabe #{{shortId}} · {{date}}",
       deleteLabel: "Diese Erfahrung löschen",
       deleteFailed: "Löschen fehlgeschlagen. Bitte erneut versuchen.",

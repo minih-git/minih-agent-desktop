@@ -928,7 +928,6 @@ export const zhCN = {
       empty: "还没有经验。",
       disabled: "经验提炼没打开。",
       openSettings: "打开记忆设置",
-      whereSettings: "在「设置 → AI → 长期记忆」里打开。",
       source: "任务 #{{shortId}} · {{date}}",
       deleteLabel: "删除这条经验",
       deleteFailed: "删除失败，请重试。",
