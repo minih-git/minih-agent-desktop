@@ -21643,3 +21643,76 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   its per-turn composition. The launch path itself (`bot.forTaskSession` →
   `resolveTaskPersona` in `session-launch.ts`) is covered by domain tests and a
   source anchor, **not** by an end-to-end turn against a running host.
+
+#### E2E-BOT-relay-hands-off-to-next-role: One change, two steps, and the second starts where the first stopped
+
+- **Preconditions**: A repository registered in the app, one employee, and a
+  steward conversation.
+- **Steps**: 1) Ask the steward for one change that must happen in order, so it
+  proposes two cards, the second with `after` naming the first. 2) Confirm the
+  first card, then the second. 3) Let the first step finish, and click
+  「接受并交给下一棒」 on its completion card. 4) Inspect the second step's
+  workspace.
+- **Expected**: Step 1 shows the second card as 「接在 #a 之后」, and its start
+  button is grey with 「先开前一张」 until the first card is confirmed. Step 2
+  collapses the second card into one line 「已确认，等 <employee> 的 #a」 — it is
+  confirmed and authorized, but the host does not start it: `pendingDispatch`
+  and the startup fence both skip a `waiting` step, so neither a drain nor a
+  restart can run it early. Step 3 is one transaction (`accepted_at`,
+  `relay_handoff_at`, `relay_state = ready`) and the second step starts without
+  a second question; a repeated click keeps the first timestamp and starts
+  nothing twice. Step 4 shows a branch whose tip is the first step's last commit,
+  `base_ref` names that branch, and `base_remote` is false.
+- **Specs linked**: ADR `bot-sessions-and-steward` «Relay between roles» §1, §3,
+  §4, `03-runtime/06-host-rpc-protocol.md` (`taskCard.propose` `after`,
+  `task.relay.handoff`)
+- **Acceptance**: A (function), Quality
+- **Milestone**: Employee mode 0.5, slice 7
+- **Status**: Covered. `task_relay_tests.rs` proves the edge validation, the
+  handoff's idempotency, the "not drained, not fenced" rule, and (with real git)
+  that the second step starts from the first one's tip; `bot-relay-user-path.test.mjs`
+  clicks the two cards, the collapsed line and the handoff button against the
+  real renderer.
+
+#### E2E-BOT-relay-orphaned-step-is-stuck: An abandoned step strands the one behind it, and only the person can restart it
+
+- **Preconditions**: A chain of two steps, both confirmed, the first running.
+- **Steps**: 1) Archive the first step without handing it off. 2) Open the second
+  step's card. 3) Click 「改从 main 开工」.
+- **Expected**: Step 1 leaves the second step `blocked` with
+  `blocker = { reason: "relay-orphaned", parent: <first step's short id> }`,
+  written in the same transaction as the archive — it is not left waiting for a
+  step that will never finish. Step 2 offers exactly two decisions, 「改从 main 开工」
+  and 「放弃」, and nothing happens on its own. Step 3 drops the edge, clears the
+  blocker, returns the task to `queued`, prepares its workspace from the
+  project's own `main`, and dispatches the delivery that was waiting; the
+  steward is not woken by any of it, because a handoff is progress and not an
+  anomaly.
+- **Specs linked**: ADR `bot-sessions-and-steward` «Relay between roles» §5,
+  `03-runtime/06-host-rpc-protocol.md` (`task.relay.detach`)
+- **Acceptance**: A (function), Quality
+- **Milestone**: Employee mode 0.5, slice 7
+- **Status**: Covered. `task_relay_tests.rs` (abandonment → orphaned → detach →
+  dispatchable again) and the completion-card scene in the visual test.
+
+#### E2E-BOT-overlap-warning-on-start: Two tasks in one repository are told apart before anyone is surprised
+
+- **Preconditions**: Two open tasks in the same repository, both with a workspace,
+  one of them already editing `a.txt`.
+- **Steps**: 1) Open the dock with a card for the second task. 2) Start it and let
+  it report ready. 3) Break the git read (a project that is not a repository) and
+  reopen the card.
+- **Expected**: Step 1 shows one line above the start button —
+  「同仓库还有 1 个进行中的任务：#a（改了 1 个文件）」 — and the button stays enabled:
+  it is a warning, not a refusal. Step 2's completion card adds
+  「和 #a 改了同样的文件：a.txt」, capped at five paths, and two steps of one relay
+  chain are never reported against each other. Step 3 shows 「查不到其他任务的改动」,
+  never an empty list: "nobody else touches this file" and "nobody could tell"
+  lead to opposite decisions.
+- **Specs linked**: ADR `bot-sessions-and-steward` «Relay between roles» §6,
+  `03-runtime/06-host-rpc-protocol.md` (`task.overlap`)
+- **Acceptance**: A (function), Quality
+- **Milestone**: Employee mode 0.5, slice 7
+- **Status**: Covered. `task_overlap_tests.rs` computes the intersection, excludes
+  a chain, and reports an unreadable project as `readable: false`;
+  `bot-relay-user-path.test.mjs` renders both lines.

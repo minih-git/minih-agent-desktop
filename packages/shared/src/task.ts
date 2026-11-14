@@ -74,8 +74,18 @@ export type TaskBlocker = {
    * `stopped` is the person's own stop, `error` a turn that failed, and
    * `interrupted` the startup fence: the app died while this task's turn was
    * running, so nothing is running now and nothing will resume by itself.
+   *
+   * `relay-orphaned` and `relay-base` are the two ways a relay step loses the
+   * step before it (employee mode 0.5 slice 7): it was abandoned without handing
+   * off, or its branch is gone. Both are the person's decision, never an
+   * automatic restart from `main`.
    */
-  reason?: "stopped" | "error" | "interrupted" | "delivery";
+  reason?: "stopped" | "error" | "interrupted" | "delivery" | "relay-orphaned" | "relay-base";
+  /**
+   * For `relay-orphaned` / `relay-base`: the short id of the step this one was
+   * waiting for, so the card can name it.
+   */
+  parent?: string;
   /**
    * For `delivery`: which fixed step stopped, and what it said. The card
    * composes the sentence from `reason` and the remote's name, so the words the

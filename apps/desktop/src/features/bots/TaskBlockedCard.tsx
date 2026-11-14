@@ -6,6 +6,7 @@ import { useAppStore } from "../../stores/app-store";
 import { Button } from "../../components/ui";
 import { TaskRestartButton } from "./TaskRestartButton";
 import { retryResumesDelivery } from "./task-delivery";
+import { isRelayBlocked, relayBlockerText } from "./task-relay";
 import { blockedFields } from "./task-waiting";
 
 /**
@@ -53,6 +54,10 @@ export function TaskBlockedCard({
 
   const fields = blockedFields(task);
   const interrupted = isTaskInterrupted(task);
+  // A relay step that lost the step before it: the two decisions are "start from
+  // main" and "give up", and neither retry nor reassignment applies (slice 7).
+  const relayStuck = isRelayBlocked(task.blocker);
+  const relayNote = relayBlockerText(task.blocker, t);
   const who = employeeName?.trim() || t("bots.card.targetUnknown");
 
   const run = async (key: string, action: () => Promise<void>) => {
@@ -99,6 +104,21 @@ export function TaskBlockedCard({
         ...(stewardSessionId ? { stewardSessionId } : {}),
       });
       setReassignedTo(true);
+    });
+
+  /**
+   * 「改从 main 开工」: drop the edge to the step that cannot be continued and
+   * build this step's workspace from the project's own `main`.
+   *
+   * The host refuses it for any other kind of blocker, so the card only offers
+   * it where it means something.
+   */
+  const detach = () =>
+    run("detach", async () => {
+      const result = await api.detachTask(task.id);
+      if (result.startError) {
+        setError(t("bots.blocked.startFromMainFailed", { reason: result.startError }));
+      }
     });
 
   const drop = () =>
@@ -159,6 +179,12 @@ export function TaskBlockedCard({
           {t("bots.blocked.stopped")}
         </p>
       ) : null}
+      {relayNote ? (
+        <p className="task-blocked-note" data-blocked-relay={task.blocker?.reason ?? ""}>
+          {relayNote}
+          {task.blocker?.detail ? <span className="task-blocked-detail"> · {task.blocker.detail}</span> : null}
+        </p>
+      ) : null}
 
       {fields.where || fields.tried || fields.suggestion ? (
         <dl className="task-blocked-fields">
@@ -195,23 +221,39 @@ export function TaskBlockedCard({
       ) : null}
 
       <div className="task-blocked-actions">
-        {interrupted ? (
-          // 「重新开工」 is this task's retry: one card, one set of buttons.
-          <TaskRestartButton task={task} onRestarted={() => onChanged?.()} />
-        ) : (
-          // One action at a time: every button is disabled while any of them is
-          // in flight, so a second click cannot race the first answer.
-          <Button variant="secondary" disabled={Boolean(busy)} onClick={() => void retry()}>
-            {t("bots.blocked.retry")}
+        {relayStuck ? (
+          // Neither retry nor reassignment helps a step whose predecessor cannot
+          // be continued: the two decisions are the person's, and the host picks
+          // neither on its own.
+          <Button
+            variant="secondary"
+            disabled={Boolean(busy)}
+            onClick={() => void detach()}
+            data-blocked-start-from-main=""
+          >
+            {busy === "detach" ? t("bots.blocked.startFromMainBusy") : t("bots.blocked.startFromMain")}
           </Button>
+        ) : (
+          <>
+            {interrupted ? (
+              // 「重新开工」 is this task's retry: one card, one set of buttons.
+              <TaskRestartButton task={task} onRestarted={() => onChanged?.()} />
+            ) : (
+              // One action at a time: every button is disabled while any of them
+              // is in flight, so a second click cannot race the first answer.
+              <Button variant="secondary" disabled={Boolean(busy)} onClick={() => void retry()}>
+                {t("bots.blocked.retry")}
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              disabled={Boolean(busy)}
+              onClick={() => void reassign()}
+            >
+              {t("bots.blocked.reassign")}
+            </Button>
+          </>
         )}
-        <Button
-          variant="secondary"
-          disabled={Boolean(busy)}
-          onClick={() => void reassign()}
-        >
-          {t("bots.blocked.reassign")}
-        </Button>
         {confirmingDrop ? (
           <>
             <span className="task-blocked-confirm">{t("bots.blocked.dropConfirm")}</span>
