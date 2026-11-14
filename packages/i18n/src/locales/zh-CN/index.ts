@@ -915,6 +915,9 @@ export const zhCN = {
       dropCancel: "保留",
       saySomething: "我来说两句",
       delivery: "合并没有走完（第 {{step}} 步）：{{detail}}",
+      // A stop whose reason the card does not know. It is never the person's
+      // own decision, so it does not say so.
+      unknown: "这个任务停住了。",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "前一棒 #{{shortId}} 已放弃",
       relayBase: "前一棒 #{{shortId}} 的分支不在了",

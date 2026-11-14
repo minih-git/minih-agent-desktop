@@ -906,6 +906,8 @@ export const ptBR = {
       dropCancel: "Manter",
       saySomething: "Dizer algo",
       delivery: "A mesclagem parou na etapa {{step}}: {{detail}}",
+      // A stop whose reason the card does not know.
+      unknown: "Esta tarefa parou.",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "O passo anterior (#{{shortId}}) foi abandonado",
       relayBase: "O branch do passo #{{shortId}} sumiu",

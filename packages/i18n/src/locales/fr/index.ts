@@ -899,6 +899,8 @@ export const fr = {
       dropCancel: "Conserver",
       saySomething: "Dire quelque chose",
       delivery: "La fusion s'est arrêtée à l'étape {{step}} : {{detail}}",
+      // A stop whose reason the card does not know.
+      unknown: "Cette tâche s'est arrêtée.",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "L'étape précédente (#{{shortId}}) a été abandonnée",
       relayBase: "La branche de l'étape #{{shortId}} a disparu",

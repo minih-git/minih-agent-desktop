@@ -911,6 +911,8 @@ export const ko = {
       dropCancel: "유지",
       saySomething: "한마디 하기",
       delivery: "{{step}} 단계에서 병합이 멈췄습니다: {{detail}}",
+      // A stop whose reason the card does not know.
+      unknown: "이 작업이 멈췄습니다.",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "앞 단계 #{{shortId}}가 포기되었습니다",
       relayBase: "앞 단계 #{{shortId}}의 브랜치가 사라졌습니다",

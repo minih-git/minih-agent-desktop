@@ -907,6 +907,8 @@ export const zhTW = {
       dropCancel: "保留",
       saySomething: "我來說兩句",
       delivery: "合併沒有走完（第 {{step}} 步）：{{detail}}",
+      // A stop whose reason the card does not know.
+      unknown: "這個任務停住了。",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "前一棒 #{{shortId}} 已放棄",
       relayBase: "前一棒 #{{shortId}} 的分支不在了",

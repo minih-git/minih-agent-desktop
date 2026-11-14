@@ -928,6 +928,9 @@ export const en = {
       dropCancel: "Keep",
       saySomething: "Say something",
       delivery: "Merging stopped at step {{step}}: {{detail}}",
+      // A stop whose reason the card does not know. It is never the person's
+      // own decision, so it does not say so.
+      unknown: "This task stopped.",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "The step before this one (#{{shortId}}) was abandoned",
       relayBase: "The branch of step #{{shortId}} is gone",

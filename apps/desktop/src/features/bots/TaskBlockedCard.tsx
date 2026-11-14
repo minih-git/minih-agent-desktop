@@ -179,6 +179,13 @@ export function TaskBlockedCard({
           {t("bots.blocked.stopped")}
         </p>
       ) : null}
+      {fields.source === "unknown" ? (
+        // A reason this card does not know says only that it stopped: it is not
+        // the person's own decision, and naming one would be a lie.
+        <p className="task-blocked-note" data-blocked-unknown="">
+          {t("bots.blocked.unknown")}
+        </p>
+      ) : null}
       {relayNote ? (
         <p className="task-blocked-note" data-blocked-relay={task.blocker?.reason ?? ""}>
           {relayNote}

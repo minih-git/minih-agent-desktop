@@ -493,6 +493,9 @@ window.shot = {
       batchText: (document.querySelector("[data-task-batch]") || {}).textContent || "",
       chainRows: document.querySelectorAll("[data-batch-chain='true']").length,
       batchRows: document.querySelectorAll("[data-batch-row]").length,
+      // A stuck task's note must not claim the person stopped it unless the
+      // host recorded exactly that.
+      stoppedNote: Boolean(document.querySelector("[data-blocked-stopped]")),
       calls: state.calls,
       // The pictures are of the whole shell, so the layout is part of what this
       // test proves: the card sits above the input, and the topbar sits in the
@@ -713,6 +716,10 @@ app.whenReady().then(async () => {
         if (seen.calls.merge.length !== 0) throw new Error("the handoff click merged something");
         // A step that lost its predecessor offers the two decisions, not a retry.
         check(await call(win, "window.shot.render('blocked-relay','dark')"), "blocked render");
+        seen = await probe();
+        if (seen.stoppedNote) {
+          throw new Error("the card of a step whose predecessor was abandoned claims a manual stop");
+        }
         check(await call(win, "window.shot.act('detach')"), "detach");
         seen = await probe();
         if (seen.calls.detach.length !== 1) throw new Error("「改从 main 开工」 did not reach the host");

@@ -21687,8 +21687,10 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   `blocker = { reason: "relay-orphaned", parent: <first step's short id> }`,
   written in the same transaction as the archive — it is not left waiting for a
   step that will never finish. Step 2 offers exactly two decisions, 「改从 main 开工」
-  and 「放弃」, and nothing happens on its own. Step 3 drops the edge, clears the
-  blocker, returns the task to `queued`, prepares its workspace from the
+  and 「放弃」, and nothing happens on its own; the card's one note names the step
+  it lost (「前一棒 #… 已放弃」) and never says 「你手动停了这个任务。」 — that
+  sentence belongs to a stop the person made themselves. Step 3 drops the edge,
+  clears the blocker, returns the task to `queued`, prepares its workspace from the
   project's own `main`, and dispatches the delivery that was waiting; the
   steward is not woken by any of it, because a handoff is progress and not an
   anomaly.

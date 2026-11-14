@@ -918,6 +918,8 @@ export const tr = {
       dropCancel: "Koru",
       saySomething: "Bir şey söyle",
       delivery: "Birleştirme {{step}} adımında durdu: {{detail}}",
+      // A stop whose reason the card does not know.
+      unknown: "Bu görev durdu.",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "Önceki adım (#{{shortId}}) bırakıldı",
       relayBase: "Önceki adımın (#{{shortId}}) dalı kayboldu",

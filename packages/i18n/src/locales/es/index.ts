@@ -899,6 +899,8 @@ export const es = {
       dropCancel: "Conservar",
       saySomething: "Decir algo",
       delivery: "La fusión se detuvo en el paso {{step}}: {{detail}}",
+      // A stop whose reason the card does not know.
+      unknown: "Esta tarea se detuvo.",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "El paso anterior (#{{shortId}}) se abandonó",
       relayBase: "La rama del paso #{{shortId}} ya no existe",

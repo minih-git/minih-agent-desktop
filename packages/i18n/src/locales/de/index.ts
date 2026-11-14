@@ -899,6 +899,8 @@ export const de = {
       dropCancel: "Behalten",
       saySomething: "Etwas sagen",
       delivery: "Zusammenführen blieb bei Schritt {{step}} stehen: {{detail}}",
+      // A stop whose reason the card does not know.
+      unknown: "Diese Aufgabe wurde angehalten.",
       // A relay step whose predecessor cannot be continued (slice 7).
       relayOrphaned: "Der Schritt davor (#{{shortId}}) wurde aufgegeben",
       relayBase: "Der Branch von Schritt #{{shortId}} ist verschwunden",

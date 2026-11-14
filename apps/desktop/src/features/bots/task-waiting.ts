@@ -7,6 +7,7 @@ import {
   type TaskWaiting,
 } from "@minih-agent/shared";
 import { deliveryFailure, showsCompletionCard, taskBatches } from "./task-delivery";
+import { isRelayBlocked } from "./task-relay";
 
 /**
  * What the waiting channel shows, without React (employee mode 0.5 slice 4a).
@@ -129,10 +130,16 @@ export type BlockedFields = {
   tried?: string;
   suggestion?: string;
   /**
-   * `report` when the employee reported it, `stopped`, `failed`, `interrupted`,
-   * and `delivery` when the host's own merge stopped part-way (slice 4b).
+   * `report` when the employee reported it, `stopped` when the person stopped
+   * it themselves, `failed`, `interrupted`, and `delivery` when the host's own
+   * merge stopped part-way (slice 4b).
+   *
+   * `relay` is a step whose predecessor cannot be continued: its own line says
+   * which step that was (slice 7), and the card adds nothing on top. `unknown`
+   * is any other reason — a new one the card does not know yet included — and
+   * says only that the task stopped, never that the person stopped it.
    */
-  source: "report" | "stopped" | "failed" | "interrupted" | "delivery";
+  source: "report" | "stopped" | "failed" | "interrupted" | "delivery" | "relay" | "unknown";
   /** The error code of a failed turn, when the host recorded one. */
   code?: string;
   /** For `delivery`: which fixed step stopped. */
@@ -161,6 +168,9 @@ export function blockedFields(task: TaskView): BlockedFields {
     return { source: "failed", ...(blocker.code ? { code: blocker.code } : {}) };
   }
   if (blocker?.reason === "stopped") return { source: "stopped" };
+  // A relay step whose predecessor cannot be continued says which step it lost
+  // in its own line (`relayBlockerText`); nothing is added on top of it.
+  if (isRelayBlocked(blocker)) return { source: "relay" };
   if (blocker?.where || blocker?.tried || blocker?.suggestion) {
     return {
       source: "report",
@@ -170,6 +180,8 @@ export function blockedFields(task: TaskView): BlockedFields {
     };
   }
   // A failed stage with no recorded code is still a failure: say so rather than
-  // showing an empty card.
-  return task.stage === "failed" ? { source: "failed" } : { source: "stopped" };
+  // showing an empty card. Everything else stopped for a reason this card does
+  // not know, so it says only that — 「stopped」 is the person's own decision and
+  // is never a fallback.
+  return task.stage === "failed" ? { source: "failed" } : { source: "unknown" };
 }
