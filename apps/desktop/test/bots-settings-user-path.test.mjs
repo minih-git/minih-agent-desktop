@@ -92,19 +92,30 @@ const clearCalls = () => { calls.length = 0; };
 window.botsSettingsProbe = async () => {
   const report = {};
 
-  // 1. With no employees, the page offers the crew and creates nothing on mount.
+  // 1. With no employees, the page offers the one employee the host still
+  //    creates for the person, and mounting it creates nothing.
   bots = [];
   flushSync(() => rootNode.render(React.createElement(BotsSettingsPage, { bots: [] })));
   await settle();
-  check(button("Create the default crew"), "the crew button was not offered");
-  check(callsTo(IPC.invoke.botSeedDefaults).length === 0, "mounting the page seeded the crew");
+  check(button("Enable Super Agent"), "the Super Agent button was not offered");
+  check(!button("Create the default crew"), "the fixed crew button is back");
+  check(callsTo(IPC.invoke.botSeedDefaults).length === 0, "mounting the page seeded an employee");
 
-  // 2. One click seeds exactly once.
-  flushSync(() => button("Create the default crew").click());
+  // 2. One click creates exactly the Super Agent, once.
+  flushSync(() => button("Enable Super Agent").click());
   await until(() => callsTo(IPC.invoke.botSeedDefaults).length === 1, "the seed call");
   await settle();
-  check(callsTo(IPC.invoke.botSeedDefaults).length === 1, "the crew was seeded more than once");
+  check(callsTo(IPC.invoke.botSeedDefaults).length === 1, "seeding ran more than once");
   report.seedCalls = callsTo(IPC.invoke.botSeedDefaults).length;
+  // With a dispatcher on the crew the button is gone: there is nothing left for
+  // the host to create, and a second way to do it would be a second surprise.
+  const steward = employee("steward-1", "Super Agent");
+  steward.profile.definition = "steward";
+  bots = [steward];
+  flushSync(() => rootNode.render(React.createElement(BotsSettingsPage, { bots })));
+  await settle();
+  check(!button("Enable Super Agent"), "the button survived having a Super Agent");
+  check(button("Start from blank"), "hiring lost its blank path");
 
   // 3. Dismiss asks first: the first click issues no dismiss call.
   bots = [employee("s-1", "Steward")];

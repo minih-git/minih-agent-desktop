@@ -54,13 +54,20 @@ test("the rules are attached as this turn's briefing and never appended to the t
   // The last occurrence: an earlier one reconciles the stage after beginTurn.
   const at = source.lastIndexOf('session.role === "task"');
   assert.ok(at > 0, "a task session no longer gets its own rules");
-  const near = source.slice(at, at + 260);
-  assert.match(near, /TASK_SESSION_BRIEFING/);
+  const near = source.slice(at, at + 300);
+  // Slice 6 moved the text behind one builder, which now returns the rules plus
+  // whatever team norms the person wrote.
+  assert.match(near, /buildTaskSessionBriefing/);
   assert.match(source, /const turnBriefing = isSteward/);
-  // A persisted copy would be the bug: the block must not be sent through the
-  // transcript path.
-  const appended = source.match(/appendMessage[\s\S]{0,200}TASK_SESSION_BRIEFING/);
-  assert.equal(appended, null, "the rules are being written to the transcript");
+  // A persisted copy would be the bug: neither the rules nor the norms may go
+  // through the transcript path.
+  const appendedRules = source.match(/appendMessage[\s\S]{0,200}TASK_SESSION_BRIEFING/);
+  assert.equal(appendedRules, null, "the rules are being written to the transcript");
+  const appendedNorms = source.match(/appendMessage[\s\S]{0,200}teamNormsBriefing/);
+  assert.equal(appendedNorms, null, "the norms are being written to the transcript");
+  // Both ride in the per-turn field only, which the sidecar injects into this
+  // request and nothing else reads.
+  assert.match(source, /\.\.\.\(turnBriefing \? \{ turnBriefing \} : \{\}\)/);
 });
 
 test("the steward is told to relay a question and never to answer it", async () => {
