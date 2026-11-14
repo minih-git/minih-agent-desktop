@@ -259,10 +259,7 @@ fn relay_links(db: &Database) -> Result<std::collections::HashMap<String, Option
         .prepare_cached("SELECT id, relay_parent_task_id FROM tasks")?;
     let links = statement
         .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-            ))
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })?
         .collect::<rusqlite::Result<std::collections::HashMap<_, _>>>()?;
     Ok(links)
@@ -340,8 +337,12 @@ pub fn relay_chain(db: &Database, task_id: &str) -> Result<Vec<Task>> {
     let mut chain = Vec::new();
     let mut cursor = Some(head);
     while let Some(id) = cursor {
-        let Some(task) = get_task(db, &id)? else { break };
-        cursor = child_of.get(task.id.as_str()).map(|next| (*next).to_string());
+        let Some(task) = get_task(db, &id)? else {
+            break;
+        };
+        cursor = child_of
+            .get(task.id.as_str())
+            .map(|next| (*next).to_string());
         chain.push(task);
         if chain.len() > RELAY_WALK_LIMIT {
             break;

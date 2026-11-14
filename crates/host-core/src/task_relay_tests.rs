@@ -139,9 +139,7 @@ fn a_card_can_only_follow_a_card_from_the_same_batch() {
     let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
     let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
-    let message = propose_fails(
-        &db, &steward, &worker, "Backfill it", "turn-2", &first.id,
-    );
+    let message = propose_fails(&db, &steward, &worker, "Backfill it", "turn-2", &first.id);
     assert!(
         message.contains("same turn"),
         "the refusal does not name the batch: {message}"
@@ -214,14 +212,7 @@ fn a_revise_cannot_close_a_loop() {
     let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
     let first = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
-    let second = propose(
-        &db,
-        &steward,
-        &worker,
-        "Step 2",
-        "turn-1",
-        Some(&first.id),
-    );
+    let second = propose(&db, &steward, &worker, "Step 2", "turn-1", Some(&first.id));
     let error = drafts::revise(
         &db,
         &json!({
@@ -289,7 +280,10 @@ fn a_handoff_is_idempotent() {
     let step_one = confirm(&db, &first, "confirm-1", &project);
     let step_two = confirm(&db, &second, "confirm-2", &project);
     assert_eq!(step_two.relay_state.as_deref(), Some("waiting"));
-    assert_eq!(step_two.relay_parent_task_id.as_deref(), Some(step_one.id.as_str()));
+    assert_eq!(
+        step_two.relay_parent_task_id.as_deref(),
+        Some(step_one.id.as_str())
+    );
 
     // The step is finished, which is what the completion card shows.
     let st = db.conn();
@@ -402,7 +396,11 @@ fn the_chain_and_its_positions_are_read_from_the_links() {
     let chain = tasks::relay_chain(&db, &step_two.id).unwrap();
     assert_eq!(
         chain.iter().map(|task| task.id.clone()).collect::<Vec<_>>(),
-        vec![step_one.id.clone(), step_two.id.clone(), step_three.id.clone()]
+        vec![
+            step_one.id.clone(),
+            step_two.id.clone(),
+            step_three.id.clone()
+        ]
     );
     assert_eq!(chain[1].relay_step, 2);
     assert_eq!(chain[1].relay_total, 3);
@@ -508,7 +506,10 @@ async fn a_relay_step_starts_from_the_end_of_the_previous_branch() {
     let worktree = crate::tasks::get_task(&repo.state.lock().await.db, &first.id)
         .unwrap()
         .unwrap();
-    assert!(worktree.workspace_status == "ready", "step one did not prepare");
+    assert!(
+        worktree.workspace_status == "ready",
+        "step one did not prepare"
+    );
     let row = {
         let st = repo.state.lock().await;
         crate::session_worktrees::registry::for_session(&st.db, &first.session_id)
@@ -517,7 +518,11 @@ async fn a_relay_step_starts_from_the_end_of_the_previous_branch() {
             .find(|row| row.delegation_id.is_none())
             .unwrap()
     };
-    std::fs::write(std::path::Path::new(&row.path).join("step-one.txt"), "one\n").unwrap();
+    std::fs::write(
+        std::path::Path::new(&row.path).join("step-one.txt"),
+        "one\n",
+    )
+    .unwrap();
     git_out(std::path::Path::new(&row.path), &["add", "step-one.txt"]);
     git_out(
         std::path::Path::new(&row.path),
@@ -543,13 +548,20 @@ async fn a_relay_step_starts_from_the_end_of_the_previous_branch() {
     let second = crate::tasks::get_task(&repo.state.lock().await.db, &second.id)
         .unwrap()
         .unwrap();
-    assert_eq!(second.workspace_status, "ready", "{:?}", second.workspace_error);
+    assert_eq!(
+        second.workspace_status, "ready",
+        "{:?}",
+        second.workspace_error
+    );
     assert_eq!(
         second.base_ref.as_deref(),
         Some(format!("refs/heads/{first_workspace}").as_str()),
         "the second step did not record the branch it continues"
     );
-    assert!(!second.base_remote, "a continued branch is local, not fetched");
+    assert!(
+        !second.base_remote,
+        "a continued branch is local, not fetched"
+    );
     let second_row = {
         let st = repo.state.lock().await;
         crate::session_worktrees::registry::for_session(&st.db, &second.session_id)
@@ -558,7 +570,10 @@ async fn a_relay_step_starts_from_the_end_of_the_previous_branch() {
             .find(|row| row.delegation_id.is_none())
             .unwrap()
     };
-    let head = git_out(std::path::Path::new(&second_row.path), &["rev-parse", "HEAD"]);
+    let head = git_out(
+        std::path::Path::new(&second_row.path),
+        &["rev-parse", "HEAD"],
+    );
     assert_eq!(
         head.trim(),
         first_tip.trim(),

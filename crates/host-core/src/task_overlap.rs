@@ -181,17 +181,13 @@ pub async fn overlap(state: &SharedState, git: &GitRunner, params: &Value) -> Re
         }
         let own = match task_id.as_deref() {
             Some(id) => {
-                let task = crate::tasks::get_task(db, id)?
-                    .ok_or_else(|| anyhow!("NOT_FOUND: task"))?;
+                let task =
+                    crate::tasks::get_task(db, id)?.ok_or_else(|| anyhow!("NOT_FOUND: task"))?;
                 let workspace = registry::for_session(db, &task.session_id)?
                     .into_iter()
                     .find(|entry| entry.delegation_id.is_none())
                     .map(|entry| PathBuf::from(entry.path));
-                Some((
-                    task.title,
-                    workspace,
-                    task.workspace_branch.or(task.branch),
-                ))
+                Some((task.title, workspace, task.workspace_branch.or(task.branch)))
             }
             None => None,
         };

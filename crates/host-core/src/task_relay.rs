@@ -177,7 +177,7 @@ pub fn detach(db: &Database, input: &Value) -> Result<Value> {
         "UPDATE tasks SET relay_parent_task_id=NULL, relay_state=NULL WHERE id=?1",
         params![task_id],
     )?;
-    crate::task_stage::unblock_relay(db, &tx, &task_id)?;
+    unblock(db, &tx, &task_id)?;
     let delivery_id: String = tx.query_row(
         "SELECT COALESCE(delivery_id, '') FROM tasks WHERE id=?1",
         params![task_id],
@@ -239,10 +239,99 @@ pub fn orphan_successors(
             "UPDATE tasks SET relay_state='orphaned' WHERE id=?1 AND relay_state='waiting'",
             params![successor],
         )?;
-        crate::task_stage::block_relay_orphaned(db, conn, successor, &parent_short, false)?;
+        block_orphaned(db, conn, successor, &parent_short, false)?;
     }
     Ok(waiting.len())
 }
 #[cfg(test)]
 #[path = "task_relay_tests.rs"]
 mod tests;
+
+// ---- the stages a relay step can land in ------------------------------------
+//
+// One writer: `task_stage::move_stage`. These three are the relay's own
+// transitions, and they live here because they are about a chain — a step that
+// lost its predecessor, a step that was abandoned, and a step a person starts
+// from `main` — and not about the stage vocabulary itself.
+
+use crate::task_stage::{self, Column, StageMove};
+use rusqlite::Connection;
+
+/// The stage a relay step lands in when the step before it was abandoned.
+///
+/// The blocker names the step that was lost, because the person's next choice is
+/// about that step: start this one from `main` instead, or drop it. `silent` is
+/// true when the host writes it from the card's own confirmation, which the
+/// person is already looking at.
+pub fn block_orphaned(
+    db: &Database,
+    conn: &Connection,
+    task_id: &str,
+    parent_short: &str,
+    silent: bool,
+) -> Result<Option<StageMove>> {
+    let parent: String = parent_short
+        .chars()
+        .take(task_stage::MAX_BLOCKER_FIELD_CHARS)
+        .collect();
+    let blocker = json!({ "reason": "relay-orphaned", "parent": parent }).to_string();
+    task_stage::move_stage(
+        db,
+        conn,
+        task_id,
+        Some("blocked"),
+        Column::Set(&blocker),
+        Column::Keep,
+        silent,
+    )
+}
+
+/// The stage a step lands in when the branch it should continue is gone.
+///
+/// A step whose predecessor's branch no longer exists has nothing to build on.
+/// It stops instead of quietly starting from `main`: the change the chain was for
+/// would be delivered from a base nobody chose.
+pub fn block_base(
+    db: &Database,
+    conn: &Connection,
+    task_id: &str,
+    parent_short: &str,
+    detail: &str,
+) -> Result<Option<StageMove>> {
+    let parent: String = parent_short
+        .chars()
+        .take(task_stage::MAX_BLOCKER_FIELD_CHARS)
+        .collect();
+    let detail: String = detail
+        .chars()
+        .take(task_stage::MAX_BLOCKER_FIELD_CHARS)
+        .collect();
+    let blocker = json!({ "reason": "relay-base", "parent": parent, "detail": detail }).to_string();
+    task_stage::move_stage(
+        db,
+        conn,
+        task_id,
+        Some("blocked"),
+        Column::Set(&blocker),
+        Column::Keep,
+        false,
+    )
+}
+
+/// The stage a step returns to when the person starts it from `main` instead of
+/// from the step that cannot be continued.
+///
+/// Back to `queued`: nobody is holding it yet, and the host is about to open its
+/// workspace and dispatch it. The blocker goes away in the same write, so the
+/// blocked card cannot outlive the decision it described.
+pub fn unblock(db: &Database, conn: &Connection, task_id: &str) -> Result<Option<StageMove>> {
+    task_stage::move_stage(
+        db,
+        conn,
+        task_id,
+        Some("queued"),
+        Column::Clear,
+        Column::Keep,
+        false,
+    )
+}

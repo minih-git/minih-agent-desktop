@@ -323,7 +323,7 @@ pub async fn prepare(
             Err(message) => {
                 set_workspace(state, task_id, WorkspaceStatus::Failed, Some(&message)).await?;
                 let st = state.lock().await;
-                crate::task_stage::block_relay_base(
+                crate::task_relay::block_base(
                     &st.db,
                     st.db.conn(),
                     task_id,
@@ -339,27 +339,22 @@ pub async fn prepare(
         Some(start) => Placement::RepoLocalFrom(&name, start),
         None => Placement::RepoLocal(&name),
     };
-    let created = match lifecycle::create_session_worktree(
-        state,
-        git,
-        &task.session_id,
-        &project,
-        placement,
-    )
-    .await
-    {
-        Ok(created) => created,
-        Err(error) => {
-            set_workspace(
-                state,
-                task_id,
-                WorkspaceStatus::Failed,
-                Some(&error.message),
-            )
-            .await?;
-            return Ok(());
-        }
-    };
+    let created =
+        match lifecycle::create_session_worktree(state, git, &task.session_id, &project, placement)
+            .await
+        {
+            Ok(created) => created,
+            Err(error) => {
+                set_workspace(
+                    state,
+                    task_id,
+                    WorkspaceStatus::Failed,
+                    Some(&error.message),
+                )
+                .await?;
+                return Ok(());
+            }
+        };
 
     let row = {
         let st = state.lock().await;

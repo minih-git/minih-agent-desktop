@@ -38,18 +38,27 @@ async fn fixture() -> Fixture {
     git_cmd(&project, &["checkout", "-q", "-b", "one", "main"]);
     std::fs::write(project.join("a.txt"), "first\n").unwrap();
     git_cmd(&project, &["add", "a.txt"]);
-    git_cmd(&project, &["commit", "-q", "-m", "feat: first step writes a"]);
+    git_cmd(
+        &project,
+        &["commit", "-q", "-m", "feat: first step writes a"],
+    );
     git_cmd(&project, &["checkout", "-q", "main"]);
     git_cmd(&project, &["checkout", "-q", "-b", "two", "main"]);
     std::fs::write(project.join("a.txt"), "second\n").unwrap();
     std::fs::write(project.join("b.txt"), "second\n").unwrap();
     git_cmd(&project, &["add", "a.txt", "b.txt"]);
-    git_cmd(&project, &["commit", "-q", "-m", "feat: second step writes a and b"]);
+    git_cmd(
+        &project,
+        &["commit", "-q", "-m", "feat: second step writes a and b"],
+    );
     git_cmd(&project, &["checkout", "-q", "main"]);
     git_cmd(&project, &["checkout", "-q", "-b", "three", "main"]);
     std::fs::write(project.join("c.txt"), "third\n").unwrap();
     git_cmd(&project, &["add", "c.txt"]);
-    git_cmd(&project, &["commit", "-q", "-m", "feat: third step writes c"]);
+    git_cmd(
+        &project,
+        &["commit", "-q", "-m", "feat: third step writes c"],
+    );
     git_cmd(&project, &["checkout", "-q", "main"]);
 
     {
@@ -202,7 +211,9 @@ async fn an_unreadable_project_is_reported_as_such() {
     .unwrap();
     assert_eq!(result["readable"], json!(false), "{result}");
     assert!(
-        result["reason"].as_str().is_some_and(|text| !text.is_empty()),
+        result["reason"]
+            .as_str()
+            .is_some_and(|text| !text.is_empty()),
         "the failure was not explained: {result}"
     );
 }

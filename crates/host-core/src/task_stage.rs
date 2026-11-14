@@ -45,7 +45,7 @@ pub const MAX_WAITING_REQUESTS: usize = 8;
 const MAX_WAITING_QUESTION_CHARS: usize = 500;
 const MAX_WAITING_OPTIONS: usize = 4;
 const MAX_WAITING_OPTION_CHARS: usize = 160;
-const MAX_BLOCKER_FIELD_CHARS: usize = 600;
+pub(crate) const MAX_BLOCKER_FIELD_CHARS: usize = 600;
 
 /// The blocker a person's own stop leaves behind. A reason, not an explanation:
 /// nobody is woken for it.
@@ -62,7 +62,7 @@ pub struct StageMove {
 
 /// What a stage write does to one of the JSON columns that live beside it.
 #[derive(Clone, Copy)]
-enum Column<'a> {
+pub(crate) enum Column<'a> {
     /// Leave the stored value alone.
     Keep,
     /// Nothing is stuck / nothing is waiting.
@@ -181,7 +181,7 @@ fn read_waiting(conn: &rusqlite::Connection, task_id: &str) -> Result<Vec<TaskWa
 ///   and close while the stage itself stays `person/answer`.
 /// - **A change is announced once**, under the key (task, stage, `stage_seq`),
 ///   in this same transaction; `silent` exists only for the person's own stop.
-fn move_stage(
+pub(crate) fn move_stage(
     db: &Database,
     conn: &rusqlite::Connection,
     task_id: &str,
@@ -951,83 +951,6 @@ pub fn block_delivery(
         task_id,
         Some("blocked"),
         Column::Set(&blocker),
-        Column::Keep,
-        false,
-    )
-}
-
-/// The stage a relay step lands in when the step before it was abandoned
-/// (employee mode 0.5 slice 7).
-///
-/// The blocker names the step that was lost, because the person's next choice is
-/// about that step: start this one from `main` instead, or drop it. It goes
-/// through [`move_stage`] like every other stage write. `silent` is true when the
-/// host writes it from the card's own confirmation, which the person is already
-/// looking at.
-pub fn block_relay_orphaned(
-    db: &Database,
-    conn: &rusqlite::Connection,
-    task_id: &str,
-    parent_short: &str,
-    silent: bool,
-) -> Result<Option<StageMove>> {
-    let parent: String = parent_short.chars().take(MAX_BLOCKER_FIELD_CHARS).collect();
-    let blocker = json!({ "reason": "relay-orphaned", "parent": parent }).to_string();
-    move_stage(
-        db,
-        conn,
-        task_id,
-        Some("blocked"),
-        Column::Set(&blocker),
-        Column::Keep,
-        silent,
-    )
-}
-
-/// The stage a relay step lands in when the branch it should continue is gone
-/// (employee mode 0.5 slice 7).
-///
-/// A step whose predecessor's branch no longer exists has nothing to build on.
-/// It stops instead of quietly starting from `main`: the change the chain was
-/// for would be delivered from a base nobody chose.
-pub fn block_relay_base(
-    db: &Database,
-    conn: &rusqlite::Connection,
-    task_id: &str,
-    parent_short: &str,
-    detail: &str,
-) -> Result<Option<StageMove>> {
-    let parent: String = parent_short.chars().take(MAX_BLOCKER_FIELD_CHARS).collect();
-    let detail: String = detail.chars().take(MAX_BLOCKER_FIELD_CHARS).collect();
-    let blocker = json!({ "reason": "relay-base", "parent": parent, "detail": detail }).to_string();
-    move_stage(
-        db,
-        conn,
-        task_id,
-        Some("blocked"),
-        Column::Set(&blocker),
-        Column::Keep,
-        false,
-    )
-}
-
-/// The stage a relay step returns to when the person starts it from `main`
-/// instead of from the step that was abandoned (slice 7).
-///
-/// Back to `queued`: nobody is holding it yet, and the host is about to open its
-/// workspace and dispatch it. The blocker goes away in the same write, so the
-/// blocked card cannot outlive the decision it described.
-pub fn unblock_relay(
-    db: &Database,
-    conn: &rusqlite::Connection,
-    task_id: &str,
-) -> Result<Option<StageMove>> {
-    move_stage(
-        db,
-        conn,
-        task_id,
-        Some("queued"),
-        Column::Clear,
         Column::Keep,
         false,
     )

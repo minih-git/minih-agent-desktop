@@ -286,7 +286,9 @@ mod tests {
         assert_eq!(parent, None);
         let drafts: i64 = db
             .conn()
-            .query_row("SELECT COUNT(*) FROM task_card_drafts", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM task_card_drafts", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(drafts, 1, "the migration dropped a draft");
     }

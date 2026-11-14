@@ -888,7 +888,7 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
             .as_deref()
             .map(crate::tasks::short_id)
             .unwrap_or_default();
-        crate::task_stage::block_relay_orphaned(db, &tx, &task.id, &parent_short, true)?;
+        crate::task_relay::block_orphaned(db, &tx, &task.id, &parent_short, true)?;
     }
     tx.execute(
         "UPDATE session_collaboration_messages SET target_session_id=?2, target_title=?3

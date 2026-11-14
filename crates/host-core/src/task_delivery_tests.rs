@@ -810,7 +810,10 @@ async fn chain() -> Chain {
     );
     std::fs::write(wt_two.join("backfill.txt"), "rows\n").unwrap();
     git_cmd(&wt_two, &["add", "backfill.txt"]);
-    git_cmd(&wt_two, &["commit", "-q", "-m", "feat: backfill the column"]);
+    git_cmd(
+        &wt_two,
+        &["commit", "-q", "-m", "feat: backfill the column"],
+    );
     git_cmd(&wt_two, &["push", "-q", "origin", step_two_branch]);
     git_cmd(&wt_two, &["push", "-q", "gitea", step_two_branch]);
     let second_tip = head_of(&wt_two);
@@ -850,7 +853,10 @@ async fn chain() -> Chain {
             .unwrap()
         };
         let task_id = created_task["task"]["id"].as_str().unwrap().to_string();
-        let session_id = created_task["task"]["sessionId"].as_str().unwrap().to_string();
+        let session_id = created_task["task"]["sessionId"]
+            .as_str()
+            .unwrap()
+            .to_string();
         {
             let st = state.lock().await;
             registry::insert(
@@ -967,7 +973,10 @@ async fn the_last_step_merges_the_whole_chain_and_cleans_every_step_up() {
 
     // Every branch of the chain is gone locally, and no worktree holds one.
     let branches = git_cmd(&chain.project, &["branch", "--list", "minih-agent/*"]);
-    assert!(branches.trim().is_empty(), "a chain branch survived: {branches}");
+    assert!(
+        branches.trim().is_empty(),
+        "a chain branch survived: {branches}"
+    );
     let worktrees = git_cmd(&chain.project, &["worktree", "list", "--porcelain"]);
     assert!(
         !worktrees.contains("wt-one") && !worktrees.contains("wt-two"),

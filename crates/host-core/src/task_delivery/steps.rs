@@ -530,9 +530,8 @@ async fn cleanup_step(
 ) -> std::result::Result<(), Stop> {
     let chain = {
         let st = state.lock().await;
-        tasks::relay_chain(&st.db, &target.task.id).map_err(|error| {
-            Stop::new("cleanup", error.to_string(), true)
-        })?
+        tasks::relay_chain(&st.db, &target.task.id)
+            .map_err(|error| Stop::new("cleanup", error.to_string(), true))?
     };
     for step in &chain {
         task_workspace::cleanup_for_archive(state, git, &step.id, false)
