@@ -204,6 +204,10 @@ import type {
   TaskDeliveryMergeResult,
   TaskList,
   TaskListRequest,
+  TaskOverlap,
+  TaskOverlapRequest,
+  TaskRelayDetachResult,
+  TaskRelayHandoffResult,
   TaskRestartResult,
   TaskReassignRequest,
   TaskReassignResult,
@@ -1712,6 +1716,31 @@ export const api = {
     invoke<TaskDeliveryCheck>(IPC.invoke.taskDeliveryCheck, { taskId }),
   mergeTaskDelivery: (taskId: string) =>
     invoke<TaskDeliveryMergeResult>(IPC.invoke.taskDeliveryMerge, { taskId }),
+  /**
+   * 「接受并交给下一棒」 on a finished step (employee mode 0.5 slice 7).
+   *
+   * One click accepts the work and unlocks the step behind it: the next step was
+   * authorized when its card was confirmed, so unlocking it is a dispatch and not
+   * a second question. `unlocked` names the tasks that started.
+   */
+  handOffTask: (taskId: string) =>
+    invoke<TaskRelayHandoffResult & { startError?: string }>(IPC.invoke.taskRelayHandoff, {
+      taskId,
+    }),
+  /**
+   * 「改从 main 开工」 on a step whose predecessor was abandoned or whose branch is
+   * gone: the edge is dropped and the workspace is built from the project's main.
+   */
+  detachTask: (taskId: string) =>
+    invoke<TaskRelayDetachResult & { startError?: string }>(IPC.invoke.taskRelayDetach, { taskId }),
+  /**
+   * Which other open tasks in this project are changing files (slice 7).
+   *
+   * A hint the dock and the completion card show; it never blocks work. A read
+   * that failed comes back as `readable: false`, never as an empty list.
+   */
+  checkTaskOverlap: (request: TaskOverlapRequest) =>
+    invoke<TaskOverlap>(IPC.invoke.taskOverlap, request),
   /**
    * Move a proposed card to another employee (employee mode 0.5 slice 3).
    *

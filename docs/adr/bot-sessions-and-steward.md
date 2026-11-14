@@ -1227,7 +1227,7 @@ explicitly: research, reading and review go to a researcher or a reviewer with
 
 ### 6. What this section does not do
 
-- no multi-role relay between employees (slice 7);
+- multi-role relay between employees: delivered in the next section;
 - no generated avatars;
 - no user-defined or exportable templates;
 - the three old pre-set employees are **not** migrated onto templates: they are
@@ -1250,3 +1250,120 @@ explicitly: research, reading and review go to a researcher or a reviewer with
 | The norms never enter the transcript | **Yes** — per-turn `turnBriefing` only; a source test pins it | `ipc/agent-ipc.ts`, `bot-task-session-rules.test.mjs` |
 | The norms cannot act as a permission | **Yes** — the block says so; the ceiling stays `min(card, employee)` | `services/team-norms.ts` |
 | The roster names the job | **Yes** — `definition` per row, worded by `roleWordForDefinition` | `bots.rs::roster`, `session-messaging-tools.ts` |
+
+## Relay between roles (employee mode 0.5, slice 7, schema v40)
+
+A change is often one thing done in an order: add the column, backfill it, then
+switch the reader. The person's rule for this mode is that cards with a
+dependency **share one feature branch**, and the next card unlocks when the
+previous one finishes. That rule cannot be implemented as a shared branch, and
+the reason is git's, not the product's.
+
+### 1. git decides the shape: a relay, not a shared branch
+
+A branch cannot be checked out in two worktrees at once. Two employees working
+the same branch would therefore need one folder, one checkout and one working
+tree — which contradicts the whole of slice 2 (each task has its own workspace).
+
+So "one feature branch, several steps" becomes **a chain of branches**: step 2
+starts its own branch from the *end* of step 1's, so it contains every commit
+step 1 made. `task_workspace::prepare` creates it with
+`Placement::RepoLocalFrom(name, start)`, records `base_ref =
+refs/heads/<step 1's branch>` and `base_remote = false`, and fetches nothing:
+the commit it continues is local by construction.
+
+A predecessor whose branch no longer exists stops the step with
+`relay-base` on its card. It never quietly restarts from `main`: the base a
+change is built on is part of what the person approved, and only they may drop
+it — which is what 「改从 main 开工」 (`task.relay.detach`) is for.
+
+### 2. Only the last step is merged
+
+`tasks.relay_has_successor` refuses `task.delivery.merge` for a step that is
+followed by another: the middle step's branch is the next step's base, so
+merging it would put half a change on `main` and leave the next step building on
+something nobody approved. The middle step's completion card offers
+「接受并交给下一棒」 instead, and that is the only path forward.
+
+The last step merges the whole chain, because every earlier step's commits are
+already on its branch. Its completion card lists the commits per step
+(`changes.steps`) so the person can see that what they are merging is three
+steps' work, and its cleanup removes every step's worktree and local branch
+(`-d`, never `-D`) and archives every step: after the merge, a step whose work is
+on `main` has nothing left to do on its own.
+
+### 3. A handoff is a person's click, recorded once
+
+`task.relay.handoff` runs in one transaction: `accepted_at` (the work is
+acceptable), `relay_handoff_at` (this step is done and its branch is the next
+one's base), `relay_state = ready` on the step that was waiting, and the
+deliveries Main has to dispatch. It is only available from `person/accept`, and a
+second click keeps the first timestamp and returns the same deliveries — a
+retried click cannot start the next step twice.
+
+### 4. Why unlocking may dispatch without asking again
+
+The next step's card was **already confirmed by the person**, with `after`
+naming the card it follows. That confirmation is the authorization; the handoff
+only decides *when* it becomes runnable. Asking again would be asking the same
+person to approve the same card twice, and it would make "unlock" a second
+decision nobody stated.
+
+The corollary is a rule that had to be added in two places: a confirmed step
+that is still `waiting` is **not work waiting to be started**. `pendingDispatch`
+skips it, and the startup fence that marks every queued delivery `interrupted`
+skips it too — otherwise a restart would either start step 2 before step 1 or
+kill a delivery the person had already authorized a day earlier.
+
+### 5. Abandonment strands the step behind it
+
+Archiving a step without handing off turns its successor into `orphaned`,
+`blocked`, with `{reason: "relay-orphaned", parent}` on its card, in the same
+transaction as the archive: "abandoned" and "the step behind it is stuck" are one
+fact. The card then offers 「改从 main 开工」 and 「放弃」, and nothing happens until
+the person picks one — a step that silently restarted from `main` would deliver a
+change nobody asked for on a branch whose premise was dropped.
+
+### 6. Overlapping files are a warning, never a refusal
+
+`task.overlap` lists what other open tasks in the same repository have changed
+(commits on their branch relative to `main`, plus what their workspace still
+holds uncommitted), and which of those files this task changes too. Two steps of
+one chain are excluded: they are *supposed* to touch the same files.
+
+It is a hint the person reads before starting work and on the completion card,
+and it blocks nothing. A read that fails comes back as `readable: false` and the
+card says 「查不到其他任务的改动」: "nobody else touches this file" and "nobody could
+tell" lead to opposite decisions, and only one of them is true.
+
+### 7. Schema v40, and what it may not do
+
+Four additive columns and two indexes: `task_card_drafts.after_draft_id`,
+`tasks.relay_parent_task_id`, `tasks.relay_state` (`waiting` / `ready` /
+`orphaned`), `tasks.relay_handoff_at`. The edge is stored on the card because a
+card exists before its task does; what became of the edge is read from the parent
+*task*, never from a snapshot taken when the card was proposed.
+
+The step is a pure `ALTER TABLE ... ADD COLUMN`. Nothing is rebuilt, nothing is
+rewritten, and a long-lived file with historical foreign-key violations still
+opens — the rule every step since v33 has followed.
+
+### Enforcement status after this section
+
+| Rule | Enforced | Where |
+| --- | --- | --- |
+| A card may only follow a card from the same turn's batch | **Yes** — refused at propose and revise | `session_collaboration/drafts.rs` |
+| A relay stays inside one repository | **Yes** — card `repo.origin` compared on both sides | `drafts.rs::resolve_after` |
+| A chain never loops and holds at most five steps | **Yes** — `ancestor_chain` refuses a loop and a sixth step | `drafts.rs` |
+| A card cannot be confirmed before the card it follows | **Yes** — `CONFLICT: … start that card first` | `drafts.rs::confirm`, `task_relay_tests.rs` |
+| A step starts where the previous branch ended | **Yes** — `Placement::RepoLocalFrom`, `base_remote = false` | `task_workspace.rs`, `lifecycle/create.rs` |
+| A missing predecessor branch blocks instead of falling back to `main` | **Yes** — `relay-base` blocker, no worktree created | `task_workspace::relay_base` |
+| A middle step cannot be merged | **Yes** — `relay_has_successor` refuses | `task_delivery/mod.rs` |
+| A handoff is idempotent and only from `person/accept` | **Yes** — one transaction, first timestamp wins | `task_relay::handoff` |
+| A waiting step is neither drained nor fenced as interrupted | **Yes** — both queries exclude `waiting`/`orphaned` | `repository::pending_dispatch`, `settlement::recover` |
+| Abandoning a step orphans the next one, in one transaction | **Yes** — `orphan_successors` inside `tasks::archive` | `tasks.rs`, `task_relay.rs` |
+| 「改从 main 开工」 is the person's click | **Yes** — `task.relay.detach`, refused unless the predecessor is unusable | `task_relay::detach` |
+| The last step merges the whole chain and cleans every step up | **Yes** — chain-driven cleanup with `-d` | `task_delivery/steps.rs` |
+| Two steps of one chain are not reported as an overlap | **Yes** — the chain is excluded whole | `task_overlap::overlap` |
+| An unreadable overlap is reported as unreadable | **Yes** — `readable: false` + `reason` | `task_overlap.rs`, `task_overlap_tests.rs` |
+| A task session knows its place in the chain | **Yes** — the host injects "step k of n" and the push rule | `services/task-status.ts` |

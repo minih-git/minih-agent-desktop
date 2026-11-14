@@ -240,8 +240,16 @@ pub fn recover(db: &Database) -> Result<()> {
         let mut statement = tx.prepare(
             "SELECT id, report_seq FROM session_collaboration_messages
              WHERE status='running'
-                OR (status='queued' AND NOT EXISTS(SELECT 1 FROM turn_queue q
-                     WHERE q.session_message_id=session_collaboration_messages.id))",
+                OR (status='queued'
+                    AND NOT EXISTS(SELECT 1 FROM turn_queue q
+                         WHERE q.session_message_id=session_collaboration_messages.id)
+                    -- A confirmed relay step that is still waiting for its
+                    -- predecessor was never started, so it was not interrupted:
+                    -- fencing it here would turn the person's later handoff into
+                    -- a dead delivery (employee mode 0.5 slice 7).
+                    AND NOT EXISTS(SELECT 1 FROM tasks t
+                         WHERE t.delivery_id = session_collaboration_messages.id
+                           AND t.relay_state IN ('waiting','orphaned')))",
         )?;
         let rows = statement
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -251,7 +259,11 @@ pub fn recover(db: &Database) -> Result<()> {
     tx.execute(
         "UPDATE session_collaboration_messages SET status='interrupted',
         error='Execution interrupted by application restart',updated_at=?1 WHERE status='running'
-        OR (status='queued' AND NOT EXISTS(SELECT 1 FROM turn_queue q WHERE q.session_message_id=session_collaboration_messages.id))",
+        OR (status='queued'
+            AND NOT EXISTS(SELECT 1 FROM turn_queue q WHERE q.session_message_id=session_collaboration_messages.id)
+            AND NOT EXISTS(SELECT 1 FROM tasks t
+                 WHERE t.delivery_id = session_collaboration_messages.id
+                   AND t.relay_state IN ('waiting','orphaned')))",
         params![now_ms()],
     )?;
     for (id, _seq) in &interrupted {

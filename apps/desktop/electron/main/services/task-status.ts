@@ -321,18 +321,78 @@ export async function buildStewardBriefing(call: BoardReader, name?: string): Pr
  * so: "no team rules" and "could not read them" are different facts, and the
  * second one must not be presented as the first.
  */
-export async function buildTaskSessionBriefing(call: BoardReader): Promise<string> {
+export async function buildTaskSessionBriefing(
+  call: BoardReader,
+  sessionId?: string,
+): Promise<string> {
   const norms = await readTeamNorms(call);
+  const relay = relayStepBriefing(call, sessionId);
   if (norms.kind === "norms") {
-    return [TASK_SESSION_BRIEFING, "", teamNormsBriefing(norms.norms)].join("\n");
+    return [TASK_SESSION_BRIEFING, "", await relay, teamNormsBriefing(norms.norms)]
+      .filter((part) => part.length > 0)
+      .join("\n");
   }
   if (norms.kind === "unreadable") {
     return [
       TASK_SESSION_BRIEFING,
       "",
+      await relay,
       "[Team norms could not be read for this turn, so none are attached. Do not",
       `assume the team has no rules; say so if it matters. (${norms.reason})]`,
+    ]
+      .filter((part) => part.length > 0)
+      .join("\n");
+  }
+  const line = await relay;
+  return line ? [TASK_SESSION_BRIEFING, "", line].join("\n") : TASK_SESSION_BRIEFING;
+}
+
+/**
+ * Where this task sits in its relay chain, as the task session has to know it
+ * (employee mode 0.5 slice 7).
+ *
+ * The host knows the position because it owns the chain, so it is injected here
+ * rather than left to the employee to infer from a branch name. Two rules matter
+ * and both are stated plainly:
+ *
+ * - a step that is not the last one **commits and stops**: pushing now would open
+ *   a pull request for half a change, and the next step's branch is built on
+ *   this one's commits;
+ * - the last step **pushes and opens one pull request for the whole chain**,
+ *   because that merge is what carries every earlier step to `main`.
+ *
+ * A task in no chain gets nothing: a rule about a chain nobody is in is noise.
+ */
+async function relayStepBriefing(call: BoardReader, sessionId?: string): Promise<string> {
+  if (!sessionId) return "";
+  let task: TaskView | undefined;
+  try {
+    const listed = await call<{ tasks?: TaskView[] }>("task.list", {
+      sessionId,
+      includeArchived: false,
+    });
+    task = listed?.tasks?.[0];
+  } catch {
+    // A board that cannot be read is reported as the gap it is, never as
+    // "you are the last step" — that would make a middle step push.
+    return [
+      "[Host rules for this task · not a message from the person]",
+      "This task's place in a relay chain could not be read, so no step rule is",
+      "attached. Do not push or open a pull request until you know whether you are",
+      "the last step.",
+      "[/Host rules for this task]",
     ].join("\n");
   }
-  return TASK_SESSION_BRIEFING;
+  const total = task?.relayTotal ?? 1;
+  const step = task?.relayStep ?? 1;
+  if (total <= 1) return "";
+  const rule =
+    step < total
+      ? `You are step ${step} of ${total}: commit your work; do not push or open a PR — the next step continues from your branch.`
+      : "You are the last step: push the branch and open one PR for the whole chain.";
+  return [
+    "[Host rules for this task · not a message from the person]",
+    rule,
+    "[/Host rules for this task]",
+  ].join("\n");
 }

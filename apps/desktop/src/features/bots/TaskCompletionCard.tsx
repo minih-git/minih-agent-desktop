@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TaskDeliveryCheck, TaskView } from "@minih-agent/shared";
+import type { TaskDeliveryCheck, TaskOverlap, TaskView } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
 import { Button } from "../../components/ui";
@@ -12,6 +12,7 @@ import {
   isAccepted,
   usageSummary,
 } from "./task-delivery";
+import { overlapRows, relayPosition } from "./task-relay";
 
 /**
  * 「完成卡」: the employee delivered, and the person decides what happens next
@@ -50,6 +51,8 @@ export function TaskCompletionCard({
   const selectSession = useAppStore((state) => state.selectSession);
   const [check, setCheck] = useState<TaskDeliveryCheck | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
+  /** What other tasks in this repository change, for the overlap line (slice 7). */
+  const [overlap, setOverlap] = useState<TaskOverlap | null>(null);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +77,18 @@ export function TaskCompletionCard({
     } finally {
       setChecking(false);
     }
-  }, [task.id]);
+    // The overlap is a hint beside the decision, so its own failure never
+    // changes the verdict — it is reported as the gap it is and nothing more.
+    if (task.projectPath) {
+      try {
+        setOverlap(
+          await api.checkTaskOverlap({ projectPath: task.projectPath, taskId: task.id }),
+        );
+      } catch {
+        setOverlap({ readable: false, tasks: [], intersections: [] });
+      }
+    }
+  }, [task.id, task.projectPath]);
 
   useEffect(() => {
     void load();
@@ -107,6 +121,24 @@ export function TaskCompletionCard({
       if (!result?.merged) {
         const detail = result?.detail ? ` (${result.detail})` : "";
         setError(t("bots.completion.mergeFailed", { step: result?.failedStep ?? "", detail }));
+      }
+    });
+
+  /**
+   * 「接受并交给下一棒」: accept this step and unlock the one behind it (slice 7).
+   *
+   * The next step's card was authorized when the person confirmed it, so this is
+   * not a second decision: the host records the handoff and Main starts the step
+   * that was waiting. A middle step never merges — its branch is the next step's
+   * base.
+   */
+  const handoff = () =>
+    run("handoff", async () => {
+      const result = await api.handOffTask(task.id);
+      // The handoff stands even when the next step could not start: the card
+      // says what happened instead of pretending the click did nothing.
+      if (result.startError) {
+        setError(t("bots.completion.handoffFailed", { reason: result.startError }));
       }
     });
 
@@ -170,6 +202,11 @@ export function TaskCompletionCard({
   const commits = check?.changes?.commits ?? [];
   const result = task.result;
   const who = employeeName?.trim() || t("bots.card.targetUnknown");
+  /** Where this step sits in its chain, and the steps the merge would carry. */
+  const position = relayPosition(task);
+  const middle = !position.isLast;
+  const chainSteps = check?.changes?.steps ?? [];
+  const overlapLines = overlapRows(overlap, t);
 
   return (
     <section
@@ -181,6 +218,8 @@ export function TaskCompletionCard({
       data-completion-can-merge={ready ? "true" : "false"}
       data-completion-reason={check?.reason ?? ""}
       data-completion-variant={variant}
+      data-completion-relay-step={position.total > 1 ? `${position.step}/${position.total}` : undefined}
+      data-completion-relay-middle={middle ? "true" : undefined}
       aria-busy={busy ? true : undefined}
     >
       <div className="task-completion-header">
@@ -201,9 +240,24 @@ export function TaskCompletionCard({
       </div>
       <p className="task-completion-goal">{task.title}</p>
 
+      {position.total > 1 ? (
+        // Where this step sits, and what the button on the right does about it:
+        // a step in between hands its branch on, the last one merges the chain.
+        <p className="task-completion-relay" data-completion-relay="">
+          <span>{t("bots.completion.chainStep", { step: position.step, total: position.total })}</span>
+          <span className="task-completion-count">
+            {middle ? t("bots.completion.handoffHint") : t("bots.completion.chainLast")}
+          </span>
+        </p>
+      ) : null}
+
       {accepted ? (
         <p className="task-completion-note" data-completion-accepted-note="">
-          {t("bots.completion.acceptedNote")}
+          {/* Accepted is not the same as done with it: a middle step still owes
+              the next one its branch. */}
+          {middle
+            ? t("bots.completion.handoffWaiting")
+            : t("bots.completion.acceptedNote")}
         </p>
       ) : null}
 
@@ -268,6 +322,38 @@ export function TaskCompletionCard({
               {t("bots.completion.moreCommits", { count: check.changes.commits.length })}
             </span>
           ) : null}
+          {chainSteps.length ? (
+            // A chain is merged whole, so the card lists it whole: which stub
+            // came from which step is the one thing the merge itself cannot show
+            // afterwards (slice 7).
+            <ul className="task-completion-chain" data-completion-chain="">
+              {chainSteps.map((entry, index) => (
+                <li key={entry.taskId} data-chain-step={entry.shortId}>
+                  <span className="task-completion-count">
+                    {t("bots.completion.chainStep", {
+                      step: index + 1,
+                      total: chainSteps.length,
+                    })}{" "}
+                    · #{entry.shortId}
+                  </span>
+                  <span className="task-completion-count">
+                    {t("bots.completion.chainStepCount", {
+                      commits: entry.commits.length,
+                      files: entry.files,
+                    })}
+                  </span>
+                  <ul className="task-completion-commits">
+                    {entry.commits.map((commit) => (
+                      <li key={`${entry.shortId}:${commit.sha}`}>
+                        <code>{commit.sha}</code>
+                        <span>{commit.subject}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {check?.prUrl ? (
             <a
               className="task-completion-link"
@@ -282,6 +368,19 @@ export function TaskCompletionCard({
           <Button variant="ghost" onClick={openChanges} data-completion-diff="">
             {t("bots.completion.viewChanges")}
           </Button>
+        </div>
+      ) : null}
+
+      {overlapLines.length ? (
+        // The one thing the host can prove about a collision: two tasks in this
+        // repository change the same file. A warning, not a verdict (slice 7).
+        <div className="task-completion-overlap" data-completion-overlap="">
+          <span className="task-completion-label">{t("bots.completion.changes")}</span>
+          <ul>
+            {overlapLines.map((line) => (
+              <li key={line.key}>{line.text}</li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
@@ -359,7 +458,20 @@ export function TaskCompletionCard({
       ) : null}
 
       <div className="task-completion-actions">
-        {mergeable ? (
+        {middle ? (
+          // A step in between hands its branch on: the next step continues from
+          // it, and only the last step is merged (slice 7). The chain's gate —
+          // PR, CI, review — is the last step's question, not this one's.
+          <Button
+            variant="primary"
+            disabled={Boolean(busy)}
+            onClick={() => void handoff()}
+            data-completion-handoff=""
+            title={t("bots.completion.handoffHint")}
+          >
+            {t("bots.completion.handoff")}
+          </Button>
+        ) : mergeable ? (
           <Button
             variant="primary"
             disabled={!ready || Boolean(busy)}

@@ -506,6 +506,63 @@
   letter-spacing: var(--tracking-wide);
 }
 
+/* Where this step sits in its chain, and what its primary button does about it
+   (employee mode 0.5 slice 7). */
+/* The reason a relay step cannot start, in the blocker's own words, beside the
+   sentence that names the step it lost. */
+.task-blocked-detail {
+  color: var(--ds-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.task-completion-relay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+}
+
+/* The steps the last step's merge would carry, each with its own commits: the
+   merge is one fast-forward, and afterwards nothing shows what came from where. */
+.task-completion-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-completion-chain > li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 2px solid var(--ds-border-subtle);
+}
+
+/* Files this task and another one both change. A warning beside the decision,
+   never a verdict, and it says so when the read failed. */
+.task-completion-overlap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.task-completion-overlap ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+  overflow-wrap: anywhere;
+}
+
 .task-completion-count {
   color: var(--ds-text-muted);
   font-size: var(--text-2xs);
@@ -683,6 +740,12 @@
 
 .task-batch-row[data-batch-accepted="true"] .task-batch-state {
   color: var(--ds-success);
+}
+
+/* A chain is one row (employee mode 0.5 slice 7): the row names every step, and
+   the label is the row's subject rather than a number followed by one task. */
+.task-batch-chain .task-batch-goal {
+  font-weight: var(--font-weight-medium);
 }
 
 .task-batch-expanded {

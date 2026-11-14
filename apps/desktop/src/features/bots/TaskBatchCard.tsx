@@ -5,6 +5,7 @@ import { api } from "../../lib/api";
 import { Button } from "../../components/ui";
 import { TaskCompletionCard } from "./TaskCompletionCard";
 import { batchMergeOrder, isAccepted, type TaskBatch } from "./task-delivery";
+import { batchRows, rowLabel } from "./task-relay";
 
 /**
  * 「汇总卡」: one sentence became several cards, and all of them are finished
@@ -37,13 +38,63 @@ export function TaskBatchCard({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string[]>([]);
 
+  /** One row per chain, one per single task, in the order the batch was proposed. */
+  const rows = batchRows(batch.tasks, batchMergeOrder(batch));
+
   const acceptAll = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     const finished: string[] = [];
     try {
-      for (const task of batchMergeOrder(batch)) {
+      for (const row of rows) {
+        if (row.chain) {
+          // A chain is one decision, so 「全部接受」 hands every step on in order
+          // and merges only the last one: its branch already contains the
+          // others, and a middle merge would put half a change on `main`.
+          const last = row.tasks[row.tasks.length - 1];
+          let stopped = false;
+          for (const step of row.tasks.slice(0, -1)) {
+            if (step.archivedAt || done.includes(step.id)) continue;
+            try {
+              await api.handOffTask(step.id);
+              finished.push(step.id);
+            } catch (cause) {
+              setError(
+                t("bots.completion.handoffFailed", {
+                  reason: cause instanceof Error ? cause.message : String(cause),
+                }),
+              );
+              stopped = true;
+              break;
+            }
+          }
+          if (stopped) break;
+          if (last.archivedAt || done.includes(last.id)) {
+            finished.push(last.id);
+            continue;
+          }
+          const check = await api.checkTaskDelivery(last.id);
+          if (!check?.canMerge) {
+            await api.acceptTask(last.id);
+            finished.push(last.id);
+            continue;
+          }
+          const result = await api.mergeTaskDelivery(last.id);
+          finished.push(last.id);
+          if (!result?.merged) {
+            setError(
+              t("bots.completion.batchStopped", {
+                shortId: last.shortId,
+                step: result?.failedStep ?? "",
+                detail: result?.detail ?? "",
+              }),
+            );
+            break;
+          }
+          continue;
+        }
+        const task = row.tasks[0];
         if (done.includes(task.id) || task.archivedAt) {
           finished.push(task.id);
           continue;
@@ -96,26 +147,55 @@ export function TaskBatchCard({
       </div>
 
       <ol className="task-batch-rows">
-        {batchMergeOrder(batch).map((task, index) => (
-          <li
-            key={task.id}
-            className="task-batch-row"
-            data-batch-row={task.id}
-            data-batch-accepted={isAccepted(task) ? "true" : "false"}
-          >
-            <span className="task-batch-index">{index + 1}</span>
-            <span className="task-batch-task">#{task.shortId}</span>
-            <span className="task-batch-goal">{task.title}</span>
-            <span className="task-batch-employee">
-              {names[task.employeeSessionId] ?? ""}
-            </span>
-            <span className="task-batch-state">
-              {isAccepted(task)
-                ? t("bots.completion.rowAccepted")
-                : t("bots.completion.rowFinished")}
-            </span>
-          </li>
-        ))}
+        {rows.map((row, index) => {
+          const last = row.tasks[row.tasks.length - 1];
+          if (!row.chain) {
+            return (
+              <li
+                key={last.id}
+                className="task-batch-row"
+                data-batch-row={last.id}
+                data-batch-accepted={isAccepted(last) ? "true" : "false"}
+              >
+                <span className="task-batch-index">{index + 1}</span>
+                <span className="task-batch-task">#{last.shortId}</span>
+                <span className="task-batch-goal">{last.title}</span>
+                <span className="task-batch-employee">
+                  {names[last.employeeSessionId] ?? ""}
+                </span>
+                <span className="task-batch-state">
+                  {isAccepted(last)
+                    ? t("bots.completion.rowAccepted")
+                    : t("bots.completion.rowFinished")}
+                </span>
+              </li>
+            );
+          }
+          // A chain occupies one row, and the row says where the merge happens:
+          // three rows inviting three merges is the mistake the relay prevents.
+          return (
+            <li
+              key={`chain:${row.tasks[0].id}`}
+              className="task-batch-row task-batch-chain"
+              data-batch-row={row.tasks.map((task) => task.id).join(" ")}
+              data-batch-chain="true"
+              data-batch-accepted={isAccepted(last) ? "true" : "false"}
+            >
+              <span className="task-batch-index">{index + 1}</span>
+              <span className="task-batch-goal">
+                {t("bots.completion.chainTitle", { chain: rowLabel(row) })}
+              </span>
+              <span className="task-batch-employee">
+                {names[last.employeeSessionId] ?? ""}
+              </span>
+              <span className="task-batch-state">
+                {isAccepted(last)
+                  ? t("bots.completion.rowAccepted")
+                  : t("bots.completion.rowFinished")}
+              </span>
+            </li>
+          );
+        })}
       </ol>
 
       {error ? (

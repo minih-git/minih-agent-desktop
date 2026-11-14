@@ -8,8 +8,11 @@ import {
   type TaskCardDraftView,
   type TaskCreateResult,
   type TaskDeliveryMergeResult,
+  type TaskRelayDetachResult,
+  type TaskRelayHandoffResult,
   type TaskView,
   type TeamNormsSetRequest,
+  taskStartsOnConfirm,
 } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
 import type { HireDraftOutcome } from "../services/hire-draft";
@@ -162,8 +165,12 @@ export function registerBotIpc({
     // A start failure must not undo the person's decision: the card says the
     // work was dispatched but did not start, and the delivery keeps whatever
     // state the ledger recorded.
+    // A relay step is confirmed but must not start yet: the step before it has
+    // not handed off, so there is no branch to continue (employee mode 0.5
+    // slice 7). Its delivery stays queued until that handoff, or until the
+    // person starts it from main.
     let startError: string | undefined;
-    if (result.delivery) {
+    if (result.delivery && taskStartsOnConfirm(result.task)) {
       try {
         await sessionCollaboration.dispatchConfirmed(result.delivery);
       } catch (error) {
@@ -318,6 +325,66 @@ export function registerBotIpc({
     sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
     return result;
   });
+
+  // Relay between steps (employee mode 0.5 slice 7). 「接受并交给下一棒」 is the
+  // person's click on a finished step's card: the host records the handoff and
+  // answers with the delivery of the step behind it, which was authorized when
+  // that card was confirmed. Starting it is the ordinary dispatch, so a handoff
+  // never asks the same person twice.
+  handle(IPC.invoke.taskRelayHandoff, async (request) => {
+    const { taskId } = (request ?? {}) as { taskId?: string };
+    if (!taskId) throw new Error("taskId is required");
+    const result = (await host().call("task.relay.handoff", { taskId })) as
+      TaskRelayHandoffResult & { deliveries?: SessionCollaborationMessage[] };
+    // The delivery of the step that follows this one, if it exists and has not
+    // started. A start failure must not undo the handoff: the next step's card
+    // shows what happened, and the person can start it from there.
+    let startError: string | undefined;
+    for (const delivery of result.deliveries ?? []) {
+      try {
+        await sessionCollaboration.dispatchConfirmed(delivery);
+      } catch (error) {
+        startError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (result?.task) announceTask(result.task, "stage");
+    await reconcileTaskStages();
+    sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
+    return {
+      task: result.task,
+      handedOffAt: result.handedOffAt,
+      unlocked: result.unlocked ?? [],
+      ...(startError ? { startError } : {}),
+    } satisfies TaskRelayHandoffResult;
+  });
+
+  // 「改从 main 开工」 on a step whose predecessor is gone: the edge is dropped, the
+  // workspace is built from the project's own main, and the delivery that was
+  // waiting starts again. The person's own decision — nothing here is automatic.
+  handle(IPC.invoke.taskRelayDetach, async (request) => {
+    const { taskId } = (request ?? {}) as { taskId?: string };
+    if (!taskId) throw new Error("taskId is required");
+    const result = (await host().call("task.relay.detach", { taskId })) as
+      TaskRelayDetachResult & { deliveries?: SessionCollaborationMessage[] };
+    let startError: string | undefined;
+    for (const delivery of result.deliveries ?? []) {
+      try {
+        await sessionCollaboration.dispatchConfirmed(delivery);
+      } catch (error) {
+        startError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (result?.task) announceTask(result.task, "stage");
+    await reconcileTaskStages();
+    sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
+    return { task: result.task, ...(startError ? { startError } : {}) };
+  });
+
+  // Which other open tasks in this repository are changing files. A hint the
+  // card shows before work starts; it never blocks anything.
+  handle(IPC.invoke.taskOverlap, async (request) =>
+    host().call("task.overlap", (request ?? {}) as Record<string, unknown>),
+  );
 
   handle(IPC.invoke.taskCardDrop, async (request) => {
     const { draftId } = (request ?? {}) as { draftId?: string };

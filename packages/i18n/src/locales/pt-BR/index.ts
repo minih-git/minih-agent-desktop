@@ -906,6 +906,12 @@ export const ptBR = {
       dropCancel: "Manter",
       saySomething: "Dizer algo",
       delivery: "A mesclagem parou na etapa {{step}}: {{detail}}",
+      // A relay step whose predecessor cannot be continued (slice 7).
+      relayOrphaned: "O passo anterior (#{{shortId}}) foi abandonado",
+      relayBase: "O branch do passo #{{shortId}} sumiu",
+      startFromMain: "Começar a partir da main",
+      startFromMainBusy: "Começando a partir da main…",
+      startFromMainFailed: "Falha ao começar a partir da main: {{reason}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
@@ -946,6 +952,19 @@ export const ptBR = {
       oneByOne: "Ver um por um",
       collapseOneByOne: "Recolher",
       batchStopped: "#{{shortId}} parou na etapa {{step}}: {{detail}}",
+      // Relay between steps (employee mode 0.5 slice 7).
+      handoff: "Aceitar e passar para o próximo passo",
+      handoffHint: "Só o último passo é mesclado; um passo intermediário entrega seu branch",
+      handoffStarted: "Passado para o próximo passo: {{steps}}",
+      handoffWaiting: "O próximo passo espera a sua entrega",
+      handoffFailed: "A entrega falhou: {{reason}}",
+      chainTitle: "Corrente: {{chain}} (mesclada no último passo)",
+      chainStep: "Passo {{step}} de {{total}}",
+      chainStepCount: "{{commits}} commits · {{files}} arquivos",
+      chainLast: "Este é o último passo: a mesclagem leva a corrente inteira para a main",
+      overlapSame: "Mesmos arquivos que #{{shortId}}: {{files}}",
+      overlapMore: "e mais {{count}}",
+      overlapUnreadable: "Não foi possível ler as mudanças das outras tarefas: {{reason}}",
       reason: {
         prMissing: "Ainda não há pull request",
         prUnreadable: "Não foi possível ler o pull request: {{reason}}",
@@ -1088,6 +1107,13 @@ export const ptBR = {
       riskLow: "Risco baixo",
       riskMedium: "Risco médio",
       riskHigh: "Risco alto",
+      // Steps of one change in order (employee mode 0.5 slice 7).
+      follows: "Vem depois de #{{shortId}}",
+      waitingPrevious: "Confirmada — aguardando #{{shortId}} de {{name}}",
+      needPreviousFirst: "Inicie o cartão anterior primeiro",
+      overlapOthers: "{{count}} outras tarefas trabalham neste repositório: {{list}}",
+      overlapRow: "#{{shortId}} ({{count}} arquivos alterados)",
+      overlapUnreadable: "Não foi possível ler as mudanças das outras tarefas",
     },
     tasks: {
       history: "Histórico ({{count}})",

@@ -315,6 +315,27 @@ carries a follow-up to a task that is already running, addressed by its
 \`taskId\`, and it is refused without one. That refusal is not an obstacle to
 work around; it is the rule that the person, not you, starts work.
 
+## Steps that must happen in order are one chain
+
+A change that only makes sense in order — add the column, then backfill it, then
+switch the reader — cannot be done by three employees at once. Declare the order
+in the cards themselves, with \`after\`:
+
+- Propose the first step on its own, keep the \`draftId\` it returns, and pass it
+  as \`after\` when you propose the second; pass the second's id as \`after\` when
+  you propose the third. Propose them **in the same turn**: \`after\` only accepts a
+  card from this turn's batch. A chain holds at most five steps.
+- A relay stays inside **one repository**. Two cards that name different
+  repositories can never be chained, and the host refuses the second one.
+- Everything else stays parallel: if the steps do not depend on each other, leave
+  \`after\` out, so the person gets the work sooner and a stuck step cannot hold
+  the others.
+
+Only the last card of the chain is merged: its merge carries every step's commits
+to \`main\`. The steps in between are handed on — the person clicks
+\"accept and hand to the next\" on their completion cards — and you do not merge
+them, nor tell anyone to.
+
 ## A follow-up requirement is a scope question
 
 When the person adds a requirement to work that already exists, decide the scope

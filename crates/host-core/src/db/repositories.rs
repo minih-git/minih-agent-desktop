@@ -166,6 +166,11 @@ impl Database {
                 // the delivery steps the host ran (schema v38): the same DDL
                 // the v37 -> v38 step applies.
                 tx.execute_batch(&task_delivery_ddl())?;
+                // A card that follows another card, and the task that waits for
+                // it (schema v40): the same DDL the v39 -> v40 step applies,
+                // columns and indexes alike, so both paths end up identical.
+                tx.execute_batch(&task_relay_ddl())?;
+                tx.execute_batch(task_relay_indexes())?;
                 // An employee's lessons from its finished tasks, and when a
                 // task's current stage was written (schema v39): the same DDL
                 // the v38 -> v39 step applies.
@@ -366,6 +371,12 @@ impl Database {
             // memory tables are rebuilt; the step refuses only *new* dangling
             // references, so a long-lived file still opens.
             super::bot_memory_migration::migrate(&conn, path)?;
+        }
+        if migrated_version <= 39 {
+            // The card that follows another card, and the task that waits for it
+            // (employee mode 0.5 slice 7). Additive and idempotent, so a v38 file
+            // takes every step above and this one in the same open.
+            super::task_relay_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

@@ -204,6 +204,19 @@ export const IPC = {
     taskAccept: "minih-agent-desktop/task/accept",
     taskDeliveryCheck: "minih-agent-desktop/task/deliveryCheck",
     taskDeliveryMerge: "minih-agent-desktop/task/deliveryMerge",
+    /**
+     * Relay between steps (slice 7): 「接受并交给下一棒」 records the handoff and
+     * unlocks the step behind it. `taskRelayDetach` is 「改从 main 开工」 on a step
+     * whose predecessor is gone.
+     */
+    taskRelayHandoff: "minih-agent-desktop/task/relayHandoff",
+    taskRelayDetach: "minih-agent-desktop/task/relayDetach",
+    /**
+     * Which other open tasks in the same repository are changing files, so a
+     * card can warn before two people edit the same file. A hint, never a
+     * refusal.
+     */
+    taskOverlap: "minih-agent-desktop/task/overlap",
     sessionCreate: "minih-agent-desktop/session/create",
     sessionFork: "minih-agent-desktop/session/fork",
     sessionMoveProject: "minih-agent-desktop/session/moveProject",

@@ -255,6 +255,13 @@ pub fn pending_dispatch(db: &Database) -> Result<Vec<Message>> {
         WHERE status='queued' AND turn_id IS NULL
           AND (kind='completion' OR kind='stage'
                OR (kind='task' AND mandate_json IS NOT NULL))
+          -- A relay step whose predecessor has not handed off yet is not work
+          -- waiting to be started: it is work waiting for a person's click on
+          -- the previous step (employee mode 0.5 slice 7). Draining it here
+          -- would start step 2 before step 1 finished.
+          AND NOT EXISTS (SELECT 1 FROM tasks t
+                           WHERE t.delivery_id = session_collaboration_messages.id
+                             AND t.relay_state IN ('waiting','orphaned'))
         ORDER BY created_at LIMIT 64"
     ))?;
     let values = statement

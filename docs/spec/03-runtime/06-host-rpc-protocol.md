@@ -796,7 +796,13 @@ or general MCP operations:
   card with no target at all: a steward that cannot attribute the work leaves
   the employee empty and the person picks one in the card's dropdown. A card may
   declare `readOnly: true`, and then only with `permissionMode: ask`; the host
-  rejects the pair otherwise instead of reinterpreting it.
+  rejects the pair otherwise instead of reinterpreting it. `propose` and
+  `revise` also accept an optional **`after`** — the draft id of a card proposed
+  earlier in the same turn that this one continues (employee mode 0.5 slice 7).
+  It is refused unless the target is in the same batch, names the same
+  `repo.origin`, closes no loop, and keeps the chain at five steps or fewer;
+  `revise` re-checks it because either side can have moved. Absent keeps the
+  stored edge, an explicit empty value clears it.
 - `taskCard.autoStart` — whether the host may confirm a proposed card by itself.
   Never from the `risk` a model supplied, and never from the mode: `auto` is the
   widest mode the product has (Write/Edit and Bash run without asking), so a mode
@@ -865,6 +871,29 @@ or general MCP operations:
   `blocker.reason = "delivery"`, not an RPC error, because the person's next action
   is that card's 重试. No force-push, no merge commit, no request body ever
   contains a credential.
+- `task.relay.handoff { taskId }` — 「接受并交给下一棒」: the person accepts a finished
+  step and unlocks the step behind it (employee mode 0.5 slice 7). One
+  transaction writes `accepted_at`, `relay_handoff_at`, and `relay_state = ready`
+  on the successor, and answers `{ task, handedOffAt, unlocked: [{ taskId,
+  deliveryId }], deliveries }`. Only a step in `person/accept` may be handed on;
+  a repeat keeps the first timestamp and returns the same deliveries, so a
+  retried click cannot start the next step twice. Main dispatches the returned
+  deliveries — the successor was authorized when its own card was confirmed, so
+  unlocking it is not a second decision.
+- `task.relay.detach { taskId }` — 「改从 main 开工」 on a step whose predecessor was
+  abandoned (`relay-orphaned`) or whose branch is gone (`relay-base`). Drops the
+  edge, clears the blocker, leaves the task `queued`, and answers with the
+  delivery to start. Refused for any other blocked task: the host never chooses
+  this on its own.
+- `task.overlap { projectPath, taskId? }` — what other open tasks in the same
+  repository are changing: the files on their branch relative to `main` plus
+  their workspace's uncommitted files, and the intersection with `taskId` when
+  one is named. Answers `{ readable, reason?, tasks: [{ taskId, shortId, title,
+  fileCount }], intersections: [{ taskId, shortId, title, files }] }`, where
+  each `files` list is capped at 5. Two steps of one chain are excluded. A git
+  read that fails answers `readable: false` — never an empty list, because
+  "nobody else touches this file" and "nobody could tell" lead to opposite
+  decisions. It is a hint on the card and blocks nothing.
 - `task.report` — (blocked) the legacy reading of the same tool, kept in the table
   above for `blocked`:
   `{ sessionId, status: "blocked", where, tried, suggestion }`, each field at most

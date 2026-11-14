@@ -60,12 +60,24 @@ pub struct Draft {
     /// proposed on its own has none, and is never grouped into a summary.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_id: Option<String>,
+    /// The card this one follows, inside the same batch (employee mode 0.5
+    /// slice 7). Ordered steps of one change share a chain of branches; two
+    /// cards without this run in parallel, as they always did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_draft_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
+/// The longest relay chain the host accepts.
+///
+/// A bound, not a workflow: a chain is one change delivered in steps, and five
+/// steps is already more than a person can hold in their head while only the
+/// last one can be merged.
+pub const MAX_RELAY_CHAIN: usize = 5;
+
 const SELECT: &str = "SELECT id,session_id,status,card_json,card_hash,source_utterance,
- target_session_id,confirmed_by,confirmed_at,delivery_id,batch_id,created_at,updated_at
+ target_session_id,confirmed_by,confirmed_at,delivery_id,batch_id,created_at,updated_at,after_draft_id
  FROM task_card_drafts";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Draft> {
@@ -81,6 +93,7 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Draft> {
         confirmed_at: row.get::<_, Option<i64>>(8)?.map(ms_to_ts),
         delivery_id: row.get(9)?,
         batch_id: row.get(10)?,
+        after_draft_id: row.get(13)?,
         created_at: ms_to_ts(row.get(11)?),
         updated_at: ms_to_ts(row.get(12)?),
     })
@@ -193,6 +206,128 @@ fn validate_card_authority(card: &Value) -> Result<()> {
     }
 }
 
+/// The `repo.origin` a card names, if it names one.
+fn card_origin(card: &Value) -> Option<&str> {
+    card.pointer("/repo/origin").and_then(Value::as_str)
+}
+
+/// Every card a card follows, nearest first, ending at the head of the chain.
+///
+/// A chain that loops back on itself is refused rather than walked forever: the
+/// stored rows are the only thing that can produce one, and a loop would make
+/// every later question about the chain unanswerable.
+fn ancestor_chain(db: &Database, start: &str) -> Result<Vec<String>> {
+    let mut chain: Vec<String> = Vec::new();
+    let mut current = Some(start.to_string());
+    while let Some(id) = current {
+        if chain.iter().any(|seen| seen == &id) {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: a card cannot follow a chain that loops back on itself"
+            ));
+        }
+        if chain.len() >= MAX_RELAY_CHAIN {
+            return Err(anyhow!(
+                "LIMIT_EXCEEDED: a relay chain holds at most {MAX_RELAY_CHAIN} steps"
+            ));
+        }
+        chain.push(id.clone());
+        current = db
+            .conn()
+            .prepare_cached("SELECT after_draft_id FROM task_card_drafts WHERE id=?1")?
+            .query_row(params![id], |row| row.get::<_, Option<String>>(0))
+            .optional()?
+            .flatten();
+    }
+    Ok(chain)
+}
+
+/// Resolve and validate the card this one declares it follows (employee mode
+/// 0.5 slice 7).
+///
+/// Four refusals, each naming what the person would otherwise only discover from
+/// a broken chain: the target has to exist in this steward's drafts, has to come
+/// from the same turn (one sentence split into steps is one batch), must not
+/// close a loop, and must name the same repository — a relay is one branch
+/// continued, so two repositories can never be chained. The fifth bound is the
+/// length of the chain.
+fn resolve_after(
+    db: &Database,
+    session_id: &str,
+    batch_id: Option<&str>,
+    card: &Value,
+    self_id: Option<&str>,
+    after: &str,
+) -> Result<String> {
+    let target: Option<(String, Option<String>)> = db
+        .conn()
+        .prepare_cached(
+            "SELECT card_json, batch_id FROM task_card_drafts
+              WHERE id=?1 AND session_id=?2",
+        )?
+        .query_row(params![after, session_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .optional()?;
+    let Some((target_card, target_batch)) = target else {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: `after` must name a card this steward proposed in this turn"
+        ));
+    };
+    // One batch is one sentence split into steps. Chaining across turns would
+    // tie a card to work the person has already stopped thinking about.
+    match (batch_id, target_batch.as_deref()) {
+        (Some(mine), Some(theirs)) if mine == theirs => {}
+        _ => {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: a card can only follow a card from the same turn; propose them together"
+            ))
+        }
+    }
+    let target_card: Value = serde_json::from_str(&target_card).unwrap_or(Value::Null);
+    match (card_origin(card), card_origin(&target_card)) {
+        (Some(mine), Some(theirs)) if mine == theirs => {}
+        (mine, theirs) => {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: a relay stays inside one repository; this card names {}, the card before it names {}",
+                mine.unwrap_or("no repository"),
+                theirs.unwrap_or("no repository")
+            ))
+        }
+    }
+    let chain = ancestor_chain(db, after)?;
+    if let Some(me) = self_id {
+        if chain.iter().any(|id| id == me) {
+            return Err(anyhow!(
+                "INVALID_ARGUMENT: a card cannot follow a chain that loops back on itself"
+            ));
+        }
+    }
+    // The new card is one more step than the chain it joins.
+    if chain.len() + 1 > MAX_RELAY_CHAIN {
+        return Err(anyhow!(
+            "LIMIT_EXCEEDED: a relay chain holds at most {MAX_RELAY_CHAIN} steps"
+        ));
+    }
+    Ok(after.to_string())
+}
+
+/// The `after` a propose or revise asked for: absent keeps what is stored, an
+/// explicit empty value clears it.
+enum AfterRequest<'a> {
+    Keep,
+    Clear,
+    Set(&'a str),
+}
+
+fn after_request(input: &Value) -> AfterRequest<'_> {
+    match input.get("after") {
+        None => AfterRequest::Keep,
+        Some(Value::Null) => AfterRequest::Clear,
+        Some(Value::String(value)) if value.trim().is_empty() => AfterRequest::Clear,
+        Some(Value::String(value)) => AfterRequest::Set(value.trim()),
+        Some(_) => AfterRequest::Keep,
+    }
+}
 fn evict_oldest(conn: &rusqlite::Connection, session_id: &str) -> Result<()> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM task_card_drafts WHERE session_id=?1",
@@ -266,6 +401,20 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.chars().take(128).collect::<String>());
+    // A card may declare that it follows another (slice 7). The edge is checked
+    // before the card is stored, so a chain that could never run is never shown
+    // to the person.
+    let after_draft_id = match after_request(input) {
+        AfterRequest::Set(after) => Some(resolve_after(
+            db,
+            &session_id,
+            batch_id.as_deref(),
+            &card,
+            None,
+            after,
+        )?),
+        AfterRequest::Keep | AfterRequest::Clear => None,
+    };
     let now = now_ms();
     let id = Uuid::new_v4().to_string();
     // The same card proposed again is the same draft: re-proposing must not
@@ -284,8 +433,8 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
     tx.execute(
         "INSERT INTO task_card_drafts
          (id,session_id,status,card_json,card_hash,source_utterance,target_session_id,
-          batch_id,created_at,updated_at)
-         VALUES (?1,?2,'proposed',?3,?4,?5,?6,?7,?8,?8)",
+          batch_id,after_draft_id,created_at,updated_at)
+         VALUES (?1,?2,'proposed',?3,?4,?5,?6,?7,?8,?9,?9)",
         params![
             id,
             session_id,
@@ -294,6 +443,7 @@ pub fn propose(db: &Database, input: &Value) -> Result<Value> {
             source_utterance,
             target,
             batch_id,
+            after_draft_id,
             now
         ],
     )?;
@@ -323,10 +473,32 @@ pub fn revise(db: &Database, input: &Value) -> Result<Value> {
         card["permissionMode"] = json!(granted_mode(db, &existing.target_session_id, requested)?);
     }
     let hash = card_hash(&card);
+    // The edge is re-checked on every revise, because both sides of it can move:
+    // the card may name another repository now, and the chain it joins may have
+    // grown. Absent keeps the stored edge, an explicit empty value clears it.
+    let after_draft_id = match after_request(input) {
+        AfterRequest::Keep => existing.after_draft_id.clone(),
+        AfterRequest::Clear => None,
+        AfterRequest::Set(after) => Some(resolve_after(
+            db,
+            &existing.session_id,
+            existing.batch_id.as_deref(),
+            &card,
+            Some(draft_id),
+            after,
+        )?),
+    };
     db.conn().execute(
-        "UPDATE task_card_drafts SET card_json=?2, card_hash=?3, updated_at=?4
-         WHERE id=?1 AND status='proposed'",
-        params![draft_id, serde_json::to_string(&card)?, hash, now_ms()],
+        "UPDATE task_card_drafts
+            SET card_json=?2, card_hash=?3, after_draft_id=?4, updated_at=?5
+          WHERE id=?1 AND status='proposed'",
+        params![
+            draft_id,
+            serde_json::to_string(&card)?,
+            hash,
+            after_draft_id,
+            now_ms()
+        ],
     )?;
     Ok(json!({"draft": get(db, draft_id)?}))
 }
@@ -637,6 +809,44 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
     // created here, in the same transaction as the confirmation, so there is no
     // state in which a card is confirmed but its work has no home; the delivery
     // is then addressed to the new task session instead of the employee.
+    // The relay, if this card declared one (employee mode 0.5 slice 7).
+    //
+    // Two rules, both about not guessing. The previous card must have been
+    // started — "先开前一张" — because a step with no branch to continue from has
+    // nothing to work on. And what this task then waits for is read from the
+    // parent task itself (`relay_handoff_at`, `archived_at`), never from a
+    // snapshot taken when the card was proposed: a card proposed an hour ago and
+    // confirmed now has to see what is true now.
+    let (relay_parent, relay_state) = match draft.after_draft_id.as_deref() {
+        None => (None, None),
+        Some(after) => {
+            let parent: Option<(String, Option<i64>, Option<i64>)> = tx
+                .prepare_cached(
+                    "SELECT t.id, t.relay_handoff_at, t.archived_at
+                       FROM task_card_drafts d JOIN tasks t ON t.delivery_id = d.delivery_id
+                      WHERE d.id = ?1 AND d.status = 'confirmed'",
+                )?
+                .query_row(params![after], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })
+                .optional()?;
+            let Some((parent_id, handoff, archived)) = parent else {
+                return Err(anyhow!(
+                    "CONFLICT: the card this one follows has not been started; start that card first"
+                ));
+            };
+            // Abandoned without a handoff is `orphaned`, not `waiting`: waiting
+            // would leave the card waiting for a step that will never finish.
+            let state = if archived.is_some() && handoff.is_none() {
+                "orphaned"
+            } else if handoff.is_some() {
+                "ready"
+            } else {
+                "waiting"
+            };
+            (Some(parent_id), Some(state))
+        }
+    };
     let task = super::tasks::create_in(
         db,
         &tx,
@@ -666,8 +876,20 @@ pub fn confirm(db: &Database, request: ConfirmRequest<'_>) -> Result<Value> {
             // that inherited the employee's wider mode would be refused when its
             // delivery is checked, which is the bug this replaces (review S2).
             permission_mode: Some(granted.as_str()),
+            relay_parent_task_id: relay_parent.as_deref(),
+            relay_state,
         },
     )?;
+    // A card that follows an abandoned step lands stuck, in the one function
+    // that writes a stage, so its blocked card says which step it lost rather
+    // than leaving the person to work it out from an empty workspace.
+    if relay_state == Some("orphaned") {
+        let parent_short = relay_parent
+            .as_deref()
+            .map(crate::tasks::short_id)
+            .unwrap_or_default();
+        crate::task_relay::block_orphaned(db, &tx, &task.id, &parent_short, true)?;
+    }
     tx.execute(
         "UPDATE session_collaboration_messages SET target_session_id=?2, target_title=?3
          WHERE id=?1 AND status='queued'",

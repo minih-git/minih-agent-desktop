@@ -140,6 +140,14 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
           "The person's own words for this request. Required for propose and confirm: it is what makes the frozen card reviewable.",
       }),
     ),
+    after: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 128,
+        description:
+          "The draftId of a card proposed earlier in the same turn that this card continues. Use it only when the steps must happen in order inside one repository: the next card's branch starts where this one's ends, and only the last card of the chain is merged. Leave it out for independent work, so the cards run in parallel, and never chain cards in different repositories.",
+      }),
+    ),
   },
   SessionResult: {
     sessionId,
@@ -153,7 +161,7 @@ export const sessionToolDescriptions: Record<string, string> = {
   SessionList:
     "List the other Agent sessions that can receive a delivery, optionally filtered by a title substring. Use it to turn a session name the user said into a real Session ID, and to confirm the target before sending. Titles are not unique: when several sessions match, ask the user which one instead of guessing. Only Agent-mode sessions appear.",
   TaskCard:
-    "Propose, revise or drop one task card for an employee session. A card is what the person confirms before work is dispatched: goal, acceptance criteria, boundaries, repository, permission mode, and the actions that must come back to them. Use `action: \"propose\"` with `targetSessionId` to show a card, `\"revise\"` to change a card nobody has confirmed, and `\"drop\"` to withdraw one. You cannot confirm a card: the person confirms it in the app, and their click is what dispatches the work. A card asks for permission and never grants it — `permissionMode` is required, `inherit` is refused, and deploy/delete/spend are always added to `mustAsk`.",
+    "Propose, revise or drop one task card for an employee session. A card is what the person confirms before work is dispatched: goal, acceptance criteria, boundaries, repository, permission mode, and the actions that must come back to them. Use `action: \"propose\"` with `targetSessionId` to show a card, `\"revise\"` to change a card nobody has confirmed, and `\"drop\"` to withdraw one. You cannot confirm a card: the person confirms it in the app, and their click is what dispatches the work. A card asks for permission and never grants it — `permissionMode` is required, `inherit` is refused, and deploy/delete/spend are always added to `mustAsk`. When the work is one change in ordered steps inside one repository, pass `after` with the earlier card's draftId: the next step then starts from the end of the previous one's branch and only the last step is merged.",
   SessionSend:
     "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Address a follow-up to work that is already running by `taskId`; address an existing session directly by Session ID. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. Choose `delivery: \"now\"` when the target must act on it inside its current turn instead of after that turn ends; the default queues it. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session: use SessionCreate first when no session exists yet. It cannot cancel another sender's delivery either.",
   SessionResult:

@@ -53,6 +53,26 @@ pub struct Changes {
     pub files: usize,
     /// True when the list was cut: the card then says "and N more".
     pub truncated: bool,
+    /// The steps of a relay chain, first to last, when this delivery lands more
+    /// than one (employee mode 0.5 slice 7).
+    ///
+    /// The card lists them so a person can see that what they are merging is
+    /// three steps' work, and which commit came from which: the merge is one
+    /// fast-forward of the whole chain, and after it nobody can tell by looking.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<ChangeStep>,
+}
+
+/// One step of a relay chain and what it added on top of the step before it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeStep {
+    pub task_id: String,
+    pub short_id: String,
+    pub title: String,
+    pub commits: Vec<ChangeCommit>,
+    pub files: usize,
+    pub truncated: bool,
 }
 
 /// How many commits the card lists before it stops.
@@ -122,7 +142,66 @@ async fn changes_of(git: &GitRunner, row: &WorktreeRow) -> Option<Changes> {
             .collect(),
         files: preview.files.len(),
         truncated: preview.commits.len() > MAX_CARD_COMMITS,
+        // Filled by `check` when the task is one step of a relay: the chain is
+        // not visible from a single worktree row.
+        steps: Vec::new(),
     })
+}
+
+/// What each step of a relay chain added on top of the step before it (employee
+/// mode 0.5 slice 7).
+///
+/// Read from the branches rather than from the workspaces: by the time the card
+/// renders, earlier steps may already have had their folders cleaned, while
+/// their commits are still exactly the range `previous..this`.
+async fn chain_changes(
+    git: &GitRunner,
+    project: &Path,
+    chain: &[Task],
+    base_branch: &str,
+) -> Vec<ChangeStep> {
+    let mut steps = Vec::new();
+    let mut previous = base_branch.to_string();
+    for task in chain {
+        let Some(branch) = task.workspace_branch.clone() else {
+            continue;
+        };
+        let range = format!("{previous}..{branch}");
+        let commits = git
+            .output(project, &["log", "--reverse", "--format=%h%x1f%s", &range])
+            .await
+            .map(|output| output.stdout)
+            .unwrap_or_default();
+        let listed: Vec<ChangeCommit> = commits
+            .lines()
+            .filter_map(|line| line.split_once('\u{1f}'))
+            .map(|(sha, subject)| ChangeCommit {
+                sha: sha.trim().to_string(),
+                subject: subject.trim().to_string(),
+            })
+            .collect();
+        let files = git
+            .output(project, &["diff", "--name-only", &previous, &branch])
+            .await
+            .map(|output| {
+                output
+                    .stdout
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .count()
+            })
+            .unwrap_or(0);
+        steps.push(ChangeStep {
+            task_id: task.id.clone(),
+            short_id: task.short_id.clone(),
+            title: task.title.clone(),
+            commits: listed.iter().take(MAX_CARD_COMMITS).cloned().collect(),
+            files,
+            truncated: listed.len() > MAX_CARD_COMMITS,
+        });
+        previous = branch;
+    }
+    steps
 }
 
 // ---- the task's delivery target ---------------------------------------------
@@ -194,7 +273,18 @@ pub async fn check(
         },
         DeliveryMode::Local => local_gate(state, git, &target).await,
     };
-    let changes = changes_of(git, &target.row).await;
+    let chain = {
+        let st = state.lock().await;
+        tasks::relay_chain(&st.db, task_id)?
+    };
+    let mut changes = changes_of(git, &target.row).await;
+    if let Some(changes) = changes.as_mut() {
+        // A chain is merged whole, so the card lists it whole: what the person
+        // is about to put on `main` is every step, not just this one.
+        if chain.len() > 1 {
+            changes.steps = chain_changes(git, &target.project, &chain, &target.base_branch).await;
+        }
+    }
     let (elapsed_ms, usage) = {
         let st = state.lock().await;
         let elapsed = elapsed_ms_of(&st.db, &target.task);
@@ -213,6 +303,17 @@ pub async fn check(
         "changes": changes,
         "elapsedMs": elapsed_ms,
         "usage": usage,
+        // Where this step sits (employee mode 0.5 slice 7): the card shows
+        // 「接受并交给下一棒」 instead of 「接受并合并」 for every step but the last,
+        // and that is a fact about the chain, not about the pull request.
+        "relay": {
+            "step": chain.iter().position(|task| task.id == target.task.id).map(|at| at + 1).unwrap_or(1),
+            "total": chain.len().max(1),
+            "isLast": chain
+                .iter()
+                .position(|task| task.id == target.task.id)
+                .is_none_or(|at| at + 1 >= chain.len()),
+        },
     }))
 }
 
@@ -446,6 +547,20 @@ pub async fn merge(
     task_id: &str,
 ) -> Result<Value> {
     let target = target_of(state, task_id).await?;
+    // Only the last step of a relay may be merged (employee mode 0.5 slice 7).
+    //
+    // A middle step's branch is the *base* of the next step's, so merging it
+    // would put half a change on `main` and leave the next step building on a
+    // base that no longer matches what the person approved. The next step has
+    // its own button for this: 接受并交给下一棒.
+    {
+        let st = state.lock().await;
+        if tasks::relay_has_successor(&st.db, task_id)? {
+            return Err(anyhow!(
+                "CONFLICT: this is one step of a relay; merge the last step instead"
+            ));
+        }
+    }
     // Accepting is implied: the button says "accept and merge", so the task is
     // accepted whether or not the merge lands.
     {

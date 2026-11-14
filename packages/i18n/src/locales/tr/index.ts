@@ -918,6 +918,12 @@ export const tr = {
       dropCancel: "Koru",
       saySomething: "Bir şey söyle",
       delivery: "Birleştirme {{step}} adımında durdu: {{detail}}",
+      // A relay step whose predecessor cannot be continued (slice 7).
+      relayOrphaned: "Önceki adım (#{{shortId}}) bırakıldı",
+      relayBase: "Önceki adımın (#{{shortId}}) dalı kayboldu",
+      startFromMain: "Bunun yerine main'den başlat",
+      startFromMainBusy: "main'den başlatılıyor…",
+      startFromMainFailed: "main'den başlatma başarısız: {{reason}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
@@ -958,6 +964,19 @@ export const tr = {
       oneByOne: "Tek tek gör",
       collapseOneByOne: "Daralt",
       batchStopped: "#{{shortId}} {{step}} adımında durdu: {{detail}}",
+      // Relay between steps (employee mode 0.5 slice 7).
+      handoff: "Kabul et ve sonraki adıma devret",
+      handoffHint: "Yalnızca son adım birleştirilir; aradaki adım dalını devreder",
+      handoffStarted: "Sonraki adıma devredildi: {{steps}}",
+      handoffWaiting: "Sonraki adım devri bekliyor",
+      handoffFailed: "Devir başarısız: {{reason}}",
+      chainTitle: "Zincir: {{chain}} (son adımda birleştirilir)",
+      chainStep: "Adım {{step}} / {{total}}",
+      chainStepCount: "{{commits}} commit · {{files}} dosya",
+      chainLast: "Bu son adım: birleştirme tüm zinciri main'e taşır",
+      overlapSame: "#{{shortId}} ile aynı dosyalar: {{files}}",
+      overlapMore: "ve {{count}} tane daha",
+      overlapUnreadable: "Diğer görevlerin değişiklikleri okunamadı: {{reason}}",
       reason: {
         prMissing: "Henüz pull request yok",
         prUnreadable: "Pull request okunamadı: {{reason}}",
@@ -1101,6 +1120,13 @@ export const tr = {
       riskLow: "Düşük risk",
       riskMedium: "Orta risk",
       riskHigh: "Yüksek risk",
+      // Steps of one change in order (employee mode 0.5 slice 7).
+      follows: "#{{shortId}} kartından sonra gelir",
+      waitingPrevious: "Onaylandı — {{name}} tarafından #{{shortId}} bekleniyor",
+      needPreviousFirst: "Önce önceki kartı başlat",
+      overlapOthers: "Aynı depoda {{count}} görev daha çalışıyor: {{list}}",
+      overlapRow: "#{{shortId}} ({{count}} dosya değişti)",
+      overlapUnreadable: "Diğer görevlerin değişiklikleri okunamadı",
     },
     tasks: {
       history: "Geçmiş ({{count}})",

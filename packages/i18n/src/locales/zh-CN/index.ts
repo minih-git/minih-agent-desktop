@@ -915,6 +915,12 @@ export const zhCN = {
       dropCancel: "保留",
       saySomething: "我来说两句",
       delivery: "合并没有走完（第 {{step}} 步）：{{detail}}",
+      // A relay step whose predecessor cannot be continued (slice 7).
+      relayOrphaned: "前一棒 #{{shortId}} 已放弃",
+      relayBase: "前一棒 #{{shortId}} 的分支不在了",
+      startFromMain: "改从 main 开工",
+      startFromMainBusy: "正在从 main 开工…",
+      startFromMainFailed: "从 main 开工失败：{{reason}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
@@ -955,6 +961,19 @@ export const zhCN = {
       oneByOne: "逐个看",
       collapseOneByOne: "收起",
       batchStopped: "#{{shortId}} 在第 {{step}} 步停下：{{detail}}",
+      // Relay between steps (employee mode 0.5 slice 7).
+      handoff: "接受并交给下一棒",
+      handoffHint: "整条链只在最后一棒合并，中间棒交接给下一棒",
+      handoffStarted: "已交给下一棒：{{steps}}",
+      handoffWaiting: "下一棒在等你交接",
+      handoffFailed: "交接失败：{{reason}}",
+      chainTitle: "链：{{chain}}（最后一棒合并）",
+      chainStep: "第 {{step}}/{{total}} 棒",
+      chainStepCount: "{{commits}} 个提交 · {{files}} 个文件",
+      chainLast: "这是最后一棒：合并后整条链一起进 main",
+      overlapSame: "和 #{{shortId}} 改了同样的文件：{{files}}",
+      overlapMore: "还有 {{count}} 个",
+      overlapUnreadable: "查不到其他任务的改动：{{reason}}",
       reason: {
         prMissing: "还没有 PR",
         prUnreadable: "查不到 PR 状态：{{reason}}",
@@ -1097,6 +1116,13 @@ export const zhCN = {
       riskLow: "低风险",
       riskMedium: "中风险",
       riskHigh: "高风险",
+      // Steps of one change in order (employee mode 0.5 slice 7).
+      follows: "接在 #{{shortId}} 之后",
+      waitingPrevious: "已确认，等 {{name}} 的 #{{shortId}}",
+      needPreviousFirst: "先开前一张",
+      overlapOthers: "同仓库还有 {{count}} 个进行中的任务：{{list}}",
+      overlapRow: "#{{shortId}}（改了 {{count}} 个文件）",
+      overlapUnreadable: "查不到其他任务的改动",
     },
     tasks: {
       history: "历史（{{count}}）",

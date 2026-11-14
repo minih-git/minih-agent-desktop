@@ -74,8 +74,18 @@ export type TaskBlocker = {
    * `stopped` is the person's own stop, `error` a turn that failed, and
    * `interrupted` the startup fence: the app died while this task's turn was
    * running, so nothing is running now and nothing will resume by itself.
+   *
+   * `relay-orphaned` and `relay-base` are the two ways a relay step loses the
+   * step before it (employee mode 0.5 slice 7): it was abandoned without handing
+   * off, or its branch is gone. Both are the person's decision, never an
+   * automatic restart from `main`.
    */
-  reason?: "stopped" | "error" | "interrupted" | "delivery";
+  reason?: "stopped" | "error" | "interrupted" | "delivery" | "relay-orphaned" | "relay-base";
+  /**
+   * For `relay-orphaned` / `relay-base`: the short id of the step this one was
+   * waiting for, so the card can name it.
+   */
+  parent?: string;
   /**
    * For `delivery`: which fixed step stopped, and what it said. The card
    * composes the sentence from `reason` and the remote's name, so the words the
@@ -178,7 +188,45 @@ export type TaskChanges = {
   files: number;
   /** True when the list was cut at the card's limit. */
   truncated: boolean;
+  /**
+   * The steps of a relay chain, first to last, when the merge lands more than
+   * one (employee mode 0.5 slice 7). Each entry lists what that step added on top
+   * of the step before it.
+   */
+  steps?: Array<{
+    taskId: string;
+    shortId: string;
+    title: string;
+    commits: TaskChangeCommit[];
+    files: number;
+    truncated: boolean;
+  }>;
 };
+
+/** Where a step sits in its relay chain, as the completion card needs it. */
+export type TaskRelayPosition = {
+  /** 1-based position of the task in its chain. */
+  step: number;
+  /** How many steps the chain has. */
+  total: number;
+  /** True when this is the last step, the only one that may be merged. */
+  isLast: boolean;
+};
+
+/**
+ * Whether confirming a card should also start its task now.
+ *
+ * A relay step waits for the step before it (employee mode 0.5 slice 7): its
+ * card is already confirmed, its delivery is already written, and starting it
+ * early would build the second half of a change on a branch that does not exist
+ * yet. `orphaned` waits for the person's own 「改从 main 开工」. Everything else —
+ * including every task that is in no chain — starts on the click.
+ */
+export function taskStartsOnConfirm(
+  task: Pick<TaskView, "relayState"> | undefined,
+): boolean {
+  return task?.relayState !== "waiting" && task?.relayState !== "orphaned";
+}
 
 /** What one task's turns cost, when the ledger has it. */
 export type TaskUsage = {
@@ -203,10 +251,46 @@ export type TaskDeliveryCheck = {
   changes?: TaskChanges | null;
   elapsedMs?: number;
   usage?: TaskUsage | null;
+  /** Where this step sits in its relay chain (employee mode 0.5 slice 7). */
+  relay?: TaskRelayPosition;
 };
 
 export type TaskAcceptRequest = { taskId: string };
 export type TaskAcceptResult = { task: TaskView };
+
+/**
+ * The outcome of one 「接受并交给下一棒」 click (employee mode 0.5 slice 7).
+ *
+ * The host records the handoff and answers with the deliveries Main has to
+ * start: the next step was authorized when its card was confirmed, so unlocking
+ * it is a dispatch and not a second question. `unlocked` is empty for a step
+ * whose successor card has not been confirmed yet — that card starts at its own
+ * confirmation, which is when the person is asked.
+ */
+export type TaskRelayHandoffResult = {
+  task: TaskView;
+  handedOffAt: string;
+  unlocked: Array<{ taskId: string; deliveryId: string }>;
+};
+
+/** The outcome of 「改从 main 开工」 on an orphaned step. */
+export type TaskRelayDetachResult = { task: TaskView };
+
+/**
+ * What other open tasks in this project are changing (slice 7).
+ *
+ * `readable: false` is not an empty list: "nobody else touches this file" and
+ * "nobody could tell" lead to opposite decisions, and the card says which one it
+ * is.
+ */
+export type TaskOverlap = {
+  readable: boolean;
+  reason?: string;
+  tasks: Array<{ taskId: string; shortId: string; title: string; fileCount: number }>;
+  intersections: Array<{ taskId: string; shortId: string; title: string; files: string[] }>;
+};
+
+export type TaskOverlapRequest = { projectPath: string; taskId?: string };
 
 export type TaskDeliveryMergeRequest = { taskId: string };
 /**
@@ -304,6 +388,27 @@ export type TaskView = {
   delivery?: TaskDeliveryState;
   /** The card batch this task came from, when one turn proposed several cards. */
   batchId?: string;
+  /**
+   * The task this one continues from, when it is one step of a relay (employee
+   * mode 0.5 slice 7).
+   *
+   * A relay is how one change is delivered in several steps: a branch cannot be
+   * checked out in two worktrees, so each step starts its own branch from the end
+   * of the one before it, and only the last step is merged.
+   */
+  relayParentTaskId?: string;
+  /**
+   * `waiting` while the step before this one is running, `ready` once it handed
+   * off, `orphaned` when it was abandoned without handing off. Absent for a task
+   * in no chain.
+   */
+  relayState?: "waiting" | "ready" | "orphaned";
+  /** When this task handed its work to the next step. */
+  relayHandoffAt?: string;
+  /** This task's position in its chain, 1-based. A task in no chain is 1 of 1. */
+  relayStep?: number;
+  /** How many steps the chain has. A task in no chain is 1 of 1. */
+  relayTotal?: number;
 };
 
 /**

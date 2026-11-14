@@ -149,6 +149,27 @@ pub struct Task {
     /// one sentence split into three tasks is one batch by construction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_id: Option<String>,
+    /// The task this one continues from, when it is one step of a relay
+    /// (employee mode 0.5 slice 7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_parent_task_id: Option<String>,
+    /// `waiting`, `ready` or `orphaned`; absent for a task in no chain.
+    ///
+    /// `waiting` means the step before this one is still running, so the host
+    /// has not started this task and will not start it on its own. `ready` means
+    /// it handed off and this step may run. `orphaned` means the step before it
+    /// was abandoned without handing off, which is a blocked card and a person's
+    /// decision, never an automatic fallback to `main`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_state: Option<String>,
+    /// When this task handed its work to the next step.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_handoff_at: Option<String>,
+    /// This task's position in its chain, 1-based, and the chain's length. A
+    /// task in no chain is step 1 of 1, which is what makes the task session's
+    /// "step k of n" rule a single expression rather than a special case.
+    pub relay_step: usize,
+    pub relay_total: usize,
 }
 
 const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title, t.origin,
@@ -163,7 +184,8 @@ const SELECT: &str = "SELECT t.id, t.employee_session_id, t.session_id, t.title,
     (SELECT m.updated_at FROM session_collaboration_messages m WHERE m.id = t.delivery_id),
     t.waiting_json, t.blocker_json, t.stage_seq,
     t.accepted_at, t.result_json, t.delivery_json,
-    (SELECT d.batch_id FROM task_card_drafts d WHERE d.delivery_id = t.delivery_id)
+    (SELECT d.batch_id FROM task_card_drafts d WHERE d.delivery_id = t.delivery_id),
+    t.relay_parent_task_id, t.relay_state, t.relay_handoff_at
  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
@@ -216,7 +238,127 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
             .as_deref()
             .and_then(|encoded| serde_json::from_str(encoded).ok()),
         batch_id: row.get(27)?,
+        relay_parent_task_id: row.get(28)?,
+        relay_state: row.get(29)?,
+        relay_handoff_at: row.get::<_, Option<i64>>(30)?.map(ms_to_ts),
+        // Filled by `with_relay_positions`, which needs the other rows of the
+        // list: a task read on its own cannot know where its chain ends.
+        relay_step: 1,
+        relay_total: 1,
     })
+}
+
+/// The steps of one relay chain, first to last (employee mode 0.5 slice 7).
+///
+/// The chain is read from the `relay_parent_task_id` links rather than from a
+/// stored list, because a link is one fact and a list is a second copy of it.
+/// [`with_relay_positions`] fills in the two derived numbers.
+fn relay_links(db: &Database) -> Result<std::collections::HashMap<String, Option<String>>> {
+    let mut statement = db
+        .conn()
+        .prepare_cached("SELECT id, relay_parent_task_id FROM tasks")?;
+    let links = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?
+        .collect::<rusqlite::Result<std::collections::HashMap<_, _>>>()?;
+    Ok(links)
+}
+
+/// Bound for walking links, so a corrupted link pair cannot spin forever.
+const RELAY_WALK_LIMIT: usize = 16;
+
+/// Fill in each task's `relay_step` and `relay_total` from the chain it is in.
+///
+/// One extra read for the whole list, and none at all when no task is in a
+/// chain — which is every task that existed before this slice.
+fn with_relay_positions(db: &Database, tasks: &mut [Task]) -> Result<()> {
+    if tasks.iter().all(|task| task.relay_parent_task_id.is_none()) {
+        return Ok(());
+    }
+    let links = relay_links(db)?;
+    // Exactly one follower per step is enforced when a card is proposed, so a
+    // parent has at most one child here.
+    let mut child_of: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for (id, parent) in &links {
+        if let Some(parent) = parent.as_deref() {
+            child_of.entry(parent).or_insert(id.as_str());
+        }
+    }
+    for task in tasks.iter_mut() {
+        let mut step = 1;
+        let mut cursor = task.relay_parent_task_id.clone();
+        let mut walked = 0;
+        while let Some(parent) = cursor {
+            walked += 1;
+            if walked > RELAY_WALK_LIMIT {
+                break;
+            }
+            step += 1;
+            cursor = links.get(&parent).cloned().flatten();
+        }
+        let mut total = step;
+        let mut child = child_of.get(task.id.as_str()).copied();
+        let mut walked = 0;
+        while let Some(next) = child {
+            walked += 1;
+            if walked > RELAY_WALK_LIMIT {
+                break;
+            }
+            total += 1;
+            child = child_of.get(next).copied();
+        }
+        task.relay_step = step;
+        task.relay_total = total;
+    }
+    Ok(())
+}
+
+/// The whole chain a task belongs to, first step to last, including the task.
+///
+/// Read for the completion card, the handoff, and the cleanup after the last
+/// step merges: all three need "every step of this chain", not just its ends.
+pub fn relay_chain(db: &Database, task_id: &str) -> Result<Vec<Task>> {
+    let links = relay_links(db)?;
+    let child_of: std::collections::HashMap<&str, &str> = links
+        .iter()
+        .filter_map(|(id, parent)| parent.as_deref().map(|parent| (parent, id.as_str())))
+        .collect();
+    // Walk back to the head of the chain, then forward through every step.
+    let mut head = task_id.to_string();
+    let mut walked = 0;
+    while let Some(Some(parent)) = links.get(&head) {
+        walked += 1;
+        if walked > RELAY_WALK_LIMIT {
+            break;
+        }
+        head = parent.clone();
+    }
+    let mut chain = Vec::new();
+    let mut cursor = Some(head);
+    while let Some(id) = cursor {
+        let Some(task) = get_task(db, &id)? else {
+            break;
+        };
+        cursor = child_of
+            .get(task.id.as_str())
+            .map(|next| (*next).to_string());
+        chain.push(task);
+        if chain.len() > RELAY_WALK_LIMIT {
+            break;
+        }
+    }
+    with_relay_positions(db, &mut chain)?;
+    Ok(chain)
+}
+
+/// Whether a task is followed by another step, i.e. it is not the last of its
+/// chain. Only the last step may be merged.
+pub fn relay_has_successor(db: &Database, task_id: &str) -> Result<bool> {
+    Ok(db
+        .conn()
+        .prepare_cached("SELECT EXISTS(SELECT 1 FROM tasks WHERE relay_parent_task_id=?1)")?
+        .query_row(params![task_id], |row| row.get(0))?)
 }
 
 /// The part of a task id a person can quote. Ids are UUIDs, so the first block
@@ -226,11 +368,15 @@ pub fn short_id(id: &str) -> String {
 }
 
 pub fn get_task(db: &Database, task_id: &str) -> Result<Option<Task>> {
-    Ok(db
+    let mut found = db
         .conn()
         .prepare_cached(&format!("{SELECT} WHERE t.id=?1"))?
         .query_row(params![task_id], row)
-        .optional()?)
+        .optional()?;
+    if let Some(task) = found.as_mut() {
+        with_relay_positions(db, std::slice::from_mut(task))?;
+    }
+    Ok(found)
 }
 
 fn optional_text(input: &Value, key: &str, limit: usize) -> Result<Option<String>> {
@@ -267,6 +413,12 @@ pub struct CreateRequest<'a> {
     /// instead of inheriting one that would then be refused on dispatch
     /// (employee mode 0.5 slice 3, review S2).
     pub permission_mode: Option<&'a str>,
+    /// The task this one continues from, when the confirmed card declared one
+    /// (employee mode 0.5 slice 7). Read from the parent task by `confirm`, so
+    /// the edge is one fact rather than a copy of the draft's.
+    pub relay_parent_task_id: Option<&'a str>,
+    /// `waiting`, `ready` or `orphaned` for a relay step; absent otherwise.
+    pub relay_state: Option<&'a str>,
 }
 
 /// Create a task and its session, atomically.
@@ -356,8 +508,9 @@ pub fn create_in(
     conn.execute(
         "INSERT INTO tasks
          (id, employee_session_id, session_id, title, origin, project_id, branch,
-          stage, delivery_id, source_utterance, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+          stage, delivery_id, source_utterance, created_at,
+          relay_parent_task_id, relay_state)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             id,
             request.employee_session_id,
@@ -369,7 +522,9 @@ pub fn create_in(
             INITIAL_STAGE,
             request.delivery_id,
             request.source_utterance,
-            now_ms()
+            now_ms(),
+            request.relay_parent_task_id,
+            request.relay_state
         ],
     )?;
     get_task(db, &id)?
@@ -392,7 +547,9 @@ pub fn employee_tasks(db: &Database, employee_session_id: &str) -> Result<Vec<Ta
          ORDER BY t.created_at DESC, t.rowid DESC"
     ))?;
     let rows = statement.query_map(params![employee_session_id], row)?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    let mut tasks = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    with_relay_positions(db, &mut tasks)?;
+    Ok(tasks)
 }
 
 /// What an employee's dot reports, given the tasks it holds.
@@ -449,8 +606,11 @@ pub fn create(db: &Database, input: &Value) -> Result<Value> {
             source_utterance: optional_text(input, "sourceUtterance", 4_096)?,
             delivery_id: optional_text(input, "deliveryId", 256)?,
             // A task the person creates in the workbench runs at the employee's
-            // own mode: there is no card here to narrow it.
+            // own mode: there is no card here to narrow it, and no chain: a relay
+            // is declared by a card that names the card it follows.
             permission_mode: None,
+            relay_parent_task_id: None,
+            relay_state: None,
         },
     )?;
     tx.commit()?;
@@ -467,6 +627,10 @@ pub fn create(db: &Database, input: &Value) -> Result<Value> {
 /// its whole history on every refresh.
 pub fn list(db: &Database, input: &Value) -> Result<Value> {
     let employee = input.get("employeeSessionId").and_then(Value::as_str);
+    // The task's own session, when the caller already has the session and not
+    // the task: Main reads the briefing's relay position this way, and asking
+    // for one row by session is cheaper than listing a board and searching it.
+    let session = input.get("sessionId").and_then(Value::as_str);
     let include_archived = input
         .get("includeArchived")
         .and_then(Value::as_bool)
@@ -475,14 +639,17 @@ pub fn list(db: &Database, input: &Value) -> Result<Value> {
     let mut statement = db.conn().prepare_cached(&format!(
         "{SELECT}
          WHERE (?1 IS NULL OR t.employee_session_id=?1)
+           AND (?4 IS NULL OR t.session_id=?4)
            AND (?2 OR t.archived_at IS NULL)
            AND (?3 IS NULL OR t.created_at >= ?3)
          ORDER BY t.created_at DESC, t.rowid DESC
          LIMIT 500"
     ))?;
     let tasks = statement
-        .query_map(params![employee, include_archived, since], row)?
+        .query_map(params![employee, include_archived, since, session], row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut tasks = tasks;
+    with_relay_positions(db, &mut tasks)?;
     Ok(json!({ "tasks": tasks }))
 }
 
@@ -528,6 +695,11 @@ pub fn archive(db: &Database, input: &Value) -> Result<Value> {
             // blocked card — therefore owes exactly one, and a restart between
             // the stamp and the run resumes it instead of losing it.
             crate::memory::stamp_pending_tx(&tx, task_id)?;
+            // A step of a relay that leaves without handing off strands the step
+            // behind it, in this same transaction (employee mode 0.5 slice 7):
+            // "abandoned" and "the next step is stuck" are one fact, and storing
+            // only the first would leave the second waiting forever.
+            crate::task_relay::orphan_successors(db, &tx, task_id)?;
             at
         }
     };

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type TaskCardDraftView } from "@minih-agent/shared";
+import { type TaskCardDraftView, type TaskOverlap, type TaskView } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { Button } from "../../components/ui";
 import { IconChevronDown, IconChevronUp } from "../../components/icons";
@@ -10,6 +10,14 @@ import {
   dispatchedLine,
   visibleCards,
 } from "./task-card-dock";
+import {
+  followsLine,
+  overlapHint,
+  predecessorStarted,
+  shortLabel,
+  taskOfDraft,
+  waitingForPreviousLine,
+} from "./task-relay";
 import { DEFAULT_STEWARD_NAME, stewardNameOf } from "./steward-name";
 
 /**
@@ -65,6 +73,22 @@ export function TaskCardDock({
    */
   const [stewardName, setStewardName] = useState(DEFAULT_STEWARD_NAME);
   const [startErrors, setStartErrors] = useState<Record<string, string>>({});
+  /**
+   * The tasks these cards became.
+   *
+   * A confirmed card folds into one line, and a relay step that is waiting for
+   * the step before it folds into a different one: the confirmation is done and
+   * the work is authorized, but the host has not started it. Only the task says
+   * which of the two a card is.
+   */
+  const [tasks, setTasks] = useState<TaskView[]>([]);
+  /**
+   * What other tasks in one repository are changing, per project.
+   *
+   * Read once per project the dock's cards name, never per card: it is a hint
+   * above the start button, and the person is looking at several cards at once.
+   */
+  const [overlaps, setOverlaps] = useState<Record<string, TaskOverlap | null>>({});
 
   useEffect(() => {
     if (!readHost) return undefined;
@@ -78,6 +102,16 @@ export function TaskCardDock({
       } catch (cause) {
         if (cancelled) return;
         setLoadError(cause instanceof Error ? cause.message : String(cause));
+      }
+      // The tasks are read in their own try: a card list is still worth showing
+      // when the board cannot be read, and the only thing lost is the sentence
+      // that tells a waiting step apart from a running one.
+      try {
+        const listed = await api.listTasks({});
+        if (cancelled) return;
+        setTasks(listed.tasks ?? []);
+      } catch {
+        // Left as it was: no task, no line.
       }
     };
     void load();
@@ -120,6 +154,46 @@ export function TaskCardDock({
   const drafts = providedDrafts ?? loadedDrafts;
   const visible = useMemo(() => visibleCards(drafts), [drafts]);
 
+  /**
+   * The projects the dock's proposed cards name.
+   *
+   * One read of "what else is changing here" per project, because the hint is
+   * about the repository and several cards can name the same one. A card whose
+   * employee has no project contributes nothing: there is nothing to compare.
+   */
+  const cardProjects = useMemo(() => {
+    const paths = new Set<string>();
+    for (const draft of visible) {
+      if (draft.status !== "proposed") continue;
+      const path = targetProjects[draft.targetSessionId];
+      if (path) paths.add(path);
+    }
+    return [...paths].sort();
+  }, [visible, targetProjects]);
+  const projectsKey = cardProjects.join("\n");
+
+  useEffect(() => {
+    if (!readHost || !projectsKey) return undefined;
+    let cancelled = false;
+    const load = async () => {
+      const next: Record<string, TaskOverlap | null> = {};
+      for (const path of projectsKey.split("\n")) {
+        try {
+          next[path] = await api.checkTaskOverlap({ projectPath: path });
+        } catch {
+          // A read that threw is the same fact the host reports as
+          // `readable: false`: nobody could tell, and the card says so.
+          next[path] = { readable: false, tasks: [], intersections: [] };
+        }
+      }
+      if (!cancelled) setOverlaps((current) => ({ ...current, ...next }));
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [readHost, projectsKey]);
+
   const setError = (draftId: string, message: string | null) => {
     setErrors((current) => {
       const next = { ...current };
@@ -131,7 +205,17 @@ export function TaskCardDock({
 
   const reload = async () => {
     const result = await onReload();
-    if (readHost) setLoadedDrafts(result.drafts ?? []);
+    if (readHost) {
+      setLoadedDrafts(result.drafts ?? []);
+      // The confirmation changed a card into a task, so the line the card folds
+      // into is read back rather than assumed.
+      try {
+        const listed = await api.listTasks({});
+        setTasks(listed.tasks ?? []);
+      } catch {
+        // Keep the tasks that were already known.
+      }
+    }
     return result.drafts ?? [];
   };
 
@@ -244,11 +328,41 @@ export function TaskCardDock({
           </div>
         </section>
       ) : null}
-      {visible.map((draft) =>
-        draft.status === "confirmed" ? (
-          // A card the host started by itself (a read-only card for an employee
-          // that is not observing) folds into one quiet line: it is work in
-          // motion, not something the person has to read now.
+      {visible.map((draft) => {
+        if (draft.status !== "confirmed") {
+          const follows = followsLine(draft, drafts, t);
+          const project = targetProjects[draft.targetSessionId] ?? "";
+          return (
+            <TaskCard
+              key={draft.id}
+              draft={draft}
+              busy={busyId === draft.id}
+              error={errors[draft.id] ?? null}
+              stewardName={stewardName}
+              onConfirm={() => void confirm(draft)}
+              onAssign={(targetSessionId) => void assign(draft, targetSessionId)}
+              employees={employees}
+              project={project}
+              previousShortId={follows?.shortId ?? null}
+              canStart={predecessorStarted(draft, drafts)}
+              overlap={project ? (overlaps[project] ?? null) : null}
+              onDrop={() => void drop(draft)}
+            />
+          );
+        }
+        // A confirmed card folds into one line. Two lines are possible, and
+        // which one it is comes from the task: work in motion, or a relay step
+        // that is authorized and waiting for the step before it to hand off.
+        const task = taskOfDraft(draft, tasks);
+        const waiting = task
+          ? waitingForPreviousLine(
+              task,
+              tasks,
+              (sessionId) => employees.find((one) => one.sessionId === sessionId)?.name ?? "",
+              t,
+            )
+          : null;
+        return (
           <div
             key={draft.id}
             className={`task-card-dispatched${
@@ -256,13 +370,16 @@ export function TaskCardDock({
             }`}
             data-draft-id={draft.id}
             data-auto-started={draft.confirmedBy === "policy" ? "true" : undefined}
+            data-relay-waiting={waiting ? "true" : undefined}
           >
             <span>
-              {draft.confirmedBy === "policy"
-                ? t("bots.card.autoStarted", {
-                    name: draft.targetTitle ?? t("bots.card.targetUnknown"),
-                  })
-                : dispatchedLine(draft, t)}
+              {waiting
+                ? waiting
+                : draft.confirmedBy === "policy"
+                  ? t("bots.card.autoStarted", {
+                      name: draft.targetTitle ?? t("bots.card.targetUnknown"),
+                    })
+                  : dispatchedLine(draft, t)}
             </span>
             {startErrors[draft.id] ? (
               <span className="task-card-error" role="alert">
@@ -270,21 +387,8 @@ export function TaskCardDock({
               </span>
             ) : null}
           </div>
-        ) : (
-          <TaskCard
-            key={draft.id}
-            draft={draft}
-            busy={busyId === draft.id}
-            error={errors[draft.id] ?? null}
-            stewardName={stewardName}
-            onConfirm={() => void confirm(draft)}
-            onAssign={(targetSessionId) => void assign(draft, targetSessionId)}
-            employees={employees}
-            project={targetProjects[draft.targetSessionId]}
-            onDrop={() => void drop(draft)}
-          />
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -295,6 +399,9 @@ function TaskCard({
   error,
   project,
   stewardName,
+  previousShortId = null,
+  canStart = true,
+  overlap = null,
   employees = [],
   onAssign,
   onConfirm,
@@ -307,6 +414,12 @@ function TaskCard({
   project?: string;
   /** The steward's current name; the card's heading names it. */
   stewardName: string;
+  /** The card this one follows, as a short label, or null when it starts a chain. */
+  previousShortId?: string | null;
+  /** False while the card this one follows has not been started (slice 7). */
+  canStart?: boolean;
+  /** What other tasks in this project are changing; a hint, never a refusal. */
+  overlap?: TaskOverlap | null;
   /** The roster the dropdown offers (slice 3). */
   employees?: readonly { sessionId: string; name: string }[];
   /** The person's pick; the host re-narrows and re-hashes the card. */
@@ -321,6 +434,12 @@ function TaskCard({
   // refused by the host until the person picks one, so the button says so
   // instead of failing on the click.
   const hasTarget = Boolean(draft.targetSessionId.trim());
+  const overlapLine = overlapHint(overlap, t);
+  const startLabel = !hasTarget
+    ? t("bots.card.pickEmployee")
+    : canStart
+      ? t("bots.card.confirm")
+      : t("bots.card.needPreviousFirst");
 
   return (
     <section
@@ -337,6 +456,14 @@ function TaskCard({
         <span>{t(riskKey(card.risk))}</span>
       </div>
       <p className="task-card-goal">{card.goal}</p>
+
+      {previousShortId ? (
+        // The card this one follows: a chain is read in order, so the person sees
+        // where this step sits before reading what it asks for (slice 7).
+        <p className="task-card-relay" data-card-follows={previousShortId}>
+          {t("bots.card.follows", { shortId: previousShortId })}
+        </p>
+      ) : null}
 
       {card.reason ? (
         // Why this employee: the steward's one-sentence justification, read
@@ -438,15 +565,22 @@ function TaskCard({
       ) : null}
 
       <div className="task-card-actions">
+        {overlapLine ? (
+          // A warning, not a refusal: the person who is told can still decide
+          // the two changes are unrelated (slice 7).
+          <p className="task-card-overlap" data-card-overlap="">
+            {overlapLine}
+          </p>
+        ) : null}
         <Button variant="secondary" disabled={busy} onClick={onDrop}>
           {busy ? t("bots.card.dropping") : t("bots.card.drop")}
         </Button>
-        <Button variant="primary" disabled={busy || !hasTarget} onClick={onConfirm}>
-          {busy
-            ? t("bots.card.confirming")
-            : hasTarget
-              ? t("bots.card.confirm")
-              : t("bots.card.pickEmployee")}
+        <Button
+          variant="primary"
+          disabled={busy || !hasTarget || !canStart}
+          onClick={onConfirm}
+        >
+          {busy ? t("bots.card.confirming") : startLabel}
         </Button>
       </div>
     </section>

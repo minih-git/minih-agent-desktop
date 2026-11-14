@@ -928,6 +928,12 @@ export const en = {
       dropCancel: "Keep",
       saySomething: "Say something",
       delivery: "Merging stopped at step {{step}}: {{detail}}",
+      // A relay step whose predecessor cannot be continued (slice 7).
+      relayOrphaned: "The step before this one (#{{shortId}}) was abandoned",
+      relayBase: "The branch of step #{{shortId}} is gone",
+      startFromMain: "Start from main instead",
+      startFromMainBusy: "Starting from main…",
+      startFromMainFailed: "Starting from main failed: {{reason}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
@@ -968,6 +974,19 @@ export const en = {
       oneByOne: "Review one by one",
       collapseOneByOne: "Collapse",
       batchStopped: "#{{shortId}} stopped at {{step}}: {{detail}}",
+      // Relay between steps (employee mode 0.5 slice 7).
+      handoff: "Accept and hand to the next step",
+      handoffHint: "Only the last step is merged; a step in between hands its branch on",
+      handoffStarted: "Handed to the next step: {{steps}}",
+      handoffWaiting: "The next step is waiting for you to hand over",
+      handoffFailed: "The handover failed: {{reason}}",
+      chainTitle: "Chain: {{chain}} (merged at the last step)",
+      chainStep: "Step {{step}} of {{total}}",
+      chainStepCount: "{{commits}} commits · {{files}} files",
+      chainLast: "This is the last step: merging takes the whole chain into main",
+      overlapSame: "Same files as #{{shortId}}: {{files}}",
+      overlapMore: "and {{count}} more",
+      overlapUnreadable: "The other tasks' changes could not be read: {{reason}}",
       reason: {
         prMissing: "There is no pull request yet",
         prUnreadable: "The pull request could not be read: {{reason}}",
@@ -1111,6 +1130,13 @@ export const en = {
       riskLow: "Low risk",
       riskMedium: "Medium risk",
       riskHigh: "High risk",
+      // Steps of one change in order (employee mode 0.5 slice 7).
+      follows: "Follows #{{shortId}}",
+      waitingPrevious: "Confirmed — waiting for #{{shortId}} from {{name}}",
+      needPreviousFirst: "Start the previous card first",
+      overlapOthers: "{{count}} other tasks are working in this repository: {{list}}",
+      overlapRow: "#{{shortId}} ({{count}} files changed)",
+      overlapUnreadable: "The other tasks' changes could not be read",
     },
     tasks: {
       history: "History ({{count}})",

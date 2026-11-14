@@ -45,7 +45,7 @@ pub const MAX_WAITING_REQUESTS: usize = 8;
 const MAX_WAITING_QUESTION_CHARS: usize = 500;
 const MAX_WAITING_OPTIONS: usize = 4;
 const MAX_WAITING_OPTION_CHARS: usize = 160;
-const MAX_BLOCKER_FIELD_CHARS: usize = 600;
+pub(crate) const MAX_BLOCKER_FIELD_CHARS: usize = 600;
 
 /// The blocker a person's own stop leaves behind. A reason, not an explanation:
 /// nobody is woken for it.
@@ -62,7 +62,7 @@ pub struct StageMove {
 
 /// What a stage write does to one of the JSON columns that live beside it.
 #[derive(Clone, Copy)]
-enum Column<'a> {
+pub(crate) enum Column<'a> {
     /// Leave the stored value alone.
     Keep,
     /// Nothing is stuck / nothing is waiting.
@@ -181,7 +181,7 @@ fn read_waiting(conn: &rusqlite::Connection, task_id: &str) -> Result<Vec<TaskWa
 ///   and close while the stage itself stays `person/answer`.
 /// - **A change is announced once**, under the key (task, stage, `stage_seq`),
 ///   in this same transaction; `silent` exists only for the person's own stop.
-fn move_stage(
+pub(crate) fn move_stage(
     db: &Database,
     conn: &rusqlite::Connection,
     task_id: &str,

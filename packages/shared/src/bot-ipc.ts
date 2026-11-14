@@ -167,6 +167,12 @@ export type TaskCardDraftView = {
    * (employee mode 0.5 slice 4b). One batch is one summary card.
    */
   batchId?: string;
+  /**
+   * The card this one follows, inside the same batch (employee mode 0.5 slice
+   * 7). The dock draws it as 「接在 #前一张 之后」, and the start button waits until
+   * the previous card has been started.
+   */
+  afterDraftId?: string;
   createdAt: string;
   updatedAt: string;
 };

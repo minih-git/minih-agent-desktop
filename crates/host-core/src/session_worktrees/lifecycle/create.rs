@@ -30,6 +30,14 @@ pub enum Placement<'a> {
     DataDir,
     /// `<repository top level>/.worktree/<name>`.
     RepoLocal(&'a str),
+    /// `<repository top level>/.worktree/<name>`, on a branch that continues
+    /// `start` instead of the project's own branch.
+    ///
+    /// This is how a relay step works (employee mode 0.5 slice 7): one branch
+    /// cannot be checked out in two worktrees, so step 2 gets its own branch
+    /// started from the end of step 1's. Nothing is fetched: the commit it
+    /// continues is local by construction.
+    RepoLocalFrom(&'a str, &'a str),
 }
 
 /// The ref a repo-local worktree branch was started from.
@@ -223,7 +231,7 @@ pub async fn create_session_worktree(
 
     let name = match placement {
         Placement::DataDir => short_id(session_id),
-        Placement::RepoLocal(name) => {
+        Placement::RepoLocal(name) | Placement::RepoLocalFrom(name, _) => {
             check_local_name(name)?;
             name.to_string()
         }
@@ -244,6 +252,25 @@ pub async fn create_session_worktree(
             let parent = crate::workspace::simple_canonicalize(&parent)?;
             let (start_ref, base) = repo_local_base(git, project, &repo).await;
             (parent.join(&name), start_ref, Some(base))
+        }
+        // A relay step continues the branch the step before it left, so nothing
+        // is fetched and nothing is chosen: the ref is the one recorded on the
+        // previous task, and a missing one is an error the caller reports rather
+        // than a quiet restart from `main`.
+        Placement::RepoLocalFrom(_, start) => {
+            ensure_local_dir_ignored(git, &repo).await?;
+            let parent = repo.toplevel.join(REPO_LOCAL_DIR);
+            std::fs::create_dir_all(&parent)?;
+            let parent = crate::workspace::simple_canonicalize(&parent)?;
+            let start_ref = merge::head_ref(start);
+            (
+                parent.join(&name),
+                start_ref.clone(),
+                Some(BasePoint {
+                    ref_name: start_ref,
+                    remote: false,
+                }),
+            )
         }
     };
     if root.exists() {
@@ -335,7 +362,7 @@ pub async fn create_session_worktree(
             }
             // A task is not allowed to start in a half-prepared workspace, so
             // its preparation waits for the command and reports the outcome.
-            Placement::RepoLocal(_) => {
+            Placement::RepoLocal(_) | Placement::RepoLocalFrom(_, _) => {
                 run_setup(
                     state.clone(),
                     row.clone(),
