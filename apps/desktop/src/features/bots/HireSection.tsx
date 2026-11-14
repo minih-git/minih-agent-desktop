@@ -10,10 +10,18 @@ import {
 import { api } from "../../lib/api";
 import { Button, Input } from "../../components/ui";
 import { IconPlus } from "../../components/icons";
+import { stewardSessionIdOf } from "./steward-name";
 
-/** Whether the crew already has a dispatcher: the enable button is for "none". */
+/**
+ * Whether the crew already has a dispatcher: the enable button is for "none".
+ *
+ * The question is the same one every other surface asks — "is there a session
+ * whose role is `steward`" — so it goes through the same helper. It must never be
+ * a name comparison: the person can rename their dispatcher (#254), and a rename
+ * that made this answer "none" would offer to hire a second one.
+ */
 export function hasSteward(bots: readonly BotListItem[]): boolean {
-  return bots.some((bot) => bot.profile.definition?.trim() === "steward");
+  return stewardSessionIdOf(bots) !== null;
 }
 
 /**

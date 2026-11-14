@@ -243,6 +243,23 @@ test("an existing team is not offered the crew as its starting point", async (t)
   assert.equal(h.callsTo(IPC.invoke.botSeedDefaults).length, 0);
 });
 
+test("a renamed steward still counts as the crew's dispatcher", async (t) => {
+  const h = await harness(t);
+  const { BotsSettingsPage } = await h.server.ssrLoadModule(
+    "/src/features/bots/BotsSettingsPage.tsx",
+  );
+  // #254 lets the person rename the steward. The page's question is "is a
+  // steward installed", answered by the definition — so a rename must not bring
+  // the enable button back, which would hire a second dispatcher.
+  const html = h.render(
+    createElement(BotsSettingsPage, {
+      bots: [bot({ sessionId: "s-1", name: "阿福", profile: { definition: "steward" } })],
+    }),
+  );
+  assert.doesNotMatch(html, /Enable Super Agent/);
+  assert.match(html, /阿福/);
+});
+
 test("dismissing an employee is not the first click", async (t) => {
   const h = await harness(t);
   const { BotsSettingsPage } = await h.server.ssrLoadModule(

@@ -284,23 +284,35 @@ pub fn for_task_session(db: &Database, input: &Value) -> Result<Value> {
 /// `skipped`) because the settings page and older builds call it, but it no
 /// longer creates a crew: a person hires the jobs they need from the templates.
 ///
-/// **Nothing existing is ever touched.** The lookup is by the steward's own
-/// name, an existing steward is reported as `skipped`, and no other row is
-/// read, renamed or deleted — a person who renamed their dispatcher, dismissed
-/// it, or hired three other employees keeps every one of those decisions.
+/// **Nothing existing is ever touched.** The steward is identified by its
+/// **role in the crew** (`definition = 'steward'`), not by its name: #254 made the
+/// name the person's own, so a lookup by name would hand a renamed steward a
+/// second dispatcher — two employees whose definition is `steward`, which the
+/// roster then refuses to offer. A dismissed steward is a `user` session with no
+/// profile, so the next call creates one again, which is what the button says.
+/// No other row is read, renamed or edited.
 pub fn seed_defaults(db: &Database) -> Result<Value> {
     let (name, definition, duty) = STEWARD_SEED;
-    let exists: bool = db.conn().query_row(
-        "SELECT EXISTS(SELECT 1 FROM sessions
-          WHERE role='bot' AND deleted_at IS NULL
-            AND json_extract(bot_profile_json, '$.name') = ?1)",
-        params![name],
-        |row| row.get(0),
-    )?;
-    if exists {
+    let existing: Option<Option<String>> = db
+        .conn()
+        .prepare_cached(
+            "SELECT json_extract(bot_profile_json, '$.name') FROM sessions
+              WHERE role='bot' AND deleted_at IS NULL
+                AND json_extract(bot_profile_json, '$.definition') = 'steward'
+              ORDER BY created_at, id LIMIT 1",
+        )?
+        .query_row([], |row| row.get(0))
+        .optional()?;
+    if let Some(current) = existing {
+        // Report the name the person gave it: the reply is read by a human, and
+        // "already there" about a name they never used would be confusing.
+        let reported = current
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| name.to_owned());
         return Ok(json!({
             "created": [],
-            "skipped": [{ "name": name, "reason": "exists" }],
+            "skipped": [{ "name": reported, "reason": "exists" }],
         }));
     }
     let observe = definition != Some("steward");

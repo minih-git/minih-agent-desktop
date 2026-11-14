@@ -113,6 +113,66 @@ fn seeding_does_not_resurrect_a_dismissed_employee() {
     assert_eq!(rows.len(), 1, "the dismissed one stays a conversation");
 }
 
+/// A renamed steward is still the steward.
+///
+/// #254 made the name the person's own, and the first version of this lookup went
+/// by name — so renaming the dispatcher to «阿福» and clicking "enable Super
+/// Agent" hired a second one, and the roster then hid both (it never offers a
+/// `steward` as a candidate). The crew's identity is the definition, never a name.
+#[test]
+fn renaming_the_steward_does_not_hire_a_second_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let seeded = bots::seed_defaults(&db).unwrap();
+    let steward = seeded["created"][0]["sessionId"].as_str().unwrap().to_owned();
+
+    bots::update(
+        &db,
+        &json!({ "sessionId": steward, "profile": { "name": "阿福" } }),
+    )
+    .unwrap();
+    let renamed = employees(&db);
+    assert_eq!(renamed.len(), 1);
+    assert!(renamed[0].2.contains("\"阿福\""), "the name is the person's");
+
+    let again = bots::seed_defaults(&db).unwrap();
+    assert_eq!(again["created"], json!([]), "a rename is not a missing steward");
+    assert_eq!(
+        again["skipped"],
+        json!([{ "name": "阿福", "reason": "exists" }]),
+        "the reply names the employee the person actually has",
+    );
+    let rows = employees(&db);
+    assert_eq!(rows.len(), 1, "no second dispatcher: {rows:?}");
+    let stewards = rows
+        .iter()
+        .filter(|row| row.2.contains("\"definition\":\"steward\""))
+        .count();
+    assert_eq!(stewards, 1);
+}
+
+/// A dismissed steward is gone, so enabling it again creates one.
+///
+/// Dismissing flips the role back to `user` and clears the profile, which is why
+/// this is *not* the malformed-row case: nothing in the crew claims the role.
+#[test]
+fn a_dismissed_steward_is_created_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let first = bots::seed_defaults(&db).unwrap()["created"][0]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    bots::dismiss(&db, &json!({ "sessionId": first })).unwrap();
+    assert!(employees(&db).is_empty(), "nothing claims the role any more");
+
+    let again = bots::seed_defaults(&db).unwrap();
+    assert_eq!(again["created"].as_array().unwrap().len(), 1);
+    assert_eq!(again["created"][0]["definition"], json!("steward"));
+    assert_ne!(again["created"][0]["sessionId"], json!(first));
+    assert_eq!(employees(&db).len(), 1);
+}
+
 #[test]
 fn team_norms_round_trip_and_clear() {
     let dir = tempfile::tempdir().unwrap();
