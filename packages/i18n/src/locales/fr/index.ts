@@ -899,6 +899,12 @@ export const fr = {
       dropCancel: "Conserver",
       saySomething: "Dire quelque chose",
       delivery: "La fusion s'est arrêtée à l'étape {{step}} : {{detail}}",
+      // A relay step whose predecessor cannot be continued (slice 7).
+      relayOrphaned: "L'étape précédente (#{{shortId}}) a été abandonnée",
+      relayBase: "La branche de l'étape #{{shortId}} a disparu",
+      startFromMain: "Démarrer depuis main",
+      startFromMainBusy: "Démarrage depuis main…",
+      startFromMainFailed: "Le démarrage depuis main a échoué : {{reason}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
@@ -939,6 +945,19 @@ export const fr = {
       oneByOne: "Voir un par un",
       collapseOneByOne: "Replier",
       batchStopped: "#{{shortId}} s'est arrêté à {{step}} : {{detail}}",
+      // Relay between steps (employee mode 0.5 slice 7).
+      handoff: "Accepter et passer à l'étape suivante",
+      handoffHint: "Seule la dernière étape est fusionnée ; une étape intermédiaire transmet sa branche",
+      handoffStarted: "Transmis à l'étape suivante : {{steps}}",
+      handoffWaiting: "L'étape suivante attend votre transmission",
+      handoffFailed: "La transmission a échoué : {{reason}}",
+      chainTitle: "Chaîne : {{chain}} (fusionnée à la dernière étape)",
+      chainStep: "Étape {{step}} sur {{total}}",
+      chainStepCount: "{{commits}} commits · {{files}} fichiers",
+      chainLast: "C'est la dernière étape : la fusion amène toute la chaîne dans main",
+      overlapSame: "Mêmes fichiers que #{{shortId}} : {{files}}",
+      overlapMore: "et {{count}} de plus",
+      overlapUnreadable: "Les modifications des autres tâches n'ont pas pu être lues : {{reason}}",
       reason: {
         prMissing: "Il n'y a pas encore de pull request",
         prUnreadable: "La pull request est illisible : {{reason}}",
@@ -1081,6 +1100,13 @@ export const fr = {
       "riskLow": "Risque faible",
       "riskMedium": "Risque moyen",
       "riskHigh": "Risque élevé",
+      // Steps of one change in order (employee mode 0.5 slice 7).
+      "follows": "Suit #{{shortId}}",
+      "waitingPrevious": "Confirmée — en attente de #{{shortId}} de {{name}}",
+      "needPreviousFirst": "Démarrez d'abord la carte précédente",
+      "overlapOthers": "{{count}} autres tâches travaillent dans ce dépôt : {{list}}",
+      "overlapRow": "#{{shortId}} ({{count}} fichiers modifiés)",
+      "overlapUnreadable": "Les modifications des autres tâches n'ont pas pu être lues",
     },
     "tasks": {
       "history": "Historique ({{count}})",

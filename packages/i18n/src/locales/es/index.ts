@@ -899,6 +899,12 @@ export const es = {
       dropCancel: "Conservar",
       saySomething: "Decir algo",
       delivery: "La fusión se detuvo en el paso {{step}}: {{detail}}",
+      // A relay step whose predecessor cannot be continued (slice 7).
+      relayOrphaned: "El paso anterior (#{{shortId}}) se abandonó",
+      relayBase: "La rama del paso #{{shortId}} ya no existe",
+      startFromMain: "Empezar desde main",
+      startFromMainBusy: "Empezando desde main…",
+      startFromMainFailed: "No se pudo empezar desde main: {{reason}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
@@ -939,6 +945,19 @@ export const es = {
       oneByOne: "Ver uno por uno",
       collapseOneByOne: "Contraer",
       batchStopped: "#{{shortId}} se detuvo en {{step}}: {{detail}}",
+      // Relay between steps (employee mode 0.5 slice 7).
+      handoff: "Aceptar y pasar al siguiente paso",
+      handoffHint: "Solo se fusiona el último paso; un paso intermedio entrega su rama",
+      handoffStarted: "Pasado al siguiente paso: {{steps}}",
+      handoffWaiting: "El siguiente paso espera tu entrega",
+      handoffFailed: "La entrega falló: {{reason}}",
+      chainTitle: "Cadena: {{chain}} (se fusiona en el último paso)",
+      chainStep: "Paso {{step}} de {{total}}",
+      chainStepCount: "{{commits}} commits · {{files}} archivos",
+      chainLast: "Este es el último paso: al fusionar, toda la cadena entra en main",
+      overlapSame: "Mismos archivos que #{{shortId}}: {{files}}",
+      overlapMore: "y {{count}} más",
+      overlapUnreadable: "No se pudieron leer los cambios de las otras tareas: {{reason}}",
       reason: {
         prMissing: "Todavía no hay pull request",
         prUnreadable: "No se pudo leer el pull request: {{reason}}",
@@ -1081,6 +1100,13 @@ export const es = {
       "riskLow": "Riesgo bajo",
       "riskMedium": "Riesgo medio",
       "riskHigh": "Riesgo alto",
+      // Steps of one change in order (employee mode 0.5 slice 7).
+      "follows": "Va después de #{{shortId}}",
+      "waitingPrevious": "Confirmada: esperando #{{shortId}} de {{name}}",
+      "needPreviousFirst": "Primero inicia la tarjeta anterior",
+      "overlapOthers": "{{count}} tareas más trabajan en este repositorio: {{list}}",
+      "overlapRow": "#{{shortId}} ({{count}} archivos cambiados)",
+      "overlapUnreadable": "No se pudieron leer los cambios de las otras tareas",
     },
     "tasks": {
       "history": "Historial ({{count}})",

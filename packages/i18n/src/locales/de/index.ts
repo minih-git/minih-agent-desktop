@@ -899,6 +899,12 @@ export const de = {
       dropCancel: "Behalten",
       saySomething: "Etwas sagen",
       delivery: "Zusammenführen blieb bei Schritt {{step}} stehen: {{detail}}",
+      // A relay step whose predecessor cannot be continued (slice 7).
+      relayOrphaned: "Der Schritt davor (#{{shortId}}) wurde aufgegeben",
+      relayBase: "Der Branch von Schritt #{{shortId}} ist verschwunden",
+      startFromMain: "Stattdessen von main starten",
+      startFromMainBusy: "Wird von main gestartet…",
+      startFromMainFailed: "Starten von main fehlgeschlagen: {{reason}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
@@ -939,6 +945,19 @@ export const de = {
       oneByOne: "Einzeln ansehen",
       collapseOneByOne: "Einklappen",
       batchStopped: "#{{shortId}} blieb bei {{step}} stehen: {{detail}}",
+      // Relay between steps (employee mode 0.5 slice 7).
+      handoff: "Annehmen und an den nächsten Schritt übergeben",
+      handoffHint: "Nur der letzte Schritt wird zusammengeführt; ein Schritt dazwischen gibt seinen Branch weiter",
+      handoffStarted: "An den nächsten Schritt übergeben: {{steps}}",
+      handoffWaiting: "Der nächste Schritt wartet auf deine Übergabe",
+      handoffFailed: "Die Übergabe ist fehlgeschlagen: {{reason}}",
+      chainTitle: "Kette: {{chain}} (im letzten Schritt zusammengeführt)",
+      chainStep: "Schritt {{step}} von {{total}}",
+      chainStepCount: "{{commits}} Commits · {{files}} Dateien",
+      chainLast: "Das ist der letzte Schritt: beim Zusammenführen geht die ganze Kette nach main",
+      overlapSame: "Gleiche Dateien wie #{{shortId}}: {{files}}",
+      overlapMore: "und {{count}} weitere",
+      overlapUnreadable: "Die Änderungen der anderen Aufgaben konnten nicht gelesen werden: {{reason}}",
       reason: {
         prMissing: "Es gibt noch keinen Pull Request",
         prUnreadable: "Der Pull Request ist nicht lesbar: {{reason}}",
@@ -1081,6 +1100,13 @@ export const de = {
       "riskLow": "Geringes Risiko",
       "riskMedium": "Mittleres Risiko",
       "riskHigh": "Hohes Risiko",
+      // Steps of one change in order (employee mode 0.5 slice 7).
+      "follows": "Folgt auf #{{shortId}}",
+      "waitingPrevious": "Bestätigt – wartet auf #{{shortId}} von {{name}}",
+      "needPreviousFirst": "Zuerst die vorherige Karte starten",
+      "overlapOthers": "{{count}} weitere Aufgaben arbeiten in diesem Repository: {{list}}",
+      "overlapRow": "#{{shortId}} ({{count}} Dateien geändert)",
+      "overlapUnreadable": "Die Änderungen der anderen Aufgaben konnten nicht gelesen werden",
     },
     "tasks": {
       "history": "Verlauf ({{count}})",

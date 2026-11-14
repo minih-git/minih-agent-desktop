@@ -911,6 +911,12 @@ export const ko = {
       dropCancel: "유지",
       saySomething: "한마디 하기",
       delivery: "{{step}} 단계에서 병합이 멈췄습니다: {{detail}}",
+      // A relay step whose predecessor cannot be continued (slice 7).
+      relayOrphaned: "앞 단계 #{{shortId}}가 포기되었습니다",
+      relayBase: "앞 단계 #{{shortId}}의 브랜치가 사라졌습니다",
+      startFromMain: "main에서 시작하기",
+      startFromMainBusy: "main에서 시작하는 중…",
+      startFromMainFailed: "main에서 시작 실패: {{reason}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
@@ -951,6 +957,19 @@ export const ko = {
       oneByOne: "하나씩 보기",
       collapseOneByOne: "접기",
       batchStopped: "#{{shortId}}이(가) {{step}} 단계에서 멈췄습니다: {{detail}}",
+      // Relay between steps (employee mode 0.5 slice 7).
+      handoff: "수락하고 다음 단계로 넘기기",
+      handoffHint: "마지막 단계만 병합합니다. 중간 단계는 브랜치를 넘깁니다",
+      handoffStarted: "다음 단계로 넘겼습니다: {{steps}}",
+      handoffWaiting: "다음 단계가 인계를 기다리고 있습니다",
+      handoffFailed: "인계 실패: {{reason}}",
+      chainTitle: "사슬: {{chain}} (마지막 단계에서 병합)",
+      chainStep: "{{total}}단계 중 {{step}}단계",
+      chainStepCount: "커밋 {{commits}}개 · 파일 {{files}}개",
+      chainLast: "마지막 단계입니다. 병합하면 사슬 전체가 main으로 들어갑니다",
+      overlapSame: "#{{shortId}}와 같은 파일: {{files}}",
+      overlapMore: "외 {{count}}개",
+      overlapUnreadable: "다른 작업의 변경 사항을 읽을 수 없습니다: {{reason}}",
       reason: {
         prMissing: "아직 PR이 없습니다",
         prUnreadable: "PR 상태를 읽을 수 없습니다: {{reason}}",
@@ -1093,6 +1112,13 @@ export const ko = {
       riskLow: "낮은 위험",
       riskMedium: "중간 위험",
       riskHigh: "높은 위험",
+      // Steps of one change in order (employee mode 0.5 slice 7).
+      follows: "#{{shortId}} 뒤에 이어짐",
+      waitingPrevious: "확인됨 — {{name}}의 #{{shortId}} 대기 중",
+      needPreviousFirst: "먼저 앞 카드를 시작하세요",
+      overlapOthers: "같은 저장소에서 {{count}}개 작업이 진행 중입니다: {{list}}",
+      overlapRow: "#{{shortId}} (파일 {{count}}개 변경)",
+      overlapUnreadable: "다른 작업의 변경 사항을 읽을 수 없습니다",
     },
     tasks: {
       history: "기록 ({{count}})",
