@@ -11,17 +11,23 @@ import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot
  * Relay between roles, through real clicks and the real stylesheet (employee
  * mode 0.5 slice 7).
  *
- * The renderer is the shipped one; the host is scripted, because what this test
- * is about is what the person sees and what the renderer sends. The rules
- * themselves — the card edge, the handoff, the chain merge, the overlap read —
- * are proven against the host in `task_relay_tests.rs`, `task_overlap_tests.rs`
- * and `task_delivery_tests.rs`.
+ * The renderer is the shipped one, in the shipped shell: the app grid, the
+ * sidebar, the topbar inside the main pane, the transcript, and the composer
+ * with its own dock stack. Nothing is placed by hand — the dock, the completion
+ * card, the blocked card and the summary card mount themselves from the store and
+ * the host, exactly as they do in the product, so a picture cannot show a layout
+ * the app does not have.
+ *
+ * The host is scripted, because what this test is about is what the person sees
+ * and what the renderer sends. The rules themselves — the card edge, the handoff,
+ * the chain merge, the overlap read — are proven against the host in
+ * `task_relay_tests.rs`, `task_overlap_tests.rs` and `task_delivery_tests.rs`.
  *
  * Six pictures are the deliverable this guards: the two chained cards, the step
  * that collapsed into 「已确认，等 <员工> 的 #a」, the middle step's completion
  * card, the step that lost its predecessor, the start card with the overlap
  * hint, and the summary card where a chain is one row. Dark and light, 1440 and
- * 1024, in the full shell (sidebar, transcript, composer).
+ * 1024, zh-CN, with `finishAnimations()` before every capture.
  */
 
 const root = repositoryRoot();
@@ -38,17 +44,14 @@ import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { ConversationTopbar } from "../../apps/desktop/src/components/ConversationTopbar";
 import { Composer } from "../../apps/desktop/src/components/Composer";
-import { TaskCardDock } from "../../apps/desktop/src/features/bots/TaskCardDock";
-import { TaskCompletionCard } from "../../apps/desktop/src/features/bots/TaskCompletionCard";
-import { TaskBlockedCard } from "../../apps/desktop/src/features/bots/TaskBlockedCard";
-import { TaskBatchCard } from "../../apps/desktop/src/features/bots/TaskBatchCard";
 import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
-import { sortBots } from "../../apps/desktop/src/features/bots/bot-status";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 
 await i18n.use(initReactI18next).init({ lng: "zh-CN", keySeparator: false,
   resources: { "zh-CN": { translation: flattenCatalog(catalogs["zh-CN"]) } },
   interpolation: { escapeValue: false } });
+
+const noop = () => undefined;
 
 const steward = {
   sessionId: "steward", title: "Super Agent",
@@ -69,13 +72,27 @@ const desk = {
   updatedAt: "2026-11-14T02:00:00.000Z", createdAt: "2026-11-01T00:00:00.000Z",
 };
 
+/** The summaries the store reads to decide whether a conversation is the steward's. */
+const summaries = [
+  { id: "steward", title: "Super Agent", role: "bot",
+    botProfile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
+    projectPath: "/repo/Minih-Agent-Desktop", updatedAt: "2026-11-14T02:00:00.000Z",
+    createdAt: "2026-11-01T00:00:00.000Z", mode: "agent" },
+  { id: "sess-step-one", title: "加上 active 列", role: "task",
+    projectPath: "/repo/Minih-Agent-Desktop", updatedAt: "2026-11-14T02:00:00.000Z",
+    createdAt: "2026-11-14T01:00:00.000Z", mode: "agent" },
+  { id: "sess-step-two", title: "回填并切换读路径", role: "task",
+    projectPath: "/repo/Minih-Agent-Desktop", updatedAt: "2026-11-14T02:00:00.000Z",
+    createdAt: "2026-11-14T01:05:00.000Z", mode: "agent" },
+];
+
 const stepOne = {
   id: "11111111-1111-4111-8111-111111111111", shortId: "111111",
   employeeSessionId: "router", sessionId: "sess-step-one", title: "加上 active 列",
   origin: "steward", stage: "person/accept", projectPath: "/repo/Minih-Agent-Desktop",
   workspaceBranch: "minih-agent/111111", deliveryMode: "pr",
   createdAt: "2026-11-14T01:00:00.000Z", workspaceStatus: "ready",
-  relayStep: 1, relayTotal: 2, deliveryId: "delivery-step-one",
+  relayStep: 1, relayTotal: 2, batchId: "turn-1", deliveryId: "delivery-step-one",
   result: { summary: "列加好了，回填脚本放在下一步。", acceptance: [{ criterion: "迁移脚本可重复执行", met: true }] },
 };
 const stepTwo = {
@@ -84,7 +101,8 @@ const stepTwo = {
   origin: "steward", stage: "person/accept", projectPath: "/repo/Minih-Agent-Desktop",
   workspaceBranch: "minih-agent/222222", deliveryMode: "pr",
   createdAt: "2026-11-14T01:05:00.000Z", workspaceStatus: "ready",
-  relayStep: 2, relayTotal: 2, relayParentTaskId: stepOne.id, deliveryId: "delivery-step-two",
+  relayStep: 2, relayTotal: 2, relayParentTaskId: stepOne.id, batchId: "turn-1",
+  deliveryId: "delivery-step-two",
 };
 const stepThree = {
   ...stepTwo,
@@ -124,13 +142,18 @@ const checks = {
 const state = {
   drafts: [],
   tasks: [],
+  sessions: summaries,
   overlaps: { readable: true, tasks: [], intersections: [] },
-  calls: { confirm: [], handoff: [], detach: [], merge: [], overlap: [] },
-  // The overlap answer this scene was rendered with, set by the render call.
   renderedOverlap: null,
-  handoffStarted: false,
+  calls: { confirm: [], handoff: [], detach: [], merge: [], overlap: [] },
 };
 
+/**
+ * A draft as the host stores it: a UUID id, a goal, and — when it continues
+ * another card — the id of that card. The ids are real UUIDs because the dock
+ * quotes a short form of them, and a fixture with "draft-a" would hide both the
+ * truncation and the fallback.
+ */
 function draft(id, goal, afterDraftId) {
   return {
     id, sessionId: "steward", status: "proposed",
@@ -150,12 +173,21 @@ function draft(id, goal, afterDraftId) {
   };
 }
 
+const DRAFT_ONE = "7d1c9f2a-4b6e-4d1f-9a02-0b8f3c5e7a11";
+const DRAFT_TWO = "b2e4a8c6-1f3d-4a97-8c55-6d0e2b9f4c33";
+
 window.minihAgent = {
   platform: "darwin",
   on: () => () => undefined,
   async invoke(channel, input) {
     if (channel === IPC.invoke.botList) return { ok: true, data: { bots: [router, desk, steward] } };
+    if (channel === IPC.invoke.sessionList) {
+      return { ok: true, data: { sessions: state.sessions, runningSessionIds: [] } };
+    }
     if (channel === IPC.invoke.taskList) return { ok: true, data: { tasks: state.tasks } };
+    if (channel === IPC.invoke.taskGet) {
+      return { ok: true, data: { task: state.tasks.find((task) => task.id === input.taskId) } };
+    }
     if (channel === IPC.invoke.taskCardList) return { ok: true, data: { drafts: state.drafts } };
     if (channel === IPC.invoke.backgroundTasksList) return { ok: true, data: { tasks: [] } };
     if (channel === IPC.invoke.todosGet) {
@@ -177,11 +209,11 @@ window.minihAgent = {
       const task = {
         id: taskId,
         shortId: waiting ? "444444" : "555555",
+        employeeSessionId: "router",
+        sessionId: waiting ? "sess-step-two" : "sess-step-one",
         // The task and its card are matched by the delivery the confirmation
         // wrote, which is how the dock finds the line a confirmed card folds to.
         deliveryId: "delivery-" + taskId,
-        employeeSessionId: "router",
-        sessionId: waiting ? "sess-step-two" : "sess-step-one",
         title: draft.card.goal, origin: "steward", stage: "queued",
         projectPath: "/repo/Minih-Agent-Desktop",
         createdAt: "2026-11-14T02:00:00.000Z",
@@ -198,7 +230,6 @@ window.minihAgent = {
     }
     if (channel === IPC.invoke.taskRelayHandoff) {
       state.calls.handoff.push(input.taskId);
-      state.handoffStarted = true;
       return { ok: true, data: { task: stepOne, handedOffAt: "2026-11-14T03:00:00.000Z",
         unlocked: [{ taskId: stepTwo.id, deliveryId: "delivery-step-two" }] } };
     }
@@ -210,40 +241,44 @@ window.minihAgent = {
       state.calls.merge.push(input.taskId);
       return { ok: true, data: { merged: true, task: stepTwo } };
     }
-    if (channel === IPC.invoke.taskAccept) {
-      return { ok: true, data: { task: stepOne } };
-    }
+    if (channel === IPC.invoke.taskAccept) return { ok: true, data: { task: stepOne } };
     return { ok: true, data: {} };
   },
 };
 
-function Line({ role, text }) {
-  return <p className={role === "user" ? "shot-user" : "shot-steward"}>{text}</p>;
-}
-
-function Shell({ dock, children }) {
+/**
+ * The shipped shell, assembled the way the app assembles it: the sidebar beside
+ * the app grid, the topbar inside the main pane, the transcript, and the composer
+ * — which owns the dock stack the cards live in. Nothing here places a card; the
+ * components mount themselves from the store and the host.
+ */
+function Shell() {
   return (
-    <div className="shot-surface">
-      <div className="shot-topbar">
-        <ConversationTopbar sessionId="steward" title="Super Agent" />
-      </div>
-      <div style={{ display: "flex", gap: 16, flex: "1 1 auto", minHeight: 0 }}>
-        <aside className="shot-sidebar">
-          <BotSidebarGroup bots={sortBots([router, desk, steward])} activeSessionId="steward" />
-        </aside>
-        <main style={{ flex: "1 1 auto", display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-          <div className="shot-stack">
-            <Line role="user" text="把 active 列分两步加上：先加列，再回填。" />
-            <Line role="steward" text="这一步要按顺序做，我把它拆成了两棒：第一棒加列，第二棒回填并切换读路径。第二棒接在第一棒之后。" />
+    <div className="app-shell">
+      <aside className="sidebar sidebar-surface">
+        <div className="shot-sidebar-body">
+          <BotSidebarGroup activeSessionId={state.activeSessionId} onOpenBot={noop} onOpenTask={noop} />
+        </div>
+      </aside>
+      <section className="main-pane">
+        <ConversationTopbar
+          sidebarCollapsed={false}
+          workPanelOpen={false}
+          onToggleSidebar={noop}
+          onNewTask={noop}
+          onOpenSearch={noop}
+        />
+        <div className="route-surface route-page shot-stack">
+          <div className="shot-turn">
+            <p className="shot-user">把 active 列分两步加上：先加列，再回填。</p>
+            <p className="shot-steward">
+              这一步要按顺序做，我把它拆成了两棒：第一棒加列，第二棒回填并切换读路径。第二棒接在第一棒之后。
+            </p>
           </div>
           <div className="shot-spacer" />
-          {dock}
-          {children}
-          <div className="composer-dock">
-            <Composer />
-          </div>
-        </main>
-      </div>
+        </div>
+        <Composer variant="docked" />
+      </section>
     </div>
   );
 }
@@ -255,67 +290,86 @@ const rendered = { scene: null, theme: "dark" };
 let mount = 0;
 
 function finishAnimations() {
-  for (const animation of document.getAnimations()) animation.finish();
+  for (const animation of document.getAnimations()) {
+    const timing = animation.effect && animation.effect.getTiming ? animation.effect.getTiming() : null;
+    if (timing && timing.iterations === Infinity) continue;
+    try { animation.finish(); } catch { /* idle or infinite */ }
+  }
 }
 
-function montage(scene) {
-  if (scene === "dock-chain" || scene === "overlap-hint") {
-    state.drafts = [draft("draft-a", "加上 active 列"), draft("draft-b", "回填并切换读路径", "draft-a")];
+function scene(name) {
+  if (name === "dock-chain" || name === "overlap-hint") {
+    state.activeSessionId = "steward";
+    state.sessions = summaries;
     state.tasks = [];
-    state.overlaps = state.renderedOverlap ?? (scene === "overlap-hint"
+    state.drafts = [
+      draft(DRAFT_ONE, "加上 active 列"),
+      draft(DRAFT_TWO, "回填并切换读路径", DRAFT_ONE),
+    ];
+    state.overlaps = state.renderedOverlap ?? (name === "overlap-hint"
       ? { readable: true, tasks: [{ taskId: stepTwo.id, shortId: "3f8a11", title: "换个登录页", fileCount: 2 }], intersections: [] }
       : { readable: true, tasks: [], intersections: [] });
-    return <Shell dock={<TaskCardDock key={"dock-" + mount} sessionId="steward" />} />;
+    return;
   }
-  if (scene === "dock-waiting") {
+  if (name === "dock-waiting") {
+    state.activeSessionId = "steward";
+    state.sessions = summaries;
+    // Both steps are running: the first has not handed off yet, so the second is
+    // confirmed and waiting. A finished step would show a completion card in the
+    // same stack, and this picture is about the two folded lines.
+    state.tasks = [
+      { ...stepOne, stage: "working", acceptedAt: undefined },
+      { ...stepTwo, stage: "queued", relayState: "waiting" },
+    ];
     state.drafts = [
-      { ...draft("draft-a", "加上 active 列"), status: "confirmed", confirmedBy: "user",
+      { ...draft(DRAFT_ONE, "加上 active 列"), status: "confirmed", confirmedBy: "user",
         confirmedAt: "2026-11-14T02:00:00.000Z", deliveryId: "delivery-step-one" },
-      { ...draft("draft-b", "回填并切换读路径", "draft-a"), status: "confirmed", confirmedBy: "user",
+      { ...draft(DRAFT_TWO, "回填并切换读路径", DRAFT_ONE), status: "confirmed", confirmedBy: "user",
         confirmedAt: "2026-11-14T02:05:00.000Z", deliveryId: "delivery-step-two" },
     ];
-    state.tasks = [stepOne, { ...stepTwo, relayState: "waiting" }];
     state.overlaps = { readable: true, tasks: [], intersections: [] };
-    return <Shell dock={<TaskCardDock key={"dock-" + mount} sessionId="steward" />} />;
+    return;
   }
-  if (scene === "completion-middle") {
+  if (name === "completion-middle") {
+    state.activeSessionId = "sess-step-one";
+    state.sessions = summaries;
+    state.tasks = [stepOne];
     state.drafts = [];
-    state.tasks = [];
-    return (
-      <Shell dock={null}>
-        <TaskCompletionCard task={stepOne} employeeName="Router 后端" stewardSessionId="steward" variant="dock" />
-      </Shell>
-    );
+    state.overlaps = { readable: true, tasks: [], intersections: [] };
+    return;
   }
-  if (scene === "blocked-relay") {
+  if (name === "blocked-relay") {
+    state.activeSessionId = "sess-step-two";
+    state.sessions = summaries;
+    state.tasks = [{
+      ...stepTwo,
+      stage: "blocked",
+      relayState: "orphaned",
+      blocker: { reason: "relay-orphaned", parent: "111111" },
+    }];
     state.drafts = [];
-    state.tasks = [];
-    return (
-      <Shell dock={null}>
-        <TaskBlockedCard
-          task={{ ...stepTwo, stage: "blocked", relayState: "orphaned",
-            blocker: { reason: "relay-orphaned", parent: "111111" } }}
-          employeeName="Router 后端"
-          stewardName="Super Agent"
-          stewardSessionId="steward"
-        />
-      </Shell>
-    );
+    state.overlaps = { readable: true, tasks: [], intersections: [] };
+    return;
   }
-  if (scene === "batch-chain") {
+  if (name === "batch-chain") {
+    state.activeSessionId = "steward";
+    state.sessions = summaries;
+    state.tasks = [stepOne, stepTwo, stepThree];
     state.drafts = [];
-    state.tasks = [];
-    return (
-      <Shell dock={null}>
-        <TaskBatchCard
-          batch={{ batchId: "turn-1", tasks: [stepOne, stepTwo, stepThree] }}
-          names={{ router: "Router 后端" }}
-          stewardSessionId="steward"
-        />
-      </Shell>
-    );
+    state.overlaps = { readable: true, tasks: [], intersections: [] };
+    return;
   }
-  throw new Error("unknown scene " + scene);
+  if (name === "completion-last") {
+    // The last step of the chain: its completion card lists every step the
+    // whole-chain merge would land, and its primary button merges.
+    state.activeSessionId = "sess-step-two";
+    state.sessions = summaries;
+    state.tasks = [stepOne, stepTwo];
+    state.drafts = [];
+    state.overlaps = { readable: true, tasks: [], intersections: [] };
+    return;
+  }
+  throw new Error("unknown scene " + name);
 }
 
 async function settle(turns = 6) {
@@ -325,18 +379,29 @@ async function settle(turns = 6) {
   }
 }
 
+function rectOf(selector) {
+  const node = document.querySelector(selector);
+  if (!node) return null;
+  const rect = node.getBoundingClientRect();
+  return { top: Math.round(rect.top), bottom: Math.round(rect.bottom),
+    left: Math.round(rect.left), right: Math.round(rect.right) };
+}
+
 window.shot = {
-  async render(scene, theme, overlap) {
+  async render(name, theme, overlap) {
     try {
       state.renderedOverlap = overlap ?? null;
       document.documentElement.dataset.theme = theme;
-      rendered.scene = scene;
+      document.documentElement.dataset.platform = "darwin";
+      rendered.scene = name;
       rendered.theme = theme;
       mount += 1;
-      const element = montage(scene);
-      flushSync(() => root.render(element));
+      scene(name);
+      useAppStore.setState({ activeSessionId: state.activeSessionId, sessions: state.sessions });
+      flushSync(() => root.render(<Shell key={"shell-" + mount} />));
       await settle();
       finishAnimations();
+      await settle(2);
       return { ok: true };
     } catch (error) {
       return { ok: false, error: String((error && error.message) || error) };
@@ -345,7 +410,7 @@ window.shot = {
   async act(name) {
     try {
       if (name === "start-a" || name === "start-b") {
-        const id = name === "start-a" ? "draft-a" : "draft-b";
+        const id = name === "start-a" ? DRAFT_ONE : DRAFT_TWO;
         const card = document.querySelector("[data-draft-id='" + id + "']");
         if (!card) throw new Error("card " + id + " is not on screen");
         const button = card.querySelector(".task-card-actions button:last-of-type");
@@ -396,14 +461,28 @@ window.shot = {
       batchText: (document.querySelector("[data-task-batch]") || {}).textContent || "",
       chainRows: document.querySelectorAll("[data-batch-chain='true']").length,
       batchRows: document.querySelectorAll("[data-batch-row]").length,
-      // The pictures are of the whole shell, so the sidebar, the transcript and
-      // the composer are part of what this test proves.
-      shell: {
-        sidebar: Boolean(document.querySelector(".shot-sidebar .bot-group")),
-        transcript: document.querySelectorAll(".shot-stack > p").length,
-        composer: Boolean(document.querySelector(".composer-dock textarea, .composer-dock [contenteditable='true']")),
-      },
       calls: state.calls,
+      // The pictures are of the whole shell, so the layout is part of what this
+      // test proves: the card sits above the input, and the topbar sits in the
+      // main pane rather than across the sidebar.
+      layout: {
+        input: rectOf(".composer-dock textarea, .composer-dock [contenteditable='true']"),
+        card: rectOf("[data-draft-id], [data-task-completion], [data-task-blocked], [data-task-batch]"),
+        // The topbar is absolutely positioned by the product's own CSS; inside
+        // the main pane it spans the pane, not the window.
+        topbar: rectOf(".main-pane > .conversation-topbar"),
+        sidebar: rectOf(".sidebar"),
+        sidebarRow: rectOf("[data-sidebar-bot-group]"),
+        composer: rectOf(".composer-dock"),
+        viewportBottom: Math.round(window.innerHeight),
+        // The card must be a child of the composer's own stack, above the input:
+        // that is what makes it follow the input wherever the dock moves.
+        cardInStack: (() => {
+          const stack = document.querySelector(".composer-dock > .composer-stack");
+          const card = document.querySelector("[data-draft-id], [data-task-completion], [data-task-blocked], [data-task-batch]");
+          return Boolean(stack && card && stack.contains(card));
+        })(),
+      },
     };
   },
 };
@@ -440,11 +519,11 @@ async function compileStylesheet(workDir) {
 const harnessCss = `
   html, body, #root { height: 100%; margin: 0; }
   body { background: var(--ds-bg-primary); color: var(--ds-text-primary); }
-  #root { padding: 20px; box-sizing: border-box; }
-  .shot-surface { display: flex; flex-direction: column; gap: 16px; height: 100%; }
-  .shot-topbar > * { position: static; }
-  .shot-sidebar { width: 280px; flex: 0 0 auto; }
-  .shot-stack { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+  #root { height: 100%; }
+  .shot-sidebar-body { display: flex; flex-direction: column; gap: 8px; padding: 8px;
+    overflow-y: auto; height: 100%; box-sizing: border-box; }
+  .shot-stack { display: flex; flex-direction: column; gap: 12px; padding: 12px 16px; }
+  .shot-turn { display: flex; flex-direction: column; gap: 10px; }
   .shot-user { align-self: flex-end; max-width: 72%; margin: 0; padding: 8px 12px;
     border-radius: var(--radius-md); background: var(--ds-bg-secondary); color: var(--ds-text-primary); }
   .shot-steward { max-width: 92%; margin: 0; color: var(--ds-text-secondary); }
@@ -509,16 +588,12 @@ test(
       "overlap-hint",
       "batch-chain",
     ];
-    const plan = [];
+    const plan = [{ kind: "flow" }];
     for (const theme of ["dark", "light"]) {
       for (const width of [1440, 1024]) {
         for (const scene of scenes) plan.push({ kind: "shot", theme, width, scene });
       }
     }
-    // The click flow runs first and asserts as it goes: the pictures are one
-    // pass, and the behaviour is another, so neither depends on the other's
-    // final screen.
-    plan.unshift({ kind: "flow" });
 
     await writeFile(
       join(workDir, "main.cjs"),
@@ -528,6 +603,7 @@ const path = require("node:path");
 app.setPath("userData", path.join(__dirname, "profile"));
 const plan = ${JSON.stringify(plan)};
 const outDir = ${JSON.stringify(artifactRoot)};
+const scenes = ${JSON.stringify(scenes)};
 const call = (win, script) => win.webContents.executeJavaScript(script);
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 1440, height: 900, useContentSize: true,
@@ -535,6 +611,39 @@ app.whenReady().then(async () => {
   let failure = null;
   const check = (value, label) => { if (!value || value.ok !== true) throw new Error(label + ": " + JSON.stringify(value)); };
   const probe = () => call(win, "JSON.stringify(window.shot.probe())").then((raw) => JSON.parse(raw));
+  // Every picture is measured, not eyeballed: the card sits above the composer's
+  // input, and the topbar sits in the main pane instead of across the sidebar.
+  const assertLayout = (seen, scene) => {
+    const { input, card, topbar, sidebar, sidebarRow, composer } = seen.layout;
+    if (!input) throw new Error(scene + ": the composer input is not on screen");
+    if (!sidebar) throw new Error(scene + ": the sidebar is not on screen");
+    if (!topbar) throw new Error(scene + ": the topbar is not inside the main pane");
+    if (!sidebarRow) throw new Error(scene + ": the sidebar's bot group is not on screen");
+    // Every picture is of a card; an empty dock would be a picture of a failed
+    // read, not of the product.
+    if (!card) throw new Error(scene + ": no card is on screen");
+    if (!seen.layout.cardInStack) {
+      throw new Error(scene + ": the card is not inside the composer's stack");
+    }
+    // R1: a dock card is layered above the input, inside the composer's own
+    // dock — never under it, and never off the top of the window.
+    if (card.bottom > input.top + 2) {
+      throw new Error(scene + ": the card (" + card.bottom + ") runs under the input (" + input.top + ")");
+    }
+    if (card.top < 0) throw new Error(scene + ": the card starts above the window (" + card.top + ")");
+    if (composer && composer.bottom > seen.layout.viewportBottom + 2) {
+      throw new Error(scene + ": the composer (" + composer.bottom + ") runs past the window ("
+        + seen.layout.viewportBottom + ")");
+    }
+    // R2: the topbar is absolutely positioned, so it spans whichever box is
+    // positioned around it — the main pane, not the window over the sidebar.
+    if (topbar.left < sidebar.right) {
+      throw new Error(scene + ": the topbar (" + topbar.left + ") overlaps the sidebar (" + sidebar.right + ")");
+    }
+    if (sidebarRow.top < 0) {
+      throw new Error(scene + ": the sidebar's first row is clipped (" + sidebarRow.top + ")");
+    }
+  };
   try {
     await win.loadFile(path.join(__dirname, "index.html"));
     win.setContentSize(1440, 900);
@@ -545,18 +654,19 @@ app.whenReady().then(async () => {
         // once it is confirmed it collapses into the waiting line.
         check(await call(win, "window.shot.render('dock-chain','dark')"), "flow render");
         let seen = await probe();
-        if (seen.follows.length !== 1) throw new Error("the chained card does not say what it follows");
-        if (!seen.shell.composer) throw new Error("the shell has no composer");
-        if (seen.shell.transcript < 2) throw new Error("the shell has no transcript: " + JSON.stringify(seen.shell));
-        if (!seen.shell.sidebar) throw new Error("the shell has no sidebar: " + JSON.stringify(seen.shell));
+        if (seen.follows.length !== 1) {
+          throw new Error("the chained card does not say what it follows: " + JSON.stringify(seen));
+        }
+        if (!seen.follows[0].includes("加上 active 列")) {
+          throw new Error("the chained card names an id instead of the card it follows: " + seen.follows[0]);
+        }
         if (!seen.disabledStart.includes("先开前一张")) throw new Error("the second card's start is not disabled: " + JSON.stringify(seen.disabledStart));
         check(await call(win, "window.shot.act('start-a')"), "start a");
         seen = await probe();
-        if (!seen.calls.confirm.includes("draft-a")) throw new Error("the first card was not confirmed");
+        if (!seen.calls.confirm.includes(${JSON.stringify("7d1c9f2a-4b6e-4d1f-9a02-0b8f3c5e7a11")})) throw new Error("the first card was not confirmed");
         if (seen.disabledStart.includes("先开前一张")) throw new Error("the second card stayed disabled after the first was started");
         check(await call(win, "window.shot.act('start-b')"), "start b");
         seen = await probe();
-        if (!seen.calls.confirm.includes("draft-b")) throw new Error("the second card was not confirmed");
         if (seen.waiting.length !== 1) throw new Error("the waiting step did not collapse into one line: " + JSON.stringify(seen.waiting));
         if (!seen.waiting[0].includes("等 Router 后端 的 #555555")) throw new Error("the waiting line does not name the step it waits for: " + seen.waiting[0]);
         // The middle step's completion card hands on instead of merging.
@@ -587,6 +697,13 @@ app.whenReady().then(async () => {
         seen = await probe();
         if (seen.chainRows !== 1) throw new Error("the chain is not one row: " + seen.chainRows);
         if ((seen.batchText.match(/链：/g) || []).length !== 1) throw new Error("the chain title is not one line: " + seen.batchText);
+        // A relay that has finished: the second step's completion card lists the
+        // whole chain, and its primary button merges rather than handing on.
+        check(await call(win, "window.shot.render('completion-last','dark')"), "last render");
+        seen = await probe();
+        if (!seen.merge) throw new Error("the last step has no merge button");
+        if (seen.handoff) throw new Error("the last step offers a handoff instead of a merge");
+        if (seen.chainSteps !== 2) throw new Error("the last step does not list the chain: " + seen.chainSteps);
         continue;
       }
       if (entry.kind === "shot") {
@@ -594,6 +711,7 @@ app.whenReady().then(async () => {
         const rendered = await call(win, "window.shot.render(" + JSON.stringify(entry.scene) + "," + JSON.stringify(entry.theme) + ")");
         if (!rendered || rendered.ok !== true) throw new Error("scene " + entry.scene + " did not render: " + JSON.stringify(rendered));
         await new Promise((resolve) => setTimeout(resolve, 150));
+        assertLayout(await probe(), entry.scene);
         const image = await win.webContents.capturePage();
         require("node:fs").writeFileSync(path.join(outDir, entry.scene + "-" + entry.theme + "-" + entry.width + ".png"), image.toPNG());
       }
@@ -642,7 +760,9 @@ test("relay: the task session is told which step it is", () => {
 
 /** Run one Electron child and resolve with its exit code, forwarding its output. */
 function spawnProcess(binary, args) {
-  const { spawn } = createRequire(import.meta.url)("node:child_process");
-  const child = spawn(binary, args, { stdio: ["ignore", "inherit", "inherit"], env: process.env });
+  const child = createRequire(import.meta.url)("node:child_process").spawn(binary, args, {
+    stdio: ["ignore", "inherit", "inherit"],
+    env: process.env,
+  });
   return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
 }
