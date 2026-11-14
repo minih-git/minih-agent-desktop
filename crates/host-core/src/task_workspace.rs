@@ -288,6 +288,14 @@ pub async fn prepare(
     let mode = delivery_mode(git, Some(&project)).await;
     set_delivery_mode(state, task_id, mode).await?;
 
+    // A step whose predecessor was abandoned has nothing to continue from, and
+    // this is not the place to decide otherwise: the blocked card offers
+    // 「改从 main 开工」, and that click clears the edge before coming back here.
+    if task.relay_state.as_deref() == Some("orphaned") {
+        set_workspace(state, task_id, WorkspaceStatus::None, None).await?;
+        return Ok(());
+    }
+
     let existing = {
         let st = state.lock().await;
         registry::for_owner(&st.db, &task.session_id, None)?
@@ -305,12 +313,38 @@ pub async fn prepare(
     }
 
     let name = workspace_name(&task.short_id, &task.title);
+    // A relay step starts from the end of the step before it (employee mode 0.5
+    // slice 7). A predecessor that has no branch yet, or whose branch is gone,
+    // stops this step with the reason on the card instead of falling back to
+    // `main`: the chain was agreed for a reason, and only the person may drop it.
+    let start = match task.relay_parent_task_id.as_deref() {
+        Some(parent) => match relay_base(state, git, &project, parent).await {
+            Ok(start) => Some(start),
+            Err(message) => {
+                set_workspace(state, task_id, WorkspaceStatus::Failed, Some(&message)).await?;
+                let st = state.lock().await;
+                crate::task_stage::block_relay_base(
+                    &st.db,
+                    st.db.conn(),
+                    task_id,
+                    &crate::tasks::short_id(parent),
+                    &message,
+                )?;
+                return Ok(());
+            }
+        },
+        None => None,
+    };
+    let placement = match start.as_deref() {
+        Some(start) => Placement::RepoLocalFrom(&name, start),
+        None => Placement::RepoLocal(&name),
+    };
     let created = match lifecycle::create_session_worktree(
         state,
         git,
         &task.session_id,
         &project,
-        Placement::RepoLocal(&name),
+        placement,
     )
     .await
     {
@@ -354,6 +388,55 @@ pub async fn prepare(
         set_workspace(state, task_id, WorkspaceStatus::Failed, Some(&message)).await?;
     }
     Ok(())
+}
+
+/// The branch a relay step has to continue: the predecessor's own branch, which
+/// must still exist (employee mode 0.5 slice 7).
+///
+/// The branch is the whole point of a chain, so "it is gone" is a refusal with a
+/// reason rather than a quiet restart from `main`. Each message names the step
+/// the person has to look at.
+async fn relay_base(
+    state: &SharedState,
+    git: &GitRunner,
+    project: &str,
+    parent_id: &str,
+) -> Result<String, String> {
+    let parent = {
+        let st = state.lock().await;
+        tasks::get_task(&st.db, parent_id).map_err(|error| error.to_string())?
+    };
+    let short = crate::tasks::short_id(parent_id);
+    let Some(parent) = parent else {
+        return Err(format!(
+            "the step before this one (#{short}) no longer exists, so there is no branch to continue"
+        ));
+    };
+    let branch = parent
+        .workspace_branch
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            format!("step #{short} has no branch yet; this step cannot continue from it")
+        })?;
+    let exists = git
+        .output(
+            Path::new(project),
+            &[
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{branch}"),
+            ],
+        )
+        .await
+        .map(|output| output.success())
+        .unwrap_or(false);
+    if !exists {
+        return Err(format!(
+            "the branch of step #{short} ({branch}) is gone, so this step has nothing to continue from"
+        ));
+    }
+    Ok(branch)
 }
 
 /// A preparation retry on a folder that already exists: the worktree is fine, so

@@ -55,6 +55,8 @@ type StoredDraft = {
   cardHash: string;
   sourceUtterance: string;
   targetSessionId: string;
+  /** The card this one follows, when the steward declared an order. */
+  afterDraftId?: string;
 };
 
 /**
@@ -73,6 +75,9 @@ const render = (draft: StoredDraft): string => {
     `card ${draft.id} (${draft.status})`,
     body,
     `request: ${draft.sourceUtterance}`,
+    // The model has to see the order it declared, so a second revise or a
+    // follow-up card continues the chain rather than duplicating a step.
+    ...(draft.afterDraftId ? [`follows: ${draft.afterDraftId}`] : []),
     `target: ${draft.targetSessionId}`,
     `hash: ${draft.cardHash}`,
   ].join("\n");
@@ -134,6 +139,12 @@ export function createTaskCardTool(
           args: {
             ...(action === "revise" ? { draftId: stringArg(record, "draftId") } : {}),
             ...(action === "propose" ? { targetSessionId: stringArg(record, "targetSessionId") } : {}),
+            // The card this one follows, when the work is one change in ordered
+            // steps (employee mode 0.5 slice 7): the next step's branch starts
+            // where this one's ends, and only the last step is merged. The host
+            // refuses an edge that cannot work — another batch, another
+            // repository, a loop, or a chain longer than five.
+            ...(stringArg(record, "after") ? { after: stringArg(record, "after") } : {}),
             sourceUtterance,
             card: normalized.card,
           },

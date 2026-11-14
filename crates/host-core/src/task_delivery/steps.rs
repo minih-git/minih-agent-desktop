@@ -517,30 +517,53 @@ async fn delete_remote_branches(
 /// Remove the workspace, the local branch, and the task row's place in the open
 /// list. The task is archived last: its record is what a person would read if
 /// the removal had gone wrong.
+///
+/// A relay chain is cleaned whole (employee mode 0.5 slice 7): the last step's
+/// merge carried every earlier step's commits onto `main`, so their branches are
+/// ancestors now — `-d` accepts them — and their workspaces are folders nothing
+/// will ever use again. Leaving them behind would leave the person with a
+/// sidebar full of finished steps and a repository full of dead branches.
 async fn cleanup_step(
     state: &SharedState,
     git: &GitRunner,
     target: &Target,
 ) -> std::result::Result<(), Stop> {
-    task_workspace::cleanup_for_archive(state, git, &target.task.id, false)
-        .await
-        .map_err(|error| Stop::of("cleanup", error, true))?;
-    // `-d`, never `-D`: a branch whose work is not on `main` is exactly the case
-    // that must not be deleted, and git already knows how to say so.
-    let output = git
-        .output(&target.project, &["branch", "-d", &target.row.branch])
-        .await
-        .map_err(|error| Stop::new("cleanup", error.to_string(), true))?;
-    if !output.success() {
-        let message = output.stderr.trim();
-        // A branch that is already gone is finished work, not a failure.
-        if !message.contains("not found") && !message.contains("no such branch") {
-            return Err(Stop::new("cleanup", message.to_string(), true));
+    let chain = {
+        let st = state.lock().await;
+        tasks::relay_chain(&st.db, &target.task.id).map_err(|error| {
+            Stop::new("cleanup", error.to_string(), true)
+        })?
+    };
+    for step in &chain {
+        task_workspace::cleanup_for_archive(state, git, &step.id, false)
+            .await
+            .map_err(|error| Stop::of("cleanup", error, true))?;
+    }
+    for step in &chain {
+        // `-d`, never `-D`: a branch whose work is not on `main` is exactly the
+        // case that must not be deleted, and git already knows how to say so.
+        let Some(branch) = step.workspace_branch.as_deref() else {
+            continue;
+        };
+        let output = git
+            .output(&target.project, &["branch", "-d", branch])
+            .await
+            .map_err(|error| Stop::new("cleanup", error.to_string(), true))?;
+        if !output.success() {
+            let message = output.stderr.trim();
+            // A branch that is already gone is finished work, not a failure.
+            if !message.contains("not found") && !message.contains("no such branch") {
+                return Err(Stop::new("cleanup", message.to_string(), true));
+            }
         }
     }
     let st = state.lock().await;
-    tasks::archive(&st.db, &json!({ "taskId": target.task.id }))
-        .map_err(|error| Stop::new("cleanup", error.to_string(), true))?;
+    // Every step leaves the open list: the chain is delivered, and a step whose
+    // work is on `main` has nothing left to do on its own.
+    for step in &chain {
+        tasks::archive(&st.db, &json!({ "taskId": step.id }))
+            .map_err(|error| Stop::new("cleanup", error.to_string(), true))?;
+    }
     Ok(())
 }
 

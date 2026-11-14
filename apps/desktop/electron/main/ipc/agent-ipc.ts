@@ -581,7 +581,13 @@ export function registerAgentIpc({
         // person wrote (slice 6). They ride with the turn and are never written to
         // the transcript, so a norm cannot accumulate or be read back as history.
         session.role === "task"
-        ? await buildTaskSessionBriefing((method, params) => briefingHost!.call(method, params))
+        ? await buildTaskSessionBriefing(
+            (method, params) => briefingHost!.call(method, params),
+            // The task's session, so the brief can say which step of a relay
+            // chain this turn is: a middle step commits and stops, the last one
+            // pushes and opens one pull request for the whole chain.
+            session.id,
+          )
         : undefined;
     try {
       result = await sidecar.call<{ accepted: boolean; turnId: string }>(

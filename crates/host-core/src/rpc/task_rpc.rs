@@ -143,6 +143,45 @@ pub(super) async fn handle(
             let st = state.lock().await;
             crate::task_inspection::inspect(&st.db, crate::db::now_ms()).map_err(internal)
         }
+        // Relay between steps (employee mode 0.5 slice 7). The click on a
+        // completion card is what hands the branch on: the host records the
+        // handoff and answers with the delivery Main has to start, so the next
+        // step begins exactly where this one stopped. Repeating the click is the
+        // same answer, never a second dispatch.
+        "task.relay.handoff" => {
+            let st = state.lock().await;
+            crate::task_relay::handoff(&st.db, &params).map_err(session_collaboration_rpc_err)
+        }
+        // 「改从 main 开工」 on an orphaned step: the edge to the abandoned step
+        // goes away, the workspace is built from the project's own `main`, and
+        // the delivery that was waiting is dispatched again. The person's own
+        // click, never a fallback the host chooses.
+        "task.relay.detach" => {
+            let detached = {
+                let st = state.lock().await;
+                crate::task_relay::detach(&st.db, &params).map_err(session_collaboration_rpc_err)?
+            };
+            let task_id = detached
+                .pointer("/task/id")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let Some(task_id) = task_id else {
+                return Ok(detached);
+            };
+            task_workspace::prepare(state, &git, &task_id)
+                .await
+                .map_err(to_rpc)?;
+            let mut detached = detached;
+            detached["task"] = read_task(state, &task_id).await?;
+            Ok(detached)
+        }
+        // Which other open tasks in this repository are changing files, and
+        // which of those files this one changes too. A hint the card shows,
+        // never a refusal: a person who is told can still decide the two changes
+        // are unrelated.
+        "task.overlap" => crate::task_overlap::overlap(state, &git, &params)
+            .await
+            .map_err(internal),
         _ => {
             let st = state.lock().await;
             crate::session_collaboration::handle_task(&st.db, method, &params)

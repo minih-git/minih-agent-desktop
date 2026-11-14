@@ -5,6 +5,7 @@ import type {
   SessionCollaborationDelivery,
   SessionCollaborationMessage,
   SessionCollaborationSummary,
+  TaskView,
 } from "@minih-agent/shared";
 import {
   decodeMandate,
@@ -12,6 +13,7 @@ import {
   imageGenerationBindings,
   isImageGenerationModel,
   modelWireIdsEqual,
+  taskStartsOnConfirm,
 } from "@minih-agent/shared";
 import { readTaskBoard } from "./task-status";
 import { DESKTOP_PRINCIPAL, type AgentHostBridge } from "../agent-host-bridge";
@@ -231,6 +233,7 @@ async function autoConfirmIfAllowed(
   const started = await host.call<{
     draft: TaskCardDraftRecord;
     delivery?: SessionCollaborationMessage;
+    task?: TaskView;
   }>("taskCard.confirm", {
     draftId: draft.id,
     cardHash: draft.cardHash,
@@ -241,7 +244,10 @@ async function autoConfirmIfAllowed(
     // auto-start cannot deliver the same work twice.
     idempotencyKey: `taskcard:${draft.id}`,
   });
-  if (started.delivery) await start(started.delivery);
+  // A card that follows another is confirmed now and starts at that step's
+  // handoff, not before (employee mode 0.5 slice 7). The policy decides whether
+  // the person has to be asked; it never decides an order the steward declared.
+  if (started.delivery && taskStartsOnConfirm(started.task)) await start(started.delivery);
   return started.draft;
 }
 
@@ -746,6 +752,10 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
               // The turn, not the card: one sentence split into three cards is
               // one batch, and the summary card appears when all three finish.
               batchId: sourceTurnId,
+              // The card this one follows, when the steward declared an order
+              // (employee mode 0.5 slice 7). The host validates the edge: same
+              // batch, no loop, one repository, at most five steps.
+              after: text(input.args, "after"),
             },
           );
           // Auto-start is the host's own rule, never the model's judgement: a
@@ -762,6 +772,9 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           const result = await host.call<{ draft: TaskCardDraftRecord }>("taskCard.revise", {
             draftId: text(input.args, "draftId"),
             card: input.args.card,
+            // Re-checked by the host like a first proposal: either side of the
+            // edge can have moved since the card was proposed.
+            after: text(input.args, "after"),
           });
           return { draft: result.draft };
         }
