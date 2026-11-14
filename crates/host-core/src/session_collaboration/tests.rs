@@ -630,11 +630,7 @@ fn the_roster_offers_employees_but_never_the_secretary() {
 
     let roster = handle(&db, "bot.roster", &json!({"sessionId": steward})).unwrap();
     let employees = roster["employees"].as_array().unwrap();
-    assert_eq!(
-        employees.len(),
-        2,
-        "the hired crew minus the secretary"
-    );
+    assert_eq!(employees.len(), 2, "the hired crew minus the secretary");
     assert!(
         employees
             .iter()

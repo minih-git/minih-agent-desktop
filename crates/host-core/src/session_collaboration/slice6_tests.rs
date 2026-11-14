@@ -38,7 +38,11 @@ fn employees(db: &Database) -> Vec<(String, String, String)> {
         .unwrap();
     statement
         .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get::<_, Option<String>>(2)?.unwrap_or_default()))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+            ))
         })
         .unwrap()
         .collect::<rusqlite::Result<Vec<_>>>()
@@ -129,7 +133,10 @@ fn team_norms_round_trip_and_clear() {
         }),
     )
     .unwrap();
-    assert_eq!(saved["norms"]["communication"], json!("用中文汇报，先给结论"));
+    assert_eq!(
+        saved["norms"]["communication"],
+        json!("用中文汇报，先给结论")
+    );
     assert_eq!(
         norms::get(&db).unwrap()["norms"]["delivery"],
         json!("改动要带测试"),
@@ -142,7 +149,10 @@ fn team_norms_round_trip_and_clear() {
         &json!({ "norms": { "communication": " ", "scope": "", "delivery": "" } }),
     )
     .unwrap();
-    assert_eq!(norms::get(&db).unwrap()["norms"]["communication"], json!(""));
+    assert_eq!(
+        norms::get(&db).unwrap()["norms"]["communication"],
+        json!("")
+    );
     let stored: Option<Value> = db.kv_get("team", "norms").unwrap();
     assert!(stored.is_none(), "cleared norms leave no row");
 }
@@ -198,12 +208,15 @@ fn a_task_session_answers_with_its_employee() {
 
     let answer = bots::for_task_session(&db, &json!({ "sessionId": task_session })).unwrap();
     assert_eq!(answer["employee"]["sessionId"], json!(reviewer));
-    assert_eq!(answer["employee"]["profile"]["definition"], json!("code-reviewer"));
+    assert_eq!(
+        answer["employee"]["profile"]["definition"],
+        json!("code-reviewer")
+    );
 
     // A session that is not a task's own answers `null` rather than inventing an
     // employee, so Main applies no persona instead of somebody else's.
-    let ordinary = sessions::create_session(&db, Some("Chat".into()), None, None, None, None)
-        .unwrap();
+    let ordinary =
+        sessions::create_session(&db, Some("Chat".into()), None, None, None, None).unwrap();
     let none = bots::for_task_session(&db, &json!({ "sessionId": ordinary.id })).unwrap();
     assert_eq!(none["employee"], Value::Null);
 }
