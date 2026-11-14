@@ -1972,14 +1972,16 @@ async fn handle_request(
             remote_tools::handle(state, method, params, tx).await
         }
         // The collaboration surface keeps its own prefix, and the employee
-        // surface answers to `bot.*` / `taskCard.*`. All three are served by the
+        // surface answers to `bot.*` / `taskCard.*`; the team norms the person
+        // writes ride under `team.*` (slice 6). All of them are served by the
         // same handler, so they must share one routing arm: a prefix the router
         // does not forward falls through to `method not found`, which is exactly
         // how `bot.list` broke in the running app.
         method
             if method.starts_with("session.collaboration.")
                 || method.starts_with("bot.")
-                || method.starts_with("taskCard.") =>
+                || method.starts_with("taskCard.")
+                || method.starts_with("team.") =>
         {
             if method == "taskCard.confirm" {
                 // Confirming resolves the card's repository to a checkout on
@@ -6199,13 +6201,18 @@ mod tests {
     ///
     /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts` and
     /// `apps/desktop/electron/main/services/session-collaboration.ts`.
-    const DESKTOP_BOT_METHODS: [&str; 14] = [
+    const DESKTOP_BOT_METHODS: [&str; 17] = [
         "bot.list",
         "bot.roster",
         "bot.create",
         "bot.update",
         "bot.dismiss",
         "bot.seedDefaults",
+        // A task's employee, and the role its session runs as (slice 6).
+        "bot.forTaskSession",
+        // The team norms the person writes, under their own prefix (slice 6).
+        "team.norms.get",
+        "team.norms.set",
         "taskCard.list",
         "taskCard.get",
         "taskCard.propose",

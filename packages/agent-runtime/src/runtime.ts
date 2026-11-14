@@ -355,7 +355,11 @@ import {
 } from "./context-calibration.js";
 
 import { rebuildNodeNetworkTransport } from "./node-proxy.js";
-import { declaresTaskReport, TASK_REPORT_TOOL_NAME } from "./task-report.js";
+import {
+  declaresTaskReport,
+  TASK_REPORT_TOOL_NAME,
+  TASK_SESSION_PERSONA_TOOLS,
+} from "./task-report.js";
 import {
   createProviderTransportHealth,
   explainsProviderFetchFailure,
@@ -1184,16 +1188,22 @@ export type AgentRuntimeOptions = {
    * workspace" is a host rule rather than a request in a prompt. `missingName`
    * is set when the session names a definition that does not exist — the turn
    * then fails instead of running with every tool.
+   *
+   * A **task** session resolves the definition of the employee it belongs to
+   * (slice 6), with `taskSession: true`: the role's tools stay the ceiling, and
+   * only the task rules' own tools (`TaskReport`, `asktool`) are added back, so
+   * a reviewer's task still cannot Write.
    */
-  botPersona?: { definition: SubagentDefinition } | { missingName: string };
+  botPersona?:
+    | { definition: SubagentDefinition; taskSession?: boolean }
+    | { missingName: string };
   /**
    * Whether this session is a **task**'s own session, so it may report that it
    * is stuck (employee mode 0.5 slice 4a).
    *
-   * Main sets it from the session's `role`, because a task session has no
-   * persona and no other session may hand the person a blocked card. The tool
-   * itself writes the task row on the host, which is the only thing that decides
-   * a stage.
+   * Main sets it from the session's `role`, because no other session may hand
+   * the person a blocked card. The tool itself writes the task row on the host,
+   * which is the only thing that decides a stage.
    */
   taskReporter?: boolean;
   /**
@@ -1251,9 +1261,12 @@ export type RuntimeMatchConfig = {
    * The employee definition the caller wants this session to run as. It is a
    * compare item of its own: the tool ceiling is fixed at construction, so a
    * session that became a steward must get a new runtime instead of keeping the
-   * previous turn's catalog.
+   * previous turn's catalog. `taskSession` is part of the value too, because it
+   * decides whether `TaskReport` is in that ceiling.
    */
-  botPersona?: { definition: SubagentDefinition } | { missingName: string };
+  botPersona?:
+    | { definition: SubagentDefinition; taskSession?: boolean }
+    | { missingName: string };
   /** A task session keeps `TaskReport`; nothing else declares it. */
   taskReporter?: boolean;
 };
@@ -1276,7 +1289,9 @@ function trustedExtensionIds(specs: TrustedExtensionSpec[]): string {
  * installing one (or naming a different one) also retires the runtime.
  */
 function personaFingerprint(
-  persona?: { definition: SubagentDefinition } | { missingName: string },
+  persona?:
+    | { definition: SubagentDefinition; taskSession?: boolean }
+    | { missingName: string },
 ): string {
   if (!persona) return "none";
   if ("missingName" in persona) return `missing:${persona.missingName}`;
@@ -1286,6 +1301,10 @@ function personaFingerprint(
     tools: definition.tools,
     inheritTools: definition.inheritTools === true,
     prompt: definition.prompt,
+    // A definition that began running a task's rules has a wider ceiling than
+    // the same definition running an employee container, so the two are not the
+    // same warm runtime.
+    taskSession: persona.taskSession === true,
   });
 }
 
@@ -2296,6 +2315,14 @@ export class DesktopAgentRuntime {
       this.personaToolCeiling = new Set(
         resolveSubagentToolNames(opts.botPersona.definition, []),
       );
+      // A task session runs as its employee's role but still has to be able to
+      // say it is stuck (slice 6). The extra names are a fixed set, not a
+      // caller's list: `TaskReport` and nothing that writes.
+      if (opts.botPersona.taskSession === true) {
+        for (const name of TASK_SESSION_PERSONA_TOOLS) {
+          this.personaToolCeiling.add(name);
+        }
+      }
       // The definition's own prompt is the employee's standing instructions, so
       // it belongs in the system prompt rather than in a user turn.
       this.personaPrompt = opts.botPersona.definition.prompt.trim();

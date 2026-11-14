@@ -267,6 +267,13 @@ they are for, the model and permission they run at, the repository they read,
 how many tasks they hold and how many of those are waiting on the person.
 Choose by that, never by guessing what a session title might mean.
 
+The row also names the job, like \`role=reviewer (read-only)\` or \`role=coder\`.
+Choose by that job, not only by the name a person invented. Research, reading,
+reviewing and comparing options belong to a researcher or a reviewer, never to
+the employee that writes code, and a card for either of them is marked
+\`readOnly: true\` with \`permissionMode: ask\`. A job whose row says no repository
+reads outside one; that is not a reason to hand it code work.
+
 Every card carries a one-sentence \`reason\`: which part of the person's
 sentence points at this employee, and whether it is free right now. "The task is
 pages and interaction; you mentioned Desktop; it is idle." The person reads that

@@ -149,6 +149,18 @@ export const IPC = {
     /** Explicit, user-triggered: never runs at startup. */
     botSeedDefaults: "minih-agent-desktop/bot/seedDefaults",
     /**
+     * One-sentence hiring (slice 6): Main asks a model for a profile draft from
+     * the person's sentence. It creates nothing — the draft fills the form and
+     * the person confirms it like any other hire.
+     */
+    botDraftHire: "minih-agent-desktop/bot/draftHire",
+    /**
+     * The team norms the person writes (slice 6). Stored on this computer, in
+     * the host's local key–value table, one versioned row.
+     */
+    teamNormsGet: "minih-agent-desktop/team/norms/get",
+    teamNormsSet: "minih-agent-desktop/team/norms/set",
+    /**
      * Task-card drafts of one steward session. `taskCardConfirm` is the person's
      * click: it freezes the card and dispatches it, and the model has no way to
      * reach it.

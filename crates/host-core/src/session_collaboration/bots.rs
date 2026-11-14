@@ -10,9 +10,8 @@ use super::drafts;
 use crate::db::{now_ms, Database};
 use crate::sessions;
 use anyhow::{anyhow, Result};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
-
 /// The name the default crew gives the steward, and the name a person sees
 /// before one exists.
 ///
@@ -23,27 +22,18 @@ use serde_json::{json, Value};
 /// the previous default to this one.
 pub const STEWARD_DEFAULT_NAME: &str = "Super Agent";
 
-/// The crew a person gets when they explicitly ask for defaults. The steward is
-/// the only one allowed to dispatch, and it is the only one that starts without
-/// asking; every other employee begins in `observe`.
-pub const DEFAULT_CREW: [(&str, Option<&str>, &str); 4] = [
-    (
-        STEWARD_DEFAULT_NAME,
-        Some("steward"),
-        "Dispatch work, track it, and report back in chat.",
-    ),
-    (
-        "Router 后端",
-        None,
-        "Minih-Router gateway, accounts and billing.",
-    ),
-    (
-        "Desktop 前端",
-        None,
-        "Minih-Agent-Desktop renderer and desktop shell.",
-    ),
-    ("调研与文档", None, "Research, notes and documentation."),
-];
+/// The one employee the host ever creates by itself: the steward.
+///
+/// Slice 6 removed the fixed crew. A person hires the jobs they need from the
+/// hiring templates, so "give me the defaults" now means exactly one thing —
+/// make sure the dispatcher exists — and nothing else is created behind their
+/// back. `bot.seedDefaults` keeps its name and its reply shape because the
+/// renderer and the older builds call it; only what it creates changed.
+pub const STEWARD_SEED: (&str, Option<&str>, &str) = (
+    STEWARD_DEFAULT_NAME,
+    Some("steward"),
+    "Dispatch work, track it, and report back in chat.",
+);
 
 fn string(input: &Value, key: &str, limit: usize) -> Result<String> {
     super::string(input, key, limit).map(str::to_owned)
@@ -107,6 +97,34 @@ fn profile_of(input: &Value) -> Result<String> {
     Ok(serde_json::to_string(&normalized)?)
 }
 
+/// The model an employee is hired with, from the form's `providerId/modelId`
+/// key (employee mode 0.5 slice 6).
+///
+/// The hire form suggests a model per template and the person may keep it or
+/// pick another; a new employee's session stores it, so its tasks inherit the
+/// model the job was hired with (ADR §9). An absent key means "no model chosen",
+/// which is every employee hired before this slice.
+fn model_of(input: &Value) -> Result<(Option<String>, Option<String>)> {
+    let Some(raw) = input.get("modelKey") else {
+        return Ok((None, None));
+    };
+    let Some(key) = raw.as_str().map(str::trim).filter(|key| !key.is_empty()) else {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: modelKey must be a provider/model string"
+        ));
+    };
+    let (provider, model) = key
+        .split_once('/')
+        .map(|(provider, model)| (provider.trim(), model.trim()))
+        .unwrap_or_default();
+    if provider.is_empty() || model.is_empty() {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: modelKey must be a provider/model string"
+        ));
+    }
+    Ok((Some(provider.to_owned()), Some(model.to_owned())))
+}
+
 /// Create an employee, either as a new session or by promoting an existing one.
 pub fn create(db: &Database, input: &Value) -> Result<Value> {
     let profile_json = profile_of(input)?;
@@ -131,6 +149,7 @@ pub fn create(db: &Database, input: &Value) -> Result<Value> {
             Ok(json!({ "session": sessions::session_summary(db, session_id)? }))
         }
         None => {
+            let (provider_id, model_id) = model_of(input)?;
             let created = sessions::create_session_with_options(
                 db,
                 sessions::SessionCreateOptions {
@@ -148,6 +167,8 @@ pub fn create(db: &Database, input: &Value) -> Result<Value> {
                         .get("permissionMode")
                         .and_then(Value::as_str)
                         .map(str::to_owned),
+                    provider_id,
+                    model_id,
                     role: Some("bot".into()),
                     bot_profile_json: Some(profile_json),
                     ..Default::default()
@@ -233,54 +254,86 @@ pub fn dismiss(db: &Database, input: &Value) -> Result<Value> {
     Ok(json!({ "session": sessions::session_summary(db, &session_id)? }))
 }
 
-/// Create the default crew. Only ever called from an explicit user action.
+/// The employee a **task session** belongs to, and the profile it runs as
+/// (employee mode 0.5 slice 6).
+///
+/// A task's own session carries no profile: the role lives on the employee, so
+/// this is the one read Main needs before it can run a task under its role.
+/// `employee: null` means the session is not a task's own session — the honest
+/// answer, not an empty employee.
+pub fn for_task_session(db: &Database, input: &Value) -> Result<Value> {
+    let session_id = string(input, "sessionId", 256)?;
+    let employee_id: Option<String> = db
+        .conn()
+        .prepare_cached("SELECT employee_session_id FROM tasks WHERE session_id=?1")?
+        .query_row(params![session_id], |row| row.get(0))
+        .optional()?;
+    let Some(employee_id) = employee_id else {
+        return Ok(json!({ "employee": Value::Null }));
+    };
+    let profile = sessions::session_bot_profile(db, &employee_id)?;
+    Ok(json!({
+        "employee": { "sessionId": employee_id, "profile": profile }
+    }))
+}
+
+/// Make sure the steward exists — the only employee `bot.seedDefaults` creates
+/// (employee mode 0.5 slice 6).
+///
+/// It keeps the old method name and the old reply shape (`created` /
+/// `skipped`) because the settings page and older builds call it, but it no
+/// longer creates a crew: a person hires the jobs they need from the templates.
+///
+/// **Nothing existing is ever touched.** The lookup is by the steward's own
+/// name, an existing steward is reported as `skipped`, and no other row is
+/// read, renamed or deleted — a person who renamed their dispatcher, dismissed
+/// it, or hired three other employees keeps every one of those decisions.
 pub fn seed_defaults(db: &Database) -> Result<Value> {
-    let mut created = Vec::new();
-    let mut skipped = Vec::new();
-    for (name, definition, duty) in DEFAULT_CREW {
-        let exists: bool = db.conn().query_row(
-            "SELECT EXISTS(SELECT 1 FROM sessions
-              WHERE role='bot' AND deleted_at IS NULL
-                AND json_extract(bot_profile_json, '$.name') = ?1)",
-            params![name],
-            |row| row.get(0),
-        )?;
-        if exists {
-            skipped.push(json!({"name": name, "reason": "exists"}));
-            continue;
-        }
-        // The steward is the only employee that starts acting on its own; the
-        // others record what they would do until the person turns them on.
-        let observe = definition != Some("steward");
-        let mut profile = json!({
-            "name": name,
-            "duty": duty,
-            "permissionMode": "ask",
-            "mustAsk": [],
-            "observe": observe,
-        });
-        if let Some(definition) = definition {
-            profile["definition"] = json!(definition);
-        }
-        let profile_json = serde_json::to_string(&sessions::normalize_bot_profile(&profile)?)?;
-        let session = sessions::create_session_with_options(
-            db,
-            sessions::SessionCreateOptions {
-                title: Some(name.into()),
-                mode: Some("agent".into()),
-                permission_mode: Some("ask".into()),
-                role: Some("bot".into()),
-                bot_profile_json: Some(profile_json),
-                ..Default::default()
-            },
-        )?;
-        created.push(json!({
+    let (name, definition, duty) = STEWARD_SEED;
+    let exists: bool = db.conn().query_row(
+        "SELECT EXISTS(SELECT 1 FROM sessions
+          WHERE role='bot' AND deleted_at IS NULL
+            AND json_extract(bot_profile_json, '$.name') = ?1)",
+        params![name],
+        |row| row.get(0),
+    )?;
+    if exists {
+        return Ok(json!({
+            "created": [],
+            "skipped": [{ "name": name, "reason": "exists" }],
+        }));
+    }
+    let observe = definition != Some("steward");
+    let mut profile = json!({
+        "name": name,
+        "duty": duty,
+        "permissionMode": "ask",
+        "mustAsk": [],
+        "observe": observe,
+    });
+    if let Some(definition) = definition {
+        profile["definition"] = json!(definition);
+    }
+    let profile_json = serde_json::to_string(&sessions::normalize_bot_profile(&profile)?)?;
+    let session = sessions::create_session_with_options(
+        db,
+        sessions::SessionCreateOptions {
+            title: Some(name.into()),
+            mode: Some("agent".into()),
+            permission_mode: Some("ask".into()),
+            role: Some("bot".into()),
+            bot_profile_json: Some(profile_json),
+            ..Default::default()
+        },
+    )?;
+    Ok(json!({
+        "created": [{
             "sessionId": session.id,
             "name": name,
             "definition": definition,
-        }));
-    }
-    Ok(json!({ "created": created, "skipped": skipped }))
+        }],
+        "skipped": [],
+    }))
 }
 
 /// The crew a steward may hand work to (employee mode 0.5 slice 3).
@@ -332,6 +385,10 @@ pub fn roster(db: &Database, input: &Value) -> Result<Value> {
             "sessionId": id,
             "name": profile.get("name").cloned().unwrap_or_else(|| json!(title)),
             "duty": profile.get("duty").cloned().unwrap_or(Value::Null),
+            // The job this employee was hired for (slice 6). The steward has to
+            // tell "who reviews" from "who researches" before she names anyone,
+            // and a name like «阿福» says nothing about that.
+            "definition": profile.get("definition").cloned().unwrap_or(Value::Null),
             "permissionMode": profile.get("permissionMode").cloned().unwrap_or(Value::Null),
             "observe": profile.get("observe").cloned().unwrap_or(json!(true)),
             // Reserved for the repositories an employee is responsible for. One

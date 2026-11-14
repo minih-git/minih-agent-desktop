@@ -110,5 +110,7 @@ export * from "./bot-session.js";
 export * from "./bot-stage.js";
 export * from "./task-card.js";
 export * from "./bot-ipc.js";
+export * from "./bot-hiring.js";
+export * from "./team-norms.js";
 export * from "./task.js";
 export * from "./task.js";

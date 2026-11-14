@@ -1,5 +1,7 @@
 import type { BotMustAsk, BotProfile, TaskStage } from "./bot-session.js";
-import type { PermissionMode } from "./types/permissions.js";
+import type { HireTemplateId } from "./bot-hiring.js";
+import type { TeamNorms } from "./team-norms.js";
+import type { GlobalPermissionMode, PermissionMode } from "./types/permissions.js";
 
 /**
  * The employee surface the renderer needs (ADR bot-sessions-and-steward §5).
@@ -54,6 +56,12 @@ export type BotRosterEntry = {
   sessionId: string;
   name: string;
   duty?: string | null;
+  /**
+   * The definition this employee runs as (`code-reviewer`, `explorer`, …), so a
+   * choice can be made by job rather than by a name the person invented
+   * (employee mode 0.5 slice 6).
+   */
+  definition?: string | null;
   permissionMode?: string | null;
   observe?: boolean;
   projectPath?: string;
@@ -93,6 +101,12 @@ export type BotCreateRequest = {
   /** Title for a new session; ignored when promoting. */
   title?: string;
   projectPath?: string;
+  /**
+   * The model this employee's sessions run on, as `providerId/modelId`
+   * (employee mode 0.5 slice 6). Only a create: the hire form suggests one from
+   * the template and the person may change it; an update keeps the model.
+   */
+  modelKey?: string;
 };
 
 export type BotUpdateRequest = {
@@ -209,3 +223,37 @@ export type TaskCardReassignResult = {
    */
   repoAvailable: boolean;
 };
+
+/**
+ * One-sentence hiring (employee mode 0.5 slice 6).
+ *
+ * The sentence is the person's; the answer is Main's, and it is a **draft**: it
+ * fills the form, and only the person's confirmation creates an employee. The
+ * draft never carries a session id, so nothing here can promote or dismiss
+ * anything either.
+ */
+export type BotHireDraftRequest = { utterance: string };
+
+export type BotHireDraft = {
+  templateId: HireTemplateId;
+  name: string;
+  duty: string;
+  /** Never `inherit`: a draft is a concrete hiring decision. */
+  permissionMode: GlobalPermissionMode;
+  mustAsk: BotMustAsk[];
+  /** The installed definition the template resolved to, when it resolved. */
+  definition?: string;
+  /** An existing project the draft suggests; never a project it created. */
+  projectPath?: string;
+  /** The model's one sentence on why this template, shown above the form. */
+  reason: string;
+};
+
+export type BotHireDraftResult = { draft: BotHireDraft };
+
+/** The team norms the person writes; empty sections are simply blank. */
+export type TeamNormsSetRequest = {
+  norms: { communication: string; scope: string; delivery: string };
+};
+
+export type TeamNormsView = { norms: TeamNorms | null };

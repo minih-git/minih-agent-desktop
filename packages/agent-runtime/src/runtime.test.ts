@@ -2511,6 +2511,58 @@ describe("DesktopAgentRuntime employee persona", () => {
     await runtime.dispose();
   });
 
+  /**
+   * A task runs as the role that owns it (employee mode 0.5 slice 6).
+   *
+   * This is the whole point of the slice: before it, the definition only
+   * governed the employee's own container, and the session that actually did
+   * the work — the task's — ran with every tool the app has. A reviewer's task
+   * now cannot Write or Edit, while still holding the two tools the task rules
+   * are written in terms of.
+   */
+  it("runs a task under its role, keeping only the task rules' own tools", async () => {
+    const reviewer: SubagentDefinition = {
+      name: "code-reviewer",
+      description: "Reviews code and never changes it.",
+      tools: ["Read", "Grep", "Glob"],
+      source: "builtin",
+      prompt: "You review code. You never edit.",
+    };
+    const employeeRuntime = createRuntime({ botPersona: { definition: reviewer } });
+    const taskRuntime = createRuntime({
+      botPersona: { definition: reviewer, taskSession: true },
+      taskReporter: true,
+    });
+    try {
+      const employeeNames = catalogNames(employeeRuntime);
+      const taskNames = catalogNames(taskRuntime);
+      // The role is the ceiling in both: a reviewer never gets an editing tool.
+      expect(employeeNames).not.toContain("Write");
+      expect(taskNames).not.toContain("Write");
+      expect(taskNames).not.toContain("Edit");
+      expect(taskNames).not.toContain("Bash");
+      expect(taskNames).toContain("Read");
+      // The task rules need these two, and nothing else is added for them.
+      expect(taskNames).toContain("TaskReport");
+      expect(taskNames).toContain("asktool");
+      // The employee's own container does not run tasks, so it has no reporter.
+      expect(employeeNames).not.toContain("TaskReport");
+    } finally {
+      await employeeRuntime.dispose();
+      await taskRuntime.dispose();
+    }
+  });
+
+  it("fails a task whose employee names a definition that is not installed", async () => {
+    // Main hands over `missingName`; the turn must stop rather than run the task
+    // with the full catalog, which is the permission bug a typo would become.
+    const runtime = createRuntime({ botPersona: { missingName: "code-reveiwer" } });
+    await expect(runtime.prompt("Say hello.", "user-1", "turn-1")).rejects.toMatchObject({
+      errorCode: "BOT_DEFINITION_MISSING",
+    });
+    await runtime.dispose();
+  });
+
   it("reuses a runtime only while the persona is unchanged, and retires it when it changes", async () => {
     // A session that ran as ordinary last turn must not keep Write, Edit, and
     // Bash after it is marked as an employee: the ceiling is fixed at

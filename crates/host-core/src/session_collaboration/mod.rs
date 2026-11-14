@@ -17,6 +17,7 @@ pub(crate) mod notices;
 mod permissions;
 pub mod progress;
 mod projections;
+pub mod norms;
 mod provenance;
 pub(crate) mod repository;
 mod restart;
@@ -441,6 +442,13 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
         "bot.update" => bots::update(db, input),
         "bot.dismiss" => bots::dismiss(db, input),
         "bot.seedDefaults" => bots::seed_defaults(db),
+        // The employee a task session belongs to (slice 6): a task runs as its
+        // role, and the role's definition lives on the employee's profile.
+        "bot.forTaskSession" => bots::for_task_session(db, input),
+        // Team norms: the rules every employee follows, written by the person
+        // (slice 6). Kept in the local key–value table, one versioned row.
+        "team.norms.get" => norms::get(db),
+        "team.norms.set" => norms::set(db, input),
         "taskCard.list" => bots::list_drafts(db, string(input, "sessionId", 256)?),
         "taskCard.get" => Ok(json!({
             "draft": drafts::get(db, string(input, "draftId", 256)?)?,
@@ -521,3 +529,7 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
 
 #[cfg(test)]
 mod tests;
+
+/// Slice 6: hiring, team norms, and the employee behind a task session.
+#[cfg(test)]
+mod slice6_tests;
