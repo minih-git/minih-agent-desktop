@@ -1101,7 +1101,8 @@ export const de = {
       "riskMedium": "Mittleres Risiko",
       "riskHigh": "Hohes Risiko",
       // Steps of one change in order (employee mode 0.5 slice 7).
-      "follows": "Folgt auf #{{shortId}}",
+      "follows": "Folgt auf „{{title}}“",
+      "followsShort": "Folgt auf #{{shortId}}",
       "waitingPrevious": "Bestätigt – wartet auf #{{shortId}} von {{name}}",
       "needPreviousFirst": "Zuerst die vorherige Karte starten",
       "overlapOthers": "{{count}} weitere Aufgaben arbeiten in diesem Repository: {{list}}",

@@ -1117,7 +1117,8 @@ export const zhCN = {
       riskMedium: "中风险",
       riskHigh: "高风险",
       // Steps of one change in order (employee mode 0.5 slice 7).
-      follows: "接在 #{{shortId}} 之后",
+      follows: "接在「{{title}}」之后",
+      followsShort: "接在 #{{shortId}} 之后",
       waitingPrevious: "已确认，等 {{name}} 的 #{{shortId}}",
       needPreviousFirst: "先开前一张",
       overlapOthers: "同仓库还有 {{count}} 个进行中的任务：{{list}}",

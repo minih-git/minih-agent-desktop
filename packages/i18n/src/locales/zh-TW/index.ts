@@ -1109,7 +1109,8 @@ export const zhTW = {
       riskMedium: "中風險",
       riskHigh: "高風險",
       // Steps of one change in order (employee mode 0.5 slice 7).
-      follows: "接在 #{{shortId}} 之後",
+      follows: "接在「{{title}}」之後",
+      followsShort: "接在 #{{shortId}} 之後",
       waitingPrevious: "已確認，等 {{name}} 的 #{{shortId}}",
       needPreviousFirst: "先開前一張",
       overlapOthers: "同倉庫還有 {{count}} 個進行中的任務：{{list}}",

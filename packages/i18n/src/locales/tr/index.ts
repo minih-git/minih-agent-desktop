@@ -1121,7 +1121,8 @@ export const tr = {
       riskMedium: "Orta risk",
       riskHigh: "Yüksek risk",
       // Steps of one change in order (employee mode 0.5 slice 7).
-      follows: "#{{shortId}} kartından sonra gelir",
+      follows: "“{{title}}” kartından sonra gelir",
+      followsShort: "#{{shortId}} kartından sonra gelir",
       waitingPrevious: "Onaylandı — {{name}} tarafından #{{shortId}} bekleniyor",
       needPreviousFirst: "Önce önceki kartı başlat",
       overlapOthers: "Aynı depoda {{count}} görev daha çalışıyor: {{list}}",

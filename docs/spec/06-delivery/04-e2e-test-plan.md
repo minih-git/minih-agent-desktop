@@ -21653,9 +21653,13 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   first card, then the second. 3) Let the first step finish, and click
   「接受并交给下一棒」 on its completion card. 4) Inspect the second step's
   workspace.
-- **Expected**: Step 1 shows the second card as 「接在 #a 之后」, and its start
-  button is grey with 「先开前一张」 until the first card is confirmed. Step 2
-  collapses the second card into one line 「已确认，等 <employee> 的 #a」 — it is
+- **Expected**: Step 1 shows the second card as 「接在「<the first card's title>」
+  之后」 — the previous card's goal, cut at 24 characters, not its draft id, so
+  a person can recognise which step they are on; when the previous card is no
+  longer in the dock's list the line falls back to 「接在 #<short id> 之后」.
+  Its start button is grey with 「先开前一张」 until the first card is confirmed.
+  Step 2 collapses the second card into one line 「已确认，等 <employee> 的 #a」
+  — it is
   confirmed and authorized, but the host does not start it: `pendingDispatch`
   and the startup fence both skip a `waiting` step, so neither a drain nor a
   restart can run it early. Step 3 is one transaction (`accepted_at`,

@@ -343,7 +343,7 @@ export function TaskCardDock({
               onAssign={(targetSessionId) => void assign(draft, targetSessionId)}
               employees={employees}
               project={project}
-              previousShortId={follows?.shortId ?? null}
+              follows={follows}
               canStart={predecessorStarted(draft, drafts)}
               overlap={project ? (overlaps[project] ?? null) : null}
               onDrop={() => void drop(draft)}
@@ -399,7 +399,7 @@ function TaskCard({
   error,
   project,
   stewardName,
-  previousShortId = null,
+  follows = null,
   canStart = true,
   overlap = null,
   employees = [],
@@ -414,8 +414,8 @@ function TaskCard({
   project?: string;
   /** The steward's current name; the card's heading names it. */
   stewardName: string;
-  /** The card this one follows, as a short label, or null when it starts a chain. */
-  previousShortId?: string | null;
+  /** The card this one follows, as the dock reads it, or null at the head of a chain. */
+  follows?: { shortId: string; title: string | null; text: string } | null;
   /** False while the card this one follows has not been started (slice 7). */
   canStart?: boolean;
   /** What other tasks in this project are changing; a hint, never a refusal. */
@@ -457,11 +457,13 @@ function TaskCard({
       </div>
       <p className="task-card-goal">{card.goal}</p>
 
-      {previousShortId ? (
+      {follows ? (
         // The card this one follows: a chain is read in order, so the person sees
-        // where this step sits before reading what it asks for (slice 7).
-        <p className="task-card-relay" data-card-follows={previousShortId}>
-          {t("bots.card.follows", { shortId: previousShortId })}
+        // where this step sits before reading what it asks for (slice 7). The
+        // line quotes the previous card's goal rather than its id, because the id
+        // is a handle the app made up and the goal is what they wrote.
+        <p className="task-card-relay" data-card-follows={follows.shortId}>
+          {follows.text}
         </p>
       ) : null}
 

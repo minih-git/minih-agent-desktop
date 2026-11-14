@@ -1108,7 +1108,8 @@ export const ptBR = {
       riskMedium: "Risco médio",
       riskHigh: "Risco alto",
       // Steps of one change in order (employee mode 0.5 slice 7).
-      follows: "Vem depois de #{{shortId}}",
+      follows: "Vem depois de “{{title}}”",
+      followsShort: "Vem depois de #{{shortId}}",
       waitingPrevious: "Confirmada — aguardando #{{shortId}} de {{name}}",
       needPreviousFirst: "Inicie o cartão anterior primeiro",
       overlapOthers: "{{count}} outras tarefas trabalham neste repositório: {{list}}",

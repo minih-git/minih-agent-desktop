@@ -1113,7 +1113,8 @@ export const ko = {
       riskMedium: "중간 위험",
       riskHigh: "높은 위험",
       // Steps of one change in order (employee mode 0.5 slice 7).
-      follows: "#{{shortId}} 뒤에 이어짐",
+      follows: "“{{title}}” 뒤에 이어짐",
+      followsShort: "#{{shortId}} 뒤에 이어짐",
       waitingPrevious: "확인됨 — {{name}}의 #{{shortId}} 대기 중",
       needPreviousFirst: "먼저 앞 카드를 시작하세요",
       overlapOthers: "같은 저장소에서 {{count}}개 작업이 진행 중입니다: {{list}}",

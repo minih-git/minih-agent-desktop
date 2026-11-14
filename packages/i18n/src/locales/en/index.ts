@@ -1131,7 +1131,8 @@ export const en = {
       riskMedium: "Medium risk",
       riskHigh: "High risk",
       // Steps of one change in order (employee mode 0.5 slice 7).
-      follows: "Follows #{{shortId}}",
+      follows: "Follows “{{title}}”",
+      followsShort: "Follows #{{shortId}}",
       waitingPrevious: "Confirmed — waiting for #{{shortId}} from {{name}}",
       needPreviousFirst: "Start the previous card first",
       overlapOthers: "{{count}} other tasks are working in this repository: {{list}}",

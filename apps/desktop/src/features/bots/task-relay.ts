@@ -19,16 +19,43 @@ export function shortLabel(id: string | undefined): string {
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-/** 「接在 #a 之后」, or null for a card that starts a chain. */
+/** How much of a card's own words the "follows" line quotes. */
+export const FOLLOWS_TITLE_CHARS = 24;
+
+/**
+ * 「接在「加上 active 列」之后」, or null for a card that starts a chain.
+ *
+ * The line quotes the *previous card's goal*, because that is what a person can
+ * recognise: a draft id is a handle the app made up, and a chain read as
+ * "#draft-1" tells them nothing about which step they are on. When the previous
+ * card is not in the dock's list any more (it was evicted, or the card was
+ * proposed in an earlier turn), the id's short form is the only honest label.
+ */
 export function followsLine(
   draft: TaskCardDraftView,
   drafts: readonly TaskCardDraftView[],
   translate: Translate,
-): { shortId: string; text: string } | null {
+): { shortId: string; title: string | null; text: string } | null {
   const after = draft.afterDraftId;
   if (!after) return null;
   const shortId = shortLabel(after);
-  return { shortId, text: translate("bots.card.follows", { shortId }) };
+  const previous = drafts.find((candidate) => candidate.id === after);
+  const title = previous?.card.goal.trim() ?? "";
+  if (!title) {
+    return { shortId, title: null, text: translate("bots.card.followsShort", { shortId }) };
+  }
+  return {
+    shortId,
+    title,
+    text: translate("bots.card.follows", { title: clampTitle(title) }),
+  };
+}
+
+/** A quoted goal, cut at the dock's limit with the ellipsis the UI expects. */
+function clampTitle(title: string): string {
+  return title.length > FOLLOWS_TITLE_CHARS
+    ? `${title.slice(0, FOLLOWS_TITLE_CHARS - 1)}…`
+    : title;
 }
 
 /**
