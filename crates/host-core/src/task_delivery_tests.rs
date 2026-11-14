@@ -733,3 +733,255 @@ async fn a_new_turn_drops_a_delivery_record_that_never_published() {
         "a record that never published was kept across a new turn"
     );
 }
+
+// ---- a relay chain ----------------------------------------------------------
+
+/// Two steps of one change: the second branch starts at the end of the first, and
+/// each has its own task and workspace (employee mode 0.5 slice 7).
+struct Chain {
+    _dir: tempfile::TempDir,
+    state: SharedState,
+    project: PathBuf,
+    origin: PathBuf,
+    second: PathBuf,
+    step_one: tasks::Task,
+    step_two: tasks::Task,
+    second_tip: String,
+}
+
+async fn chain() -> Chain {
+    let dir = tempfile::tempdir().unwrap();
+    let project = init_repo(&dir.path().join("project"));
+    let origin = dir.path().join("origin.git");
+    let gitea = dir.path().join("gitea.git");
+    bare(&origin);
+    bare(&gitea);
+    git_cmd(
+        &project,
+        &["remote", "add", "origin", origin.to_str().unwrap()],
+    );
+    git_cmd(
+        &project,
+        &["remote", "add", "gitea", gitea.to_str().unwrap()],
+    );
+    git_cmd(&project, &["push", "-q", "origin", "main"]);
+    git_cmd(&project, &["push", "-q", "gitea", "main"]);
+
+    let mut app = AppState::open(dir.path().join("data").as_path()).unwrap();
+    app.handshook = true;
+    let state: SharedState = Arc::new(Mutex::new(app));
+    let project_path = std::fs::canonicalize(&project)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+
+    // Step one: a branch from main with one commit, and a worktree for it.
+    let step_one_branch = "minih-agent/step-1";
+    let wt_one = dir.path().join("wt-one");
+    git_cmd(
+        &project,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            step_one_branch,
+            wt_one.to_str().unwrap(),
+            "main",
+        ],
+    );
+    std::fs::write(wt_one.join("schema.txt"), "column\n").unwrap();
+    git_cmd(&wt_one, &["add", "schema.txt"]);
+    git_cmd(&wt_one, &["commit", "-q", "-m", "feat: add the column"]);
+    // Step two: a branch from the end of step one, in its own worktree.
+    let step_two_branch = "minih-agent/step-2";
+    let wt_two = dir.path().join("wt-two");
+    git_cmd(
+        &project,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            step_two_branch,
+            wt_two.to_str().unwrap(),
+            step_one_branch,
+        ],
+    );
+    std::fs::write(wt_two.join("backfill.txt"), "rows\n").unwrap();
+    git_cmd(&wt_two, &["add", "backfill.txt"]);
+    git_cmd(&wt_two, &["commit", "-q", "-m", "feat: backfill the column"]);
+    git_cmd(&wt_two, &["push", "-q", "origin", step_two_branch]);
+    git_cmd(&wt_two, &["push", "-q", "gitea", step_two_branch]);
+    let second_tip = head_of(&wt_two);
+
+    let mut created = Vec::new();
+    for (title, branch, worktree) in [
+        ("Add the column", step_one_branch, &wt_one),
+        ("Backfill it", step_two_branch, &wt_two),
+    ] {
+        let employee = crate::sessions::create_session_with_options(
+            &state.lock().await.db,
+            crate::sessions::SessionCreateOptions {
+                title: Some("后端".into()),
+                mode: Some("agent".into()),
+                permission_mode: Some("accept-edits".into()),
+                role: Some("bot".into()),
+                bot_profile_json: Some(
+                    json!({"name": "后端", "permissionMode": "accept-edits", "observe": false})
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let created_task = {
+            let st = state.lock().await;
+            tasks::create(
+                &st.db,
+                &json!({
+                    "employeeSessionId": employee,
+                    "title": title,
+                    "origin": "direct",
+                    "projectPath": project_path,
+                }),
+            )
+            .unwrap()
+        };
+        let task_id = created_task["task"]["id"].as_str().unwrap().to_string();
+        let session_id = created_task["task"]["sessionId"].as_str().unwrap().to_string();
+        {
+            let st = state.lock().await;
+            registry::insert(
+                &st.db,
+                &NewWorktree {
+                    session_id: &session_id,
+                    delegation_id: None,
+                    path: &worktree.to_string_lossy(),
+                    common_dir: &project.join(".git").to_string_lossy(),
+                    prefix: "",
+                    branch,
+                    owner_branch: "main",
+                    port_base: None,
+                },
+            )
+            .unwrap();
+            st.db
+                .conn()
+                .execute(
+                    "UPDATE tasks SET stage='person/accept', delivery_mode='pr',
+                            workspace_branch=?2, workspace_status='ready'
+                      WHERE id=?1",
+                    rusqlite::params![task_id, branch],
+                )
+                .unwrap();
+        }
+        let task = crate::tasks::get_task(&state.lock().await.db, &task_id)
+            .unwrap()
+            .unwrap();
+        created.push(task);
+    }
+    let step_one = created.remove(0);
+    let step_two = created.remove(0);
+    // The handoff already happened: the second step exists because the first one
+    // handed on, and that is what makes it the *middle* step of a chain.
+    {
+        let st = state.lock().await;
+        st.db
+            .conn()
+            .execute(
+                "UPDATE tasks SET relay_handoff_at=?2, accepted_at=?2 WHERE id=?1",
+                rusqlite::params![step_one.id, crate::db::now_ms()],
+            )
+            .unwrap();
+        st.db
+            .conn()
+            .execute(
+                "UPDATE tasks SET relay_parent_task_id=?2, relay_state='ready' WHERE id=?1",
+                rusqlite::params![step_two.id, step_one.id],
+            )
+            .unwrap();
+    }
+    let step_one = crate::tasks::get_task(&state.lock().await.db, &step_one.id)
+        .unwrap()
+        .unwrap();
+    let step_two = crate::tasks::get_task(&state.lock().await.db, &step_two.id)
+        .unwrap()
+        .unwrap();
+
+    Chain {
+        _dir: dir,
+        state,
+        project,
+        origin,
+        second: gitea,
+        step_one,
+        step_two,
+        second_tip,
+    }
+}
+
+/// **A middle step cannot be merged.** Its branch is the next step's base, so
+/// merging it would put half a change on `main` and leave the next step building
+/// on something the person never approved.
+#[tokio::test]
+async fn merging_a_middle_step_is_refused() {
+    let chain = chain().await;
+    let git = GitRunner::default();
+    let gh = ScriptedGh::green(&chain.second_tip);
+    let error = task_delivery::merge(&chain.state, &git, &gh, &chain.step_one.id)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("one step of a relay"),
+        "the refusal does not name the chain: {error}"
+    );
+    assert_eq!(head_of(&chain.project), head_of(&chain.project));
+}
+
+/// **The last step merges the whole chain, and cleans every step up.**
+///
+/// Both steps' commits reach `main` and both remotes in one fast-forward, every
+/// step's workspace and local branch is removed afterwards, and the steps in
+/// between leave the open list with the last one.
+#[tokio::test]
+async fn the_last_step_merges_the_whole_chain_and_cleans_every_step_up() {
+    let chain = chain().await;
+    let git = GitRunner::default();
+    let gh = ScriptedGh::green(&chain.second_tip);
+
+    let result = task_delivery::merge(&chain.state, &git, &gh, &chain.step_two.id)
+        .await
+        .unwrap();
+    assert_eq!(result["merged"], json!(true), "{result}");
+
+    assert_eq!(head_of(&chain.origin), chain.second_tip);
+    assert_eq!(head_of(&chain.second), chain.second_tip);
+    // Both steps' files are on `main`: the chain went in whole.
+    assert!(chain.project.join("schema.txt").is_file());
+    assert!(chain.project.join("backfill.txt").is_file());
+    let merge_commits = git_cmd(&chain.project, &["rev-list", "--merges", "HEAD", "--count"]);
+    assert_eq!(merge_commits.trim(), "0", "a merge commit was created");
+
+    // Every branch of the chain is gone locally, and no worktree holds one.
+    let branches = git_cmd(&chain.project, &["branch", "--list", "minih-agent/*"]);
+    assert!(branches.trim().is_empty(), "a chain branch survived: {branches}");
+    let worktrees = git_cmd(&chain.project, &["worktree", "list", "--porcelain"]);
+    assert!(
+        !worktrees.contains("wt-one") && !worktrees.contains("wt-two"),
+        "a chain workspace survived: {worktrees}"
+    );
+
+    // Both steps leave the open list: the change they carried is delivered.
+    let st = chain.state.lock().await;
+    for step in [&chain.step_one, &chain.step_two] {
+        let task = crate::tasks::get_task(&st.db, &step.id).unwrap().unwrap();
+        assert!(
+            task.archived_at.is_some(),
+            "step {} stayed in the open list",
+            task.short_id
+        );
+    }
+}

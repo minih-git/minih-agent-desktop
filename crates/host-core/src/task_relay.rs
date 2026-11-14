@@ -125,9 +125,11 @@ pub fn handoff(db: &Database, input: &Value) -> Result<Value> {
         }
     }
     tx.commit()?;
+    // The stored timestamp, not this call's clock: a repeated click reports when
+    // the handoff *happened*, which is the only value a retry can compare.
     Ok(json!({
         "task": tasks::get_task(db, &task_id)?,
-        "handedOffAt": ms_to_ts(now),
+        "handedOffAt": ms_to_ts(handoff_at.unwrap_or(now)),
         "unlocked": unlocked,
         "deliveries": deliveries,
     }))
@@ -241,3 +243,6 @@ pub fn orphan_successors(
     }
     Ok(waiting.len())
 }
+#[cfg(test)]
+#[path = "task_relay_tests.rs"]
+mod tests;

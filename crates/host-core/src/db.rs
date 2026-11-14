@@ -64,7 +64,9 @@ pub(crate) use repositories::{
     strip_obsolete_plan_approval_permission_mode, upsert_project_row, MAX_PROJECT_MEMORY_BYTES,
     OBSOLETE_PLAN_APPROVAL_PERMISSION_MODE,
 };
-pub(crate) use task_relay_migration::{task_relay_ddl, TASK_CARD_AFTER_COLUMNS, TASK_RELAY_COLUMNS};
+pub(crate) use task_relay_migration::{
+    task_relay_ddl, task_relay_indexes, TASK_CARD_AFTER_COLUMNS, TASK_RELAY_COLUMNS,
+};
 pub(crate) use schema::{PLAN_APPROVALS_SCHEMA, SCHEMA_LATEST, SESSION_TODO_DDL};
 pub(crate) use session_title_source_migration::migrate_v22_to_v23;
 pub(crate) use task_card_draft_migration::TASK_CARD_DRAFT_DDL;

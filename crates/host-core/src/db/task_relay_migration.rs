@@ -66,6 +66,17 @@ pub(crate) fn task_relay_ddl() -> String {
         .join("\n")
 }
 
+/// The indexes this slice adds, shared by the fresh schema and the migration.
+///
+/// The two lookups they cover exist for every task in a chain: the successor of a
+/// task being handed off, and the chain a task belongs to.
+pub(crate) fn task_relay_indexes() -> &'static str {
+    "CREATE INDEX IF NOT EXISTS idx_tasks_relay_parent
+       ON tasks(relay_parent_task_id);
+     CREATE INDEX IF NOT EXISTS idx_task_card_drafts_after
+       ON task_card_drafts(after_draft_id);"
+}
+
 fn has_column(tx: &Transaction<'_>, table: &str, column: &str) -> Result<bool> {
     Ok(tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
@@ -94,14 +105,7 @@ pub(crate) fn migrate_v39_to_v40_tx(tx: &Transaction<'_>) -> Result<()> {
             .map_err(|error| anyhow!("add task_card_drafts.{column}: {error}"))?;
         }
     }
-    // The two lookups this slice makes exist for every task in a chain: the
-    // successor of a task being handed off, and the chain a task belongs to.
-    tx.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_tasks_relay_parent
-           ON tasks(relay_parent_task_id);
-         CREATE INDEX IF NOT EXISTS idx_task_card_drafts_after
-           ON task_card_drafts(after_draft_id);",
-    )?;
+    tx.execute_batch(task_relay_indexes())?;
     tx.pragma_update(None, "user_version", 40i64)?;
     Ok(())
 }
@@ -152,7 +156,6 @@ mod tests {
         conn.execute_batch(&format!(
             "DROP TABLE task_card_drafts;
              {DRAFTS}
-             {BATCH}
              DROP TABLE tasks;
              {TASKS_V33}
              {WORKSPACE}
@@ -160,10 +163,11 @@ mod tests {
              {DELIVERY}
              PRAGMA user_version = 39;",
             DRAFTS = crate::db::TASK_CARD_DRAFT_DDL,
-            BATCH = "ALTER TABLE task_card_drafts ADD COLUMN batch_id TEXT;",
             TASKS_V33 = crate::db::TASKS_DDL,
             WORKSPACE = crate::db::task_workspace_ddl(),
             WAITING = crate::db::task_waiting_ddl(),
+            // The v37 -> v38 step adds the tasks columns *and* the draft's
+            // `batch_id`, so this one call reproduces both tables' shape at v39.
             DELIVERY = crate::db::task_delivery_ddl(),
         ))
         .unwrap();
