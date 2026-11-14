@@ -111,7 +111,7 @@ export function startTaskWaitingRuntime({
   // change: the host looked, decided something has waited too long, and named it
   // (employee mode 0.5 slice 5). One native notification per finding; a quiet
   // hour sends nothing at all.
-  const stopInspection = api.onTaskInspection((event) => {
+  const stopInspection = api.onTaskInspection?.((event) => {
     announceInspection(event.findings, { translate, notifyNative });
   });
   return () => {

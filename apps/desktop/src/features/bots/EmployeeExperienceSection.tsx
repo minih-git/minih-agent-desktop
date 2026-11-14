@@ -58,7 +58,10 @@ export function EmployeeExperienceSection({
   }, []);
 
   useEffect(() => {
-    if (enabled !== true || bots.length === 0) return;
+    // A settings read that failed leaves `enabled` unknown: the section still
+    // shows what the host holds, because a failed read is not a reason to hide
+    // lessons the person may want to delete.
+    if (enabled === false || bots.length === 0) return;
     let live = true;
     void Promise.all(
       bots.map(async (bot) => {

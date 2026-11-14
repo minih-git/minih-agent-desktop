@@ -218,3 +218,85 @@
   color: var(--ds-text-muted);
   font-size: var(--text-xs);
 }
+
+/* An employee's lessons from its earlier tasks (employee mode 0.5 slice 5).
+   One group per employee, one line per lesson, with the source task beside it:
+   the source is the citation, so it sits on the same line as the lesson rather
+   than under it. */
+.bot-experience {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bot-experience-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bot-experience-title {
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.bot-experience-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-experience-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--ds-surface-sunken);
+}
+
+.bot-experience-content {
+  flex: 1;
+  min-width: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bot-experience-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+
+.bot-experience-source-button {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--ds-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.bot-experience-source-button:hover:not(:disabled),
+.bot-experience-source-button:focus-visible {
+  color: var(--ds-text-primary);
+  background: var(--ds-surface-hover);
+}
+
+.bot-experience-source-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
