@@ -135,7 +135,7 @@ fn reread(db: &Database, task_id: &str) -> tasks::Task {
 /// **The chain is declared by the cards, so the edge is checked when it is made.**
 #[test]
 fn a_card_can_only_follow_a_card_from_the_same_batch() {
-    let (_dir, db, project) = database();
+    let (_dir, db, _project) = database();
     let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
     let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
@@ -150,7 +150,7 @@ fn a_card_can_only_follow_a_card_from_the_same_batch() {
 /// continued: the second step's base has to be in the same history.
 #[test]
 fn a_relay_stays_inside_one_repository() {
-    let (_dir, db, project) = database();
+    let (_dir, db, _project) = database();
     let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
     let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
@@ -179,7 +179,7 @@ fn a_relay_stays_inside_one_repository() {
 /// accepted into a shape nothing can display.
 #[test]
 fn a_chain_holds_at_most_five_steps() {
-    let (_dir, db, project) = database();
+    let (_dir, db, _project) = database();
     let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
     let mut previous = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
@@ -208,7 +208,7 @@ fn task_relay_max() -> usize {
 /// the chain forever.
 #[test]
 fn a_revise_cannot_close_a_loop() {
-    let (_dir, db, project) = database();
+    let (_dir, db, _project) = database();
     let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
     let first = propose(&db, &steward, &worker, "Step 1", "turn-1", None);

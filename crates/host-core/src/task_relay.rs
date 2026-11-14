@@ -40,15 +40,26 @@ fn task_id_of(input: &Value) -> Result<String> {
         .ok_or_else(|| anyhow!("INVALID_ARGUMENT: taskId required"))
 }
 
-/// The steps that follow this one, in chain order, newest last.
-fn successors(db: &Database, task_id: &str) -> Result<Vec<(String, Option<String>, String)>> {
+/// One step that follows another, as the handoff has to read it.
+struct Successor {
+    id: String,
+    relay_state: Option<String>,
+    delivery_id: String,
+}
+
+/// The steps that follow this one, in chain order, oldest first.
+fn successors(db: &Database, task_id: &str) -> Result<Vec<Successor>> {
     let mut statement = db.conn().prepare_cached(
         "SELECT id, relay_state, COALESCE(delivery_id, '') FROM tasks
           WHERE relay_parent_task_id=?1 AND archived_at IS NULL
           ORDER BY created_at ASC",
     )?;
     let rows = statement.query_map(params![task_id], |row| {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        Ok(Successor {
+            id: row.get(0)?,
+            relay_state: row.get(1)?,
+            delivery_id: row.get(2)?,
+        })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
@@ -66,16 +77,36 @@ fn successors(db: &Database, task_id: &str) -> Result<Vec<(String, Option<String
 /// unlocks nothing — a card confirmed afterwards sees `relay_handoff_at` and
 /// starts at once instead of waiting forever.
 pub fn handoff(db: &Database, input: &Value) -> Result<Value> {
+    /// The four facts a handoff reads before it writes anything.
+    struct Existing {
+        stage: String,
+        archived_at: Option<i64>,
+        accepted_at: Option<i64>,
+        handoff_at: Option<i64>,
+    }
     let task_id = task_id_of(input)?;
     let tx = db.conn().unchecked_transaction()?;
-    let existing: Option<(String, Option<i64>, Option<i64>, Option<i64>)> = tx
+    let existing: Option<Existing> = tx
         .query_row(
             "SELECT stage, archived_at, accepted_at, relay_handoff_at FROM tasks WHERE id=?1",
             params![task_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok(Existing {
+                    stage: row.get(0)?,
+                    archived_at: row.get(1)?,
+                    accepted_at: row.get(2)?,
+                    handoff_at: row.get(3)?,
+                })
+            },
         )
         .optional()?;
-    let Some((stage, archived_at, accepted_at, handoff_at)) = existing else {
+    let Some(Existing {
+        stage,
+        archived_at,
+        accepted_at,
+        handoff_at,
+    }) = existing
+    else {
         return Err(anyhow!("NOT_FOUND: task"));
     };
     if archived_at.is_some() {
@@ -105,21 +136,22 @@ pub fn handoff(db: &Database, input: &Value) -> Result<Value> {
     }
     let mut deliveries: Vec<Message> = Vec::new();
     let mut unlocked: Vec<Value> = Vec::new();
-    for (successor_id, relay_state, delivery_id) in successors(db, &task_id)? {
-        if relay_state.as_deref() == Some("orphaned") {
+    for successor in successors(db, &task_id)? {
+        if successor.relay_state.as_deref() == Some("orphaned") {
             // Already told this step lost its predecessor; a handoff cannot
             // undo that, and the person's own choice is the only way back.
             continue;
         }
-        if relay_state.as_deref() == Some("waiting") {
+        if successor.relay_state.as_deref() == Some("waiting") {
             tx.execute(
                 "UPDATE tasks SET relay_state='ready' WHERE id=?1 AND relay_state='waiting'",
-                params![successor_id],
+                params![successor.id],
             )?;
         }
-        if !delivery_id.is_empty() {
-            if let Some(message) = repository::get(db, &delivery_id)? {
-                unlocked.push(json!({ "taskId": successor_id, "deliveryId": delivery_id }));
+        if !successor.delivery_id.is_empty() {
+            if let Some(message) = repository::get(db, &successor.delivery_id)? {
+                unlocked
+                    .push(json!({ "taskId": successor.id, "deliveryId": successor.delivery_id }));
                 deliveries.push(message);
             }
         }

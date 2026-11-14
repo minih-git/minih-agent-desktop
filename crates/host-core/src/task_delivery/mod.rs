@@ -309,10 +309,10 @@ pub async fn check(
         "relay": {
             "step": chain.iter().position(|task| task.id == target.task.id).map(|at| at + 1).unwrap_or(1),
             "total": chain.len().max(1),
-            "isLast": !chain
+            "isLast": chain
                 .iter()
                 .position(|task| task.id == target.task.id)
-                .is_some_and(|at| at + 1 < chain.len()),
+                .is_none_or(|at| at + 1 >= chain.len()),
         },
     }))
 }

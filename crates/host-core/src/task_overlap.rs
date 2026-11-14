@@ -228,18 +228,16 @@ pub async fn overlap(state: &SharedState, git: &GitRunner, params: &Value) -> Re
     // What this task itself changes, so the completion card can name the files
     // two tasks share rather than every file either of them touched.
     let mut mine: BTreeSet<String> = BTreeSet::new();
-    if let Some((_title, workspace, branch)) = own {
-        if let Some(branch) = branch {
-            match files_of(git, &project, workspace.as_ref(), "main", &branch).await {
-                Ok(files) => mine = files,
-                Err(error) => {
-                    return Ok(json!({
-                        "readable": false,
-                        "reason": error.to_string(),
-                        "tasks": [],
-                        "intersections": [],
-                    }))
-                }
+    if let Some((_title, workspace, Some(branch))) = own {
+        match files_of(git, &project, workspace.as_ref(), "main", &branch).await {
+            Ok(files) => mine = files,
+            Err(error) => {
+                return Ok(json!({
+                    "readable": false,
+                    "reason": error.to_string(),
+                    "tasks": [],
+                    "intersections": [],
+                }))
             }
         }
     }
