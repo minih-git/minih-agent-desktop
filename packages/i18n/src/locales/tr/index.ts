@@ -993,6 +993,7 @@ export const tr = {
         nothingToMerge: "Birleştirilecek değişiklik yok",
         previewFailed: "Değişiklikler okunamadı: {{reason}}",
         relayFork: "Aktarım zinciri çatallanıyor; son adım belirlenemiyor",
+        relayUnreadable: "Aktarım zinciri okunamıyor; son adım belirlenemiyor",
         unknown: "Şu anda birleştirilemez",
         checking: "Kontrol ediliyor…",
       },

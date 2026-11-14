@@ -974,6 +974,7 @@ export const fr = {
         nothingToMerge: "Il n'y a rien à fusionner",
         previewFailed: "Les modifications sont illisibles : {{reason}}",
         relayFork: "La chaîne de relais se sépare ; aucun pas n'est le dernier",
+        relayUnreadable: "La chaîne de relais est illisible ; aucun pas n'est le dernier",
         unknown: "Impossible de fusionner pour l'instant",
         checking: "Vérification…",
       },

@@ -110,6 +110,8 @@ export function gateReasonKey(reason: TaskDeliveryReason | undefined): string {
       return "bots.completion.reason.previewFailed";
     case "relay-fork":
       return "bots.completion.reason.relayFork";
+    case "relay-unreadable":
+      return "bots.completion.reason.relayUnreadable";
     default:
       return "bots.completion.reason.unknown";
   }

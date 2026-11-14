@@ -1285,11 +1285,15 @@ were proposed before either was clicked — the propose-time check cannot see th
 window, and two confirmations in the same instant would leave two steps behind
 one.
 
-A fork that is already in the database is not guessed at either.
-`tasks::relay_fork` finds the step with two live successors, `relay_chain`
-refuses to answer, `task.delivery.check` greys out with `relay-fork`,
-`task.delivery.merge` and `task.relay.handoff` refuse, and the cleanup never runs
-— it is the one place that would touch work outside what was merged.
+A chain that is already wrong in the database is not guessed at either.
+`tasks::relay_fault` finds a step with two live successors (`Fork`) or a chain
+that cannot be walked at all — a cycle, or more steps than a chain can hold
+(`Unreadable`); `relay_chain` refuses to answer either way, `task.delivery.check`
+greys out with `relay-fork` / `relay-unreadable`, `task.delivery.merge` and
+`task.relay.handoff` refuse, and the cleanup never runs — it is the one place
+that would touch work outside what was merged. Reaching the walk limit is a
+refusal, not a short chain: a truncated list is exactly what the cleanup must
+never receive.
 
 `tasks.relay_has_successor` refuses `task.delivery.merge` for a step that is
 followed by another: the middle step's branch is the next step's base, so
@@ -1372,7 +1376,8 @@ opens — the rule every step since v33 has followed.
 | A missing predecessor branch blocks instead of falling back to `main` | **Yes** — `relay-base` blocker, no worktree created | `task_workspace::relay_base` |
 | A middle step cannot be merged | **Yes** — `relay_has_successor` refuses | `task_delivery/mod.rs` |
 | A step has at most one next step | **Yes** — `resolve_after` on propose and revise, and `confirm` inside the same transaction as the task it creates | `drafts.rs`, `task_relay_tests.rs` |
-| A forked chain is refused, never guessed at | **Yes** — `relay_fork` answers "no chain" to `relay_chain`, the check greys out with `relay-fork`, the merge and the handoff refuse, nothing is cleaned | `tasks::relay_fork`, `task_delivery/mod.rs`, `task_relay.rs`, `task_delivery_tests.rs` |
+| A forked chain is refused, never guessed at | **Yes** — `relay_fault` answers "no chain" to `relay_chain`, the check greys out with `relay-fork`, the merge and the handoff refuse, nothing is cleaned | `tasks::relay_fault`, `task_delivery/mod.rs`, `task_relay.rs`, `task_delivery_tests.rs` |
+| A chain that cannot be walked is refused, not cut short | **Yes** — a cycle or a walk past the limit is `RelayFault::Unreadable`: the check greys out with `relay-unreadable`, both walks in `relay_chain` return an error instead of a truncated list | `tasks.rs`, `task_delivery/mod.rs` |
 | A handoff is idempotent and only from `person/accept` | **Yes** — one transaction, first timestamp wins | `task_relay::handoff` |
 | A waiting step is neither drained nor fenced as interrupted | **Yes** — both queries exclude `waiting`/`orphaned` | `repository::pending_dispatch`, `settlement::recover` |
 | Abandoning a step orphans the next one, in one transaction | **Yes** — `orphan_successors` inside `tasks::archive` | `tasks.rs`, `task_relay.rs` |

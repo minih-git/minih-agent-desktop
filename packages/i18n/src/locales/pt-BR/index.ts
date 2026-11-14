@@ -981,6 +981,7 @@ export const ptBR = {
         nothingToMerge: "Não há mudanças para mesclar",
         previewFailed: "Não foi possível ler as mudanças: {{reason}}",
         relayFork: "A cadeia de revezamento se divide; nenhum passo é o último",
+        relayUnreadable: "A cadeia de revezamento não pode ser lida; nenhum passo é o último",
         unknown: "Não é possível mesclar agora",
         checking: "Verificando…",
       },

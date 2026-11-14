@@ -575,8 +575,8 @@ fn a_forked_chain_has_no_answer_for_the_readers() {
         .unwrap();
 
     assert_eq!(
-        tasks::relay_fork(&db, &step_two.id).unwrap(),
-        Some(tasks::short_id(&step_one.id)),
+        tasks::relay_fault(&db, &step_two.id).unwrap(),
+        Some(tasks::RelayFault::Fork(tasks::short_id(&step_one.id))),
         "the fork was not found from the second step"
     );
     let error = tasks::relay_chain(&db, &step_two.id)
@@ -592,6 +592,58 @@ fn a_forked_chain_has_no_answer_for_the_readers() {
     assert!(
         error.contains("forks"),
         "the handoff picked one of the two steps: {error}"
+    );
+}
+
+/// **A chain the host cannot walk is refused, not cut short.**
+///
+/// Two steps that link to each other are a cycle: no head, no last step, and no
+/// honest list to hand the merge. The walk limit is where that shows up, and
+/// reaching it has to mean "cannot tell" — a truncated chain is exactly the list
+/// the cleanup must not act on.
+#[test]
+fn a_chain_that_cannot_be_walked_is_refused() {
+    let (_dir, db, project) = database();
+    let steward = session(&db, "Super Agent", None, "auto");
+    let worker = session(&db, "后端", Some("bot"), "accept-edits");
+    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
+    let second = propose(
+        &db,
+        &steward,
+        &worker,
+        "Backfill it",
+        "turn-1",
+        Some(&first.id),
+    );
+    let step_one = confirm(&db, &first, "confirm-1", &project);
+    let step_two = confirm(&db, &second, "confirm-2", &project);
+    // A -> B -> A. Nothing the entry points can write, and exactly what a repair
+    // or a hand-written link can leave behind.
+    db.conn()
+        .execute(
+            "UPDATE tasks SET relay_parent_task_id=?2 WHERE id=?1",
+            rusqlite::params![step_one.id, step_two.id],
+        )
+        .unwrap();
+
+    assert_eq!(
+        tasks::relay_fault(&db, &step_two.id).unwrap(),
+        Some(tasks::RelayFault::Unreadable),
+        "a cycle was read as a chain that ends"
+    );
+    let error = tasks::relay_chain(&db, &step_two.id)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("cannot be read"),
+        "the chain was truncated and used: {error}"
+    );
+    let error = task_relay::handoff(&db, &json!({ "taskId": step_two.id }))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("cannot be read"),
+        "the handoff walked a cycle and chose a step: {error}"
     );
 }
 // ---- the workspace a relay step starts in -----------------------------------

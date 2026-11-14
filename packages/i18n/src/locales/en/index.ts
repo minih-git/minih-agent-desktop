@@ -1004,6 +1004,7 @@ export const en = {
         nothingToMerge: "There is nothing to merge",
         previewFailed: "The changes could not be read: {{reason}}",
         relayFork: "The relay chain forks, so no step is the last one",
+        relayUnreadable: "The relay chain cannot be read, so no step is the last one",
         unknown: "This cannot be merged right now",
         checking: "Checking…",
       },

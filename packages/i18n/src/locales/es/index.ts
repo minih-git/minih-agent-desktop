@@ -974,6 +974,7 @@ export const es = {
         nothingToMerge: "No hay cambios que fusionar",
         previewFailed: "No se pudieron leer los cambios: {{reason}}",
         relayFork: "La cadena de relevos se bifurca; ningún paso es el último",
+        relayUnreadable: "La cadena de relevos no se puede leer; ningún paso es el último",
         unknown: "Ahora mismo no se puede fusionar",
         checking: "Comprobando…",
       },

@@ -982,6 +982,7 @@ export const zhTW = {
         nothingToMerge: "沒有改動可合併",
         previewFailed: "讀不到可合併的內容：{{reason}}",
         relayFork: "接力鏈分叉了，沒法判斷最後一棒",
+        relayUnreadable: "接力鏈讀不通，沒法判斷最後一棒",
         unknown: "現在不能合併",
         checking: "正在查…",
       },

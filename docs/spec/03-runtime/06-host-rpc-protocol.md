@@ -855,11 +855,14 @@ or general MCP operations:
   usage? }`. `reason` is a stable code (`pr-unreadable`, `pr-missing`,
   `ci-missing`, `ci-running`, `ci-failed`, `conflict`, `mergeable-unknown`,
   `review-required`, `no-project`, `conflict-local`, `nothing-to-merge`,
-  `preview-failed`, `relay-fork`) that the renderer translates; a fact that cannot
-  be read is a refusal, never a pass. `relay-fork` is a chain with two steps behind
-  one: no step of it is provably last, so the card is greyed out with
-  `reasonDetail` naming the step that forks, and `task.delivery.merge` and
-  `task.relay.handoff` refuse it outright rather than pick a branch. `changes` is the host's own count of the commits on the
+  `preview-failed`, `relay-fork`, `relay-unreadable`) that the renderer translates; a
+  fact that cannot be read is a refusal, never a pass. `relay-fork` is a chain with
+  two steps behind one: no step of it is provably last, so the card is greyed out
+  with `reasonDetail` naming the step that forks, and `task.delivery.merge` and
+  `task.relay.handoff` refuse it outright rather than pick a branch.
+  `relay-unreadable` is a chain that cannot be walked at all — two steps that link
+  to each other, or a chain longer than any chain can be: the same two calls refuse
+  it, and `reasonDetail` is null because there is no step to name. `changes` is the host's own count of the commits on the
   task branch (at most 20) and the files it touched. The renderer calls it once
   when the card opens and again on 刷新 — never on a timer. `gh` is the only
   network read, and its credentials stay `gh`'s own.

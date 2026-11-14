@@ -273,14 +273,18 @@ pub async fn check(
         },
         DeliveryMode::Local => local_gate(state, git, &target).await,
     };
-    // A forked chain has no last step, so the card cannot offer to merge one
-    // (employee mode 0.5 slice 7 follow-up). Grayed out with its own reason
-    // rather than an error: the person should still be able to read the card,
-    // and the host must never pick one of the two branches to believe.
-    if let Some(fork) = {
+    // A chain this host cannot read has no last step, so the card cannot offer to
+    // merge one (employee mode 0.5 slice 7 follow-up). Grayed out with its own
+    // reason rather than an error: the person should still be able to read the
+    // card, and the host must never pick one of the two branches to believe.
+    if let Some(fault) = {
         let st = state.lock().await;
-        tasks::relay_fork(&st.db, task_id)?
+        tasks::relay_fault(&st.db, task_id)?
     } {
+        let (reason, detail) = match &fault {
+            tasks::RelayFault::Fork(step) => ("relay-fork", json!(step)),
+            tasks::RelayFault::Unreadable => ("relay-unreadable", Value::Null),
+        };
         let (elapsed_ms, usage) = {
             let st = state.lock().await;
             (
@@ -290,8 +294,8 @@ pub async fn check(
         };
         return Ok(json!({
             "canMerge": false,
-            "reason": "relay-fork",
-            "reasonDetail": fork,
+            "reason": reason,
+            "reasonDetail": detail,
             "prUrl": pr_url,
             "checks": Value::Null,
             // No commit list either: it would be one branch's, presented as the
@@ -585,11 +589,13 @@ pub async fn merge(
     // its own button for this: 接受并交给下一棒.
     {
         let st = state.lock().await;
-        // A forked chain cannot say which step is last, so no step of it may be
-        // merged — and therefore nothing of it may be cleaned up.
-        if let Some(fork) = tasks::relay_fork(&st.db, task_id)? {
+        // A chain that cannot be read — a fork, a cycle, more steps than a chain can
+        // hold — cannot say which step is last, so no step of it may be merged —
+        // and therefore nothing of it may be cleaned up.
+        if let Some(fault) = tasks::relay_fault(&st.db, task_id)? {
             return Err(anyhow!(
-                "CONFLICT: the relay chain forks at #{fork}; merge nothing until it is one line"
+                "CONFLICT: {}; merge nothing until it is one line",
+                fault.describe()
             ));
         }
         if tasks::relay_has_successor(&st.db, task_id)? {

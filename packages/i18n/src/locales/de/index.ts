@@ -974,6 +974,7 @@ export const de = {
         nothingToMerge: "Es gibt nichts zusammenzuführen",
         previewFailed: "Die Änderungen sind nicht lesbar: {{reason}}",
         relayFork: "Die Relay-Kette gabelt sich; kein Schritt ist der letzte",
+        relayUnreadable: "Die Relay-Kette ist nicht lesbar; kein Schritt ist der letzte",
         unknown: "Das lässt sich gerade nicht zusammenführen",
         checking: "Wird geprüft…",
       },

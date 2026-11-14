@@ -85,11 +85,13 @@ pub fn handoff(db: &Database, input: &Value) -> Result<Value> {
         handoff_at: Option<i64>,
     }
     let task_id = task_id_of(input)?;
-    // A forked chain has no single next step, so a handoff would have to choose
-    // one of two — refuse instead (employee mode 0.5 slice 7 follow-up).
-    if let Some(fork) = crate::tasks::relay_fork(db, &task_id)? {
+    // A chain this host cannot read has no single next step, so a handoff would
+    // have to choose one of two — refuse instead (employee mode 0.5 slice 7
+    // follow-up).
+    if let Some(fault) = crate::tasks::relay_fault(db, &task_id)? {
         return Err(anyhow!(
-            "CONFLICT: the relay chain forks at #{fork}; nothing is handed on until it is one line"
+            "CONFLICT: {}; nothing is handed on until it is one line",
+            fault.describe()
         ));
     }
     let tx = db.conn().unchecked_transaction()?;

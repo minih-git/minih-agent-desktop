@@ -1120,3 +1120,61 @@ async fn a_forked_chain_is_refused_and_nothing_of_it_is_cleaned() {
         assert_eq!(task.stage, "person/accept", "step {} moved", task.short_id);
     }
 }
+
+/// **A chain the host cannot walk is refused, and nothing is cleaned.**
+///
+/// Two steps that link to each other have no head and no last step. The walk
+/// limit is where that shows up, and it must be a refusal: the merge is the one
+/// caller that would otherwise act on a truncated list.
+#[tokio::test]
+async fn a_chain_that_cannot_be_walked_is_refused_and_nothing_is_cleaned() {
+    let chain = chain().await;
+    // A -> B -> A, written behind the entry points' back.
+    {
+        let st = chain.state.lock().await;
+        st.db
+            .conn()
+            .execute(
+                "UPDATE tasks SET relay_parent_task_id=?2 WHERE id=?1",
+                rusqlite::params![chain.step_one.id, chain.step_two.id],
+            )
+            .unwrap();
+    }
+    let git = GitRunner::default();
+    let gh = ScriptedGh::green(&chain.second_tip);
+    let main_before = head_of(&chain.project);
+
+    let checked = task_delivery::check(&chain.state, &git, &gh, &chain.step_two.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        checked["canMerge"],
+        json!(false),
+        "a cycle offered a merge: {checked}"
+    );
+    assert_eq!(checked["reason"], json!("relay-unreadable"), "{checked}");
+    assert!(
+        checked["reasonDetail"].is_null(),
+        "an unreadable chain named a step: {checked}"
+    );
+
+    let error = task_delivery::merge(&chain.state, &git, &gh, &chain.step_two.id)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("cannot be read"),
+        "a cycle was merged: {error}"
+    );
+
+    // Nothing moved and nothing was cleaned: the branches and both workspaces are
+    // exactly where they were.
+    assert_eq!(head_of(&chain.project), main_before);
+    let branches = git_cmd(&chain.project, &["branch", "--list", "minih-agent/*"]);
+    assert!(
+        branches.contains("minih-agent/step-1") && branches.contains("minih-agent/step-2"),
+        "a step's branch was deleted: {branches}"
+    );
+    assert!(chain.first_worktree.join("schema.txt").is_file());
+    assert!(chain.second_worktree.join("backfill.txt").is_file());
+}

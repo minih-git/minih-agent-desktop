@@ -314,17 +314,40 @@ fn with_relay_positions(db: &Database, tasks: &mut [Task]) -> Result<()> {
     Ok(())
 }
 
-/// The step whose chain forks, if any (employee mode 0.5 slice 7 follow-up).
+/// Why a chain cannot be decided (employee mode 0.5 slice 7 follow-up).
 ///
 /// A chain is a line: a step is followed by **at most one** step. The entry
 /// points refuse a second card after the same card, but a database that is
-/// already forked — two drafts confirmed at once, or a repair that wrote a link
-/// — must not turn into a guess about which step is last. Every decision that
-/// reads a chain asks this first: `relay_chain` refuses to answer, and the
-/// delivery check, the merge and the handoff refuse with it.
+/// already wrong — two drafts confirmed at once, a repair that wrote a link, a
+/// cycle, more steps than a chain can hold — must not turn into a guess about
+/// which step is last. Every decision that reads a chain asks this first, and a
+/// chain it cannot walk is refused exactly like a forked one: "cannot tell" is
+/// never "nothing wrong".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RelayFault {
+    /// Two live steps follow one step; the short id names it.
+    Fork(String),
+    /// The links do not end within the walk limit: a cycle, or a chain longer
+    /// than any chain can be.
+    Unreadable,
+}
+
+impl RelayFault {
+    /// The fault, as the refusal sentence at a call site names it.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Fork(step) => format!("the relay chain forks at #{step}"),
+            Self::Unreadable => "the relay chain cannot be read".to_string(),
+        }
+    }
+}
+
+/// What is wrong with the chain this task belongs to, if anything.
 ///
-/// Returns the short id of the step with more than one live successor.
-pub fn relay_fork(db: &Database, task_id: &str) -> Result<Option<String>> {
+/// Returns `None` only for a chain that was walked whole: every step above this
+/// one was followed back to the head, and the head runs to an end with at most
+/// one live step at each place.
+pub fn relay_fault(db: &Database, task_id: &str) -> Result<Option<RelayFault>> {
     let mut statement = db.conn().prepare_cached(
         "SELECT id, relay_parent_task_id, archived_at FROM tasks
           WHERE relay_parent_task_id IS NOT NULL",
@@ -351,13 +374,16 @@ pub fn relay_fork(db: &Database, task_id: &str) -> Result<Option<String>> {
         parent_of.insert(id, parent);
     }
     // Walk back to the head, then down the line: a fork anywhere above this step
-    // makes this step's place in the chain unknowable, so it counts as well.
+    // makes this step's place in the chain unknowable, so it counts as well. A
+    // walk that does not end is a cycle or a link pair that lies, and it is
+    // refused rather than cut short: a truncated chain is exactly the list the
+    // merge must not act on.
     let mut head = task_id.to_string();
     let mut walked = 0;
     while let Some(parent) = parent_of.get(&head) {
         walked += 1;
         if walked > RELAY_WALK_LIMIT {
-            return Ok(None);
+            return Ok(Some(RelayFault::Unreadable));
         }
         head = parent.clone();
     }
@@ -366,14 +392,14 @@ pub fn relay_fork(db: &Database, task_id: &str) -> Result<Option<String>> {
     loop {
         let children = live_children.get(&cursor).map(Vec::as_slice).unwrap_or(&[]);
         if children.len() > 1 {
-            return Ok(Some(short_id(&cursor)));
+            return Ok(Some(RelayFault::Fork(short_id(&cursor))));
         }
         let Some(next) = children.first() else {
             return Ok(None);
         };
         walked += 1;
         if walked > RELAY_WALK_LIMIT {
-            return Ok(None);
+            return Ok(Some(RelayFault::Unreadable));
         }
         cursor = next.clone();
     }
@@ -383,12 +409,13 @@ pub fn relay_fork(db: &Database, task_id: &str) -> Result<Option<String>> {
 ///
 /// Read for the completion card, the handoff, and the cleanup after the last
 /// step merges: all three need "every step of this chain", not just its ends.
-/// A forked chain has no such answer, and guessing one would hand the merge a
-/// list of steps it must not touch — so it is refused here instead.
+/// A chain with a fault has no such answer, and guessing one would hand the merge
+/// a list of steps it must not touch — so it is refused here instead.
 pub fn relay_chain(db: &Database, task_id: &str) -> Result<Vec<Task>> {
-    if let Some(fork) = relay_fork(db, task_id)? {
+    if let Some(fault) = relay_fault(db, task_id)? {
         return Err(anyhow!(
-            "CONFLICT: the relay chain forks at #{fork}; a step can have only one next step"
+            "CONFLICT: {}; no step of it can be called the last",
+            fault.describe()
         ));
     }
     let links = relay_links(db)?;
@@ -396,13 +423,18 @@ pub fn relay_chain(db: &Database, task_id: &str) -> Result<Vec<Task>> {
         .iter()
         .filter_map(|(id, parent)| parent.as_deref().map(|parent| (parent, id.as_str())))
         .collect();
-    // Walk back to the head of the chain, then forward through every step.
+    // Walk back to the head of the chain, then forward through every step. Both
+    // walks are bounded by the same limit `relay_fault` uses, and reaching it is
+    // a refusal rather than a short list: a caller that asked for the whole chain
+    // (the merge, the cleanup) must never receive part of one.
     let mut head = task_id.to_string();
     let mut walked = 0;
     while let Some(Some(parent)) = links.get(&head) {
         walked += 1;
         if walked > RELAY_WALK_LIMIT {
-            break;
+            return Err(anyhow!(
+                "CONFLICT: the relay chain cannot be read; no step of it can be called the last"
+            ));
         }
         head = parent.clone();
     }
@@ -417,7 +449,9 @@ pub fn relay_chain(db: &Database, task_id: &str) -> Result<Vec<Task>> {
             .map(|next| (*next).to_string());
         chain.push(task);
         if chain.len() > RELAY_WALK_LIMIT {
-            break;
+            return Err(anyhow!(
+                "CONFLICT: the relay chain cannot be read; no step of it can be called the last"
+            ));
         }
     }
     with_relay_positions(db, &mut chain)?;

@@ -171,7 +171,9 @@ export type TaskDeliveryReason =
   | "nothing-to-merge"
   | "preview-failed"
   /** The chain this step belongs to forks, so no step is provably the last one. */
-  | "relay-fork";
+  | "relay-fork"
+  /** The chain cannot be walked at all (a cycle, or longer than a chain can be). */
+  | "relay-unreadable";
 
 /** The CI summary the card shows beside the verdict. */
 export type TaskCheckSummary = {

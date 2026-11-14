@@ -21735,9 +21735,9 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Acceptance**: A (function), Quality
 - **Milestone**: Employee mode 0.5, slice 7 (follow-up)
 - **Status**: Covered. `task_relay_tests.rs` (propose, revise and confirm refuse
-  the second card; the readers refuse a forged fork) and
-  `task_delivery_tests.rs` (greyed check, refused merge and handoff, both steps
-  untouched).
+  the second card; the readers refuse a forged fork; a cycle is unreadable, not a
+  short chain) and `task_delivery_tests.rs` (greyed check for `relay-fork` and
+  `relay-unreadable`, refused merge and handoff, both steps untouched).
 
 #### E2E-BOT-overlap-warning-on-start: Two tasks in one repository are told apart before anyone is surprised
 
