@@ -124,7 +124,10 @@ fn renaming_the_steward_does_not_hire_a_second_one() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
     let seeded = bots::seed_defaults(&db).unwrap();
-    let steward = seeded["created"][0]["sessionId"].as_str().unwrap().to_owned();
+    let steward = seeded["created"][0]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     bots::update(
         &db,
@@ -133,10 +136,17 @@ fn renaming_the_steward_does_not_hire_a_second_one() {
     .unwrap();
     let renamed = employees(&db);
     assert_eq!(renamed.len(), 1);
-    assert!(renamed[0].2.contains("\"阿福\""), "the name is the person's");
+    assert!(
+        renamed[0].2.contains("\"阿福\""),
+        "the name is the person's"
+    );
 
     let again = bots::seed_defaults(&db).unwrap();
-    assert_eq!(again["created"], json!([]), "a rename is not a missing steward");
+    assert_eq!(
+        again["created"],
+        json!([]),
+        "a rename is not a missing steward"
+    );
     assert_eq!(
         again["skipped"],
         json!([{ "name": "阿福", "reason": "exists" }]),
@@ -164,7 +174,10 @@ fn a_dismissed_steward_is_created_again() {
         .unwrap()
         .to_owned();
     bots::dismiss(&db, &json!({ "sessionId": first })).unwrap();
-    assert!(employees(&db).is_empty(), "nothing claims the role any more");
+    assert!(
+        employees(&db).is_empty(),
+        "nothing claims the role any more"
+    );
 
     let again = bots::seed_defaults(&db).unwrap();
     assert_eq!(again["created"].as_array().unwrap().len(), 1);
