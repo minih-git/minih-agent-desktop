@@ -379,6 +379,26 @@ async function settle(turns = 6) {
   }
 }
 
+/**
+ * Wait for something the app reads from the host to arrive.
+ *
+ * The cards mount inside the composer and ask the host for their drafts and
+ * tasks, so a fixed number of turns is a race: it passes on an idle machine and
+ * fails on a loaded one. Every wait here has a deadline and names what it was
+ * waiting for, so a failure says which read never landed.
+ */
+async function until(check, label, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    flushSync(() => undefined);
+  }
+  throw new Error(label + " never appeared");
+}
+
+const CARD = "[data-draft-id], [data-task-completion], [data-task-blocked], [data-task-batch]";
+
 function rectOf(selector) {
   const node = document.querySelector(selector);
   if (!node) return null;
@@ -400,6 +420,8 @@ window.shot = {
       useAppStore.setState({ activeSessionId: state.activeSessionId, sessions: state.sessions });
       flushSync(() => root.render(<Shell key={"shell-" + mount} />));
       await settle();
+      await until(() => document.querySelector(CARD), "the dock card in " + name);
+      await settle();
       finishAnimations();
       await settle(2);
       return { ok: true };
@@ -414,15 +436,25 @@ window.shot = {
         const card = document.querySelector("[data-draft-id='" + id + "']");
         if (!card) throw new Error("card " + id + " is not on screen");
         const button = card.querySelector(".task-card-actions button:last-of-type");
+        if (button.disabled) throw new Error("the start button of " + id + " is disabled");
         button.click();
-        await settle(8);
+        await settle(2);
+        if (name === "start-a") {
+          // The second card can be started only after the first one has been.
+          await until(() => ![...document.querySelectorAll(".task-card-actions button:last-of-type")]
+            .some((node) => node.disabled), "the second card to become startable");
+        } else {
+          // A confirmed step folds into the line that says what it waits for.
+          await until(() => document.querySelector("[data-relay-waiting='true']"),
+            "the waiting line of the confirmed step");
+        }
         return { ok: true };
       }
       if (name === "handoff") {
         const button = document.querySelector("[data-completion-handoff]");
         if (!button) throw new Error("the handoff button is missing");
         button.click();
-        await settle(8);
+        await until(() => state.calls.handoff.length === 1, "the handoff to reach the host");
         return { ok: true };
       }
       if (name === "overlap-unreadable") {
@@ -435,7 +467,7 @@ window.shot = {
         const button = document.querySelector("[data-blocked-start-from-main]");
         if (!button) throw new Error("the start-from-main button is missing");
         button.click();
-        await settle(8);
+        await until(() => state.calls.detach.length === 1, "the detach to reach the host");
         return { ok: true };
       }
       throw new Error("unknown action " + name);
