@@ -200,7 +200,7 @@ function createRuntime(
     turnId: string;
     host: { call: ReturnType<typeof vi.fn>; onNotification?: ReturnType<typeof vi.fn> };
     onEvent: (envelope: unknown) => void;
-    botPersona: { definition: SubagentDefinition } | { missingName: string };
+    botPersona: { definition: SubagentDefinition; taskSession?: boolean } | { missingName: string };
     taskReporter: boolean;
     trustedExtensions: TrustedExtensionSpec[];
     keepWarmLedger: KeepWarmLedger;

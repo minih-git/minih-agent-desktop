@@ -14,7 +14,7 @@
  */
 
 import type { BotMustAsk } from "./bot-session.js";
-import type { GlobalPermissionMode, PermissionMode } from "./types/permissions.js";
+import type { GlobalPermissionMode } from "./types/permissions.js";
 
 export const HIRE_TEMPLATE_IDS = [
   "ui",
