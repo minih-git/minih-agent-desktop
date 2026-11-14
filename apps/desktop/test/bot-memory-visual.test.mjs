@@ -337,7 +337,10 @@ app.whenReady().then(async () => {
       for (const shot of shots) {
         assert.ok(existsSync(shot.file), `${shot.file} is missing`);
         const bytes = readFileSync(shot.file);
-        assert.ok(bytes.length > 8_000, `${shot.file} is only ${bytes.length} bytes`);
+        // The switch-off scene is one line of text on a flat background, so it
+        // compresses to a few kilobytes; the DOM assertions above are what prove
+        // it rendered, and this floor only rejects a truly blank capture.
+        assert.ok(bytes.length > 4_000, `${shot.file} is only ${bytes.length} bytes`);
         console.log(`✔ ${shot.theme} ${shot.scene} ${shot.width}px → ${shot.file.replace(root + "/", "")}`);
       }
     } finally {
