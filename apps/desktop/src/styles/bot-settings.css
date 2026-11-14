@@ -328,6 +328,12 @@
 
 /* --- Hiring and team norms (employee mode 0.5 slice 6) -------------------- */
 
+/* The hiring area stacks: the job grid, the two ways to start, the sentence. */
+.bot-hire {
+  display: flex;
+  flex-direction: column;
+}
+
 /* Six jobs, in the order the plan lists them. A template is a button, because
    clicking one does exactly one thing: open its prefilled form. */
 .bot-hire-grid {

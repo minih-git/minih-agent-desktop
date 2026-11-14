@@ -216,10 +216,14 @@ test("opening the settings page never seeds the default crew", async (t) => {
   );
   const html = h.render(createElement(BotsSettingsPage, { bots: [] }));
 
-  // With nothing to manage the crew is the one prominent action…
-  assert.match(html, /Create the default crew/);
-  assert.match(html, /No employees yet/);
+  // Slice 6 replaced the fixed crew with hiring: the jobs are offered as
+  // templates, and the one employee the host still creates for the person is
+  // its own prominent button.
+  assert.match(html, /data-template-id="review"/);
+  assert.match(html, /data-template-id="research"/);
+  assert.match(html, /Enable Super Agent/);
   assert.match(html, /btn-primary/);
+  assert.doesNotMatch(html, /Create the default crew/);
   // …and it is only ever a click: mounting the page asks for nothing.
   assert.equal(h.callsTo(IPC.invoke.botSeedDefaults).length, 0);
 });
@@ -230,9 +234,12 @@ test("an existing team is not offered the crew as its starting point", async (t)
     "/src/features/bots/BotsSettingsPage.tsx",
   );
   const html = h.render(
-    createElement(BotsSettingsPage, { bots: [bot({ sessionId: "s-1", name: "Steward" })] }),
+    createElement(BotsSettingsPage, {
+      bots: [bot({ sessionId: "s-1", name: "Steward", profile: { definition: "steward" } })],
+    }),
   );
-  assert.doesNotMatch(html, /No employees yet/);
+  // With a dispatcher on the crew there is nothing left for the host to create.
+  assert.doesNotMatch(html, /Enable Super Agent/);
   assert.equal(h.callsTo(IPC.invoke.botSeedDefaults).length, 0);
 });
 

@@ -27,8 +27,14 @@ function load(relative, imports = {}) {
 // The steward's task board (employee mode 0.5 slice 3) is a value import now:
 // `TaskStatus` and the `Roster`/`SessionSend` outputs read it. It is pure, so it
 // loads with the shared package and nothing else.
+// Slice 6: the task rules and the team norms now live in two pure modules, so
+// the shim carries both. Neither talks to a host at import time.
+const teamNorms = load("../electron/main/services/team-norms.ts", {
+  "@minih-agent/shared": shared,
+});
 const taskStatus = load("../electron/main/services/task-status.ts", {
   "@minih-agent/shared": shared,
+  "./team-norms": teamNorms,
 });
 
 const {
@@ -39,6 +45,9 @@ const {
   createSessionSendTool,
   createTaskStatusTool,
 } = load("../electron/main/services/session-messaging-tools.ts", {
+  // Slice 6: the roster row names the job, so this module reads the shared
+  // vocabulary (`roleWordForDefinition`, `isReadOnlyDefinition`) as a value.
+  "@minih-agent/shared": shared,
   "./task-status": taskStatus,
 });
 

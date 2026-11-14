@@ -34,9 +34,14 @@ const taskCardsChanged = load("../electron/main/services/task-cards-changed.ts",
   "@minih-agent/shared": shared,
 });
 // The steward's task board (employee mode 0.5 slice 3): pure derivations over
-// `task.list` + `bot.list`, so it loads with no host at all.
+// `task.list` + `bot.list`, so it loads with no host at all. Slice 6 split the
+// team norms out of it, and that module is pure too.
+const teamNorms = load("../electron/main/services/team-norms.ts", {
+  "@minih-agent/shared": shared,
+});
 const taskStatus = load("../electron/main/services/task-status.ts", {
   "@minih-agent/shared": shared,
+  "./team-norms": teamNorms,
 });
 const { createSessionCollaborationService } = load(
   "../electron/main/services/session-collaboration.ts",

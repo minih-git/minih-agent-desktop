@@ -603,14 +603,10 @@ fn the_roster_offers_employees_but_never_the_secretary() {
         .as_str()
         .unwrap()
         .to_string();
-    // Give one employee a repository and an open task that waits on the person.
-    let backend = created
-        .iter()
-        .find(|item| item["name"] == json!("Router 后端"))
-        .unwrap()["sessionId"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // Slice 6: the crew is hired, not seeded. One worker with a repository and a
+    // task waiting on the person, and one read-only researcher with neither.
+    let backend = employee(&db, "Router 后端", None, false);
+    let researcher = employee(&db, "研究员", Some("explorer"), false);
     let repo = dir.path().join("router");
     std::fs::create_dir_all(&repo).unwrap();
     handle(
@@ -636,8 +632,8 @@ fn the_roster_offers_employees_but_never_the_secretary() {
     let employees = roster["employees"].as_array().unwrap();
     assert_eq!(
         employees.len(),
-        3,
-        "the four seeded crew minus the secretary"
+        2,
+        "the hired crew minus the secretary"
     );
     assert!(
         employees
@@ -650,21 +646,22 @@ fn the_roster_offers_employees_but_never_the_secretary() {
         .find(|entry| entry["sessionId"] == json!(backend))
         .unwrap();
     assert_eq!(backend_row["name"], json!("Router 后端"));
-    assert_eq!(
-        backend_row["duty"],
-        json!("Minih-Router gateway, accounts and billing.")
-    );
-    assert_eq!(backend_row["permissionMode"], json!("ask"));
+    assert_eq!(backend_row["duty"], json!("Router 后端 duty"));
+    assert_eq!(backend_row["permissionMode"], json!("accept-edits"));
     assert_eq!(backend_row["observe"], json!(false));
     assert_eq!(backend_row["openTaskCount"], json!(1));
     assert_eq!(backend_row["waitingCount"], json!(1));
     assert_eq!(backend_row["idle"], json!(false));
     assert_eq!(backend_row["repos"], json!([]), "reserved for later");
     assert!(backend_row["projectPath"].is_string());
+    // Slice 6: the row names the job, so the steward can tell a reviewer from a
+    // coder; an employee hired under no definition says so honestly.
+    assert_eq!(backend_row["definition"], Value::Null);
     let others = employees
         .iter()
-        .find(|entry| entry["sessionId"] != json!(backend))
+        .find(|entry| entry["sessionId"] == json!(researcher))
         .unwrap();
+    assert_eq!(others["definition"], json!("explorer"));
     assert_eq!(others["idle"], json!(true));
     assert_eq!(others["openTaskCount"], json!(0));
 }

@@ -458,12 +458,13 @@ fn an_observing_bot_still_receives_a_card_a_person_confirms() {
 #[test]
 fn the_employee_surface_lists_status_and_keeps_the_conversation_on_dismiss() {
     let db = database();
+    // Slice 6: the host creates one employee by itself, the steward. Every other
+    // job is hired, so the worker here is created the way a person's click does.
     let seeded = crate::session_collaboration::bots::seed_defaults(&db).unwrap();
-    assert_eq!(seeded["created"].as_array().unwrap().len(), 4);
-    // The steward may start work by itself; the others begin observing.
+    assert_eq!(seeded["created"].as_array().unwrap().len(), 1);
     let listed = crate::session_collaboration::bots::list(&db).unwrap();
     let bots = listed["bots"].as_array().unwrap();
-    assert_eq!(bots.len(), 4);
+    assert_eq!(bots.len(), 1);
     let steward = bots
         .iter()
         .find(|bot| bot["profile"]["definition"] == json!("steward"))
@@ -479,6 +480,12 @@ fn the_employee_surface_lists_status_and_keeps_the_conversation_on_dismiss() {
         json!(crate::session_collaboration::bots::STEWARD_DEFAULT_NAME)
     );
     assert_eq!(steward["status"], json!({"kind": "idle"}));
+
+    // A hired worker begins observing until the person turns it on.
+    let worker = bot(&db, "工人", "ask", true);
+    let listed = crate::session_collaboration::bots::list(&db).unwrap();
+    let bots = listed["bots"].as_array().unwrap();
+    assert_eq!(bots.len(), 2);
     for bot in bots
         .iter()
         .filter(|bot| bot["profile"]["definition"] != json!("steward"))
@@ -487,13 +494,6 @@ fn the_employee_surface_lists_status_and_keeps_the_conversation_on_dismiss() {
     }
 
     // A delivery's stage becomes the dot.
-    let worker = bots
-        .iter()
-        .find(|bot| bot["profile"]["definition"] != json!("steward"))
-        .unwrap()["sessionId"]
-        .as_str()
-        .unwrap()
-        .to_string();
     let steward_id = steward["sessionId"].as_str().unwrap().to_string();
     let draft = propose_card(&db, &steward_id, &worker, "ask");
     super::confirm(&db, confirm_request(&draft, "surface")).unwrap();
@@ -525,13 +525,13 @@ fn the_employee_surface_lists_status_and_keeps_the_conversation_on_dismiss() {
     assert!(crate::sessions::session_summary(&db, &worker)
         .unwrap()
         .is_some());
-    // Seeding again restores only the dismissed employee: the crew is
-    // identified by profile name, so the three that stayed are not duplicated.
+    // Seeding again sees the steward it already has: nothing is created, and the
+    // dismissed worker is not resurrected — a dismiss is a decision.
     let again = crate::session_collaboration::bots::seed_defaults(&db).unwrap();
-    assert_eq!(again["created"].as_array().unwrap().len(), 1);
-    assert_eq!(again["skipped"].as_array().unwrap().len(), 3);
+    assert_eq!(again["created"], json!([]));
+    assert_eq!(again["skipped"].as_array().unwrap().len(), 1);
     let restored = crate::session_collaboration::bots::list(&db).unwrap();
-    assert_eq!(restored["bots"].as_array().unwrap().len(), 4);
+    assert_eq!(restored["bots"].as_array().unwrap().len(), 1);
 }
 
 /// A confirmed card whose turn was never started is offered again.

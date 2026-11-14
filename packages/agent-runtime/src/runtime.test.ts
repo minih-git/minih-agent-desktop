@@ -201,6 +201,7 @@ function createRuntime(
     host: { call: ReturnType<typeof vi.fn>; onNotification?: ReturnType<typeof vi.fn> };
     onEvent: (envelope: unknown) => void;
     botPersona: { definition: SubagentDefinition } | { missingName: string };
+    taskReporter: boolean;
     trustedExtensions: TrustedExtensionSpec[];
     keepWarmLedger: KeepWarmLedger;
   }> = {},
@@ -233,6 +234,7 @@ function createRuntime(
     learnedMemoryIndex: overrides.learnedMemoryIndex,
     pluginSkills: overrides.pluginSkills,
     ...(overrides.botPersona ? { botPersona: overrides.botPersona } : {}),
+    ...(overrides.taskReporter ? { taskReporter: true } : {}),
     trustedExtensions: overrides.trustedExtensions,
     onEvent: overrides.onEvent ?? vi.fn(),
     keepWarmLedger: overrides.keepWarmLedger,

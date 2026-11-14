@@ -40,6 +40,9 @@ const { createSessionCollaborationService } = load("../electron/main/services/se
   // `task.list` + `bot.list`, so it loads with no host at all.
   "./task-status": load("../electron/main/services/task-status.ts", {
     "@minih-agent/shared": await import("@minih-agent/shared"),
+    "./team-norms": load("../electron/main/services/team-norms.ts", {
+      "@minih-agent/shared": await import("@minih-agent/shared"),
+    }),
   }),
 });
 
