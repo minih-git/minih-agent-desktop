@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.6.0",
+    date: "2026-11-15",
+    highlights: [
+      "Employee mode: enable Super Agent once and it becomes your default entry — describe what you need, and it splits the work and hands each part to an employee, whose task runs under that employee in its own folder inside the repository.",
+      "A task that needs you — stuck, or asking a question — moves to the waiting area and raises a system notification, so nothing waits quietly in the background.",
+      "A finished task comes back with a completion card: “Accept and merge” lands it in one click, and the host merges in fixed steps. Work that spans several roles hands off step by step and merges only at the end.",
+      "Hiring is quicker: start from a job template, or describe the job in one sentence and let it draft the profile; the team norms you write once apply to every task an employee runs.",
+      "Employees keep lessons from their finished tasks (with the learning switch on), and the hourly inspection only speaks up when something is actually stuck.",
+      "Learned memory can tidy itself now: choose a learning model and turn the new switch on, and notes that say the same thing are merged, a newer note replaces the one it contradicts, and every batch can be undone under “Recently curated”. Notes you wrote yourself and employee lessons stay out of it.",
+      "Fixed: an Anthropic request that fell back to the tunnel no longer repeats the version path, a slow plugin download is no longer cut off by a fixed deadline, long command output keeps both ends, and only one host instance can hold your data directory.",
+    ],
+  },
+
+  {
     version: "1.5.2",
     date: "2026-11-11",
     highlights: [
