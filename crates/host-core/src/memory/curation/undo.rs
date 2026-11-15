@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::db::{now_ms, Database};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection, Row};
 
 impl Database {
@@ -156,7 +156,13 @@ impl Database {
                     restored_targets.push(current.fingerprint.clone());
                 }
                 REVISION_REWORD => {
-                    let before = row.before.as_ref().expect("a reword records its before");
+                    // A rewrite's whole undo is its before snapshot. A record
+                    // without one cannot be undone, and guessing (archive the
+                    // note? leave the new wording?) would be worse than saying
+                    // so: the batch is refused and nothing is written.
+                    let before = row.before.as_ref().ok_or_else(|| {
+                        anyhow!("the reword record {} has no before snapshot", row.id)
+                    })?;
                     tx.execute(
                         "UPDATE memory_entries
                          SET content = ?1, fingerprint = ?2, revision = revision + 1,
@@ -170,7 +176,15 @@ impl Database {
                         ],
                     )?;
                 }
-                _ => {}
+                // An operation this build does not know is not "nothing to do":
+                // skipping it would mark the batch undone while the note kept
+                // the automatic change. Refuse the batch instead.
+                other => {
+                    return Err(anyhow!(
+                        "cannot undo unknown curation operation '{other}' (record {})",
+                        row.id
+                    ));
+                }
             }
         }
         let mut rejected: Vec<String> = Vec::new();
@@ -252,13 +266,27 @@ const REVISION_COLUMNS: &str = "r.id, r.batch_id, r.entry_id, r.op, r.actor, r.b
 fn revision_from_row(row: &Row<'_>) -> rusqlite::Result<MemoryRevisionRecord> {
     let before_raw: Option<String> = row.get(5)?;
     let after_raw: String = row.get(6)?;
+    // A snapshot that cannot be read is a corrupt record, not "no snapshot":
+    // the undo restores from `before_json`, so silently reading it as absent
+    // would either skip the restore or (for a rewrite) guess. Report it the
+    // same way an unreadable `after_json` is reported.
+    let before: Option<MemoryRevisionSnapshot> = match before_raw {
+        Some(raw) => Some(serde_json::from_str(&raw).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                5,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?),
+        None => None,
+    };
     Ok(MemoryRevisionRecord {
         id: row.get(0)?,
         batch_id: row.get(1)?,
         entry_id: row.get(2)?,
         op: row.get(3)?,
         actor: row.get(4)?,
-        before: before_raw.and_then(|raw| serde_json::from_str(&raw).ok()),
+        before,
         after: serde_json::from_str(&after_raw).map_err(|error| {
             rusqlite::Error::FromSqlConversionFailure(
                 6,

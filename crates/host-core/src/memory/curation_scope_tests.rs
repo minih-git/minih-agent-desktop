@@ -329,3 +329,144 @@ fn undo_refuses_a_batch_that_names_an_employee_lesson() {
         0
     );
 }
+
+// ---- records the undo cannot read back --------------------------------------
+
+/// The `after_json` an undo compares against, spelled the way the host writes it.
+fn snapshot_json(content: &str, status: &str, revision: i64) -> String {
+    serde_json::json!({ "content": content, "status": status, "revision": revision }).to_string()
+}
+
+/// A snapshot that cannot be parsed is a corrupt record, not "no snapshot".
+/// Reading it as absent used to archive an active note silently; it must be an
+/// error, and it must leave the note and the record exactly as they were.
+#[test]
+fn a_corrupt_before_snapshot_refuses_the_undo() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = scope(&dir, &db, "app");
+    let note = make(&db, &project, KIND_FACT, "Kept wording.", ORIGIN_USER_UI);
+    db.conn()
+        .execute(
+            "INSERT INTO memory_revisions
+               (batch_id, entry_id, op, actor, before_json, after_json, reason, created_at)
+             VALUES ('batch-corrupt', ?1, 'merge_archive', 'auto', '{not json',
+                     ?2, NULL, ?3)",
+            params![
+                note.id,
+                snapshot_json("Kept wording.", STATUS_ARCHIVED, 2),
+                crate::db::now_ms()
+            ],
+        )
+        .unwrap();
+
+    let error = db
+        .undo_memory_curation("batch-corrupt")
+        .expect_err("a corrupt before snapshot must refuse the undo");
+    // `before_json` is column 5 of the revision row, so the failure is reported
+    // against the snapshot itself rather than somewhere else.
+    assert!(error.to_string().contains("index: 5"), "{error}");
+    let after = entry(&db, &note.id);
+    assert_eq!(after.status, STATUS_ACTIVE);
+    assert_eq!(after.revision, note.revision);
+    assert_eq!(
+        count(
+            &db,
+            "SELECT COUNT(*) FROM memory_revisions WHERE undone_at IS NOT NULL"
+        ),
+        0
+    );
+}
+
+/// A rewrite's undo is its before snapshot. Without one the batch is refused
+/// instead of panicking the host (it used to `expect` it).
+#[test]
+fn a_reword_without_a_before_snapshot_refuses_the_undo() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = scope(&dir, &db, "app");
+    let note = make(&db, &project, KIND_FACT, "New wording.", ORIGIN_USER_UI);
+    db.conn()
+        .execute(
+            "INSERT INTO memory_revisions
+               (batch_id, entry_id, op, actor, before_json, after_json, reason, created_at)
+             VALUES ('batch-reword', ?1, 'reword', 'auto', NULL, ?2, NULL, ?3)",
+            params![
+                note.id,
+                snapshot_json("New wording.", STATUS_ACTIVE, note.revision),
+                crate::db::now_ms()
+            ],
+        )
+        .unwrap();
+
+    let error = db
+        .undo_memory_curation("batch-reword")
+        .expect_err("a reword without a before snapshot must refuse the undo");
+    assert!(error.to_string().contains("before snapshot"), "{error}");
+    assert_eq!(entry(&db, &note.id).content, "New wording.");
+    assert_eq!(
+        count(
+            &db,
+            "SELECT COUNT(*) FROM memory_revisions WHERE undone_at IS NOT NULL"
+        ),
+        0
+    );
+}
+
+/// An operation this build does not know is not "nothing to do": skipping it
+/// would mark the batch undone while the note kept the automatic change.
+///
+/// The table's check only admits the five operations that exist today, so this
+/// recreates it without that check to reach the guard — the shape a future
+/// schema could produce and an older build could then be handed.
+#[test]
+fn an_unknown_operation_refuses_the_undo() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = scope(&dir, &db, "app");
+    let note = make(&db, &project, KIND_FACT, "Untouched.", ORIGIN_USER_UI);
+    db.conn()
+        .execute_batch(
+            "ALTER TABLE memory_revisions RENAME TO memory_revisions_checked;
+             CREATE TABLE memory_revisions (
+               id          INTEGER PRIMARY KEY,
+               batch_id    TEXT NOT NULL,
+               entry_id    TEXT NOT NULL,
+               op          TEXT NOT NULL,
+               actor       TEXT NOT NULL,
+               before_json TEXT,
+               after_json  TEXT NOT NULL,
+               reason      TEXT,
+               created_at  INTEGER NOT NULL,
+               undone_at   INTEGER
+             );
+             INSERT INTO memory_revisions SELECT * FROM memory_revisions_checked;
+             DROP TABLE memory_revisions_checked;",
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO memory_revisions
+               (batch_id, entry_id, op, actor, before_json, after_json, reason, created_at)
+             VALUES ('batch-future', ?1, 'teleport', 'auto', NULL, ?2, NULL, ?3)",
+            params![
+                note.id,
+                snapshot_json("Untouched.", STATUS_ACTIVE, note.revision),
+                crate::db::now_ms()
+            ],
+        )
+        .unwrap();
+
+    let error = db
+        .undo_memory_curation("batch-future")
+        .expect_err("an unknown operation must refuse the undo");
+    assert!(error.to_string().contains("teleport"), "{error}");
+    assert_eq!(entry(&db, &note.id).status, STATUS_ACTIVE);
+    assert_eq!(
+        count(
+            &db,
+            "SELECT COUNT(*) FROM memory_revisions WHERE undone_at IS NOT NULL"
+        ),
+        0
+    );
+}
