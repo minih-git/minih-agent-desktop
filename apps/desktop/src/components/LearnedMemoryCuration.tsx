@@ -35,7 +35,7 @@ export function MemoryCurationList({
   /** The list changed something, so the notes above need a reload. */
   onChanged: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // Reading the list is what the block is for, so it opens collapsed and loads
   // on the first expansion: a user who never cares pays nothing.
   const [open, setOpen] = useState(false);
@@ -95,8 +95,10 @@ export function MemoryCurationList({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span>{title}</span>
-        <span aria-hidden>{open ? "▾" : "▸"}</span>
+        <span className="learned-memory-curation-title">{title}</span>
+        <span className="learned-memory-curation-arrow" aria-hidden>
+          {open ? "▾" : "▸"}
+        </span>
       </button>
       {open ? (
         <div className="learned-memory-curation-body">
@@ -112,18 +114,32 @@ export function MemoryCurationList({
               {batches.map((batch) => (
                 <li key={batch.batchId} className="learned-memory-curation-batch">
                   <div className="learned-memory-curation-batch-head">
-                    <span>{t(`memory.curationOp.${batch.kind}`)}</span>
+                    <span className="learned-memory-curation-op">
+                      {t(`memory.curationOp.${batch.kind}`)}
+                    </span>
+                    <time
+                      className="learned-memory-curation-time"
+                      dateTime={new Date(batch.createdAt).toISOString()}
+                    >
+                      {new Date(batch.createdAt).toLocaleString(i18n.language, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </time>
                     <Button
                       type="button"
                       size="sm"
-                      variant="ghost"
+                      variant="secondary"
+                      className="learned-memory-curation-undo"
                       disabled={busy}
                       onClick={() => undo(batch.batchId)}
                     >
                       {t("memory.curationUndo")}
                     </Button>
                   </div>
-                  <ul>
+                  <ul className="learned-memory-curation-rows">
                     {batch.rows.map((row) => (
                       <CurationRow key={row.id} row={row} />
                     ))}
