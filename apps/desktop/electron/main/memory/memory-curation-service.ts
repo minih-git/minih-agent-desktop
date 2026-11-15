@@ -346,7 +346,14 @@ export function createMemoryCurationService(deps: MemoryCurationDeps): MemoryCur
         owner: CURATION_LEASE_OWNER,
         day,
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        // The pass itself succeeded, so a failed release must not undo it; the
+        // lease expires on its own. It is still reported, because a scope that
+        // never releases would silently stop being curated.
+        log("warn", "learned memory curation lease was not released", {
+          code: (error instanceof Error ? error.message : String(error)).slice(0, 64),
+        });
+      });
   }
 
   return {

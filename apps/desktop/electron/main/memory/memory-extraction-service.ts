@@ -524,8 +524,13 @@ export function createMemoryExtractionService(
         ids: all,
       })) as { report?: { activated?: unknown[] } } | undefined;
       return Array.isArray(report?.report?.activated) ? report.report.activated.length : 0;
-    } catch {
-      // Curation is an extra: its failure changes nothing the user asked for.
+    } catch (error) {
+      // Curation is an extra: a refused activation changes nothing the user
+      // asked for, so the extraction run still counts. It is reported anyway —
+      // a host that refuses every activation must not be invisible.
+      log("warn", "learned memory activation was refused", sessionId, {
+        code: (error instanceof Error ? error.message : String(error)).slice(0, 64),
+      });
       return 0;
     }
   }
