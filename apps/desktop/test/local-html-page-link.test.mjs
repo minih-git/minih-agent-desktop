@@ -89,3 +89,95 @@ test("the page reads through the host with the session it belongs to", async () 
   // The page renders in the same sandbox the `html` fence uses, scripts off.
   assert.doesNotMatch(pageLink, /allow-scripts/);
 });
+
+/*
+ * The page card's toolbar is one place, shared by a fence and a linked page.
+ * A fence has no file on disk, so it can only offer actions about its markup;
+ * a linked page was read from a file this computer owns, so it also offers the
+ * system file manager. Both shapes are rendered here from the real component.
+ */
+test("the reveal action sits beside the panel one and only for a linked page", async () => {
+  const server = await createServer({
+    root: fileURLToPath(new URL("..", import.meta.url)),
+    configFile: false,
+    server: { middlewareMode: true, hmr: false, ws: false },
+    esbuild: { jsx: "automatic" },
+    appType: "custom",
+    optimizeDeps: { noDiscovery: true, include: [] },
+  });
+  const originalDocument = globalThis.document;
+  try {
+    globalThis.document = { documentElement: { dataset: {} } };
+    const { HtmlPreviewBlock } = await server.ssrLoadModule(
+      "/src/components/HtmlPreviewBlock.tsx",
+    );
+    const { catalogs } = await server.ssrLoadModule("@minih-agent/i18n");
+    const i18n = createInstance();
+    await i18n.init({
+      lng: "en",
+      resources: { en: { translation: catalogs.en } },
+    });
+    const labels = (html) =>
+      [...html.matchAll(/aria-label="([^"]+)"/g)].map((match) => match[1]);
+    const render = (props) =>
+      renderToStaticMarkup(
+        createElement(
+          I18nextProvider,
+          { i18n },
+          createElement(HtmlPreviewBlock, { code: "<p>page</p>", ...props }),
+        ),
+      );
+
+    // A linked page: the reveal action follows the panel one, and the source,
+    // script and copy actions stay where they were.
+    const page = render({
+      title: "report.html",
+      onOpenInPanel: () => {},
+      onRevealInFolder: () => {},
+    });
+    assert.deepEqual(labels(page), [
+      "Show HTML source",
+      "Run scripts",
+      "Open in work panel",
+      "Reveal in Finder",
+      "Copy",
+    ]);
+
+    // A session that may not touch local files, or a card given no callback,
+    // keeps the panel destination and offers no system action.
+    assert.deepEqual(
+      labels(render({ title: "report.html", onOpenInPanel: () => {} })),
+      ["Show HTML source", "Run scripts", "Open in work panel", "Copy"],
+    );
+
+    // A plain fence has no file behind it at all.
+    const fence = render({});
+    assert.equal((fence.match(/class="html-action-btn"/g) ?? []).length, 3);
+    assert.doesNotMatch(fence, /Reveal in Finder/);
+  } finally {
+    globalThis.document = originalDocument;
+    await server.close();
+  }
+});
+
+/*
+ * The card decides what the toolbar offers, so the page link is what supplies
+ * the file action: the same reference, resolved by the same click handler, with
+ * the markdown base the link keeps and the reveal destination. The resolution
+ * and reveal contract itself is covered by
+ * `chat-file-open-with-menu.test.mjs`, which asserts a base directory reaches
+ * `fs/resolveRef` and the resolved file reaches `fs/reveal`.
+ */
+test("the page link reveals the file it was read from, only where it may", async () => {
+  const pageLink = await readFile(
+    new URL("../src/components/LocalHtmlPageLink.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(pageLink, /const nativeFilesAllowed = useChatNativeFilesAllowed\(\)/);
+  assert.match(
+    pageLink,
+    /nativeFilesAllowed\s*\?\s*\(\)\s*=>\s*openFileRef\(path, baseDir, undefined, \{\s*destination: "reveal-in-folder",\s*\}\)\s*:\s*undefined/,
+  );
+  // The panel destination the card already had is untouched.
+  assert.match(pageLink, /onOpenInPanel=\{\(\) => openFileRef\(path, baseDir\)\}/);
+});

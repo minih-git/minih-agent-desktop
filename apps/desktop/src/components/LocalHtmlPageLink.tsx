@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { loadLocalHtmlPage, type LocalHtmlPage } from "../lib/html-page";
+import { useChatNativeFilesAllowed } from "../hooks/use-chat-session-capability";
 import { useOpenChatFileRef } from "../hooks/use-preview-target";
 import { useSlotSessionId } from "../plugins/renderer-slots/use-slots";
 import { useAppStore } from "../stores/app-store";
@@ -46,6 +47,9 @@ export function LocalHtmlPageLink({
   const paneSessionId = useSlotSessionId();
   const sessionId = useAppStore((s) => paneSessionId || s.activeSessionId);
   const openFileRef = useOpenChatFileRef();
+  // Only a page read from a file this computer owns has a folder to show; a
+  // remote workspace's page lives elsewhere and offers no system action.
+  const nativeFilesAllowed = useChatNativeFilesAllowed();
   const [page, setPage] = useState<LocalHtmlPage>({ status: "loading" });
 
   useEffect(() => {
@@ -75,6 +79,14 @@ export function LocalHtmlPageLink({
         code={page.code}
         title={name || "html"}
         onOpenInPanel={() => openFileRef(path, baseDir)}
+        onRevealInFolder={
+          nativeFilesAllowed
+            ? () =>
+                openFileRef(path, baseDir, undefined, {
+                  destination: "reveal-in-folder",
+                })
+            : undefined
+        }
       />
     </span>
   );
