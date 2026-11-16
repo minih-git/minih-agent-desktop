@@ -1629,7 +1629,8 @@ The existing JSON extension stores `schedule: {hour, minute, weekday}`,
 `intervalMinutes` (5–1440; required by an `interval` cadence and read by no other
 one, so a schedule that keeps the field keeps its value), `nextRunAt` (epoch
 milliseconds), `workspacePath`, and `sessionMode` (`perRun` or `reuse`, absent
-means `perRun`) for desktop automations.
+means `perRun`) for desktop automations. A scheduled task with no `workspacePath`
+is a general task: its run session has no project and never inherits the current workspace; reuse matches only another project-less session.
 Optional `weekdays` stores 1–7 unique integers in 0–6, overriding legacy
 `weekday` for weekly schedules. Missing `weekdays` preserves the single-day
 behavior. Invalid or empty selections are rejected before mutation. No table

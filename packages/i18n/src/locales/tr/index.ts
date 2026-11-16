@@ -2759,6 +2759,8 @@ sklm: {
   },
   scheduled: {
     description: "Minih-Agent-Desktop açıkken yinelenen ajan görevlerini çalıştırın.",
+    general: "Genel (proje yok)",
+    detailGeneral: "Genel (proje yok)",
     edit: "Görevi düzenle",
     hourlyHint: "Kaydetme veya etkinleştirmeden bir saat sonra başlayarak her saat çalışır. Uygulama yeniden başlatılınca süre yeniden başlar.",
     morning: "Sabah",

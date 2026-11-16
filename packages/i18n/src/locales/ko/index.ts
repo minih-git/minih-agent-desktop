@@ -2755,6 +2755,8 @@ sklm: {
   },
   scheduled: {
     description: "Minih-Agent-Desktop이 열려 있는 동안 반복 에이전트 작업을 실행합니다.",
+    general: "일반 (프로젝트 없음)",
+    detailGeneral: "일반 (프로젝트 없음)",
     edit: "작업 편집",
     hourlyHint: "저장 또는 활성화한 뒤 1시간마다 실행합니다. 앱을 다시 시작하면 간격을 새로 계산합니다.",
     morning: "오전",

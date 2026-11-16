@@ -2742,6 +2742,8 @@ sklm: {
   },
   "scheduled": {
     "description": "Wiederkehrende Agent-Aufgaben ausführen, solange Minih-Agent-Desktop geöffnet ist.",
+    "general": "Allgemein (kein Projekt)",
+    "detailGeneral": "Allgemein (kein Projekt)",
     "edit": "Aufgabe bearbeiten",
     "hourlyHint": "Läuft stündlich, erstmals eine Stunde nach dem Speichern oder Aktivieren. Ein App-Neustart startet das Intervall neu.",
     "morning": "Vormittag",

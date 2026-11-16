@@ -1235,15 +1235,16 @@ export const api = {
     cadence?: ScheduledTask["cadence"];
     enabled?: boolean;
     schedule?: ScheduledTask["schedule"];
-    workspacePath?: string;
+    workspacePath?: string | null;
     permissionMode?: ScheduledTask["permissionMode"];
     thinkingLevel?: ScheduledTask["thinkingLevel"] | null;
     providerId?: string | null;
     modelId?: string | null;
   }) => invoke<{ task: ScheduledTask }>(IPC.invoke.scheduledCreate, input),
   updateScheduled: (
-    input: Omit<Partial<ScheduledTask>, "providerId" | "modelId" | "thinkingLevel"> & {
+    input: Omit<Partial<ScheduledTask>, "workspacePath" | "providerId" | "modelId" | "thinkingLevel"> & {
       id: string;
+      workspacePath?: string | null;
       thinkingLevel?: ScheduledTask["thinkingLevel"] | null;
       providerId?: string | null;
       modelId?: string | null;

@@ -2778,6 +2778,8 @@ sklm: {
   },
   scheduled: {
     description: "Run recurring agent tasks while Minih-Agent-Desktop is open.",
+    general: "General (no project)",
+    detailGeneral: "General (no project)",
     edit: "Edit task",
     hourlyHint: "Runs every hour, starting one hour after saving or enabling. Restarting the app starts a new interval.",
     morning: "Morning",

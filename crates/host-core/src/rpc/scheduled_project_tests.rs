@@ -30,6 +30,28 @@ async fn removal_pauses_only_bound_tasks_and_preserves_definitions_and_history()
     )
     .unwrap()["task"]
         .clone();
+    let general = handle(
+        &st,
+        "scheduled.create",
+        json!({"title":"General","prompt":"Other","cadence":"hourly","schedule":{"hour":0,"minute":0,"weekday":0},"workspacePath":null}),
+    )
+    .unwrap()["task"]
+        .clone();
+    let general_run = handle(&st, "scheduled.run", json!({"id":general["id"]})).unwrap();
+    let general_session = sessions::get_session(&st.db, general_run["sessionId"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    assert!(general_session.summary.project_path.is_none());
+    assert_ne!(
+        general_session.summary.project_path.as_deref(),
+        Some(b.path().to_str().unwrap())
+    );
+    handle(
+        &st,
+        "scheduled.finishRun",
+        json!({"runId":general_run["runId"],"status":"completed"}),
+    )
+    .unwrap();
     let state = Arc::new(Mutex::new(st));
     let deleted = super::super::handle_request(
         state.clone(),
@@ -62,6 +84,11 @@ async fn removal_pauses_only_bound_tasks_and_preserves_definitions_and_history()
             .unwrap()
             .enabled
     );
+    let general_task = scheduled::get_task(&st.db, general["id"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    assert!(general_task.enabled);
+    assert!(general_task.workspace_path.is_none());
     let history = scheduled::list_runs(&st.db, Some(&ids[0]), 100).unwrap();
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].status, "completed");

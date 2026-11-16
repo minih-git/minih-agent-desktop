@@ -2718,6 +2718,8 @@ export const ptBR = {
   },
   scheduled: {
     description: "Executa tarefas recorrentes do agente enquanto o Minih-Agent-Desktop estiver aberto.",
+    general: "Geral (sem projeto)",
+    detailGeneral: "Geral (sem projeto)",
     edit: "Editar tarefa",
     hourlyHint: "Executa a cada hora, iniciando uma hora após salvar ou habilitar. Reiniciar o aplicativo inicia um novo intervalo.",
     morning: "Manhã",

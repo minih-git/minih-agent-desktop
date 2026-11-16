@@ -2734,6 +2734,8 @@ sklm: {
   },
   scheduled: {
     description: "應用程式執行時，按排程自動執行 Agent 任務。",
+    general: "通用（不綁定專案）",
+    detailGeneral: "通用（無專案）",
     edit: "編輯任務",
     hourlyHint: "儲存或啟用後，每隔 1 小時執行一次。重新啟動應用程式後重新計時。",
     morning: "上午",

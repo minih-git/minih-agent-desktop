@@ -80,6 +80,9 @@ export function ScheduledTaskRail({
               >
                 <span className="scheduled-task-title">
                   <span className="scheduled-task-name">{task.title}</span>
+                  {task.workspacePath ? null : (
+                    <span className="scheduled-task-paused">{t("scheduled.general")}</span>
+                  )}
                   {running ? (
                     <span className="scheduled-task-live" aria-hidden>
                       <IconDot size={10} />

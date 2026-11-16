@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   GlobalPermissionMode,
@@ -19,7 +19,7 @@ import { useAppStore } from "../../stores/app-store";
 import "./scheduled-editor.css";
 
 export type ScheduledDraft = Pick<ScheduledTask, "title" | "prompt" | "cadence" | "schedule"> & {
-  workspacePath?: string;
+  workspacePath?: string | null;
   permissionMode?: GlobalPermissionMode;
   providerId?: string | null;
   modelId?: string | null;
@@ -101,11 +101,6 @@ export function ScheduledEditor({
       : { ...defaultModel, thinkingLevel: task?.thinkingLevel },
   );
   const [modelTouched, setModelTouched] = useState(false);
-  useEffect(() => {
-    if (workspacePath) return;
-    const fallback = currentWorkspacePath || projects[0]?.path;
-    if (fallback) setWorkspacePath(fallback);
-  }, [currentWorkspacePath, projects, workspacePath]);
   const validTime = hour !== "" && minute !== "" && Number.isInteger(Number(hour)) &&
     Number.isInteger(Number(minute)) && Number(hour) >= 0 && Number(hour) < 24 &&
     Number(minute) >= 0 && Number(minute) < 60;
@@ -159,8 +154,8 @@ export function ScheduledEditor({
           ScheduledDraft,
           "workspacePath" | "permissionMode" | "providerId" | "modelId" | "thinkingLevel" | "sessionMode"
         > = {};
-        if (!task || task.workspacePath || workspaceTouched) {
-          if (workspacePath) executionSettings.workspacePath = workspacePath;
+        if (!task || task.workspacePath !== undefined || workspaceTouched) {
+          executionSettings.workspacePath = workspacePath || null;
         }
         if (!task || task.permissionMode || permissionTouched) {
           executionSettings.permissionMode = permissionMode;

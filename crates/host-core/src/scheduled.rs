@@ -214,7 +214,10 @@ fn task_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScheduledTask> {
             .get("nextRunAt")
             .and_then(Value::as_i64)
             .map(ms_to_ts),
-        workspace_bound: config.get("workspacePath").is_some(),
+        workspace_bound: config
+            .get("workspacePath")
+            .and_then(Value::as_str)
+            .is_some_and(|path| !path.trim().is_empty()),
         calendar_configured,
         workspace_path: config
             .get("workspacePath")

@@ -80,6 +80,7 @@ async function withVite(work) {
 /** Renders one component the way the route does, through the real catalog. */
 async function render(server, modulePath, exportName, props, locale = "en") {
   const module = await server.ssrLoadModule(modulePath);
+  const { catalogs } = await server.ssrLoadModule("/../../packages/i18n/src/index.ts");
   const Component = module[exportName];
   const i18n = createInstance();
   await i18n.init({ lng: locale, resources: { [locale]: { translation: catalogs[locale] } } });
@@ -191,6 +192,7 @@ test("the task column reports each task's own last outcome", async () => {
     assert.match(html, /PR sweep/);
     assert.match(html, /Not run yet/, "a task that never ran says so");
     assert.match(html, /Disabled/, "a paused task is marked");
+    assert.match(html, /General \(no project\)/, "an unbound task is visibly general");
     assert.equal((html.match(/aria-current="true"/g) ?? []).length, 1, "one selected task");
   });
 });
@@ -274,6 +276,13 @@ test("the task page reads facts, history, and the selected run in place", async 
       "selecting another run moves the card with it",
     );
     assert.equal((other.match(/aria-current="true"/g) ?? []).length, 1);
+    const general = await render(
+      server,
+      "/src/features/scheduled/ScheduledTaskDetail.tsx",
+      "ScheduledTaskDetail",
+      { ...props, task: TASK_B, runs: [], selectedRunId: null },
+    );
+    assert.match(general, /General \(no project\)/, "details name the project-less run location");
   });
 });
 

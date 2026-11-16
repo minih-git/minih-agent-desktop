@@ -2743,6 +2743,8 @@ sklm: {
   },
   scheduled: {
     description: "应用运行时，按计划自动执行 Agent 任务。",
+    general: "通用（不绑定项目）",
+    detailGeneral: "通用（无项目）",
     edit: "编辑任务",
     hourlyHint: "保存或启用后，每隔 1 小时执行一次。重启应用后重新计时。",
     morning: "上午",

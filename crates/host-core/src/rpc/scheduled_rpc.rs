@@ -79,9 +79,10 @@ fn handle_with_workspace_policy(
                 if allow_workspace_override && params.get("workspacePath").is_some() {
                     // The desktop form may explicitly move a task to another
                     // saved project. Conversation tools stay project-scoped.
-                } else if existing
-                    .as_ref()
-                    .is_some_and(|task| !task.workspace_bound && task.schedule.is_none())
+                } else if !allow_workspace_override
+                    && existing
+                        .as_ref()
+                        .is_some_and(|task| !task.workspace_bound && task.schedule.is_none())
                 {
                     params["workspacePath"] = json!(workspace);
                 } else if let Some(object) = params.as_object_mut() {

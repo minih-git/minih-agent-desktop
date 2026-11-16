@@ -1176,7 +1176,7 @@ CREATE INDEX idx_task_runs ON task_runs(task_id, started_at DESC);
 `scheduled.listRuns` 提供两种形状：单任务自己的历史（`taskId`，最多 200 条）与每任务最新一次运行（`latestPerTask`，每个任务一行，不能与 `taskId` 同时使用）。任务列读取后者：`task_runs` 的全局窗口可能被某个繁忙任务填满（保留策略是按任务各留最近 100 条），那样空闲任务会被误报为「尚未运行」，所以喂给任务列的读取按任务而不是共享窗口。
 保留策略按任务各留最近 100 条运行（`TASK_RUNS_KEEP`，每次打开数据库时执行）。归属由这些行派生，因此一条被清理的运行会带走两件事：它从任务历史里消失，其会话也不再带 `scheduledRun`，于是那段转写回到会话列表与全局搜索。运行速度快于保留窗口的任务——`interval` 从 5 分钟起、每小时周期约四天后——会碰到这条边界；用持久化 origin 取代派生标记的改法与 issue #1291 的后续一起跟踪。任务页每次最多读取 200 条运行，这是 `scheduled.listRuns` 对单任务历史的上限。
 
-`config_json` 保存 `schedule: {hour, minute, weekday}`、`intervalMinutes`（5–1440，只有 `interval` 周期读取，因此保留该字段的排程会保留它的值）、毫秒时间戳 `nextRunAt`、`workspacePath`、会话模式 `sessionMode`（`perRun` 或 `reuse`，缺失按 `perRun`），以及可选的任务级 `permissionMode` 与成对的 `providerId`／`modelId`。
+`config_json` 保存 `schedule: {hour, minute, weekday}`、`intervalMinutes`（5–1440，只有 `interval` 周期读取，因此保留该字段的排程会保留它的值）、毫秒时间戳 `nextRunAt`、`workspacePath`、会话模式 `sessionMode`（`perRun` 或 `reuse`，缺失按 `perRun`），以及可选的任务级 `permissionMode` 与成对的 `providerId`／`modelId`。缺少 `workspacePath` 的定时任务属于通用任务：运行会话没有项目，也不会继承当前工作区；`reuse` 只匹配同样没有项目的会话。
 这些新增字段无需物理表迁移。缺少模型字段时仍在运行时读取应用默认值；缺少权限字段时，
 自动运行继续使用 Ask，立即运行继续继承全局权限。每天、每周按宿主本地时区计算；每小时与间隔按准入时刻起算的经过时间计算：每小时采用 `nextRunAt = now + 3_600_000`，间隔采用 `nextRunAt = now + intervalMinutes × 60_000`，两者都忽略日历时间字段。
 `interval` 任务的排程若缺少 `intervalMinutes`，写入会被拒绝，而不是保存成永不触发的任务。可选 `weekdays` 保存 1–7 个不重复的 0–6 整数，覆盖每周的旧 `weekday`；

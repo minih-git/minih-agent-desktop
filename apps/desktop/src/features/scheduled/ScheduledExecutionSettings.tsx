@@ -54,7 +54,9 @@ export function ScheduledExecutionSettings({
   const currentWorkspacePath = useAppStore((state) => state.workspace?.path ?? "");
   const projectOptions = useMemo(() => {
     const seen = new Set<string>();
-    const result: Array<{ id: string; label: string }> = [];
+    const result: Array<{ id: string; label: string }> = [
+      { id: "", label: t("scheduled.general") },
+    ];
     const add = (path: string | null | undefined, name?: string) => {
       const value = path?.trim();
       if (!value) return;
@@ -67,7 +69,7 @@ export function ScheduledExecutionSettings({
     add(currentWorkspacePath);
     for (const project of projects) add(project.path, project.name);
     return result;
-  }, [currentWorkspacePath, projects, workspacePath]);
+  }, [currentWorkspacePath, projects, t, workspacePath]);
 
   return (
     <div className="composer-toolbar scheduled-execution-toolbar">

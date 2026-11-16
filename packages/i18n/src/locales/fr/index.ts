@@ -2742,6 +2742,8 @@ sklm: {
   },
   "scheduled": {
     "description": "Exécutez des tâches récurrentes tant que Minih-Agent-Desktop est ouvert.",
+    "general": "Général (sans projet)",
+    "detailGeneral": "Général (sans projet)",
     "edit": "Modifier la tâche",
     "hourlyHint": "Exécution toutes les heures, une heure après enregistrement ou activation. Redémarrer l’application relance cet intervalle.",
     "morning": "Matin",

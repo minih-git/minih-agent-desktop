@@ -88,7 +88,7 @@ export function ScheduledTaskDetail({
   const selectedStatus: ScheduledTaskRun["status"] = selectedRun?.status ?? "completed";
   const contentStatus: ScheduledTaskRun["status"] =
     selectedRun && selectedRun.id === latest?.id && latestIsLive ? "running" : selectedStatus;
-  const project = task.workspacePath ? shortenPath(task.workspacePath) : "";
+  const project = task.workspacePath ? shortenPath(task.workspacePath) : t("scheduled.detailGeneral");
   // The stored provider id is a UUID; the facts row shows the provider's name
   // beside the model, and falls back to the model alone when it is unknown.
   const model = task.modelId
