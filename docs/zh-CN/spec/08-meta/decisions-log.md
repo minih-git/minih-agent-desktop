@@ -13,6 +13,7 @@
 
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
+| D689 | 移除内置 Super Agent 层 | **删掉宿主为自己创建的那名管家，保留它下面的全部员工能力。删除项：`steward` 子代理定义及其提示词块、`STEWARD_ONLY_TOOLS`、`TaskCard` / `Roster` / `TaskStatus` 本地工具、整套 `taskCard.*` RPC 及其 IPC 处理与事件、`bot.roster`、`bot.seedDefaults`、共享任务卡编解码与渲染层 task-card / steward-name 模块、任务卡坞与管家坞、侧栏"待开工卡片"计数，以及招聘页的"启用 Super Agent"。保留且行为不变：bot 会话与 `bot_profile_json`、冻结在投递上的 Mandate 与 `session.collaboration.mandate`、`tasks.origin` 的 `('steward', 'direct')` CHECK 与历史行原值、阶段词汇、等你通道、阻塞卡与完成卡、接受并合并、接力链、员工经验、`SessionSend/Result/List/Create`、团队规范与每轮任务简报。缺口处理：`task.reassign` 不再在管家会话上拟卡，而是在所选员工处新建一个 `origin = direct` 任务并带上原目标与同一仓库，由 Main 起第一轮，原任务保持原样且不归档；全新安装员工数为 0，只有招聘区；stage、interrupted 与巡检通知改投通知中心（`task.failed` 行携带 `TASK_FAILED` / `TASK_BLOCKED` / `TASK_INTERRUPTED`，巡检为 `TASK_ANSWER_WAIT` / `TASK_ACCEPT_WAIT` / `TASK_STUCK` / `TASK_RUNNING_LONG`），恰好一次的键不变；`SessionSend` 的描述不再提管家。架构 v42 是对 `sessions` 的一条 UPDATE：`bot_profile_json.definition = 'steward'` 的行只去掉该键，name、duty、role、权限模式、转录与记忆全部保留，会话绝不删除；不重建任何表，只拒绝新增的外键违例，最后写入 `user_version = 42`。`task_card_drafts` 留在迁移链上但不再写入；`bot-persona` 的 `steward` → `none` 兼容判断保留到迁移之后。Super Agent 将在后续改动中以插件形式回归。见 ADR bot-sessions-and-steward 的"移除内置 Super Agent 层"。** | 管家是宿主唯一自建、且用户无法关掉的员工，因此无法跟随产品自身的修订；而一个驱动同样宿主表面的插件，能在受审查的权限边界内达成同一目标。把它作为一层移除，员工会话、任务与授权模型原样保留，代价是一名被删的派活者和四条被补上的路径，而不是重写员工模式。 |
 | D688 | 学习记忆自行整理 | **新增 `learnedMemory.curate`：本设备开关，默认关闭，且必须先有 `learnedMemory.model` 才能打开；打开后抽取出的候选直接生效（`suggested` → `active`，`origin` 仍为 `extracted`），不再等待建议箱，同时后台整理按作用域合并近似重复的笔记、用较新的一条替换被它否定的旧笔记，并改写抽取笔记的措辞。自动路径的删除一律是归档（`archived` + `superseded_by`），从不写入或清除屏蔽记录；用户亲手写过（`explicit` / `user_ui`）的笔记措辞永远不被改写，但它仍可作为合并或替换的目标。所有护栏都由宿主在事务内强制：单次上限为 `min(8, max(1, 该作用域活跃笔记的 20%))`、用户 30 天静默窗口、合并结果沿用同样的写入规则（1 KiB、凭据检测、屏蔽记录、来源取并集）、逐目标 `revision` 校验（任一不符则整条作废）、以及被撤销过的目标集合不再被提出。每次改动都在同一事务写入 `memory_revisions`，撤销以批次为单位——激活的撤销等同建议箱里的放弃，合并或替换的撤销还原目标，改写的撤销还原措辞；期间笔记被动过则返回 `MEMORY_UNDO_CONFLICT` 且不写入任何内容。脏作用域租约保证每个作用域每个本地日只跑一次，且在应用空闲十分钟、没有任何会话跑轮次之后。宿主架构 v41 新增 `memory_revisions`、`memory_curation_state`、`memory_curation_rejections`；同步格式、读取路径以及开关关闭时的行为都不变。取代 2026-10-19 的提议-复核设计，其逐条复核队列不再保留。员工经验的 `bot` 作用域不在本功能范围内：宿主在每个入口拒绝该作用域，脏标记跳过它。见 ADR learned-memory-consolidation、ADR agent-long-term-memory §4/§8 的 D688 修订，以及 E2E-MEMORY-auto-curation-applies-and-undoes。** | 建议箱让用户手工打理记忆，与学习记忆的目的相反，而早先的设计又用另一条队列回答同一个问题。归档本身可恢复、每次改动都带原因记录、撤销一键完成，因此建议箱提供的保护在事后同样可得，而每次整理的代价被上限与每日一次限制住。旧版应用无法打开迁移后的数据库，与每次架构升级相同。 |
 | D687 | Bot 会话与管家 | **bot 是一条带 `role: bot` 与 `botProfile` 的持久 Agent 会话（name、avatar、duty、可空 `homeHostId`、权限模式、`mustAsk`，以及必填且默认开启的 `observe`），而不是新实体；管家是内置 bot，工具只有 `SessionList/Send/Result/Create` 与任务卡工具，没有 Write/Edit/Bash/plugin/MCP 工具，也不继承工具；确认后的任务卡冻结成不可改写、有界的 Mandate 存在其 ADR 0239 账本条目上，执行方按 `min(卡片, 来源上限, bot 上限)` 重算权限并取 `mustAsk` 并集；进度使用 dsh 的六值 report（progress/waiting/ready/blocked/failed/dropped）与六行 stage，只有 `person/*` 打扰人。架构 v30 -> v31 单步追加 `sessions.role`、`sessions.bot_profile_json`，以及账本上的 `mandate_json`、`stage`、`report_seq`。跨机派活是后续单独的 `cross-host-collab` 决策。见 ADR bot-sessions-and-steward。** | 员工需要一个活得比一次对话更久的身份、一份冻结的授权记录，以及一套说明"谁在挡着这件事"的词汇；会话、协作账本与 delegate 工具作用域已经分别拥有身份、投递与权限，为其中任何一项再建实体都会让同一个工作者出现两个真相来源。 |
 | D686 | 插件用应用内的模型生成向量 | **`ModelBinding` 增加可选的 `kind`（缺省即 `chat`，或 `embedding`）；Minih Router 把某个模型归为 `embedding` 时按此保存，用户可在模型行上改。向量模型不进任何对话选择器（会话、子代理、标题、学习、提示增强），`resolveRuntimeModel` 也不允许用它启动会话。新增高风险权限 `embeddings.run` 提供 `pi.embeddings.embed(modelKey, texts 1..=64 / 单条 ≤8 KiB / 总量 ≤256 KiB, dimensions?)`，走 OpenAI 兼容的 `POST /embeddings`，返回 `{vectors, modelKey, dims, usage?}`；厂商账号 OAuth 或原生 provider 返回 `UNSUPPORTED_PROVIDER`，凭据始终不出 Electron main。`pi.models.list` 每行带上 `kind`，并接受可选 `{kind}`（缺省 `chat`），已有调用行为不变。全部为增量：不迁移、不升架构版本、不升协议版本。见 ADR plugin-embeddings。** | 索引笔记的插件此前必须在应用不管理的文件里再配一遍同一个网关和密钥，而 Desktop 本来就有这两样；真正缺的是一个说明「哪些模型是向量模型」的标记，以及一个把密钥留在宿主的调用。 |
@@ -5843,3 +5844,34 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   （`chat.quoteSelection`、`chat.quoteUnavailable`）。
 - 见 ADR 0334（修订 D681）、`04-ux/08-component-spec.md` §7.4 与
   E2E-CHAT-selection-quote-into-composer。
+
+## 2026-11-16 —— 内置 Super Agent 层离开宿主（D689）
+
+- 宿主不再为自己创建员工。`steward` 子代理定义及其提示词块、
+  `STEWARD_ONLY_TOOLS`、`TaskCard` / `Roster` / `TaskStatus` 本地工具、整套
+  `taskCard.*` RPC 及其 IPC 与事件、`bot.roster`、`bot.seedDefaults`、共享任务卡
+  编解码、渲染层任务卡坞与管家坞、侧栏待开工卡片计数，以及招聘页的
+  "启用 Super Agent" 一并删除：它们本是一层，只删一半会留下没人拟的卡和没人确认的草稿。
+- 底下每一项能力都保留且行为不变：员工会话与 `bot_profile_json`、冻结在投递上的
+  Mandate、阶段词汇、等你通道、阻塞卡与完成卡、接受并合并、接力链、员工经验、
+  跨会话消息、团队规范与每轮任务简报。
+- `tasks.origin` 继续保留 `('steward', 'direct')`，历史行的值不变，因为
+  `task.restart`、接力、完成卡与 `task_stage.rs` 仍在读它。新任务只写 `direct`：
+  人自己创建的任务，本来就是这个词的含义。
+- `task.reassign` 不再在管家会话上拟卡：它在所选员工处新建一个 `origin = direct`
+  的任务，带上原目标与同一仓库，由 Main 起第一轮；原任务保持原样、不被归档。
+- stage、interrupted 与巡检通知改投通知中心，而不是某个派活者的会话：
+  `task.failed` 行携带 `TASK_FAILED`、`TASK_BLOCKED`、`TASK_INTERRUPTED`，巡检为
+  `TASK_ANSWER_WAIT`、`TASK_ACCEPT_WAIT`、`TASK_STUCK`、`TASK_RUNNING_LONG`。
+  "恰好一次"的键不变，因此重启围栏或重跑巡检都不会多写一行。
+- 架构 v42 是对 `sessions` 的一条 `UPDATE`：`bot_profile_json.definition` 为
+  `steward` 的行只去掉这个键，name、duty、role、权限模式、转录与记忆全部保留，
+  会话绝不删除。不重建任何表，只拒绝新增的外键违例，最后写入 `user_version = 42`。
+  `task_card_drafts` 留在迁移链上但不再写入；旧版应用无法打开迁移后的文件，与每次架构升级相同。
+- `bot-persona` 的 `steward` → `none` 兼容判断保留到迁移之后，让仍带该定义的会话
+  在版本抬升与 v42 之间仍能启动。
+- Super Agent 将在后续改动中以插件形式回归，驱动同样的宿主表面（`bot.*`、`task.*`、
+  `session.collaboration.*`），并在受审查的权限边界内工作，而不是作为宿主自带的一层。
+- 见 ADR bot-sessions-and-steward 的"移除内置 Super Agent 层"、
+  `03-runtime/04-data-storage.md` §4.19c、`03-runtime/06-host-rpc-protocol.md`、
+  `03-runtime/10-session-state-machine.md` §6 与 `06-delivery/04-e2e-test-plan.md`。

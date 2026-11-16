@@ -10,6 +10,11 @@
   `03-runtime/04-data-storage.md` §4.6c, §4.19,
   `03-runtime/10-session-state-machine.md` §6
 
+- Superseded in part (2026-11, 1.7.0, D689): §2, §3 and the slice-6 §3 no
+  longer describe shipped behavior — the built-in Super Agent layer left the
+  host. See "Removing the built-in Super Agent layer" at the end of this ADR
+  for what was removed, what stays, and the plugin direction that replaces it.
+
 ## Context
 
 The product is chat-first: a person talks to their computer and work happens.
@@ -124,6 +129,12 @@ ADR 0239 requires.
 
 ### 2. The steward is a bot with no side-effecting tools
 
+> **Superseded (2026-11, 1.7.0, D689).** The built-in steward this section
+> describes is gone: the host creates no employee for itself and ships no
+> dispatcher definition. "Removing the built-in Super Agent layer" at the end of
+> this ADR records what replaced it. The delegate tool-scope check it cites is
+> unchanged and still applies to every employee definition.
+
 The steward is a built-in bot, defined like any other subagent definition, and
 it owns exactly one capability set. As shipped in employee mode 0.5 slice 3
 (§"Steward roster, briefing and wake-ups") that set is `Roster`, `TaskCard`,
@@ -142,6 +153,13 @@ bounded and keeps an injection in a worker's reply from reaching a component
 that can dispatch work.
 
 ### 3. A task card freezes into a Mandate
+
+> **Superseded (2026-11, 1.7.0, D689).** No built-in agent proposes cards and
+> nothing confirms one any more, so the proposal-and-confirmation mechanics this
+> section describes are history. What survives is the Mandate itself: a
+> task created directly carries none, and `task.restart` still reuses the frozen
+> card of a historical task. The shape and the permission rule of a Mandate, and
+> the fact that it asks rather than grants, remain as written below.
 
 The steward decides what a sentence asks for (two-layer evaluation: a
 deterministic gate on who is speaking to whom, then a model assessment of what
@@ -527,6 +545,13 @@ behaviour yet.
 
 ## Steward roster, briefing and wake-ups (employee mode 0.5, schema v35)
 
+> **Superseded (2026-11, 1.7.0, D689).** No built-in dispatcher exists, so the
+> roster, the briefing and the wake-ups this section specifies are history: the
+> roster tool, the `taskCard.*` family and the stage-notice delivery are gone,
+> and a stage change now reaches the person through the notification inbox. The
+> startup fence, `task.restart`, the stage vocabulary and the relay chain it
+> mentions remain and behave as described.
+
 Decision (2026-11-13). Slice 3 gives the steward three things she was missing —
 a crew she can read, a ledger she does not have to remember, and a reason to
 speak — and fixes the sixth defect (an interrupted task that nobody could see and
@@ -779,9 +804,9 @@ rule already sits in Main's `shouldShowNativeNotification` handler. Main would
 have had to duplicate the banner and the toast. What Main keeps is the decision
 about *whether* a banner is shown at all.
 
-The steward's model has no tool that answers a request. `bot.*`, `taskCard.*`
-and `task.*` stay out of the sidecar proxy allowlist, so the only way a request is
-resolved is a person's click.
+No model has a tool that answers a request. `bot.*` and `task.*` stay out of the
+sidecar proxy allowlist, so the only way a request is resolved is a person's
+click.
 
 ### 6. The rule that changed: a stuck task counts as waiting
 
@@ -1183,6 +1208,11 @@ data: nothing in it is executed.
 
 ### 3. `seedDefaults` narrows to the steward
 
+> **Superseded (2026-11, 1.7.0, D689).** `bot.seedDefaults` was removed with the
+> built-in Super Agent: there is no crew for the host to create, and a fresh
+> installation starts with zero employees and the hiring area. §4 onwards is
+> unaffected.
+
 `bot.seedDefaults` keeps its name and its `created`/`skipped` reply, but creates
 **only** the Super Agent. The fixed crew — Router 后端, Desktop 前端, 调研与文档
 — is gone; those jobs are hired from templates now. The method is still called
@@ -1386,3 +1416,122 @@ opens — the rule every step since v33 has followed.
 | Two steps of one chain are not reported as an overlap | **Yes** — the chain is excluded whole | `task_overlap::overlap` |
 | An unreadable overlap is reported as unreadable | **Yes** — `readable: false` + `reason` | `task_overlap.rs`, `task_overlap_tests.rs` |
 | A task session knows its place in the chain | **Yes** — the host injects "step k of n" and the push rule | `services/task-status.ts` |
+
+## Removing the built-in Super Agent layer (2026-11, 1.7.0, D689)
+
+### Context
+
+The dispatcher this ADR introduced was the one employee the host created for
+itself: a built-in session named `Super Agent`, a built-in subagent definition
+with the `Roster` / `TaskCard` / `TaskStatus` tools, a card dock bound to its
+conversation, and a hiring button that re-created it. The product decision of
+2026-11 is that the Super Agent becomes a **plugin** — a reviewed extension that
+drives the same host surfaces every other client does — rather than a layer the
+host ships and cannot turn off. This ADR records the first half of that
+decision: the built-in layer is removed (1.7.0), the plugin is a later PR.
+
+The boundary is deliberately narrow. Everything a person hires and uses stays,
+with the behavior this ADR specifies elsewhere: employee sessions, task
+sessions, worktrees, the relay chain, the waiting channel, the blocked card, the
+completion card and accept-and-merge, employee lessons, cross-session messaging
+and the notification inbox.
+
+### What was removed
+
+- The `steward` subagent definition and its prompt block, and the
+  `STEWARD_ONLY_TOOLS` set (the deny list is now `SUBAGENT_INHERIT_DENY_TOOLS`
+  alone).
+- The `TaskCard`, `Roster` and `TaskStatus` local tools; `SessionSend`,
+  `SessionResult`, `SessionList` and `SessionCreate` remain, without the
+  steward's wording in their descriptions.
+- The `taskCard.*` RPC family (`list`, `propose`, `revise`, `drop`,
+  `autoStart`, `reassign`, `confirm`), `bot.roster`, `bot.seedDefaults`, their
+  IPC handlers and events, and the shared task-card codec.
+- The renderer's task-card dock, the steward dock in the waiting channel, the
+  sidebar's pending-card count, the "Enable Super Agent" hiring action, and
+  `isSteward*` helpers.
+- `stewardNormsLine` (the per-turn steward briefing); `teamNormsBriefing` and
+  `buildTaskSessionBriefing` are unchanged.
+
+### What stays, and why
+
+- **Bot sessions and the profile.** `role`, `bot_profile_json`, the delegate
+  scope check and the roster-free employee list are untouched. A user can hire
+  as many employees as they like; a fresh installation simply starts with zero.
+- **The Mandate.** `session_collaboration_messages.mandate_json` keeps its
+  shape, its bounds, and its rule that it asks rather than grants.
+  `session.collaboration.mandate` still attaches one, `task.restart` still
+  replays the frozen card of a historical task, and the relay chain still reads
+  it. A task created after 1.7.0 carries no Mandate, which already meant
+  "delivered without a frozen authorization".
+- **`tasks.origin`.** The column keeps `CHECK (origin IN ('steward', 'direct'))`
+  and historical `steward` rows keep their value: `task.restart`, the relay, the
+  completion card and `task_stage.rs` still read it. New tasks are written
+  `direct` only, because a person creating a task is exactly what `direct`
+  means.
+- **The stage vocabulary and the notices.** §4 and the waiting channel stand.
+  What changed is the *audience*: a stage notice is no longer a ledger delivery
+  to a dispatcher conversation but a row in the notification inbox
+  (`task.failed` with `error_code` `TASK_FAILED` / `TASK_BLOCKED` /
+  `TASK_INTERRUPTED`), and the hourly inspection writes one inbox row per
+  finding (`TASK_ANSWER_WAIT`, `TASK_ACCEPT_WAIT`, `TASK_STUCK`,
+  `TASK_RUNNING_LONG`). Both keep their exactly-once key, so a restart of the
+  fence or a retried inspection adds nothing.
+- **`task_card_drafts`.** The table and its v32 / v38 / v40 steps stay on the
+  migration chain; nothing writes it from 1.7.0 on. Dropping a table with a
+  history of foreign keys buys nothing and would cost a rebuild.
+- **`bot-persona.ts`'s `steward` → `none` mapping.** It is what keeps a
+  pre-migration session launchable between the version bump and the v42 step;
+  it is deleted once no file can carry that definition.
+
+### The four gaps the removal opened
+
+1. **Handing a stuck task to another employee.** `task.reassign` no longer
+   proposes a card on a dispatcher conversation. It creates a **new task** under
+   the employee the person picked, at `origin = direct`, carrying the original
+   goal (the mandate's `goal`, else the person's words, else the title) and the
+   same repository, and Main starts its first turn. The click that names the
+   employee is the authorization, so there is no second confirmation; the
+   original task is left exactly as it was.
+2. **A fresh installation with zero employees.** The hiring area is standalone:
+   a template, a one-sentence draft or a blank form, and no empty state that
+   promises a host-created employee.
+3. **Inspection and stage notices without a dispatcher.** Both write to the
+   notification inbox, described above; the renderer's notification path never
+   passes through a bot session.
+4. **Cross-session messaging wording.** `SessionSend` addresses a session, not a
+   steward: its description names the target session and the task id when there
+   is one.
+
+### Schema v41 -> v42
+
+One `UPDATE` over one table: every `sessions.bot_profile_json` whose
+`definition` is `steward` loses that one key. `name`, `duty`, `role`,
+`permissionMode`, `observe`, `mustAsk`, the transcript and the memory stay, so
+the conversation the person had becomes an ordinary employee session instead of
+disappearing. `json_remove` is used rather than storing `null`: an absent
+definition is what "no job" already means. No table is rebuilt, so a long-lived
+file with historical foreign-key violations still opens — the step counts
+`pragma_foreign_key_check` before and after and refuses only *new* violations,
+with enforcement on. The step is idempotent and stamps `user_version = 42` last.
+An older build cannot open a v42 file, as with every schema bump.
+
+### Plugin direction (not in this change)
+
+The plugin that replaces the Super Agent drives the public surfaces this ADR
+already defines — `bot.list` / `bot.create` / `bot.update` / `bot.forTaskSession`,
+`task.*`, `session.collaboration.*` — under plugin permissions, and proposes work
+through them rather than through a host-owned card dock. The host keeps owning
+identity, persistence and the permission ceiling, so a plugin cannot widen what
+a task may do; the delegate tool scope and the `mustAsk` gate stay the boundary.
+
+### Enforcement status after this section
+
+| Rule | Enforced | Where |
+| --- | --- | --- |
+| The host creates no employee for itself | **Yes** — no seed path, no steward definition | `session_collaboration/bots.rs`, `subagent-definitions.ts` |
+| New tasks are `direct`; historical `steward` rows keep their value | **Yes** — the column CHECK is unchanged, every write path passes `direct` | `tasks.rs`, `task_stage.rs` |
+| A stage change reaches the person at most once | **Yes** — one inbox row under a `(task, stage, stage_seq)` key | `session_collaboration/notices.rs` |
+| The inspection writes one row per finding and nothing when all is well | **Yes** — keyed by `(task, condition, batch)` | `notices::inspection`, `task_inspection.rs` |
+| Reassigning creates a task under the new employee and leaves the old one alone | **Yes** — one transaction, `origin = direct`, no archive | `task_stage::reassign` |
+| A v41 file upgrades without losing a session or its profile | **Yes** — one UPDATE, FK delta check, v42 stamp | `db/steward_profile_migration.rs` |

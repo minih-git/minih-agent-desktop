@@ -1069,9 +1069,12 @@ report_seq   INTEGER NOT NULL DEFAULT 0 CHECK (report_seq >= 0)
 - `role` is the only bot discriminator. A value outside the two known roles
   fails closed on read; it is never normalized to `user`.
 - `bot_profile_json` is the encoded bot profile (`name`, `avatar`, `duty`,
-  nullable `homeHostId`, `permissionMode`, `mustAsk[]`, `observe`). It is
-  present exactly when `role = 'bot'`, is bounded, and `observe` is always
-  written — an absent flag is not read as "auto-start".
+  nullable `homeHostId`, `permissionMode`, `mustAsk[]`, `observe`, and an optional
+  `definition` naming the job it runs as). It is present exactly when
+  `role = 'bot'`, is bounded, and `observe` is always written — an absent flag is
+  not read as "auto-start". Since schema v42 no profile carries
+  `definition = 'steward'`: the built-in dispatcher left the host in 1.7.0, and a
+  session that used to hold it is an ordinary employee session (§4.19c).
 - `mandate_json` is the encoded Mandate frozen when the person confirmed the
   task card. The host treats it as an opaque, bounded opaque value: it stores,
   scopes to its delivery, and returns it. Shape, bounds, and invariants are one
@@ -1145,8 +1148,12 @@ archived_at        INTEGER
 - `project_id` mirrors `sessions.project_id`, which is written first and read
   back: the runtime launches a turn in the session's workspace, so the task's
   repository has one source of truth and the two rows cannot disagree.
-- `origin` is `steward` for work a confirmed card dispatched and `direct` for
-  work the person typed into the employee's workbench. It is provenance only.
+- `origin` is provenance only. `direct` is work the person typed into the
+  employee's workbench — the only value any write path produces since 1.7.0.
+  `steward` marks work a confirmed card dispatched before that: the value stays in
+  the CHECK and on historical rows because `task.restart`, the relay chain, the
+  completion card and `task_stage.rs` still read it, and rewriting the column
+  would rewrite what those tasks were.
 - `stage` uses the §4.19 vocabulary and is written by the host alone: the same
   transaction that accepts a ledger report (`session_collaboration.progress`)
   and the one that settles a turn (`settlement`) move a task bound to that
@@ -1281,6 +1288,44 @@ archived task: `pending`, `running`, `done`, `skipped:disabled`,
 `stage_changed_at` (when the current stage was written; the hourly inspection
 measures a wait from it, and a historic row leaves it NULL, which reads as
 "unknown" and is never reported).
+
+### 4.19c schema v42 — the built-in Super Agent layer leaves the profile
+
+The dispatcher the host used to create for itself stored
+`bot_profile_json.definition = 'steward'`. From 1.7.0 that value names nothing:
+the layer is gone and the delegate catalog does not have the job.
+
+**Schema v41 -> v42** is one `UPDATE` over one table:
+
+```sql
+UPDATE sessions
+   SET bot_profile_json = json_remove(bot_profile_json, '$.definition')
+ WHERE role = 'bot'
+   AND bot_profile_json IS NOT NULL
+   AND json_valid(bot_profile_json)
+   AND json_extract(bot_profile_json, '$.definition') = 'steward';
+```
+
+- **Only the definition is cleared.** `name`, `duty`, `role`, `permissionMode`,
+  `observe` and `mustAsk` — every setting the person chose — stay exactly as they
+  were, and the session is never deleted, archived or renamed: its transcript and
+  its memory are still theirs, and it reads as an ordinary employee session.
+  `json_remove` drops the key rather than storing `null`, because an absent
+  definition is what "no job" already means and a second spelling of it would have
+  to be special-cased by every reader.
+- **No table is rebuilt.** A file that carries historical dangling references
+  upgrades exactly like a clean one, so the step counts
+  `pragma_foreign_key_check` before and after with enforcement on and refuses only
+  *new* violations. Rewriting a JSON column cannot add one.
+- **Idempotent.** After the first run no row matches, and `user_version = 42` is
+  stamped last, so a launch that stopped mid-step is completed rather than
+  restarted. A v42 file cannot be opened by an older build, as with every schema
+  bump.
+- **`task_card_drafts` stays.** Its v32 / v38 / v40 steps remain on the migration
+  chain and the table is simply not written any more: dropping a table with a
+  history of foreign keys buys nothing and would cost a rebuild. Historical
+  `tasks.origin = 'steward'` rows and their `mandate_json` are likewise left
+  untouched (§4.19a).
 
 ### 4.7 messages — transcript index
 

@@ -763,8 +763,10 @@ report_seq   INTEGER NOT NULL DEFAULT 0 CHECK (report_seq >= 0)
 ```
 
 - `role` 是唯一的 bot 判别字段，未知值按失败关闭处理，不会被归一化成 `user`。
-- `bot_profile_json` 是编码后的 bot profile，恰好在该行 `role = 'bot'` 时存在；
-  `observe` 必须写入，缺少这个标志不会被读成"自动开工"。
+- `bot_profile_json` 是编码后的 bot profile（含可选的 `definition`，即它按哪个岗位
+  运行），恰好在该行 `role = 'bot'` 时存在；`observe` 必须写入，缺少这个标志不会
+  被读成"自动开工"。自架构 v42 起没有任何 profile 再带 `definition = 'steward'`：
+  内置派活层在 1.7.0 离开宿主，原先带该定义的会话就是普通员工会话（§4.19c）。
 - `mandate_json` 是人确认任务卡时冻结的 Mandate。宿主把它当作不透明的有界值，
   只负责存储、限定到其投递并返回；形状、边界与不变量由同一份共享编解码器
   定义。旧行没有 Mandate，含义是"没有冻结授权的投递"，而不是"无限制授权"。
@@ -824,8 +826,10 @@ archived_at        INTEGER
   查询而不是猜测。
 - `project_id` 镜像 `sessions.project_id`：后者先写入、再由任务行读回。运行时在
   **会话**的工作区里启动回合，所以任务的仓库只有一个事实来源，两行不可能不一致。
-- `origin` 区分秘书确认的卡片（`steward`）与员工工作台里直接输入（`direct`），
-  只表示来源。
+- `origin` 只表示来源。`direct` 是人在员工工作台里直接输入的任务，自 1.7.0 起也是
+  唯一会被写入的值。`steward` 标记 1.7.0 之前由确认卡片派发的任务：这个值继续留在
+  CHECK 与历史行上，因为 `task.restart`、接力链、完成卡与 `task_stage.rs` 仍在读它，
+  改写该列等于改写那些任务当时是什么。
 - `stage` 复用 §4.19 的七个阶段，只由宿主写入：接受账本报告的同一事务
   （`session_collaboration.progress`）与结算回合的同一事务（`settlement`）
   会同步该投递绑定的任务。
@@ -891,6 +895,37 @@ workspace_branch  TEXT             -- worktree 实际创建出的分支
 之前中断的步骤会被补完而不是第二次失败；全新建库走同一份列表
 （`task_workspace_ddl`），保证新库与迁移后的库结构一致。所有既有任务读出来都是
 `workspace_status = 'none'`，起点与交付字段为 NULL。
+
+### 4.19c 架构 v42 —— 内置 Super Agent 层离开 profile
+
+宿主过去为自己创建的那名派活者，把 `bot_profile_json.definition = 'steward'`
+存在 profile 里。从 1.7.0 起这个值不再指任何东西：该层已删除，委派目录里也没有
+这个岗位。
+
+**架构 v41 -> v42** 是对一张表的一条 `UPDATE`：
+
+```sql
+UPDATE sessions
+   SET bot_profile_json = json_remove(bot_profile_json, '$.definition')
+ WHERE role = 'bot'
+   AND bot_profile_json IS NOT NULL
+   AND json_valid(bot_profile_json)
+   AND json_extract(bot_profile_json, '$.definition') = 'steward';
+```
+
+- **只清掉 `definition`。** `name`、`duty`、`role`、`permissionMode`、`observe`、
+  `mustAsk` —— 人选择过的每一项设置 —— 原样保留，会话绝不删除、归档或改名：它的
+  转录与记忆仍是属于用户的，读起来就是一个普通员工会话。用 `json_remove` 而不是
+  写入 `null`，因为「没有 definition」本来就是「没有岗位」的唯一含义，第二种写法
+  会让每个读取方都要特判。
+- **不重建任何表。** 带着历史悬空引用的长期库与干净库一样能升级：该步骤在开启外键
+  约束的情况下前后各统计一次 `pragma_foreign_key_check`，只有*新增*违例才拒绝。
+  改写一个 JSON 列不可能产生新的违例。
+- **幂等。** 跑过一次后没有任何行再匹配，`user_version = 42` 最后写入，所以中途
+  中断的启动会被补完而不是重跑。旧版应用无法打开 v42 文件，与每次架构升级相同。
+- **`task_card_drafts` 保留。** 它的 v32 / v38 / v40 步骤继续留在迁移链上，只是不再
+  写入：删一张带着外键历史的表没有收益，却要付一次重建的代价。历史
+  `tasks.origin = 'steward'` 行及其 `mandate_json` 同样不动（§4.19a）。
 
 ### 4.7 messages — 转录索引
 

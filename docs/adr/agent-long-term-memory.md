@@ -389,9 +389,9 @@ Amendment to §3.1 and §4, and only for this scope:
 - **The session-start index keeps lessons separate.** `memory.index` returns them
   in their own array with their own budget (12 lines, 2 KiB), so a task's project
   notes can never be pushed out by what its employee learned.
-- **Only a task session reads them**, and only the employee that owns it. The
-  employee container, the steward, and ordinary conversations read exactly what
-  they read before.
+- **Only a task session reads them**, and only the employee that owns it. An
+  employee container and an ordinary conversation read exactly what they read
+  before.
 
 Everything else is unchanged: the same credential detector, the same fingerprints
 and compare-and-set revisions, the same tombstones (a deleted lesson never comes

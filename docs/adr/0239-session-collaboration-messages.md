@@ -114,6 +114,14 @@ Employee mode 0.5 slice 3 (ADR `bot-sessions-and-steward`, "Steward roster,
 briefing and wake-ups") adds one kind of message to the ledger: a **stage
 notice**. Everything else in this decision is unchanged.
 
+> **Amended (2026-11, 1.7.0, D689).** The built-in Super Agent layer left the
+> host, so a stage notice is no longer a ledger delivery to a dispatcher
+> conversation: it is a notification-inbox row (`task.failed` with
+> `TASK_FAILED`, `TASK_BLOCKED` or `TASK_INTERRUPTED`) addressed to the task's
+> own session, written under the same exactly-once key. Read "delivery to the
+> steward" below as "row for the person"; the `kind = stage` rows this section
+> describes remain readable, but nothing writes one any more.
+
 - A task that stops making progress on its own — `failed`, `blocked`, waiting for
   a person, or interrupted by the startup fence — writes one receipt-like
   delivery to the steward that dispatched it. It is `kind = stage`, `queued`, and

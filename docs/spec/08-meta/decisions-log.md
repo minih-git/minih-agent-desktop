@@ -10,6 +10,7 @@ This log freezes previously open questions into concrete decisions.
 
 | ID | Topic | Decision | Rationale |
 |---|---|---|---|
+| D689 | The built-in Super Agent layer is removed | **Delete the steward the host created for itself and keep every employee capability it sat on. Gone: the `steward` subagent definition and prompt block, `STEWARD_ONLY_TOOLS`, the `TaskCard` / `Roster` / `TaskStatus` local tools, the `taskCard.*` RPC family with its IPC handlers and events, `bot.roster`, `bot.seedDefaults`, the shared task-card codec and the task-card / steward-name renderer modules, the task-card and steward docks, the sidebar's pending-card count and the hire page's "Enable Super Agent". Kept, unchanged in behavior: bot sessions and `bot_profile_json`, the frozen Mandate and `session.collaboration.mandate`, `tasks.origin`'s `('steward', 'direct')` CHECK with historical rows untouched, the stage vocabulary, the waiting channel, the blocked and completion cards, accept-and-merge, the relay chain, employee lessons, `SessionSend/Result/List/Create`, team norms and `buildTaskSessionBriefing`. Gap repairs: `task.reassign` creates a new `origin = direct` task under the chosen employee and Main starts it (no card, no second confirmation); a fresh installation starts with zero employees and the hiring area alone; stage, interrupted and inspection notices become notification-inbox rows (`task.failed` with `TASK_FAILED` / `TASK_BLOCKED` / `TASK_INTERRUPTED`, plus `TASK_ANSWER_WAIT` / `TASK_ACCEPT_WAIT` / `TASK_STUCK` / `TASK_RUNNING_LONG`) under the same exactly-once keys instead of deliveries to a dispatcher conversation; `SessionSend`'s description no longer names the steward. Schema v42 is one UPDATE over `sessions` clearing `bot_profile_json.definition = 'steward'` (name, duty, role, permission mode, transcript and memory kept, the session never deleted), with no rebuild, a foreign-key delta check that refuses only new violations, and `user_version = 42` stamped last; `task_card_drafts` stays on the migration chain, unwritten. `bot-persona`'s `steward` → `none` mapping stays until after the migration. The Super Agent returns as a plugin in a later change. See ADR bot-sessions-and-steward, "Removing the built-in Super Agent layer".** | The dispatcher was the one employee the host created and could not switch off, so it could not follow the product's own revision, and a plugin driving the same host surfaces reaches the same goals inside the reviewed permission boundary. Removing it as a layer keeps employee sessions, tasks and their authorization model intact, so the cost is one deleted dispatcher and four repaired paths, not a rewrite of employee mode. |
 | D688 | Learning memory curates itself | **Add `learnedMemory.curate`, a device-local switch that is off by default and needs `learnedMemory.model` before it can be turned on: with it on, extraction's candidates take effect (`suggested` → `active`, `origin` stays `extracted`) instead of waiting in the inbox, and a background pass merges near-duplicate notes, replaces notes a newer one contradicts, and rewrites the wording of extracted notes. Every automatic removal is an archive (`archived` + `superseded_by`) — the automatic path never writes or clears a tombstone — and no pass rewrites the wording of a note the user authored by hand (`explicit` / `user_ui`), which may still be the subject of a merge or a replace. The host enforces every guardrail in the transaction: a per-pass cap of `min(8, max(1, 20 % of the scope's active notes))`, the user's 30-day quiet window for what a pass rewrites or replaces, the same write rules for a merge result (1 KiB, credential detector, tombstones, unioned provenance), a per-target `revision` check that voids the whole item, and a rejection record so an undone set is not proposed again. Every change writes `memory_revisions` in the same transaction and is undone by batch — an activation undo is the inbox's Discard, a merge or replace undo restores the targets, a reword undo restores the wording — with `MEMORY_UNDO_CONFLICT` and nothing written when a note moved in the meantime. A dirty-scope lease gives one pass per scope per local day, ten minutes into app idle with no turn running. Host schema v41 adds `memory_revisions`, `memory_curation_state`, and `memory_curation_rejections`; the sync format, the read path, and behavior with the switch off are unchanged. Replaces the Proposed proposal-and-review design of 2026-10-19, whose per-note review queue is dropped. See ADR learned-memory-consolidation, amendment D688 to ADR agent-long-term-memory §4/§8, and E2E-MEMORY-auto-curation-applies-and-undoes.** | The suggestion inbox made the user tend memory by hand, which is the opposite of what learning memory is for, and the earlier design answered that with a second queue. Archiving is recoverable, every change is recorded with its reason, and the records make an undo one click — so the protection the inbox provided is available after the fact, at a cost the cap and the one-pass-a-day rule keep bounded. An older app cannot open the migrated database, as with every schema bump. |
 | D687 | Bot sessions and the steward | **A bot is a durable Agent session with `role: bot` and a `botProfile` (name, avatar, duty, nullable `homeHostId`, permission mode, `mustAsk`, and `observe` required and defaulting to true), not a new entity; the steward is a built-in bot whose only tools are `SessionList/Send/Result/Create` and the task-card tool, with no Write/Edit/Bash/plugin/MCP tool and no inherited tools; a confirmed task card freezes into an immutable, bounded Mandate stored on its ADR 0239 ledger entry, with the executing side recomputing permission as `min(card, source ceiling, bot ceiling)` and unioning `mustAsk`; progress uses the dsh six-value report (progress/waiting/ready/blocked/failed/dropped) and a six-row stage where only `person/*` disturbs the person. Additive per-column schema step: `sessions.role`, `sessions.bot_profile_json`, and `session_collaboration_messages.mandate_json`, `stage`, and `report_seq`. Cross-host dispatch is a later `cross-host-collab` decision. See ADR bot-sessions-and-steward.** | An employee needs an identity that outlives a chat, a frozen record of what the person authorized, and a vocabulary that says who is holding a task; sessions, the collaboration ledger and delegate tool scopes already own identity, delivery and permission, so adding a second entity for any of them would create two sources of truth for one worker. |
 | D686 | Embeddings from the user's own models | **`ModelBinding` gains an optional `kind` (`chat` absent, or `embedding`); a Minih Router model the gateway classifies as `embedding` is saved that way and the user can change it on the model row. An embedding model never appears in a conversation choice (session composer, subagent pin, title, learning, follow-up) and `resolveRuntimeModel` refuses it for a launch. New high-risk permission `embeddings.run` serves `pi.embeddings.embed(modelKey, texts 1..=64 / ≤8 KiB each / ≤256 KiB, dimensions?)` over the OpenAI-compatible `POST /embeddings`, returning `{vectors, modelKey, dims, usage?}`; a vendor-account OAuth or native provider answers `UNSUPPORTED_PROVIDER`, and the credential never leaves Electron main. `pi.models.list` reports each row's `kind` and takes an optional `{kind}` that defaults to `chat`, so existing callers see no change. Additive everywhere: no migration, no schema version bump, no protocol version bump. See ADR plugin-embeddings.** | A plugin that indexes the user's notes had to ask for the same gateway and key a second time in a file the app does not manage, while Desktop already held both; the only missing piece was a way to say which saved models are vector models, and a host call that keeps the key on the host. |
@@ -8546,3 +8547,50 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   steward prompt, the task-card UI, push and the board are out of scope here.
 - See ADR bot-sessions-and-steward, `03-runtime/04-data-storage.md` §4.19, and
   `03-runtime/10-session-state-machine.md` §6.
+
+## 2026-11-16 — The built-in Super Agent layer leaves the host (D689)
+
+- The host stops creating an employee for itself. The `steward` subagent
+  definition, its prompt block, `STEWARD_ONLY_TOOLS`, the `TaskCard` / `Roster` /
+  `TaskStatus` local tools, the whole `taskCard.*` RPC family with its IPC
+  handlers and events, `bot.roster`, `bot.seedDefaults`, the shared task-card
+  codec, the renderer's task-card and steward docks, the sidebar's pending-card
+  count and the hiring page's "Enable Super Agent" are deleted together: they
+  were one layer, and leaving half of it would leave a card nobody proposes and
+  a draft nobody confirms.
+- Every capability underneath stays and behaves as it did: employee sessions and
+  `bot_profile_json`, the frozen Mandate on a delivery, the stage vocabulary, the
+  waiting channel, the blocked and completion cards, accept-and-merge, the relay
+  chain, employee lessons, cross-session messaging, team norms and the per-turn
+  task briefing.
+- `tasks.origin` keeps `('steward', 'direct')` and historical rows keep their
+  value, because `task.restart`, the relay, the completion card and
+  `task_stage.rs` still read it. New tasks are written `direct`: a person
+  creating a task is what that word already meant.
+- `task.reassign` no longer proposes a card on a dispatcher conversation. It
+  creates a new task under the employee the person picked, at `origin = direct`,
+  carrying the original goal and the same repository, and Main starts its first
+  turn; the original task is left untouched and unarchived.
+- Stage, interrupted and inspection notices go to the notification inbox instead
+  of a dispatcher conversation: `task.failed` rows with `TASK_FAILED`,
+  `TASK_BLOCKED`, `TASK_INTERRUPTED`, and `TASK_ANSWER_WAIT`,
+  `TASK_ACCEPT_WAIT`, `TASK_STUCK`, `TASK_RUNNING_LONG` from the hourly
+  inspection. The exactly-once keys are unchanged, so a fence restart or a
+  retried inspection still adds nothing.
+- Schema v42 is one `UPDATE` over `sessions`: a `bot_profile_json` whose
+  `definition` is `steward` loses that key and keeps its name, duty, role,
+  permission mode, transcript and memory. The session is never deleted, no table
+  is rebuilt, the step refuses only *new* foreign-key violations, and
+  `user_version = 42` is stamped last. `task_card_drafts` stays on the migration
+  chain unwritten; an older build cannot open the migrated file, as with every
+  schema bump.
+- `bot-persona`'s `steward` → `none` mapping stays until after the migration, so
+  a session that still carries the definition launches between the version bump
+  and the v42 step.
+- The Super Agent returns as a plugin in a later change, driving the same host
+  surfaces (`bot.*`, `task.*`, `session.collaboration.*`) inside the reviewed
+  permission boundary rather than as a layer the host ships.
+- See ADR bot-sessions-and-steward, "Removing the built-in Super Agent layer",
+  `03-runtime/04-data-storage.md` §4.19c, `03-runtime/06-host-rpc-protocol.md`,
+  `03-runtime/10-session-state-machine.md` §6, and
+  `06-delivery/04-e2e-test-plan.md`.

@@ -9159,31 +9159,27 @@ selection already in place shows it without waiting for another event.
 
 #### E2E-BOT-task-session-created-under-employee: Work started for an employee runs in a task of its own
 
-- **Preconditions**: Two employees exist and at least one repository is known. A
-  steward session can propose a task card, and the person can open an employee's
-  workbench.
+- **Preconditions**: Two employees exist and at least one repository is known. The
+  person can open an employee's workbench.
 - **Steps**: 1) Click an employee's name and type a task into the workbench
   field; press Enter. 2) Observe the sidebar row under that employee and the
   header of the conversation that opened. 3) Archive that task from the task's
   own header or the API the workbench uses, then reopen the employee's history
-  row. 4) Repeat step 1 for the steward: propose a card, confirm it, and follow
-  the dispatched work.
+  row. 4) Ask the employee's own conversation for a follow-up and let it settle.
 - **Expected**: The typed task creates a task row and its own session, opens it,
-  and sends the typed text as its first user message; no card is shown. The
-  employee row lists the task with its repository and stage, and its open count
-  is 1. The task session's header names the employee @ repository, the stage, the
-  origin (`direct` or `from your steward`) and a short id. The session does not
-  appear in "My sessions" or a project group. Archiving moves the task into
-  history (N) and marks the session's header archived, with its composer closed.
+  and sends the typed text as its first user message; no card is shown and none is
+  proposed — since 1.7.0 a task begins only from this field. The employee row
+  lists the task with its repository and stage, and its open count is 1. The task
+  session's header names the employee @ repository, the stage, the origin
+  (`direct`) and a short id. The session does not appear in "My sessions" or a
+  project group. Archiving moves the task into history (N) and marks the session's
+  header archived, with its composer closed.
 - **Expected, where the work runs**: the session's project is the repository
   chosen in step 1 — the value the runtime launches the turn in — and the task
   row reports the same project; with no repository chosen, the employee's own
-  project is used.
-- **Expected, steward path**: a confirmed card's delivery targets the task
-  session it created, not the employee's own transcript, and creating it adds no
-  project row for the card's `repo.origin` (a git remote, not a folder). When the
-  task's turn settles or its delivery fails, the sidebar row and the header show
-  the new stage after exactly one change event.
+  project is used. The turn runs in the task session, not in the employee's own
+  transcript. When the task's turn settles or its delivery fails, the sidebar row
+  and the header show the new stage after exactly one change event.
 - **Specs linked**: `03-runtime/04-data-storage.md` §4.19a, ADR
   `bot-sessions-and-steward` §7
 - **Acceptance**: C (conversation & stream), F (persistence), Quality
@@ -9231,126 +9227,32 @@ selection already in place shows it without waiting for another event.
   `session_worktrees/lifecycle/repo_local_tests.rs` cover the host side against
   real temporary repositories; a full run against a live host is not claimed.
 
-#### E2E-BOT-steward-picks-by-roster-and-reports-on-stage-change: The secretary chooses from the roster and speaks only when a stage changes
-
-- **Preconditions**: Two employees exist, one bound to a repository, and the
-  steward session is open. The person has not dispatched anything themselves.
-- **Steps**: 1) Ask the steward for work in that repository and read the card it
-  proposes. 2) Change the employee in the card's dropdown, then click "Start".
-  3) Ask the steward a plain question ("why is CI slow?"). 4) Let the dispatched
-  task reach a failure, then a waiting-on-you state; send one more follow-up
-  message to the running task with `SessionSend { taskId, message }`.
-- **Expected**: Step 1 shows one card whose `reason` line names the employee and
-  says why ("the task is pages and interaction; you mentioned Desktop; it is
-  idle"), with the assignee as a dropdown filled from the roster — the secretary
-  herself never appears in it. Step 2 sends `taskCard.reassign`, the card comes
-  back narrowed to the new employee's ceiling with a new hash and is still
-  waiting for a click; the click then starts it under the new employee. Step 3
-  produces an answer and no card. Step 4 wakes the steward exactly once per
-  stage change with one short message, and the follow-up reaches the task's own
-  session; a task the person dispatched directly never wakes her.
-- **Specs linked**: ADR `bot-sessions-and-steward` ("Steward roster, briefing and
-  wake-ups"), `03-runtime/06-host-rpc-protocol.md`,
-  `03-runtime/04-data-storage.md` §4.19
-- **Acceptance**: C (conversation & stream), F (persistence), Quality
-- **Milestone**: Employee mode 0.5, slice 3
-- **Status**: Partial. `apps/desktop/test/bot-steward-slice3-user-path.test.mjs`
-  drives the card, the picker and the collapsed auto-started row in a real
-  Electron window against a stubbed host;
-  `crates/host-core/src/session_collaboration/tests.rs` covers the roster, the
-  stage notices and their idempotency on the host side. A full run against a live
-  host and a live model is not claimed.
-
-#### E2E-BOT-steward-read-only-starts-and-changing-what-waits: Only a card that says it reads starts by itself
-
-- **Preconditions**: One employee with `observe` off, a steward at its default
-  `ask` mode, and both allowed to run tools.
-- **Steps**: 1) The steward proposes a research card with `readOnly: true` and
-  `permissionMode: ask`. 2) The steward proposes a second card for the same
-  employee with `permissionMode: auto` and no `readOnly`. 3) The person clicks
-  「开工」 on the second card. 4) The steward sends a follow-up to the first
-  card's task by `taskId`.
-- **Expected**: Step 1 is dispatched by the host itself
-  (`confirmedBy = policy`) and the task it creates runs at `ask`; the card shows
-  「只读」 and, once started, collapses to 「只读开工 · 改动前会问你」. Step 2
-  stays proposed: `auto` is the widest mode the product has, so a mode never
-  proves a card only reads. Step 3 creates the task at the narrower of the card
-  and the employee and the delivery carries the same ceiling, so it starts
-  instead of being refused as "too wide" for the steward's `ask`. Step 4 is
-  delivered, because a follow-up is checked against the task's own
-  authorization, not against the steward's.
-- **Specs linked**: ADR `bot-sessions-and-steward` ("A click is the
-  authorization", "Nobody-confirmed work never runs wider than `ask`"),
-  `03-runtime/06-host-rpc-protocol.md`
-- **Acceptance**: C (conversation & stream), F (persistence), Quality
-- **Milestone**: Employee mode 0.5, slice 3
-- **Status**: Partial. Host rules are covered by
-  `crates/host-core/src/session_collaboration/drafts/tests.rs` (the read-only
-  card, the refusal of `readOnly` with a wider mode, the `policy` clamp) and
-  `crates/host-core/src/session_collaboration/tests.rs` (the follow-up);
-  `apps/desktop/test/bot-steward-slice3-user-path.test.mjs` covers the badge and
-  the collapsed row in a real Electron window against a stubbed host. A full run
-  against a live host and a live model is not claimed.
-
 #### E2E-BOT-interrupted-task-restarts-on-click: A restart is visible, and one click starts the work again
 
-- **Preconditions**: A steward-dispatched task is running when the application is
-  closed (a turn in flight, or a confirmed card that has not started).
+- **Preconditions**: A task is running when the application is closed (a turn in
+  flight in its own session).
 - **Steps**: 1) Start the application again on the same data directory, without
-  touching the task. 2) Read the task's sidebar row and its session header.
-  3) Click 「重新开工」 and watch the task and its session.
+  touching the task. 2) Read the task's sidebar row, its session header and the
+  notification inbox. 3) Click 「重新开工」 and watch the task and its session.
 - **Expected**: Step 2 shows "Interrupted" on the sidebar row and in the header,
-  and the steward has one message saying the work was cut off — one per stage
-  change, never once per restart of the fence. Nothing resumes by itself: no turn
-  is started for the task. Step 3 writes exactly one new delivery from the same
-  mandate (a second click is the same restart), the task returns to `queued`, and
-  its session starts a turn. A task the person dispatched directly is shown the
-  same way and restarts the same way, but wakes no steward.
-- **Specs linked**: ADR `bot-sessions-and-steward` ("Steward roster, briefing and
-  wake-ups"), ADR `session-collaboration-messages` (startup fence),
-  `03-runtime/06-host-rpc-protocol.md`
+  and the inbox holds exactly one `task.failed` row with `TASK_INTERRUPTED`
+  pointing at the task's own session — one per stage change, never once per
+  restart of the fence. Nothing resumes by itself: no turn is started for the
+  task. Step 3 writes exactly one new delivery from the same mandate (a second
+  click is the same restart), the task returns to `queued`, and its session
+  starts a turn. A historical card-dispatched task behaves the same way.
+- **Specs linked**: `03-runtime/06-host-rpc-protocol.md` (stage notices), ADR
+  `session-collaboration-messages` (startup fence), ADR
+  `bot-sessions-and-steward` ("Waiting channel and blocked card")
 - **Acceptance**: F (persistence), Quality
 - **Milestone**: Employee mode 0.5, slice 3
 - **Status**: Partial. `crates/host-core/tests/host_cli.rs` restarts the real host
-  binary twice on one data directory and asserts the fence, the notice and the
-  restart; `apps/desktop/test/bot-steward-slice3-user-path.test.mjs` covers the
+  binary twice on one data directory and asserts the fence, the notice row and the
+  restart; `apps/desktop/test/task-waiting-notifications.test.mjs` covers the
   "Interrupted" row and the button's IPC call in a real Electron window. The
   combination (restart, then click, then a live turn) is not claimed as a full
   end-to-end run.
-#### E2E-BOT-steward-rename-updates-every-label: Renaming the steward renames every label about it
 
-- **Preconditions**: The default crew exists, so the steward is called
-  `Super Agent`. A task the steward dispatched is open under one employee.
-- **Steps**: 1) Read the sidebar row, the task card's heading, the workbench
-  row's origin and the conversation topbar. 2) In Settings → Employees, open the
-  steward, change its name to 阿福 and save. 3) Without reloading, read the same
-  four labels. 4) Rename it back to `Super Agent`.
-- **Expected**: Step 1 shows `Super Agent` in all four places, because those
-  labels interpolate the employee's name instead of writing one down. Step 2
-  writes one `bot.update` carrying the new name; the host stores it in
-  `bot_profile_json.name` and in `sessions.title`. Step 3 shows 阿福 in the
-  sidebar, on the card's heading, in the origin chip and in the conversation
-  topbar — the roster arrives on `botsChanged`, the session title on
-  `sessionsChanged`, both existing events: no reload, no poll, no second source
-  of truth. Step 4 returns to `Super Agent`. A row that has never been renamed
-  is migrated from the previous default (「管家」) by schema v35 → v36; a name the
-  person chose is never rewritten.
-- **Specs linked**: ADR `bot-sessions-and-steward` ("The name is the employee's
-  own"), `03-runtime/06-host-rpc-protocol.md` (`bot.update`),
-  `03-runtime/04-data-storage.md` §4.19
-- **Acceptance**: C (conversation & stream), F (persistence), Quality
-- **Milestone**: Employee mode 0.5, slice 3
-- **Status**: Partial. `apps/desktop/test/bot-steward-slice3-user-path.test.mjs`
-  renames the steward through the product's own settings form in a real Electron
-  window and asserts the sidebar, the card heading, the workbench origin and the
-  conversation topbar afterwards, in zh-CN and en; the same file proves the
-  topbar assertion by failing without the `sessionsChanged` announcement, and
-  `apps/desktop/test/bot-update-announces-sessions.test.mjs` asserts `bot.update`
-  emits it exactly once; `crates/host-core/src/db/steward_name_migration.rs`
-  covers the three migration cases and
-  `crates/host-core/src/session_collaboration/drafts/tests.rs` covers the title
-  staying in step with the profile name. A full run against a live host is not
-  claimed.
 #### E2E-BOT-workbench-surfaces-carry-their-layout: The workbench, its sidebar rows and the task header are laid out, not bare
 
 - **Preconditions**: An employee holds one task waiting on the person, one in
@@ -21385,18 +21287,18 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 
 #### E2E-BOT-task-question-shows-in-four-places: One question, four surfaces, and answering it anywhere closes it everywhere
 
-- **Preconditions**: A steward-dispatched task runs in its own session. The
-  employee calls AskTool with one question and two concrete options.
+- **Preconditions**: A task runs in its own session. The employee calls AskTool
+  with one question and two concrete options.
 - **Steps**: 1) Read the task session's own card and its header chip. 2) Read the
-  steward's dock. 3) Read the sidebar group's header and the employee's row.
-  4) Read the system notification. 5) Answer the question in the steward's dock,
-  then repeat the whole run answering in the task session instead.
+  notification inbox. 3) Read the sidebar group's header and the employee's row.
+  4) Read the system notification. 5) Answer the question in the task session,
+  then repeat the whole run answering from the inbox row.
 - **Expected**: Steps 1–4 show the *same* question, taken from the request's
-  structured fields: the card in the task, an orange row in the dock
+  structured fields: the card in the task, an orange `prompt.*` row in the inbox
   (employee @ repository · task · question) with the request's own options inline,
   「等你 1 件」 in the sidebar header plus a red dot on that employee, and a
   notification whose body is the question. Step 5 closes the record everywhere at
-  once: the task's card goes, the dock row collapses to one quiet line with
+  once: the task's card goes, the inbox row collapses to one quiet line with
   nothing added to the transcript, the sidebar count returns to zero, and the
   pinned reminder closes. The task returns to `working` while its turn is still
   running, `person/accept` after it ends. A request this screen cannot read keeps
@@ -21409,9 +21311,11 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Acceptance**: C (conversation & stream), F (persistence), Quality
 - **Milestone**: Employee mode 0.5, slice 4a
 - **Status**: Partial. `crates/host-core/src/tasks_waiting_tests.rs` proves the
-  host half (stage, stored question, the steward's notice, closing by request id,
-  the restart clearing every request, a direct task never waking the steward);
-  `apps/desktop/test/bot-waiting-channel-user-path.test.mjs` drives the dock, the
+  host half (stage, stored question, the inbox notice, closing by request id,
+  the restart clearing every request, a stop staying silent);
+  `apps/desktop/test/bot-waiting-channel-user-path.test.mjs` drives the task's
+  cards, the blocked card and the sidebar in a real Electron window with real
+  clicks and
   blocked card and the sidebar in a real Electron window with real clicks and
   asserts the IPC calls and the collapsed row; `apps/desktop/test/task-waiting-notifications.test.mjs`
   asserts the notification's title ("<employee> · <task> 在等你"), its body (the
@@ -21424,32 +21328,30 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 
 - **Preconditions**: A task's turn calls `TaskReport` with `where`, `tried` and
   `suggestion`.
-- **Steps**: 1) Read the task session and the steward's dock. 2) Click 重试.
-  3) Click 改派给… and look at the steward's dock. 4) Click 放弃 and read the
-  confirmation. 5) Click 我来说两句 6) Close the application during a turn instead
+- **Steps**: 1) Read the task session. 2) Click 重试. 3) Click 放弃 and read the
+  confirmation. 4) Click 我来说两句 5) Close the application during a turn instead
   and read the same card.
 - **Expected**: Step 1 shows the three fields verbatim and the stage stays
   `blocked` after the turn ends (settlement does not turn it into
   `person/accept`). Step 2 sends one fixed message into that task's session and
-  starts a turn — the stage returns to `working`. Step 3 proposes one **new**
-  card on the steward's conversation, carrying the original goal with nobody
-  assigned, and the original task stays where it is. Step 4 asks once ("Drop this
-  task?") and archives only on the second click. Step 5 opens the task's session
-  with its composer focused. Step 6 shows 「Interrupted」 with 「重新开工」 *inside*
+  starts a turn — the stage returns to `working`. Step 3 asks once ("Drop this
+  task?") and archives only on the second click. Step 4 opens the task's session
+  with its composer focused. Step 5 shows 「Interrupted」 with 「重新开工」 *inside*
   the same card — one card, one set of buttons — and a restart returns the task to
-  `queued` with one new delivery.
+  `queued` with one new delivery. The card offers **three** decisions, not four:
+  since 1.7.0 there is no 「改派给…」 button, because handing work over needed a
+  dispatcher to propose the new card. `task.reassign` survives on the host as one
+  transaction that creates the work directly under the employee the caller names
+  (`task_stage::reassign`); no surface calls it.
 - **Specs linked**: ADR `bot-sessions-and-steward` ("Waiting channel and blocked
   card"), `03-runtime/06-host-rpc-protocol.md` (`task.report`, `task.reassign`,
   `task.restart`)
 - **Acceptance**: C (conversation & stream), F (persistence), Quality
 - **Milestone**: Employee mode 0.5, slice 4a
 - **Status**: Partial. `crates/host-core/src/tasks_waiting_tests.rs` covers the
-  report, the blocked-stays-blocked settlement, the stop-with-reason and the
-  reassignment card; `apps/desktop/test/bot-waiting-channel-user-path.test.mjs`
-  clicks all four buttons in a real Electron window and asserts what reached
-  Main; `apps/desktop/test/bot-waiting-visual.test.mjs` captures the card in both
-  themes at 1440 and 1024. The restart-inside-the-card path reuses slice 3's
-  covered button and is not re-run end to end here.
+  report, the blocked-stays-blocked settlement and the stop-with-reason;
+  `apps/desktop/test/bot-waiting-channel-user-path.test.mjs` clicks every button
+  the card still offers in a real Electron window and asserts what reached
 
 #### E2E-BOT-direct-task-stage-follows-turns: A task the person started follows its own turns
 
@@ -21461,10 +21363,10 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Expected**: Step 1 reads `queued`. Step 2 reads `working` — not `queued`, and
   not only after settlement. Step 3 reads `person/accept`. Step 4 reads `working`
   again, so the header follows the conversation rather than the first dispatch.
-  Step 5 reads `blocked` with `reason: "stopped"`, and **no** message reaches the
-  steward: a stop is not news. A steward-dispatched task behaves the same way, and
-  each change wakes the steward exactly once, keyed by (task, stage, `stage_seq`),
-  however many settlements reach the same task.
+  Step 5 reads `blocked` with `reason: "stopped"`, and **no** inbox row is
+  written: a stop is not news. A historical card-dispatched task behaves the same
+  way, and each stage change that reaches the person does so exactly once, keyed
+  by (task, stage, `stage_seq`), however many settlements reach the same task.
 - **Specs linked**: ADR `bot-sessions-and-steward` ("Waiting channel and blocked
   card"), `03-runtime/06-host-rpc-protocol.md` (stage notices),
   `03-runtime/04-data-storage.md` (schema v37)
@@ -21472,7 +21374,8 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Milestone**: Employee mode 0.5, slice 4a
 - **Status**: Partial. `crates/host-core/src/tasks_waiting_tests.rs` drives
   `sessions::begin_turn` / `end_turn` on a directly dispatched task and on a
-  steward's, and asserts the stage after each edge, the single notice per change
+  historical card-dispatched one, and asserts the stage after each edge, the
+  single notice per change
   and the silence of a stop. The renderer half (the header chip following the
   turns) is covered by the existing task-header tests and is not re-run against a
   live host here.
@@ -21542,13 +21445,15 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 
 #### E2E-BOT-batch-summary-accepts-in-order: One sentence, three cards, one summary
 
-- **Preconditions**: The steward split one request into three cards in one turn, so
-  all three tasks carry the same `batch_id` and all three are at `person/accept`.
-- **Steps**: 1) Read the steward's dock. 2) Click 逐个看. 3) Click 全部接受 and let
-  the second task fail its push to the second remote.
+- **Preconditions**: A historical batch: three cards were proposed in one turn
+  before 1.7.0, so all three tasks carry the same `batch_id` and all three are at
+  `person/accept`. (No new batch can be created — nothing proposes cards any
+  more — so this path is exercised on data that already exists.)
+- **Steps**: 1) Read the employee's open tasks. 2) Click 逐个看. 3) Click 全部接受
+  and let the second task fail its push to the second remote.
 - **Expected**: Step 1 shows one summary card with the three tasks as rows, in the
   order the cards were proposed, and the employee each belongs to; the individual
-  completion cards are not also in the dock. Step 2 expands it into the three real
+  completion cards are not also shown. Step 2 expands it into the three real
   cards, each answerable on its own. Step 3 walks the rows in that order: a task
   that can merge is merged, a task that cannot is only accepted, and the first
   refusal stops the batch — that task becomes its own blocked card, the third is
@@ -21563,8 +21468,8 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   the summary in a real Electron window, clicks 全部接受 with a scripted host and
   asserts the merge order (`task-batch-1`, `task-batch-2`), that the third is never
   touched, and that the failure leaves a blocked card; the host-side step order and
-  resumption are proven in `task_delivery_tests.rs`. A batch proposed by a live
-  steward turn is not part of CI.
+  resumption are proven in `task_delivery_tests.rs`. A batch produced by a live
+  dispatcher turn is not part of CI, because nothing produces one any more.
 
 #### E2E-BOT-archived-task-teaches-its-employee: A finished task leaves one lesson, and the next task starts with it
 
@@ -21585,7 +21490,7 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   tombstone stops the same text from being learned again, so step 4's task either
   learns something new or nothing at all. With the switch off, the section says
   经验提炼没打开 and no model is called (`skipped:disabled`). The employee
-  container and the steward never read these lessons.
+  container and any other employee never read these lessons.
 - **Specs linked**: ADR `bot-sessions-and-steward` ("Employee experience and
   inspection"), ADR `agent-long-term-memory` (§ "Employee scope"),
   `03-runtime/06-host-rpc-protocol.md` (`task.experience.*`, `memory.index`),
@@ -21614,17 +21519,19 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 
 - **Preconditions**: One employee with open tasks: one moving, one in
   `person/answer` for 2 h 5 min, and one started directly by the person that has
-  been `blocked` for 5 h. A steward exists.
-- **Steps**: 1) Let the inspection run once. 2) Read the steward's conversation
-  and the system notifications. 3) Let it run again an hour later, then again
+  been `blocked` for 5 h.
+- **Steps**: 1) Let the inspection run once. 2) Read the notification inbox and
+  the system notifications. 3) Let it run again an hour later, then again
   after 24 h. 4) Answer the question and let it run once more.
 - **Expected**: Step 1 reports the two stuck tasks and **not** the moving one;
-  exactly one ledger notice is written (`kind = 'stage'`, payload
-  `reason: "inspection"` with both entries), and the direct task is marked
-  `direct` so the steward reports it without intervening. Step 2 shows one
+  one inbox row per finding is written with the finding's own task session and an
+  `error_code` naming the condition (`TASK_ANSWER_WAIT`, `TASK_STUCK`), and the
+  direct task is included because nothing on this path asks who dispatched it.
+  Step 2 shows one
   notification per finding, worded 「<员工> 的 <任务> 已经等你 2 小时」. Step 3
   writes nothing the next hour and one more reminder for each still-stuck pair a
-  day later. Step 4 writes nothing, because the task is no longer waiting. An
+  day later. Step 4 writes nothing, because the task is no longer waiting. A retried
+  run for the same batch adds no row. An
   app quit before the next hour leaves no timer behind, and a task whose
   `stage_changed_at` is unknown is never reported.
 - **Specs linked**: ADR `bot-sessions-and-steward` ("Employee experience and
@@ -21633,7 +21540,7 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Milestone**: Employee mode 0.5, slice 5
 - **Status**: Partial. `crates/host-core/src/task_inspection_tests.rs` covers every
   condition and both sides of its boundary, the unknown-age case, the 24-hour
-  dedupe, the merged notice, the `direct` marking, and "progress says nothing".
+  dedupe, one row per finding, the inclusion of a direct task, and "progress says nothing".
   The renderer's side is covered at module level by
   `apps/desktop/test/task-waiting-notifications.test.mjs`: one notification per
   finding worded from the employee and the task, the question as the body, a stuck
@@ -21649,13 +21556,15 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Steps**: 1) Click the 审查 template. 2) Read the form. 3) Click 保存.
   4) Return to Settings → Employees.
 - **Expected**: Step 1 creates nothing (`bot.create` is not called) and the page
-  shows 「启用 Super Agent」, because there is no dispatcher yet. Step 2 opens the
+  shows the template list, the blank form and the one-sentence draft field — and
+  **no** 「启用 Super Agent」 action, because the host creates no employee for
+  itself. Step 2 opens the
   form pre-filled with the job's name and duty, the resolved definition
   `code-reviewer`, the `ask` ceiling the read-only job starts at, and no model
   suggestion (the job has no family preference). Step 3 calls `bot.create` exactly
   once with that profile, and the employee appears in Settings, in the sidebar,
-  and in `bot.roster` with `definition: "code-reviewer"`. Step 4 shows the one
-  employee and **no** 「启用 Super Agent」 button.
+  and in the employee list with `definition: "code-reviewer"`. Step 4 shows the one
+  employee.
 - **Specs linked**: ADR `bot-sessions-and-steward` ("Hiring, team norms and tasks
   running as their role" §2-§3), `03-runtime/06-host-rpc-protocol.md` (`bot.create`)
 - **Acceptance**: A (function), Quality
@@ -21667,7 +21576,9 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 
 #### E2E-BOT-draft-hire-from-one-sentence: One sentence drafts a profile, and cancelling creates nothing
 
-- **Preconditions**: A Super Agent with a model configured. Settings → Employees.
+- **Preconditions**: A learning model or a default model configured in Settings →
+  AI (the draft runs on the learning model, else the default one).
+  Settings → Employees.
 - **Steps**: 1) Type 「招一个管 Router 计费的后端」 and click 起草. 2) Read the form.
   3) Click 取消. 4) Repeat with a model that returns prose instead of JSON, then
   with a sentence that names no repository.
@@ -21715,29 +21626,25 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 #### E2E-BOT-relay-hands-off-to-next-role: One change, two steps, and the second starts where the first stopped
 
 - **Preconditions**: A repository registered in the app, one employee, and a
-  steward conversation.
-- **Steps**: 1) Ask the steward for one change that must happen in order, so it
-  proposes two cards, the second with `after` naming the first. 2) Confirm the
-  first card, then the second. 3) Let the first step finish, and click
-  「接受并交给下一棒」 on its completion card. 4) Inspect the second step's
-  workspace.
-- **Expected**: Step 1 shows the second card as 「接在「<the first card's title>」
-  之后」 — the previous card's goal, cut at 24 characters, not its draft id, so
-  a person can recognise which step they are on; when the previous card is no
-  longer in the dock's list the line falls back to 「接在 #<short id> 之后」.
-  Its start button is grey with 「先开前一张」 until the first card is confirmed.
-  Step 2 collapses the second card into one line 「已确认，等 <employee> 的 #a」
-  — it is
+  relay chain that already exists: two steps proposed before 1.7.0, the second
+  with `after` naming the first, and both confirmed. (Nothing proposes a new
+  chain any more; the handoff path is kept for chains a file already carries.)
+- **Steps**: 1) Read the second step in the employee's open tasks. 2) Let the
+  first step finish, and click 「接受并交给下一棒」 on its completion card.
+  3) Inspect the second step's workspace.
+- **Expected**: Step 1 shows the second step as 「接在「<the first step's title>」
+  之后」 — the previous step's goal, cut at 24 characters, not its draft id, so
+  a person can recognise which step they are on; when the previous step's title
+  cannot be read the line falls back to 「接在 #<short id> 之后」. It is
   confirmed and authorized, but the host does not start it: `pendingDispatch`
   and the startup fence both skip a `waiting` step, so neither a drain nor a
-  restart can run it early. Step 3 is one transaction (`accepted_at`,
+  restart can run it early. Step 2 is one transaction (`accepted_at`,
   `relay_handoff_at`, `relay_state = ready`) and the second step starts without
   a second question; a repeated click keeps the first timestamp and starts
-  nothing twice. Step 4 shows a branch whose tip is the first step's last commit,
+  nothing twice. Step 3 shows a branch whose tip is the first step's last commit,
   `base_ref` names that branch, and `base_remote` is false.
 - **Specs linked**: ADR `bot-sessions-and-steward` «Relay between roles» §1, §3,
-  §4, `03-runtime/06-host-rpc-protocol.md` (`taskCard.propose` `after`,
-  `task.relay.handoff`)
+  §4, `03-runtime/06-host-rpc-protocol.md` (`task.relay.handoff`)
 - **Acceptance**: A (function), Quality
 - **Milestone**: Employee mode 0.5, slice 7
 - **Status**: Covered. `task_relay_tests.rs` proves the edge validation, the
@@ -21760,7 +21667,8 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   sentence belongs to a stop the person made themselves. Step 3 drops the edge,
   clears the blocker, returns the task to `queued`, prepares its workspace from the
   project's own `main`, and dispatches the delivery that was waiting; the
-  steward is not woken by any of it, because a handoff is progress and not an
+  person receives no inbox row from any of it, because a handoff is progress and
+  not an anomaly.
   anomaly.
 - **Specs linked**: ADR `bot-sessions-and-steward` «Relay between roles» §5,
   `03-runtime/06-host-rpc-protocol.md` (`task.relay.detach`)
@@ -21771,24 +21679,23 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 
 #### E2E-BOT-relay-chain-cannot-fork: One step has at most one next step, and a fork that exists anyway is refused
 
-- **Preconditions**: A steward conversation, one employee, a repository on this
-  computer, and a chain of two cards from one turn (`add the column` → `backfill
+- **Preconditions**: One employee, a repository on this computer, and a relay
+  chain of two steps from one turn before 1.7.0 (`add the column` → `backfill
   it`).
-- **Steps**: 1) Ask for a third card that also names the first card in `after`.
-  2) Write the same fork into the database directly (a repair, or an older
-  client) and reopen the second step's completion card. 3) Click accept and
-  merge on it, then on the first step. 4) Try 「接受并交给下一棒」 on the first
-  step.
-- **Expected**: Step 1 is refused with `INVALID_ARGUMENT: a step can have only one
-  next step; chain the cards in a line`; the same refusal comes from `confirm`
-  when both drafts were proposed before either was clicked. Step 2 shows the card
-  greyed out with 「接力链分叉了，没法判断最后一棒」 and no commit list. Steps 3 and
-  4 refuse with `CONFLICT: the relay chain forks at #<short id>` — no branch is
+- **Steps**: 1) Write a fork into the database directly — a second step that also
+  names the first step in `after` (a repair, or an older client) — and reopen the
+  second step's completion card. 2) Click accept and merge on it, then on the
+  first step. 3) Try 「接受并交给下一棒」 on the first step.
+- **Expected**: Step 1 shows the card
+  greyed out with 「接力链分叉了，没法判断最后一棒」 and no commit list. Steps 2 and
+  3 refuse with `CONFLICT: the relay chain forks at #<short id>` — no branch is
   merged, nothing is cleaned up, and both steps keep their workspace, their branch
-  and their stage.
+  and their stage. The propose-time refusal that used to catch a fork before a
+  click (`INVALID_ARGUMENT: a step can have only one next step…`) no longer has a
+  caller, because nothing proposes a card; the readers are what keep a forged
+  fork from being merged.
 - **Specs linked**: ADR `bot-sessions-and-steward` «Relay between roles» §2,
-  `03-runtime/06-host-rpc-protocol.md` (`taskCard.propose` `after`,
-  `task.delivery.check` `relay-fork`)
+  `03-runtime/06-host-rpc-protocol.md` (`task.delivery.check` `relay-fork`)
 - **Acceptance**: A (function), Quality
 - **Milestone**: Employee mode 0.5, slice 7 (follow-up)
 - **Status**: Covered. `task_relay_tests.rs` (propose, revise and confirm refuse
@@ -21800,16 +21707,15 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 
 - **Preconditions**: Two open tasks in the same repository, both with a workspace,
   one of them already editing `a.txt`.
-- **Steps**: 1) Open the dock with a card for the second task. 2) Start it and let
-  it report ready. 3) Break the git read (a project that is not a repository) and
-  reopen the card.
-- **Expected**: Step 1 shows one line above the start button —
-  「同仓库还有 1 个进行中的任务：#a（改了 1 个文件）」 — and the button stays enabled:
-  it is a warning, not a refusal. Step 2's completion card adds
+- **Steps**: 1) Start the second task from the employee's workbench and let it
+  report ready. 2) Read its completion card. 3) Break the git read (a project
+  that is not a repository) and reopen the card.
+- **Expected**: Step 2's completion card adds
   「和 #a 改了同样的文件：a.txt」, capped at five paths, and two steps of one relay
-  chain are never reported against each other. Step 3 shows 「查不到其他任务的改动」,
-  never an empty list: "nobody else touches this file" and "nobody could tell"
-  lead to opposite decisions.
+  chain are never reported against each other; the hint is a warning, not a
+  refusal, so the card still offers merge and accept. Step 3 shows
+  「查不到其他任务的改动」, never an empty list: "nobody else touches this file" and
+  "nobody could tell" lead to opposite decisions.
 - **Specs linked**: ADR `bot-sessions-and-steward` «Relay between roles» §6,
   `03-runtime/06-host-rpc-protocol.md` (`task.overlap`)
 - **Acceptance**: A (function), Quality

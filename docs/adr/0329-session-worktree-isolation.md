@@ -185,8 +185,8 @@ What differs, and why:
    in a half-prepared folder — while an ordinary isolated session keeps running
    it in the background. A delegate worktree of a task session is created next to
    it, so it lands in the same `.worktree` directory. Because the call waits for
-   the command, the desktop gives `task.create`, `task.workspace.retry`, and
-   `taskCard.confirm` a deadline that outlasts it
+   the command, the desktop gives `task.create`, `task.reassign`,
+   `task.workspace.retry` a deadline that outlasts it
    (`TASK_WORKSPACE_RPC_TIMEOUT_MS`, mirrored from this ADR's setup bound and
    `git.rs`'s per-command timeout) instead of the flat 130 s default; with the
    default, a slow install made the client give up while the host was still

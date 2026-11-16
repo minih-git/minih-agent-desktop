@@ -803,15 +803,13 @@ or general MCP operations:
   one is `CONFLICT`. The host validates only what it can act on
   (a concrete `permissionMode` and the size bound) and stores the encoded card
   opaquely; the shared codec owns the shape.
-- `bot.list` / `bot.create` / `bot.update` / `bot.dismiss` /
-  `bot.seedDefaults` — the employee surface (§ADRs bot-sessions-and-steward).
+- `bot.list` / `bot.create` / `bot.update` / `bot.dismiss` — the employee surface
+  (§ADRs bot-sessions-and-steward).
   Each edits a session's `role` and `bot_profile_json`; `bot.list` also answers
   the status point, derived from the session's latest delivery stage. Dismissing
   sets the role back to `user` and keeps the conversation. `bot.create` accepts
   an optional `modelKey` (`providerId/modelId`), which is how a hire's suggested
-  model becomes the session the employee's tasks inherit. `bot.seedDefaults`
-  creates **only the steward** (`Super Agent`), is called only from an explicit
-  user action, and never touches an existing employee. `bot.update` writes the
+  model becomes the session the employee's tasks inherit. `bot.update` writes the
   profile and the session title together, so a rename is one fact. It announces
   both `botsChanged` and `sessionsChanged`, because the renderer keeps the roster
   and the session list in separate stores and the conversation topbar reads the
@@ -826,40 +824,6 @@ or general MCP operations:
   ≤ 2 500 in total; an over-long write is refused with `LIMIT_EXCEEDED`, and an
   all-blank write deletes the row. `{ norms: null }`-equivalent (empty sections)
   means "the person wrote none".
-- `bot.roster` — the steward's view of the crew (slice 3): every employee except
-  the caller and every other `steward`, with the facts a choice needs — name,
-  duty, the `definition` it runs as (slice 6), model, permission mode, bound
-  repository, open tasks, how many of those wait on the person, and whether it is
-  idle. `repos` is a reserved array (one employee reads one repository today).
-  Not in the sidecar's proxy allowlist: the model reaches it only through its
-  `Roster` tool, in Main.
-- `taskCard.list` / `taskCard.propose` / `taskCard.revise` / `taskCard.drop` —
-  durable task-card drafts bound to the steward session. `propose` accepts a
-  card with no target at all: a steward that cannot attribute the work leaves
-  the employee empty and the person picks one in the card's dropdown. A card may
-  declare `readOnly: true`, and then only with `permissionMode: ask`; the host
-  rejects the pair otherwise instead of reinterpreting it. `propose` and
-  `revise` also accept an optional **`after`** — the draft id of a card proposed
-  earlier in the same turn that this one continues (employee mode 0.5 slice 7).
-  It is refused unless the target is in the same batch, names the same
-  `repo.origin`, closes no loop, and keeps the chain at five steps or fewer;
-  `revise` re-checks it because either side can have moved. Absent keeps the
-  stored edge, an explicit empty value clears it. **A step has at most one next
-  step**: a second card that names the same card is refused with
-  `INVALID_ARGUMENT: a step can have only one next step; chain the cards in a
-  line`, and `taskCard.confirm` refuses it too when both drafts were proposed
-  before either was clicked — the propose-time check cannot see that window.
-- `taskCard.autoStart` — whether the host may confirm a proposed card by itself.
-  Never from the `risk` a model supplied, and never from the mode: `auto` is the
-  widest mode the product has (Write/Edit and Bash run without asking), so a mode
-  is not evidence that a card only reads. The card must carry `readOnly: true`,
-  the employee must not be observing, and the card must ask for no gate beyond
-  `deploy` / `delete` / `spend`. A card that changes files, or that asks for
-  anything more, waits for the person.
-- `taskCard.reassign` — the person moves a proposed card to another employee.
-  The host narrows the card to `min(card, new employee)` — the steward's own mode
-  is not part of it — recomputes its `cardHash` and leaves it `proposed`; the
-  card is started by a separate click.
 - `task.restart` — start a task again after the startup fence interrupted it. The
   host writes one new delivery from the same sender with the same Mandate,
   re-points `tasks.delivery_id` at it and leaves it `queued`; the operation is
@@ -953,19 +917,23 @@ or general MCP operations:
   arguments; a session that is not a task's is refused. Writes `blocker_json` and
   moves the stage to `blocked` in one transaction, and the turn that reported it
   ends by holding that stage.
-- `task.reassign` — the same work, as a fresh card: the host proposes a card on
-  the steward's conversation with the original goal (the mandate's goal, else the
-  person's words, else the title), `targetUnknown` (nobody assigned), and the
-  reason the caller rendered. The original task is untouched and is not archived;
-  only the person's later confirmation dispatches anything.
-- Stage notices — a task that stops making progress on its own wakes its steward
-  with one `kind = stage` delivery (payload: `taskId`, employee, stage, reason,
-  the question when the stage is `person/answer`, the blocker when it is
-  `blocked`). Written in the same transaction that moved the stage, under an
-  idempotency key of (task, stage, `tasks.stage_seq`), and only for
-  `origin = steward`; `origin = direct` tasks never wake the steward. A person's
-  own stop leaves the task `blocked` with `reason: "stopped"` and is announced to
-  nobody.
+- `task.reassign` — the same work, under somebody else: the host creates a **new**
+  task under the employee the person picked, at `origin = direct`, carrying the
+  original goal (the mandate's goal, else the person's words, else the title) and
+  the same repository, and Main starts its first turn. There is no card and no
+  second confirmation: the click that names the employee is the decision. The
+  original task is untouched and is not archived. The call runs git twice — resolve
+  the repository, prepare the new workspace — outside the state lock, so the row it
+  answers with is ready to run.
+- Stage notices — a task that stops making progress on its own reaches the person
+  through the notification inbox, not a conversation: one `task.failed` row whose
+  `error_code` is `TASK_FAILED`, `TASK_BLOCKED` or `TASK_INTERRUPTED` and whose
+  target is the task's own session. Written in the same transaction that moved the
+  stage, under a key of (task, stage, `tasks.stage_seq`) in the inbox's unique
+  `request_id` slot, so a repeated write or a restart of the fence adds nothing.
+  The audience is the person: a task the person started and a historical
+  card-dispatched task are announced the same way. A person's own stop leaves the
+  task `blocked` with `reason: "stopped"` and is announced to nobody.
 - `task.inspect()` — the hourly inspection (employee mode 0.5 slice 5). A
   deterministic check of every open task; **no model is called**. Answers
   `{ findings: [{ taskId, shortId, title, employeeSessionId, employeeName,
@@ -974,8 +942,10 @@ or general MCP operations:
   (24 h in `person/accept` and not accepted), `stuck` (4 h `blocked`, `failed`,
   or an `interrupted` delivery), or `running-long` (a turn running 3 h). One
   `(task, condition)` pair is reported at most once per 24 hours, and one run
-  writes at most one merged `kind = stage` ledger notice (payload
-  `reason: "inspection"`, the list of findings, `direct` marked) to the steward.
+  writes one notification-inbox row per finding, carrying the finding's own task
+  session and an `error_code` that names the condition (`TASK_ANSWER_WAIT`,
+  `TASK_ACCEPT_WAIT`, `TASK_STUCK`, `TASK_RUNNING_LONG`). A retried run is
+  idempotent through the row's `(task, condition, batch)` key.
   An empty answer is the normal case and writes nothing.
 - `task.experience.pending({ limit? })` / `.claim({ taskId, leaseMs? })` /
   `.input({ taskId })` / `.complete({ taskId, entries })` / `.fail({ taskId,
@@ -988,14 +958,6 @@ or general MCP operations:
   `done` — **terminal**; `fail` records a code and an attempt (three at most);
   `skip` records `skipped:disabled` when the switch is off. `list` returns one
   employee's lessons with the task each came from.
-- `taskCard.confirm` — the person's click: it checks the `cardHash` the caller
-  displayed, freezes the card, records `confirmedBy`, dispatches the work and
-  notifies the steward, all in one transaction. The task session it creates runs
-  at `min(card, employee)` and the delivery carries the same ceiling, so what the
-  person approved is what runs; a `confirmedBy = policy` confirmation (nobody
-  looked at the card) is clamped to `ask` for both, whatever the card says.
-  Electron main calls it from its IPC handler only; the model has no tool that
-  reaches it.
 - `session.collaboration.report` — record one structured report
   (`progress | waiting | ready | blocked | failed | dropped`) with the worker's
   monotonic `seq` and the derived `stage`. A `seq` that is not greater than the
@@ -1014,7 +976,8 @@ The ledger is durable across a host restart. A queued entry with its
 `turn_queue.session_message_id` remains held for a new Agent Host controller;
 an unclaimed or running delivery is marked `interrupted` by the startup fence
 and is never replayed automatically. The fence also announces that interruption
-to the task's steward (slice 3), and the task reads as `interrupted` through
+to the person (one `task.failed` inbox row, `TASK_INTERRUPTED`), and the task
+reads as `interrupted` through
 `tasks.delivery_status` — the stage vocabulary has no word for it — until the
 person clicks 「重新开工」 (`task.restart`). Transcript provenance is host-derived and
 cannot be forged or removed by `session.appendMessage` or transcript

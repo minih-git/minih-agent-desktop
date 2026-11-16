@@ -279,8 +279,8 @@ state.
    with a new `taskId` and a new delivery; an existing confirmation is never
    rewritten. Changing acceptance criteria inside one task is exactly the
    `criteria-change` entry of `mustAsk` and returns to the person.
-5. **`observe` starts nothing.** While a bot profile has `observe` set, its
-   task cards are recorded and no delivery to it begins a turn. An absent flag
+5. **`observe` starts nothing.** While a bot profile has `observe` set, work
+   handed to it is recorded and no delivery to it begins a turn. An absent flag
    is read as `observe`, never as auto-start.
 6. **Stage is derived, not asserted.** After a report settles, the stage is the
    first matching row, and a report whose `reportSeq` is not greater than the
@@ -312,12 +312,11 @@ state.
    - `mustAsk` is recorded, not enforced: no tool call is gated by it yet.
      Approval by action type is a later change.
    - `observe` **is** enforced: the host's auto-start rule reads the employee's
-     stored flag, so an observing employee never starts a card by itself. A
-     person's confirmation still dispatches it.
-   - Confirmation **is** a person's click: `TaskCard` cannot confirm,
-     `SessionSend` cannot carry a card, and only the desktop's IPC reaches
-     `taskCard.confirm`. The confirmation carries the card hash the screen
-     showed, so a revise in between is refused.
+     stored flag, so an observing employee never starts work by itself.
+   - Starting work **is** a person's action: `task.create` from the employee's
+     workbench is the only way a task begins — since 1.7.0 no tool and no
+     built-in agent proposes or confirms one — and a `Task` subagent still
+     cannot reach it.
    - An employee session runs under its definition: the runtime resolves
      `botProfile.definition` into a prompt section and a tool ceiling, applied
      at declaration and re-checked before execution. A definition name that does

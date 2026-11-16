@@ -240,7 +240,7 @@ ADR `bot-sessions-and-steward` 与 `04-data-storage.md` 第 4.19 节把员工定
 4. **Mandate 不可改写。** 修正或扩大范围就是带新 `taskId` 的新 Mandate 与
    新投递，已确认的授权永不被重写。在同一任务里改验收标准正是 `mustAsk` 中的
    `criteria-change`，会回到人那里。
-5. **`observe` 不启动任何事。** bot profile 处于 `observe` 时，它的任务卡只被
+5. **`observe` 不启动任何事。** bot profile 处于 `observe` 时，交给它的工作只被
    记录，没有任何投递给它开回合。缺失该标志按 `observe` 读取，绝不视为自动开工。
 6. **阶段是派生的，不是断言出来的。** 报告结算后，阶段取第一个命中项；序号
    不大于已存值的报告不改变任何东西：
@@ -266,10 +266,10 @@ ADR `bot-sessions-and-steward` 与 `04-data-storage.md` 第 4.19 节把员工定
    - `mustAsk` 目前只记录、不拦截：还没有任何工具调用受它约束，按动作类型
      拦截审批是后续改动。
    - `observe` **已生效**：宿主的自动开工规则读取员工存储的标志，处于 observe
-     的员工不会自己开工；但真人确认仍然会派发。
-   - 确认**已是真人点击**：`TaskCard` 不能确认、`SessionSend` 不能携带卡片，
-     只有桌面端 IPC 能触达 `taskCard.confirm`；确认时携带界面显示那张卡的
-     hash，中途被改写会被拒绝。
+     的员工不会自己开工。
+   - 开工**已是真人的动作**：任务只能由员工工作台里的 `task.create` 开始——自
+     1.7.0 起没有任何工具、也没有任何内置代理会拟卡或确认卡片——`Task` 子代理
+     依然触达不到。
    - 员工会话按其定义运行：runtime 把 `botProfile.definition` 解析成提示词
      段落与工具上限，在工具声明时生效、执行前再复核；定义名解析不到时这一轮
      直接失败，而不是放开成全部工具。
