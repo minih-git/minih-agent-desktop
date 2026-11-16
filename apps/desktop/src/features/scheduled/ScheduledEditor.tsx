@@ -53,7 +53,7 @@ export function ScheduledEditor({
     task?.schedule?.weekdays ?? [task?.schedule?.weekday ?? 0],
   );
   const [workspacePath, setWorkspacePath] = useState(
-    task?.workspacePath || currentWorkspacePath || projects[0]?.path || "",
+    task ? (task.workspacePath ?? "") : currentWorkspacePath || projects[0]?.path || "",
   );
   const [workspaceTouched, setWorkspaceTouched] = useState(false);
   const [permissionMode, setPermissionMode] = useState<GlobalPermissionMode>(

@@ -22,6 +22,7 @@ import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import { ScheduledEditor } from "../../apps/desktop/src/features/scheduled/ScheduledEditor";
 import { ScheduledTaskRail } from "../../apps/desktop/src/features/scheduled/ScheduledTaskRail";
+import { Sidebar } from "../../apps/desktop/src/components/Sidebar";
 
 await i18n.use(initReactI18next).init({
   lng: "zh-CN", keySeparator: false,
@@ -34,13 +35,15 @@ const generalTask = {
   cadence: "daily", mode: "agent", enabled: true,
   createdAt: "2026-11-17T00:00:00Z", updatedAt: "2026-11-17T00:00:00Z",
   schedule: { hour: 9, minute: 0, weekday: 0 }, nextRunAt: "2026-11-18T09:00:00Z",
-  workspacePath: undefined, permissionMode: "ask", sessionMode: "perRun",
+  workspacePath: null, permissionMode: "ask", sessionMode: "perRun",
 };
 const projectTask = {
   ...generalTask, id: "project-task", title: "项目检查", workspacePath: "/repo/Minih-Agent-Desktop",
 };
 const projects = [{ path: "/repo/Minih-Agent-Desktop", name: "Minih-Agent-Desktop" }];
 useAppStore.setState({
+  page: "scheduled",
+  sessions: [], activeSessionId: null,
   workspace: { path: "/repo/Minih-Agent-Desktop", name: "Minih-Agent-Desktop" },
   settings: {},
 });
@@ -62,7 +65,15 @@ function mount(element) {
 }
 function shell(content) {
   return React.createElement("div", { className: "app-shell" },
-    React.createElement("main", { className: "main-pane route-scroll" }, content));
+    React.createElement(Sidebar, {
+      sidebarWidth: 292, widthMax: 460, sidebarToggleShortcut: "⌘B",
+      onToggleSidebar: noop, onWidthChange: noop, onWidthCommit: noop, onResizeCollapse: noop,
+    }),
+    React.createElement("main", { className: "main-pane" },
+      React.createElement("div", { className: "main-titlebar" },
+        React.createElement("div", { className: "main-titlebar-left" },
+          React.createElement("strong", { className: "page-title" }, "定时任务"))),
+      React.createElement("div", { className: "route-scroll" }, content)));
 }
 function editor() {
   return shell(React.createElement("div", { className: "page-frame scheduled-frame" },
@@ -87,6 +98,17 @@ window.shot = {
     document.documentElement.dataset.platform = "darwin";
     mount(scene === "editor" ? editor() : list());
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (scene === "editor") {
+      const current = document.querySelector(".scheduled-execution-project .settings-menu-select-trigger-label");
+      if (!current || current.textContent.trim() !== "通用（不绑定项目）") {
+        throw new Error("general editor selection is not active: " + (current?.textContent || "missing"));
+      }
+    } else {
+      const badge = document.querySelector(".scheduled-task-general");
+      if (!badge || badge.textContent.trim() !== "通用（不绑定项目）") throw new Error("general list badge missing");
+      const style = getComputedStyle(badge);
+      if (style.display === "inline" || style.paddingLeft === "0px") throw new Error("general badge has no scheduled CSS treatment");
+    }
     finishAnimations();
     await new Promise((resolve) => requestAnimationFrame(resolve));
     return { ok: true };
@@ -100,7 +122,7 @@ async function compileStylesheet(workDir) {
   const appDir = join(root, "apps/desktop");
   const entry = join(workDir, "style-entry.js");
   const outDir = join(workDir, "styles");
-  await writeFile(entry, `import ${JSON.stringify(join(appDir, "src/styles/globals.css"))};\n`);
+  await writeFile(entry, `import ${JSON.stringify(join(appDir, "src/styles/globals.css"))};\nimport ${JSON.stringify(join(appDir, "src/features/scheduled/scheduled-workspace.css"))};\nimport ${JSON.stringify(join(appDir, "src/features/scheduled/scheduled-editor.css"))};\n`);
   await viteBuild({
     configFile: false, root: appDir, logLevel: "error", plugins: [tailwindcss()],
     build: { outDir, emptyOutDir: true, cssCodeSplit: false,
@@ -118,6 +140,7 @@ async function capture() {
     await bundle({
       stdin: { contents: fixture, resolveDir: join(root, "scripts/e2e"), loader: "tsx" },
       outfile: join(workDir, "renderer.js"), bundle: true, platform: "browser", format: "esm", jsx: "automatic",
+      loader: { ".png": "dataurl" },
       define: { "process.env.NODE_ENV": '"production"', "process.env": '{"NODE_ENV":"production","DEV":false}', "import.meta.env": '{"DEV":false,"PROD":true,"MODE":"production"}' },
       alias: {
         "@minih-agent/i18n": join(root, "packages/i18n/src"),

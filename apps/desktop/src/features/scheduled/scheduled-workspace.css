@@ -153,7 +153,8 @@
   }
 }
 
-.scheduled-task-paused {
+.scheduled-task-paused,
+.scheduled-task-general {
   flex: 0 0 auto;
   border-radius: var(--radius-full);
   padding: 1px 7px;
