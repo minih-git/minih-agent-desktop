@@ -16,8 +16,6 @@ export const TEAM_NORMS_VERSION = 1;
 export const MAX_TEAM_NORM_SECTION_CHARS = 1_000;
 /** Characters all three sections may hold together. */
 export const MAX_TEAM_NORMS_CHARS = 2_500;
-/** How much of the norms the steward's own brief quotes. */
-export const MAX_TEAM_NORMS_BRIEF_CHARS = 600;
 
 export const TEAM_NORM_SECTIONS = ["communication", "scope", "delivery"] as const;
 export type TeamNormSection = (typeof TEAM_NORM_SECTIONS)[number];

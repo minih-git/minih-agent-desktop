@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CORE_PERSONA_TOOLS,
-  STEWARD_ONLY_TOOLS,
   parseSubagentDefinition,
-  resolveSubagentToolNames,
   type SubagentDefinition,
 } from "@minih-agent/shared";
 import { resolveBotPersona, runtimeBotPersona } from "./bot-persona";
@@ -21,7 +18,7 @@ import { resolveBotPersona, runtimeBotPersona } from "./bot-persona";
 const stewardDocument = `---
 name: steward
 description: Dispatch work to employee sessions.
-tools: [SessionList, SessionSend, SessionResult, SessionCreate, TaskCard]
+tools: [SessionList, SessionSend, SessionResult, SessionCreate]
 ---
 
 Dispatch work.`;
@@ -60,31 +57,5 @@ describe("resolveBotPersona", () => {
     // And a bot without a definition is just a session with a profile.
     expect(resolveBotPersona("bot", profile(), [steward()])).toEqual({ kind: "none" });
     expect(resolveBotPersona(undefined, null, [steward()])).toEqual({ kind: "none" });
-  });
-});
-
-describe("the ceiling a steward session gets", () => {
-  it("is exactly the gateway tools", () => {
-    const ceiling = resolveSubagentToolNames(steward(), []);
-    expect(ceiling).toEqual([...STEWARD_ONLY_TOOLS]);
-    for (const tool of ["Write", "Edit", "Bash", "Task"]) {
-      expect(ceiling).not.toContain(tool);
-    }
-  });
-
-  it("still denies writing tools when the session catalog offers them", () => {
-    // The runtime resolves the ceiling with an empty parent list on purpose: a
-    // steward must not pick up tools just because the session has them.
-    const ceiling = new Set(resolveSubagentToolNames(steward(), []));
-    for (const tool of ["Write", "Edit", "Bash"]) {
-      expect(ceiling.has(tool)).toBe(false);
-    }
-    // The definition does not list the runtime's own bookkeeping tools; the
-    // guard admits those separately so an employee can still inspect the tools
-    // it does have. Keeping them out of the resolved list is what makes the
-    // list "exactly what the definition granted".
-    for (const tool of CORE_PERSONA_TOOLS) {
-      expect(ceiling.has(tool)).toBe(false);
-    }
   });
 });

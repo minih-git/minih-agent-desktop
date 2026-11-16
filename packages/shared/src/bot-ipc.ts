@@ -43,38 +43,6 @@ export type BotListItem = {
 
 export type BotList = { bots: BotListItem[] };
 
-/**
- * One row of the steward's roster (`bot.roster`, employee mode 0.5 slice 3).
- *
- * It is not a `BotListItem`: the steward must not see herself, and what she
- * needs to choose is different — a duty, the repository the employee reads, how
- * much is already on its plate, and whether it is free. `repos` is reserved for
- * the repositories an employee is responsible for; one employee reads one
- * repository today, and an empty array is the honest answer until then.
- */
-export type BotRosterEntry = {
-  sessionId: string;
-  name: string;
-  duty?: string | null;
-  /**
-   * The definition this employee runs as (`code-reviewer`, `explorer`, …), so a
-   * choice can be made by job rather than by a name the person invented
-   * (employee mode 0.5 slice 6).
-   */
-  definition?: string | null;
-  permissionMode?: string | null;
-  observe?: boolean;
-  projectPath?: string;
-  modelKey?: string;
-  repos: string[];
-  openTaskCount: number;
-  waitingCount: number;
-  idle: boolean;
-  status: BotStatusPoint;
-};
-
-export type BotRoster = { employees: BotRosterEntry[] };
-
 export type BotProfileInput = {
   name: string;
   avatar?: string;
@@ -83,7 +51,7 @@ export type BotProfileInput = {
   permissionMode: PermissionMode;
   mustAsk: BotMustAsk[];
   observe: boolean;
-  /** Subagent definition the bot runs as, e.g. `steward`. */
+  /** Subagent definition the bot runs as, e.g. `code-reviewer`. */
   definition?: string;
 };
 
@@ -129,107 +97,9 @@ export type BotSeedDefaultsResult = {
   skipped: Array<{ name: string; reason: "exists" }>;
 };
 
-/** A task-card draft as the renderer shows it. */
-export type TaskCardDraftView = {
-  id: string;
-  sessionId: string;
-  status: "proposed" | "confirmed" | "dropped";
-  /**
-   * The card exactly as the host froze it; the UI renders this text and sends
-   * `cardHash` back on confirm, so a revise between render and click is refused.
-   */
-  card: {
-    goal: string;
-    criteria: Array<{ id: string; text: string }>;
-    boundaries: string[];
-    repo?: { origin: string; ref?: string };
-    permissionMode: "auto" | "accept-edits" | "ask";
-    /**
-     * The steward's claim that this work only reads, which is also the only
-     * thing that lets the host start the card without a person. Optional because
-     * rows written before the field existed do not carry it (review S1).
-     */
-    readOnly?: boolean;
-    mustAsk: BotMustAsk[];
-    risk: "low" | "medium" | "high";
-    /** Why the steward named this employee; shown on the card, never frozen. */
-    reason?: string;
-  };
-  cardHash: string;
-  sourceUtterance: string;
-  targetSessionId: string;
-  targetTitle?: string;
-  confirmedBy?: "user" | "policy";
-  confirmedAt?: string;
-  deliveryId?: string;
-  /**
-   * The turn that proposed this card, when it proposed several at once
-   * (employee mode 0.5 slice 4b). One batch is one summary card.
-   */
-  batchId?: string;
-  /**
-   * The card this one follows, inside the same batch (employee mode 0.5 slice
-   * 7). The dock draws it as 「接在 #前一张 之后」, and the start button waits until
-   * the previous card has been started.
-   */
-  afterDraftId?: string;
-  createdAt: string;
-  updatedAt: string;
+export type BotsChangedEvent = {
+  reason: "created" | "updated" | "dismissed" | "seeded" | "status";
 };
-
-export type TaskCardList = { drafts: TaskCardDraftView[] };
-
-/** The person's click. `cardHash` must match what the screen showed. */
-export type TaskCardConfirmRequest = {
-  draftId: string;
-  cardHash: string;
-  notifyOnCompletion?: boolean;
-};
-
-export type TaskCardConfirmResult = {
-  draft: TaskCardDraftView;
-  deliveryId: string;
-  /**
-   * Why the dispatched work did not start, when it did not.
-   *
-   * A confirmation is a person's decision and is never rolled back by a start
-   * failure, so the card has to say what happened instead: "dispatched, but it
-   * did not start: the target was busy". Absent means it started.
-   */
-  startError?: string;
-};
-
-export type BotsChangedEvent = { reason: "created" | "updated" | "dismissed" | "seeded" | "status" };
-export type TaskCardsChangedEvent = { sessionId: string; draftId?: string };
-
-/**
- * The person's reassignment of a proposed card to another employee.
- *
- * It is a click, like confirming, and it re-asks nothing: the host narrows the
- * card's permission to `min(card, sender, new employee)`, recomputes the hash
- * and leaves the card **proposed**, so the person still has to start it. A
- * reassigned card that dispatched itself would be a second, unread approval.
- */
-export type TaskCardReassignRequest = {
-  draftId: string;
-  /** The employee the person picked from the roster. */
-  targetSessionId: string;
-};
-
-export type TaskCardReassignResult = {
-  draft: TaskCardDraftView;
-  /** The employee's bound repository at the time of the reassignment. */
-  projectPath?: string;
-  /**
-   * Whether the card's repository can be reached from the new employee.
-   *
-   * `false` is a warning the dock shows before the person starts the card; the
-   * confirmation refuses it with `REPO_NOT_ON_THIS_COMPUTER` when nothing on
-   * this computer matches.
-   */
-  repoAvailable: boolean;
-};
-
 /**
  * One-sentence hiring (employee mode 0.5 slice 6).
  *

@@ -74,8 +74,7 @@ export type VendorAuthResolver = (input: {
 // forwarded to host-core) and only for a provider row bound to that same
 // session, so it cannot reach a credential the session was not launched with.
 /**
- * Exported so a test can hold the boundary: the employee surface (`bot.*`,
- * `taskCard.*`) must never appear here. Those methods answer on the host's RPC
+ * Exported so a test can hold the boundary: employee and task methods must never be reachable here.
  * route, but a sidecar, its plugins, and the model behind them have no user to
  * confirm a card with, so they stay unreachable from that process.
  */

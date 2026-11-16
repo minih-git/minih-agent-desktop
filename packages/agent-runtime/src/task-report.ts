@@ -30,9 +30,9 @@ export const TASK_SESSION_PERSONA_TOOLS: ReadonlySet<string> = new Set([TASK_REP
  *
  * Two conditions, and both are load-bearing: **Agent mode**, because a Plan or
  * Goal turn is a negotiation and may not write durable task state; and
- * **`taskReporter`**, which Main sets from `sessions.role === "task"`. The
- * steward, an ordinary conversation and an employee's own session therefore never
- * see it — the card it writes belongs to a task row, and only a task has one.
+ * **`taskReporter`**, which Main sets from `sessions.role === "task"`. An
+ * ordinary conversation and an employee's own session therefore never see it —
+ * the card it writes belongs to a task row, and only a task has one.
  */
 export function declaresTaskReport(
   mode: string | undefined,

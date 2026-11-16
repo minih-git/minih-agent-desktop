@@ -278,11 +278,10 @@ describe("Plan protocol contracts", () => {
   });
 
   it("lets a task's workspace preparation finish before the transport gives up", () => {
-    // These three calls wait for a git fetch and the project's setup command
+    // These two calls wait for a git fetch and the project's setup command
     // inside the host. Under the flat default the renderer gave up while the
-    // host was still preparing: the first message was never sent, and a
-    // confirmed card was never dispatched.
-    for (const method of ["task.create", "task.workspace.retry", "taskCard.confirm"]) {
+    // host was still preparing, so the first message was never sent.
+    for (const method of ["task.create", "task.workspace.retry"]) {
       expect(rpcTimeoutMs(method, {})).toBe(TASK_WORKSPACE_RPC_TIMEOUT_MS);
     }
     // The setup command alone is bounded by `WORKTREE_SETUP_TIMEOUT_MS`, so a

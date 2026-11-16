@@ -9,8 +9,8 @@
  *
  * Two shapes live here because three surfaces have to agree on them: the
  * settings page (which cards to show), Main (which definition a draft resolves
- * to, which model to suggest), and the steward's roster (what to call each
- * employee when choosing one).
+ * to, which model to suggest), and any list that reads an employee's role word
+ * rather than its definition handle.
  */
 
 import type { BotMustAsk } from "./bot-session.js";
@@ -239,15 +239,14 @@ export function pickHireModel(
 }
 
 /**
- * A short, readable word for a definition handle, for the steward's roster.
+ * A short, readable word for a definition handle.
  *
- * The steward reads the roster as prompt text and has to tell "who reviews"
- * from "who researches". The handles are the definitions' own names, which are
- * close to that already; this table is where the two that are not — `fixer` and
+ * A person reading a list of employees has to tell "who reviews" from "who
+ * researches". The handles are the definitions' own names, which are close to
+ * that already; this table is where the two that are not — `fixer` and
  * `ui-coder` — get the word the person would use.
  */
 const ROLE_WORDS: Record<string, string> = {
-  steward: "orchestrator",
   "code-reviewer": "reviewer",
   explorer: "researcher",
   "test-runner": "test runner",
@@ -263,7 +262,7 @@ export function roleWordForDefinition(definition: string | null | undefined): st
   return ROLE_WORDS[name] ?? name;
 }
 
-/** Roles that only read: the steward may start their cards without a click. */
+/** Roles that only read: a task on them changes nothing in the workspace. */
 export function isReadOnlyDefinition(definition: string | null | undefined): boolean {
   const name = definition?.trim();
   if (!name) return false;

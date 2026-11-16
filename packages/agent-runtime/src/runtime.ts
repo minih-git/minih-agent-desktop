@@ -4563,8 +4563,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     if (this.mode === "agent") {
       tools.push("PluginScaffold", "PluginPack", "GenerateImages", ...Object.keys(scheduledToolParameters));
       // A task's own session is the one that can say "I am stuck" (employee mode
-      // 0.5 slice 4a). The steward and an ordinary conversation never declare it:
-      // the card it writes belongs to a task row, and only a task has one.
+      // 0.5 slice 4a). An employee's own session and an ordinary conversation
+      // never declare it: the card it writes belongs to a task row, and only a task has one.
       if (declaresTaskReport(this.mode, this.taskReporter)) tools.push(TASK_REPORT_TOOL_NAME);
       // Cross-session delivery (ADR builtin-session-messaging) is Agent-only: a
       // Plan or Goal turn must not hand work to another Agent.
@@ -4813,8 +4813,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
   private isCoreTool(name: string): boolean {
     // An employee's whole job is the handful of tools its definition names. If
     // those were on-demand, the model would have to spend a search before doing
-    // the one thing it exists for — and real turns went that way: a steward
-    // reached for `SessionSend` before it found `TaskCard`. A persona's own list
+    // the one thing it exists for — and real turns went that way: an employee
+    // reached for a tool it does not hold. A persona's own list
     // is therefore declared up front. This decides declaration only: the cap is
     // still `isToolAllowedByPersona`, so nothing is widened.
     if (this.personaToolCeiling?.has(name)) return true;

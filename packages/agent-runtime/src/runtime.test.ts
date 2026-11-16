@@ -2285,12 +2285,12 @@ describe("DesktopAgentRuntime configuration matching", () => {
 });
 
 describe("DesktopAgentRuntime employee persona", () => {
-  const steward: SubagentDefinition = {
-    name: "steward",
+  const dispatcher: SubagentDefinition = {
+    name: "dispatcher",
     description: "Dispatches work and never changes the workspace.",
-    tools: ["Read", "Glob", "Grep", "SessionList", "SessionSend", "TaskCard"],
-    // `SessionList` stays declared on purpose: the runtime must drop it for a
-    // delegate (employee mode 0.5 slice 3), which the test below asserts.
+    tools: ["Read", "Glob", "Grep", "SessionList", "SessionSend"],
+    // `SessionList` and `SessionSend` stay declared on purpose: the runtime must
+    // drop both for a delegate, which the assertions below cover.
     source: "builtin",
     prompt: "You dispatch work. You never edit files.",
   };
@@ -2302,21 +2302,25 @@ describe("DesktopAgentRuntime employee persona", () => {
   /**
    * An employee's own tools are declared, not searched for.
    *
-   * A deployed steward had to spend a search before it could reach the tools its
-   * definition names, and in one real turn it tried `SessionSend` first and was
-   * refused four times before it found `TaskCard`. Declaring the definition's
-   * own list removes that detour; the cap itself is unchanged.
+   * A deployed employee had to spend a search before it could reach the tools its
+   * definition names, and in one real turn it tried a tool it may not hold first.
+   * Declaring the definition's own list removes that detour; the cap itself is
+   * unchanged.
    */
   it("declares the definition's own tools instead of deferring them", async () => {
-    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const runtime = createRuntime({ botPersona: { definition: dispatcher } });
     const deferred = (runtime as any).deferredToolNames as Set<string>;
 
-    for (const name of ["TaskCard", "SessionSend"]) {
+    // The definition's own tools are declared, not left in the on-demand set the
+    // model has to search first.
+    for (const name of ["Read", "Glob"]) {
       expect(catalogNames(runtime)).toContain(name);
       expect(deferred.has(name)).toBe(false);
     }
-    // The session list is not a delegate's tool any more: the steward picks
-    // people from `Roster`, so a definition that still names it gets nothing.
+    expect(catalogNames(runtime)).not.toContain("SessionSend");
+    // A definition that names a denied session tool still gets nothing: the
+    // deny list is the gate, not the definition.
+    expect(catalogNames(runtime)).not.toContain("SessionList");
     expect(catalogNames(runtime)).not.toContain("SessionList");
     // Still capped: nothing outside the definition and the core reads appears.
     expect(catalogNames(runtime)).not.toContain("Write");
@@ -2328,11 +2332,11 @@ describe("DesktopAgentRuntime employee persona", () => {
    *
    * It must reach the model on the turn it was generated for, and it must not
    * become transcript history: not persisted, not summarized, not carried into
-   * the next turn. `persona=steward` is the only session that gets one, and the
-   * runtime treats it as request-scoped context either way.
+   * the next turn. A definition-bearing session is the only kind that gets one,
+   * and the runtime treats it as request-scoped context either way.
    */
   it("carries the host's brief on the request and never into the transcript", async () => {
-    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const runtime = createRuntime({ botPersona: { definition: dispatcher } });
     const requests: AgentMessage[][] = [];
     const internals = runtime as unknown as {
       models: {
@@ -2391,16 +2395,16 @@ describe("DesktopAgentRuntime employee persona", () => {
     const runtime = createRuntime();
     const deferred = (runtime as any).deferredToolNames as Set<string>;
 
-    expect(deferred.has("TaskCard")).toBe(true);
+    // Every session tool is on demand: the model searches before the first call.
     expect(deferred.has("SessionSend")).toBe(true);
     await runtime.dispose();
   });
 
   it("declares only the definition's tools and never a workspace mutation tool", async () => {
-    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const runtime = createRuntime({ botPersona: { definition: dispatcher } });
     const names = catalogNames(runtime);
 
-    expect(names).toEqual(expect.arrayContaining(["Read", "Grep", "SessionSend", "TaskCard"]));
+    expect(names).toEqual(expect.arrayContaining(["Read", "Grep"]));
     expect(names).not.toContain("Write");
     expect(names).not.toContain("Edit");
     expect(names).not.toContain("Bash");
@@ -2425,7 +2429,7 @@ describe("DesktopAgentRuntime employee persona", () => {
   });
 
   it("refuses a Write call that reaches the execution guard", async () => {
-    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const runtime = createRuntime({ botPersona: { definition: dispatcher } });
     const beforeToolCall = (runtime as any).agent.beforeToolCall as Function;
     const call = {
       assistantMessage: {
@@ -2467,7 +2471,7 @@ describe("DesktopAgentRuntime employee persona", () => {
       },
     ];
     const runtime = createRuntime({
-      botPersona: { definition: steward },
+      botPersona: { definition: dispatcher },
       trustedExtensions: [extension],
     });
     try {
@@ -2505,7 +2509,7 @@ describe("DesktopAgentRuntime employee persona", () => {
   });
 
   it("fails the turn when the named definition is not installed", async () => {
-    const runtime = createRuntime({ botPersona: { missingName: "steward" } });
+    const runtime = createRuntime({ botPersona: { missingName: "dispatcher" } });
 
     await expect(runtime.prompt("Say hello.", "user-1", "turn-1")).rejects.toMatchObject({
       errorCode: "BOT_DEFINITION_MISSING",
@@ -2570,24 +2574,24 @@ describe("DesktopAgentRuntime employee persona", () => {
     // Bash after it is marked as an employee: the ceiling is fixed at
     // construction, so reuse would silently bypass it.
     const runtime = createRuntime();
-    expect(runtimeMatches(runtime, { botPersona: { definition: steward } })).toBe(false);
+    expect(runtimeMatches(runtime, { botPersona: { definition: dispatcher } })).toBe(false);
     // The same runtime still matches itself, so the check above is about the
     // persona and not about an unrelated field.
 
-    const rebuilt = createRuntime({ botPersona: { definition: steward } });
-    expect(runtimeMatches(rebuilt, { botPersona: { definition: steward } })).toBe(true);
-    // Editing the definition retires it too, so a widened steward is not
+    const rebuilt = createRuntime({ botPersona: { definition: dispatcher } });
+    expect(runtimeMatches(rebuilt, { botPersona: { definition: dispatcher } })).toBe(true);
+    // Editing the definition retires it too, so a widened employee is not
     // carried by a warm runtime.
     expect(
       runtimeMatches(rebuilt, {
-        botPersona: { definition: { ...steward, tools: [...steward.tools, "Bash"] } },
+        botPersona: { definition: { ...dispatcher, tools: [...dispatcher.tools, "Bash"] } },
       }),
     ).toBe(false);
-    expect(runtimeMatches(rebuilt, { botPersona: { missingName: "steward" } })).toBe(false);
+    expect(runtimeMatches(rebuilt, { botPersona: { missingName: "dispatcher" } })).toBe(false);
     expect(runtimeMatches(runtime)).toBe(true);
 
     const rebuiltNames = catalogNames(rebuilt);
-    expect(rebuiltNames).toEqual(expect.arrayContaining(["Read", "SessionSend"]));
+    expect(rebuiltNames).toEqual(expect.arrayContaining(["Read"]));
     expect(rebuiltNames).not.toContain("Write");
     expect(rebuiltNames).not.toContain("Bash");
 
@@ -2596,7 +2600,7 @@ describe("DesktopAgentRuntime employee persona", () => {
   });
 
   it("retires a runtime when an employee stops being one", async () => {
-    const runtime = createRuntime({ botPersona: { definition: steward } });
+    const runtime = createRuntime({ botPersona: { definition: dispatcher } });
     // The reverse direction matters too: once the definition is cleared the
     // session must not keep running under the old ceiling.
     expect(runtimeMatches(runtime, {})).toBe(true);
@@ -3105,22 +3109,23 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
     await runtime.dispose();
   });
 
-  it("offers cross-session delivery and the task card on demand in Agent mode only", async () => {
+  it("offers cross-session delivery on demand in Agent mode only", async () => {
     const agent = createRuntime();
     const agentNames = (agent as any).agent.state.tools.map((tool: any) => tool.name);
     // On demand like the scheduled tools: the schemas cost nothing per request
     // until the model searches for them.
     expect(agentNames).not.toContain("SessionSend");
-    // The steward's card rides the same lifecycle as the session tools, so a
-    // Plan or Goal turn cannot freeze an authorization either.
-    const dispatchAndCard = [
+    // Every cross-session tool shares one lifecycle, so a Plan or Goal turn
+    // cannot hand work to another Agent either.
+    const crossSession = [
       "SessionList",
       "SessionSend",
       "SessionResult",
       "SessionCreate",
-      "TaskCard",
+      // Dispatching work is no longer a built-in tool of this product.
+      // A contract turn must not reach any of the four either.
     ];
-    for (const name of dispatchAndCard) {
+    for (const name of crossSession) {
       expect((agent as any).deferredToolNames.has(name)).toBe(true);
     }
     const prompt = (agent as any).agent.state.systemPrompt as string;
@@ -3133,12 +3138,12 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
       const runtime = createRuntime({ mode });
       const names = (runtime as any).agent.state.tools.map((tool: any) => tool.name);
       expect(names).not.toContain("SessionSend");
-      for (const name of dispatchAndCard) {
+      for (const name of crossSession) {
         expect(names).not.toContain(name);
         expect((runtime as any).deferredToolNames.has(name)).toBe(false);
       }
       expect((runtime as any).agent.state.systemPrompt).not.toContain("SessionSend");
-      expect((runtime as any).agent.state.systemPrompt).not.toContain("TaskCard");
+      // Nothing from the cross-session group reaches a contract turn's prompt.
       await runtime.dispose();
     }
   });

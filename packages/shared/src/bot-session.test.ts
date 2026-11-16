@@ -34,7 +34,7 @@ const base = (overrides: Partial<Mandate> = {}): Mandate => ({
   requestedBy: { kind: "user", hostId: "mac-mini" },
   sourceUtterance: "login 超时今天修掉",
   createdAt: "2026-11-10T09:00:00.000Z",
-  policyVersion: "steward-1",
+  policyVersion: "policy-1",
   ...overrides,
 });
 

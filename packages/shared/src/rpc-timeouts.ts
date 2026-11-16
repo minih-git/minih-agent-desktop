@@ -80,17 +80,16 @@ export const WORKTREE_SETUP_TIMEOUT_MS = 30 * 60_000;
 export const WORKTREE_GIT_COMMAND_TIMEOUT_MS = 120_000;
 
 /**
- * `task.create`, `task.workspace.retry`, and `taskCard.confirm` prepare a task's
- * workspace before they answer: a fetch, `worktree add`, the lock, the
- * `.worktreeinclude` copy, and the project's setup command, which alone may take
+ * `task.create` and `task.workspace.retry` prepare a task's workspace before
+ * they answer: a fetch, `worktree add`, the lock, the `.worktreeinclude` copy,
+ * and the project's setup command, which alone may take
  * `WORKTREE_SETUP_TIMEOUT_MS`. Under the flat 130s default the transport gave up
  * while the host was still preparing, and the failure was worse than a slow
- * task — the renderer never sent the first message, and a confirmed card was
- * never dispatched (`dispatchConfirmed` never ran), leaving work that looked
- * started and was not.
+ * task: the renderer never sent the first message, so work that looked started
+ * was not.
  *
- * Deliberately per-method: these three are the only calls that wait for a
- * setup command, so a wider global default would hide a genuinely lost reply
+ * Deliberately per-method: these two are the only calls that wait for a setup
+ * command, so a wider global default would hide a genuinely lost reply
  * everywhere else.
  */
 export const TASK_WORKSPACE_RPC_TIMEOUT_MS =
@@ -134,11 +133,7 @@ export function rpcTimeoutMs(
   }
   // Preparing a task's workspace waits for a git fetch and the project's setup
   // command, which is slower than every other interactive call.
-  if (
-    method === "task.create" ||
-    method === "task.workspace.retry" ||
-    method === "taskCard.confirm"
-  ) {
+  if (method === "task.create" || method === "task.workspace.retry") {
     return TASK_WORKSPACE_RPC_TIMEOUT_MS;
   }
   if (method === "configSync.syncNow") return undefined;

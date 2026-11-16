@@ -7,15 +7,14 @@ import { HOST_PROXY_ALLOWED } from "./agent-sidecar.js";
  * sidecar runs the model and its plugins, which have no person to confirm
  * anything with.
  *
- * Routing `bot.*` / `taskCard.*` on the host must not widen this: the desktop
- * calls those methods directly, and `taskCard.confirm` is a person's click by
+ * Routing employee methods on the host must not widen this: the desktop calls
  * definition.
  */
 describe("host proxy allowlist", () => {
   it("never exposes the employee surface to the sidecar", () => {
     const leaked = [...HOST_PROXY_ALLOWED].filter(
       (method) =>
-        method.startsWith("bot.") || method.startsWith("taskCard.") || method.startsWith("task."),
+        method.startsWith("bot.") || method.startsWith("task."),
     );
     expect(leaked).toEqual([]);
   });

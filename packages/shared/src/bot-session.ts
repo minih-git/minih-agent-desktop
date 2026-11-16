@@ -42,16 +42,6 @@ export type BotMustAsk = (typeof BOT_MUST_ASK)[number];
  */
 export const ALWAYS_MUST_ASK: readonly BotMustAsk[] = ["deploy", "delete", "spend"];
 
-/**
- * The steward's default display name, and the fallback when no steward exists.
- *
- * Only a default: the name a person sees is the employee's own
- * `bot_profile_json.name`, which they change in Settings → Employees, and every
- * label about that role interpolates it. The host's `DEFAULT_CREW` seeds this
- * string, so a fresh install and a renamed one read the same until someone edits
- * it.
- */
-export const STEWARD_DEFAULT_NAME = "Super Agent";
 /** A bot profile is a bounded operating identity, so every field is bounded. */
 export const MAX_BOT_NAME_CHARS = 80;
 export const MAX_BOT_AVATAR_CHARS = 2_048;
@@ -89,12 +79,12 @@ export type BotProfile = {
    */
   observe: boolean;
   /**
-   * Subagent definition this bot runs as, e.g. `steward`.
+   * Subagent definition this bot runs as, e.g. `code-reviewer`.
    *
    * When present, the runtime runs each turn of this session under that
    * definition: its prompt becomes part of the system prompt and its tool list
-   * becomes the session's tool ceiling. That is what makes "the steward cannot
-   * touch the workspace" a host rule instead of a sentence in a prompt.
+   * becomes the session's tool ceiling. That is what makes "a reviewer cannot
+   * write" a host rule instead of a sentence in a prompt.
    */
   definition?: string;
 };
@@ -113,10 +103,11 @@ export const MAX_MANDATE_REPO_ORIGIN_CHARS = 512;
 export const MAX_MANDATE_REPO_REF_CHARS = 256;
 export const MAX_MANDATE_POLICY_VERSION_CHARS = 64;
 /**
- * Upper bound on a card's `reason`: why this employee, in one sentence.
+ * Upper bound on the one-sentence `reason` a hiring or dispatch surface shows
+ * beside an employee's name: why this employee, in the person's terms.
  *
- * It is a card field and never part of the frozen Mandate: it explains the
- * steward's choice to the person, and nothing authorizes from it.
+ * It is never part of the frozen Mandate — it explains a choice to the person,
+ * and nothing authorizes from it.
  */
 export const MAX_TASK_CARD_REASON_CHARS = 300;
 

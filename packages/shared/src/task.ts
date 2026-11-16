@@ -9,8 +9,9 @@
  * Three vocabularies meet here and must never be conflated:
  * - `stage` answers "who is holding this" (`bot-session.ts`);
  * - the ledger's delivery `status` answers "did the turn finish";
- * - `origin` answers "who started it" — the steward's card or the person
- *   typing directly into the employee's workbench.
+ * - `origin` answers "who started it" — the person typing into the employee's
+ *   workbench (`direct`), or, for rows written before employee mode dropped its
+ *   dispatch layer, the steward's card (`steward`). New tasks are only `direct`.
  *
  * This module is pure: shapes, bounds and the two derivations the renderer and
  * the host must agree on (a task title from a first utterance, and whether a
@@ -18,7 +19,6 @@
  */
 
 import type { TaskStage } from "./bot-session.js";
-import type { TaskCardDraftView } from "./bot-ipc.js";
 import type { SessionMessageStatus } from "./session-collaboration.js";
 
 /** Who started the task. */
@@ -370,8 +370,8 @@ export type TaskView = {
    * This is what `stage = "person/answer"` *means*: a question with its options,
    * or the tool a permission was asked for — the employee's own structured
    * words, never a sentence read out of its reply. Every surface (the task's own
-   * card, the steward's dock, the sidebar count, the system notification) shows
-   * these same entries, and answering one anywhere closes it everywhere.
+   * card, the sidebar count, the system notification) shows these same entries,
+   * and answering one anywhere closes it everywhere.
    */
   waiting?: TaskWaiting[];
   /**
@@ -636,17 +636,19 @@ export function waitingTaskCount(
  *
  * `reason` is rendered by the caller in the person's own language: the card it
  * ends up on is stored, and a stored row cannot be translated later.
+ *
+ * The host creates a new `origin: "direct"` task under `targetSessionId` and
+ * answers with that row; the stuck task keeps its own transcript and is left for
+ * the person to archive.
  */
 export type TaskReassignRequest = {
   taskId: string;
+  /** The employee the person picked to take the work over. */
+  targetSessionId: string;
   reason?: string;
-  /** The steward conversation the new card is proposed on; defaults to the host's. */
-  stewardSessionId?: string;
 };
 
 export type TaskReassignResult = {
-  draft: TaskCardDraftView;
-  created?: boolean;
   task: TaskView;
 };
 
@@ -655,7 +657,7 @@ export type TaskReassignResult = {
  *
  * The host decides, deterministically and without a model: a task that is
  * moving is never in this list. Main turns each entry into one system
- * notification, and the steward is woken once with all of them.
+ * notification in the notification center.
  */
 export const TASK_INSPECTION_CONDITIONS = [
   "answer-wait",

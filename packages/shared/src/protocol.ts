@@ -161,16 +161,6 @@ export const IPC = {
     teamNormsGet: "minih-agent-desktop/team/norms/get",
     teamNormsSet: "minih-agent-desktop/team/norms/set",
     /**
-     * Task-card drafts of one steward session. `taskCardConfirm` is the person's
-     * click: it freezes the card and dispatches it, and the model has no way to
-     * reach it.
-     */
-    taskCardList: "minih-agent-desktop/taskCard/list",
-    taskCardConfirm: "minih-agent-desktop/taskCard/confirm",
-    taskCardDrop: "minih-agent-desktop/taskCard/drop",
-    /** The person's reassignment of one proposed card to another employee. */
-    taskCardReassign: "minih-agent-desktop/taskCard/reassign",
-    /**
      * Tasks under an employee (ADR bot-sessions-and-steward §7). A task is one
      * piece of work the employee holds; it owns a session, so opening a task is
      * opening a conversation, and archiving one ends it.
@@ -188,9 +178,9 @@ export const IPC = {
      */
     taskRestart: "minih-agent-desktop/task/restart",
     /**
-     * Hand a stuck task's work to somebody else (slice 4a): the host proposes a
-     * fresh card on the steward's conversation, carrying the original goal and
-     * nobody assigned, and the person confirms it like any first dispatch.
+     * Hand a stuck task's work to somebody else (slice 4a): the host creates a
+     * new `origin: "direct"` task under the employee the person picks and starts
+     * its turn, so the work continues without passing through a card.
      */
     taskReassign: "minih-agent-desktop/task/reassign",
     /**
@@ -655,8 +645,6 @@ export const IPC = {
     sessionsChanged: "minih-agent-desktop/session/event/changed",
     /** An employee's profile, role or status dot changed. */
     botsChanged: "minih-agent-desktop/bot/event/changed",
-    /** A task-card draft was proposed, confirmed or dropped. */
-    taskCardsChanged: "minih-agent-desktop/taskCard/event/changed",
     /** A task under an employee was created, moved, or archived. */
     tasksChanged: "minih-agent-desktop/task/event/changed",
     /**
