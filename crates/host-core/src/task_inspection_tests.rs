@@ -3,8 +3,8 @@
 //! The clock is injected, so every threshold is checked on both sides of its
 //! edge without waiting hours: a task one millisecond short of two hours is not
 //! an anomaly, and a task exactly at it is. The other half of the test file is
-//! about restraint — no notice while work is moving, no repeat inside 24 hours,
-//! and one merged notice however many tasks are stuck.
+//! about restraint — no inbox row while work is moving, no repeat inside 24
+//! hours, and one row per stuck task however many are stuck at once.
 
 use rusqlite::params;
 use serde_json::json;
@@ -17,18 +17,6 @@ fn database() -> (tempfile::TempDir, Database) {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
     (dir, db)
-}
-
-fn steward(db: &Database) {
-    db.conn()
-        .execute(
-            "INSERT OR IGNORE INTO sessions (id, title, role, bot_profile_json, created_at, updated_at)
-             VALUES ('steward', 'Super Agent', 'bot',
-                     '{\"name\":\"Super Agent\",\"permissionMode\":\"ask\",\"mustAsk\":[],\"observe\":false,\"definition\":\"steward\"}',
-                     1, 1)",
-            [],
-        )
-        .unwrap();
 }
 
 fn employee(db: &Database) {
@@ -56,7 +44,7 @@ impl<'a> Default for TaskSeed<'a> {
         Self {
             id: "task-1",
             stage: "working",
-            origin: "steward",
+            origin: "direct",
             stage_changed_at: None,
             accepted_at: None,
         }
@@ -92,16 +80,19 @@ fn task(db: &Database, seed: TaskSeed<'_>) -> String {
     session_id
 }
 
-/// The ledger rows an inspection could have written.
-fn notices_written(db: &Database) -> Vec<String> {
+/// The inbox rows an inspection could have written, as `(error_code, session)`.
+fn alerts_written(db: &Database) -> Vec<(String, String)> {
     let mut statement = db
         .conn()
-        .prepare("SELECT content FROM session_collaboration_messages ORDER BY created_at")
+        .prepare(
+            "SELECT COALESCE(error_code, ''), session_id FROM notifications
+             ORDER BY created_at, rowid",
+        )
         .unwrap();
     statement
-        .query_map([], |row| row.get(0))
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .unwrap()
-        .collect::<rusqlite::Result<Vec<String>>>()
+        .collect::<rusqlite::Result<Vec<_>>>()
         .unwrap()
 }
 
@@ -123,9 +114,8 @@ fn findings(value: &Value) -> Vec<(String, String, bool)> {
 #[test]
 fn a_waiting_answer_is_reported_at_two_hours_and_not_a_minute_earlier() {
     let (_dir, db) = database();
-    steward(&db);
     let now = 10_000_000_000;
-    task(
+    let session = task(
         &db,
         TaskSeed {
             stage: "person/answer",
@@ -138,22 +128,23 @@ fn a_waiting_answer_is_reported_at_two_hours_and_not_a_minute_earlier() {
         findings(&early).is_empty(),
         "one minute short is not an anomaly"
     );
-    assert!(notices_written(&db).is_empty());
+    assert!(alerts_written(&db).is_empty());
 
     // One minute later the same task is overdue: the boundary is inclusive.
     let late = inspect(&db, now + 1).unwrap();
     assert_eq!(findings(&late)[0].0, "answer-wait");
-    let written = notices_written(&db);
+    let written = alerts_written(&db);
     assert_eq!(written.len(), 1);
-    let payload: Value = serde_json::from_str(&written[0]).unwrap();
-    assert_eq!(payload["reason"], json!("inspection"));
-    assert_eq!(payload["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(written[0].0, "TASK_ANSWER_WAIT");
+    assert_eq!(
+        written[0].1, session,
+        "the row points at the task's session"
+    );
 }
 
 #[test]
 fn finished_work_is_reported_at_a_day_unless_it_was_accepted() {
     let (_dir, db) = database();
-    steward(&db);
     let now = 10_000_000_000;
     task(
         &db,
@@ -185,7 +176,6 @@ fn finished_work_is_reported_at_a_day_unless_it_was_accepted() {
 #[test]
 fn a_stuck_task_is_reported_after_four_hours_with_or_without_its_stage() {
     let (_dir, db) = database();
-    steward(&db);
     let now = 10_000_000_000;
     task(
         &db,
@@ -198,12 +188,12 @@ fn a_stuck_task_is_reported_after_four_hours_with_or_without_its_stage() {
     );
     let result = inspect(&db, now).unwrap();
     assert_eq!(findings(&result)[0].0, "stuck");
+    assert_eq!(alerts_written(&db)[0].0, "TASK_STUCK");
 }
 
 #[test]
 fn an_unknown_stage_time_is_not_an_anomaly() {
     let (_dir, db) = database();
-    steward(&db);
     let now = 10_000_000_000;
     // A row from before `stage_changed_at` existed: "stuck since forever" is a
     // guess, and the inspection does not guess.
@@ -217,13 +207,12 @@ fn an_unknown_stage_time_is_not_an_anomaly() {
     );
     let result = inspect(&db, now).unwrap();
     assert!(findings(&result).is_empty());
-    assert!(notices_written(&db).is_empty());
+    assert!(alerts_written(&db).is_empty());
 }
 
 #[test]
 fn a_long_running_turn_is_reported_but_a_short_one_is_not() {
     let (_dir, db) = database();
-    steward(&db);
     let now = 10_000_000_000;
     let session_id = task(
         &db,
@@ -276,7 +265,6 @@ fn a_long_running_turn_is_reported_but_a_short_one_is_not() {
 #[test]
 fn the_same_condition_is_not_repeated_inside_a_day() {
     let (_dir, db) = database();
-    steward(&db);
     let now = 10_000_000_000;
     task(
         &db,
@@ -287,27 +275,28 @@ fn the_same_condition_is_not_repeated_inside_a_day() {
         },
     );
     assert_eq!(findings(&inspect(&db, now).unwrap()).len(), 1);
-    assert_eq!(notices_written(&db).len(), 1);
+    assert_eq!(alerts_written(&db).len(), 1);
 
     // The hourly timer fires again, and again says nothing.
     assert!(findings(&inspect(&db, now + 60 * MINUTE).unwrap()).is_empty());
     assert!(findings(&inspect(&db, now + 23 * 60 * MINUTE).unwrap()).is_empty());
-    assert_eq!(notices_written(&db).len(), 1);
+    assert_eq!(alerts_written(&db).len(), 1);
 
     // A day later it is worth one more mention.
     assert_eq!(
         findings(&inspect(&db, now + REMIND_AFTER_MS).unwrap()).len(),
         1
     );
-    assert_eq!(notices_written(&db).len(), 2);
+    assert_eq!(alerts_written(&db).len(), 2);
 }
 
+/// One run writes one inbox row per stuck task: a row is a pointer at a session,
+/// and a batch of anomalies spans several.
 #[test]
-fn one_run_writes_one_merged_notice_and_marks_direct_tasks() {
+fn one_run_writes_one_row_per_stuck_task() {
     let (_dir, db) = database();
-    steward(&db);
     let now = 10_000_000_000;
-    task(
+    let answered = task(
         &db,
         TaskSeed {
             id: "task-answer",
@@ -316,13 +305,11 @@ fn one_run_writes_one_merged_notice_and_marks_direct_tasks() {
             ..TaskSeed::default()
         },
     );
-    task(
+    let direct = task(
         &db,
         TaskSeed {
             id: "task-direct",
             stage: "blocked",
-            // Started by the person in the employee's own workbench.
-            origin: "direct",
             stage_changed_at: Some(now - STUCK_MS),
             ..TaskSeed::default()
         },
@@ -332,43 +319,52 @@ fn one_run_writes_one_merged_notice_and_marks_direct_tasks() {
     assert_eq!(reported.len(), 2);
     assert_eq!(result["notified"], json!(2));
 
-    // Exactly one ledger row carries both, and the direct one says so.
-    let written = notices_written(&db);
-    assert_eq!(written.len(), 1);
-    let payload: Value = serde_json::from_str(&written[0]).unwrap();
-    assert_eq!(payload["reason"], json!("inspection"));
-    let entries = payload["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 2);
-    let direct = entries
-        .iter()
-        .find(|entry| entry["taskId"] == json!("task-direct"))
-        .unwrap();
-    assert_eq!(direct["direct"], json!(true));
-    let relayed = entries
-        .iter()
-        .find(|entry| entry["taskId"] == json!("task-answer"))
-        .unwrap();
-    assert_eq!(relayed["direct"], json!(false));
+    let written = alerts_written(&db);
+    assert_eq!(written.len(), 2);
+    assert!(
+        written
+            .iter()
+            .any(|(code, session)| { code == "TASK_ANSWER_WAIT" && session == &answered }),
+        "{written:?}"
+    );
+    assert!(
+        written
+            .iter()
+            .any(|(code, session)| code == "TASK_STUCK" && session == &direct),
+        "{written:?}"
+    );
+}
 
-    // The notice is addressed to the steward, as a `stage` row, and asks for
-    // nothing on completion — she is woken to say one sentence.
-    let (kind, target, status): (String, String, String) = db
-        .conn()
-        .query_row(
-            "SELECT kind, target_session_id, status FROM session_collaboration_messages",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .unwrap();
-    assert_eq!(kind, "stage");
-    assert_eq!(target, "steward");
-    assert_eq!(status, "queued");
+/// The two rows of `findings` still say whether a task came from a dispatcher's
+/// card or the person's own workbench: that is a fact about the task, and the
+/// card shows it.
+#[test]
+fn the_findings_still_name_a_historically_dispatched_task() {
+    let (_dir, db) = database();
+    let now = 10_000_000_000;
+    task(
+        &db,
+        TaskSeed {
+            id: "task-dispatched",
+            stage: "blocked",
+            // A task a card dispatched before the dispatcher layer was removed.
+            origin: "steward",
+            stage_changed_at: Some(now - STUCK_MS),
+            ..TaskSeed::default()
+        },
+    );
+    let result = inspect(&db, now).unwrap();
+    let reported = findings(&result);
+    assert_eq!(reported.len(), 1);
+    assert!(
+        !reported[0].2,
+        "a historically dispatched task is not the person's own dispatch"
+    );
 }
 
 #[test]
 fn progress_says_nothing() {
     let (_dir, db) = database();
-    steward(&db);
     let now = 10_000_000_000;
     task(
         &db,
@@ -381,13 +377,14 @@ fn progress_says_nothing() {
     let result = inspect(&db, now).unwrap();
     assert!(findings(&result).is_empty());
     assert_eq!(result["notified"], json!(0));
-    assert!(notices_written(&db).is_empty());
+    assert!(alerts_written(&db).is_empty());
 }
 
+/// No dispatcher row is needed, and none is looked for: the person is the one
+/// who has to hear about a stuck task.
 #[test]
-fn without_a_steward_the_person_still_sees_the_task() {
+fn the_person_is_told_with_no_dispatcher_in_the_database() {
     let (_dir, db) = database();
-    // No steward row at all: nothing to address, and nothing to fail.
     let now = 10_000_000_000;
     task(
         &db,
@@ -399,6 +396,6 @@ fn without_a_steward_the_person_still_sees_the_task() {
     );
     let result = inspect(&db, now).unwrap();
     assert_eq!(findings(&result).len(), 1);
-    assert_eq!(result["notified"], json!(0));
-    assert!(notices_written(&db).is_empty());
+    assert_eq!(result["notified"], json!(1));
+    assert_eq!(alerts_written(&db).len(), 1);
 }

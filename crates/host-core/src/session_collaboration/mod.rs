@@ -10,9 +10,6 @@ use crate::{
     sessions,
 };
 pub mod bots;
-pub mod task_api;
-pub(crate) use crate::tasks;
-pub mod drafts;
 pub mod norms;
 pub(crate) mod notices;
 mod permissions;
@@ -22,6 +19,7 @@ mod provenance;
 pub(crate) mod repository;
 mod restart;
 mod settlement;
+pub mod task_api;
 pub use provenance::{prepare_append, validate_replacement};
 pub use repository::{get, Message};
 pub use settlement::{begin_turn, recover, settle_turn};
@@ -427,21 +425,12 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
             Ok(json!({"callback":settle_turn(db,string(input,"turnId",256)?)?}))
         }
         "session.collaboration.cancel" => settlement::cancel(db, input),
-        // Task-card drafts (ADR bot-sessions-and-steward §3). The model reaches
-        // propose/revise/drop; `confirm` is reached only from the desktop's IPC,
-        // because a confirmation is a person's click, not a tool call.
         // The employee surface (ADR bot-sessions-and-steward §5): every row is a
         // session with a role and a profile, so there is no second lifecycle.
         "bot.list" => bots::list(db),
-        // The steward's roster: employees worth dispatching to, with the facts a
-        // choice needs (employee mode 0.5 slice 3). Not `bot.list`: the
-        // secretary must not see herself, and must see repos, busyness and how
-        // much is waiting on the person.
-        "bot.roster" => bots::roster(db, input),
         "bot.create" => bots::create(db, input),
         "bot.update" => bots::update(db, input),
         "bot.dismiss" => bots::dismiss(db, input),
-        "bot.seedDefaults" => bots::seed_defaults(db),
         // The employee a task session belongs to (slice 6): a task runs as its
         // role, and the role's definition lives on the employee's profile.
         "bot.forTaskSession" => bots::for_task_session(db, input),
@@ -449,57 +438,6 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
         // (slice 6). Kept in the local key–value table, one versioned row.
         "team.norms.get" => norms::get(db),
         "team.norms.set" => norms::set(db, input),
-        "taskCard.list" => bots::list_drafts(db, string(input, "sessionId", 256)?),
-        "taskCard.get" => Ok(json!({
-            "draft": drafts::get(db, string(input, "draftId", 256)?)?,
-        })),
-        "taskCard.propose" => drafts::propose(db, input),
-        "taskCard.revise" => drafts::revise(db, input),
-        // The person changes the employee on a proposed card. It narrows the
-        // card to what the new employee may do, recomputes its hash, and leaves
-        // it proposed: starting it is still a separate click.
-        "taskCard.reassign" => drafts::reassign(db, input),
-        "taskCard.drop" => drafts::drop(db, input),
-        // Whether the host may start this card by itself, from stored facts.
-        "taskCard.autoStart" => {
-            let target = string(input, "targetSessionId", 256)?;
-            let card = input
-                .get("card")
-                .cloned()
-                .ok_or_else(|| anyhow!("INVALID_ARGUMENT: card required"))?;
-            Ok(json!({"refusal": drafts::auto_start_refusal(db, target, &card)?}))
-        }
-        "taskCard.confirm" => drafts::confirm(
-            db,
-            drafts::ConfirmRequest {
-                draft_id: string(input, "draftId", 256)?,
-                card_hash: string(input, "cardHash", 128)?,
-                // The host records *how* it was confirmed; the only two values
-                // are a person's click and the host's own auto-start policy.
-                confirmed_by: match input.get("confirmedBy").and_then(Value::as_str) {
-                    None | Some("user") => drafts::CONFIRMED_BY_USER,
-                    Some("policy") => drafts::CONFIRMED_BY_POLICY,
-                    Some(other) => {
-                        return Err(anyhow!("INVALID_ARGUMENT: unknown confirmedBy '{other}'"))
-                    }
-                },
-                host_id: input.get("hostId").and_then(Value::as_str),
-                device_id: input.get("deviceId").and_then(Value::as_str),
-                policy_version: input
-                    .get("policyVersion")
-                    .and_then(Value::as_str)
-                    .unwrap_or("steward-1"),
-                notify_on_completion: input
-                    .get("notifyOnCompletion")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(true),
-                idempotency_key: string(input, "idempotencyKey", 256)?,
-                // Resolved from the card's remote origin by the RPC layer,
-                // which is the only place that can run git; the host accepts it
-                // only when it names a registered project.
-                project_path: input.get("projectPath").and_then(Value::as_str),
-            },
-        ),
         // Task progress (ADR bot-sessions-and-steward): attach the frozen card,
         // record a structured report, and read one delivery's progress.
         "session.collaboration.mandate" => crate::session_collaboration::progress::set_mandate(

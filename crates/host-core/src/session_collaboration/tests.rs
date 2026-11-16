@@ -488,9 +488,9 @@ fn a_claim_that_loses_the_race_returns_conflict_and_rolls_back() {
     assert_eq!(get(&db, &message.id).unwrap().unwrap().status, "queued");
 }
 
-// ---- Employee mode 0.5 slice 3: the steward's roster, wake-ups, restarts ----
+// ---- Employee mode 0.5 slice 3: stage alerts, restarts, reassignment --------
 
-/// One employee, with the profile a card can be dispatched to.
+/// One employee, with the profile a dispatch can address.
 fn employee(db: &Database, name: &str, definition: Option<&str>, observe: bool) -> String {
     let mut profile = json!({
         "name": name,
@@ -517,10 +517,9 @@ fn employee(db: &Database, name: &str, definition: Option<&str>, observe: bool) 
     .id
 }
 
-/// A steward-dispatched task: a delivery carrying a mandate, a task row, and the
-/// delivery re-pointed at the task's own session — exactly what a confirmed card
-/// produces.
-fn dispatched_task(db: &Database, steward: &str, employee: &str, origin: &str) -> (String, String) {
+/// One task a delivery authorized: a mandate on the ledger, a task row, and the
+/// delivery re-pointed at the task's own session.
+fn dispatched_task(db: &Database, sender: &str, employee: &str, origin: &str) -> (String, String) {
     let mandate = json!({
         "version": 1,
         "taskId": Uuid::new_v4().to_string(),
@@ -539,7 +538,7 @@ fn dispatched_task(db: &Database, steward: &str, employee: &str, origin: &str) -
     let delivery = send_record(
         db,
         &json!({
-            "sourceSessionId": steward,
+            "sourceSessionId": sender,
             "pluginId": "builtin:session-messaging",
             "content": "Fix the login timeout",
             "idempotencyKey": format!("card-{}", Uuid::new_v4()),
@@ -571,179 +570,111 @@ fn dispatched_task(db: &Database, steward: &str, employee: &str, origin: &str) -
     (task_id, delivery.id)
 }
 
-/// Every stage notice addressed to the steward, whether or not it is still
-/// queued (Main claims it as soon as it starts a turn).
-fn all_stage_notices(db: &Database, steward: &str) -> Vec<Message> {
+/// The inbox rows that say a task stopped: one per (task, stage, `stage_seq`).
+fn stage_alerts(db: &Database, session_id: &str) -> Vec<(String, Option<String>)> {
     let mut statement = db
         .conn()
-        .prepare_cached(&format!(
-            "{} WHERE target_session_id=?1 AND kind='stage' ORDER BY created_at, rowid",
-            repository::SELECT
-        ))
+        .prepare_cached(
+            "SELECT kind, error_code FROM notifications
+              WHERE session_id=?1 ORDER BY created_at, rowid",
+        )
         .unwrap();
     statement
-        .query_map(params![steward], repository::row)
+        .query_map(params![session_id], |row| Ok((row.get(0)?, row.get(1)?)))
         .unwrap()
         .collect::<rusqlite::Result<Vec<_>>>()
         .unwrap()
 }
 
-/// The roster offers employees with the facts a choice needs, and never the
-/// secretary or the caller.
+/// A stage the person has to act on reaches the person exactly once, and it
+/// does so whatever `origin` the task carries: the inbox is theirs, not a
+/// dispatcher's.
 #[test]
-fn the_roster_offers_employees_but_never_the_secretary() {
+fn a_stage_change_reaches_the_person_once() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let seeded = handle(&db, "bot.seedDefaults", &json!({})).unwrap();
-    let created = seeded["created"].as_array().unwrap();
-    let steward = created
-        .iter()
-        .find(|item| item["definition"] == json!("steward"))
-        .unwrap()["sessionId"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    // Slice 6: the crew is hired, not seeded. One worker with a repository and a
-    // task waiting on the person, and one read-only researcher with neither.
-    let backend = employee(&db, "Router 后端", None, false);
-    let researcher = employee(&db, "研究员", Some("explorer"), false);
-    let repo = dir.path().join("router");
-    std::fs::create_dir_all(&repo).unwrap();
-    handle(
-        &db,
-        "bot.update",
-        &json!({"sessionId": backend, "profile": {"observe": false}, "projectPath": repo.to_string_lossy()}),
-    )
-    .unwrap();
-    let task = crate::tasks::create(
-        &db,
-        &json!({"employeeSessionId": backend, "title": "补单测", "origin": "direct"}),
-    )
-    .unwrap();
-    let task_id = task["task"]["id"].as_str().unwrap();
-    db.conn()
-        .execute(
-            "UPDATE tasks SET stage='person/answer' WHERE id=?1",
-            params![task_id],
-        )
-        .unwrap();
-
-    let roster = handle(&db, "bot.roster", &json!({"sessionId": steward})).unwrap();
-    let employees = roster["employees"].as_array().unwrap();
-    assert_eq!(employees.len(), 2, "the hired crew minus the secretary");
-    assert!(
-        employees
-            .iter()
-            .all(|entry| entry["sessionId"] != json!(steward)),
-        "the secretary is never a candidate for her own card"
-    );
-    let backend_row = employees
-        .iter()
-        .find(|entry| entry["sessionId"] == json!(backend))
-        .unwrap();
-    assert_eq!(backend_row["name"], json!("Router 后端"));
-    assert_eq!(backend_row["duty"], json!("Router 后端 duty"));
-    assert_eq!(backend_row["permissionMode"], json!("accept-edits"));
-    assert_eq!(backend_row["observe"], json!(false));
-    assert_eq!(backend_row["openTaskCount"], json!(1));
-    assert_eq!(backend_row["waitingCount"], json!(1));
-    assert_eq!(backend_row["idle"], json!(false));
-    assert_eq!(backend_row["repos"], json!([]), "reserved for later");
-    assert!(backend_row["projectPath"].is_string());
-    // Slice 6: the row names the job, so the steward can tell a reviewer from a
-    // coder; an employee hired under no definition says so honestly.
-    assert_eq!(backend_row["definition"], Value::Null);
-    let others = employees
-        .iter()
-        .find(|entry| entry["sessionId"] == json!(researcher))
-        .unwrap();
-    assert_eq!(others["definition"], json!("explorer"));
-    assert_eq!(others["idle"], json!(true));
-    assert_eq!(others["openTaskCount"], json!(0));
-}
-
-/// A stage the person or the steward has to react to wakes the steward exactly
-/// once; a task the person dispatched directly never does.
-#[test]
-fn a_stage_change_wakes_the_steward_once_and_a_direct_task_never_does() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let steward = employee(&db, "秘书", Some("steward"), false);
+    let sender = employee(&db, "调度员", None, false);
     let worker = employee(&db, "Router 后端", None, false);
-    let (task_id, delivery) = dispatched_task(&db, &steward, &worker, "steward");
+    let (task_id, delivery) = dispatched_task(&db, &sender, &worker, "steward");
+    let task_session = crate::tasks::get_task(&db, &task_id)
+        .unwrap()
+        .unwrap()
+        .session_id;
 
     // Working is not news.
     progress::report(&db, &delivery, 1, "progress", "working").unwrap();
-    assert!(all_stage_notices(&db, &steward).is_empty());
+    assert!(stage_alerts(&db, &task_session).is_empty());
 
     // Blocked is.
     progress::report(&db, &delivery, 2, "blocked", "blocked").unwrap();
-    let notices = all_stage_notices(&db, &steward);
-    assert_eq!(notices.len(), 1, "one stage change, one notice");
-    let notice = &notices[0];
-    assert_eq!(notice.kind, "stage");
-    assert_eq!(notice.status, "queued");
-    let payload: Value = serde_json::from_str(&notice.content).unwrap();
-    assert_eq!(payload["taskId"], json!(task_id));
-    assert_eq!(payload["stage"], json!("blocked"));
-    assert_eq!(payload["employee"], json!("Router 后端"));
-    // It is work for Main to start, so the drain sees it.
-    assert!(repository::pending_dispatch(&db)
-        .unwrap()
-        .iter()
-        .any(|message| message.id == notice.id));
+    let alerts = stage_alerts(&db, &task_session);
+    assert_eq!(alerts.len(), 1, "one stage change, one alert: {alerts:?}");
+    assert_eq!(alerts[0].0, "task.failed");
+    assert_eq!(alerts[0].1.as_deref(), Some("TASK_BLOCKED"));
 
-    // The same stage again is not a change: no second notice.
+    // The same stage again is not a change: no second alert.
     progress::report(&db, &delivery, 3, "blocked", "blocked").unwrap();
-    assert_eq!(all_stage_notices(&db, &steward).len(), 1);
+    assert_eq!(stage_alerts(&db, &task_session).len(), 1);
     // And the notice is idempotent on its own key, even if it is written again.
     assert_eq!(
-        notices::stage_change(&db, db.conn(), &delivery, "blocked", 2).unwrap(),
+        notices::stage_change(db.conn(), &task_id, "blocked", 2).unwrap(),
         None
     );
 
-    // Waiting for an answer is a change too.
+    // Waiting for an answer is not a second alert: the notification center
+    // already carries the `prompt.*` row for the request itself.
     progress::report(&db, &delivery, 4, "waiting", "person/answer").unwrap();
-    assert_eq!(all_stage_notices(&db, &steward).len(), 2);
+    assert_eq!(stage_alerts(&db, &task_session).len(), 1);
+}
 
-    // A task the person typed into the workbench tells nobody: she knows about
-    // it from the briefing and does not interfere.
+/// A task the person started directly reaches them too: nothing about a stuck
+/// task's audience depends on who dispatched it.
+#[test]
+fn a_direct_task_that_gets_stuck_also_reaches_the_person() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let worker = employee(&db, "Router 后端", None, false);
     let direct = crate::tasks::create(
         &db,
         &json!({"employeeSessionId": worker, "title": "自己派活", "origin": "direct"}),
     )
     .unwrap();
-    let direct_delivery = send_record(
+    let task_id = direct["task"]["id"].as_str().unwrap().to_string();
+    let task_session = direct["task"]["sessionId"].as_str().unwrap().to_string();
+
+    crate::tasks::report_blocked(
         &db,
-        &json!({"sourceSessionId": worker, "pluginId": "builtin:session-messaging",
-                "content": "自己派活", "idempotencyKey": "direct-1", "notifyOnCompletion": false}),
-        direct["task"]["sessionId"].as_str().unwrap(),
-        "task",
+        &json!({
+            "sessionId": task_session,
+            "status": "blocked",
+            "where": "缺 staging 凭据",
+            "tried": "问了两次",
+            "suggestion": "换个能拿到凭据的人",
+        }),
     )
     .unwrap();
-    db.conn()
-        .execute(
-            "UPDATE tasks SET delivery_id=?2 WHERE id=?1",
-            params![direct["task"]["id"].as_str().unwrap(), direct_delivery.id],
-        )
-        .unwrap();
-    progress::report(&db, &direct_delivery.id, 1, "failed", "failed").unwrap();
+
+    let alerts = stage_alerts(&db, &task_session);
+    assert_eq!(alerts.len(), 1, "{alerts:?}");
+    assert_eq!(alerts[0].1.as_deref(), Some("TASK_BLOCKED"));
     assert_eq!(
-        all_stage_notices(&db, &steward).len(),
-        2,
-        "a directly dispatched task does not wake the steward"
+        crate::tasks::get_task(&db, &task_id)
+            .unwrap()
+            .unwrap()
+            .stage,
+        "blocked"
     );
 }
 
-/// The startup fence marks an interrupted delivery and tells the steward, and
-/// the person's restart writes one new delivery from the same mandate.
+/// The startup fence marks an interrupted delivery and tells the person, and
+/// their restart writes one new delivery from the same mandate.
 #[test]
 fn an_interrupted_task_is_announced_and_starts_again_once() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let steward = employee(&db, "秘书", Some("steward"), false);
+    let sender = employee(&db, "调度员", None, false);
     let worker = employee(&db, "Router 后端", None, false);
-    let (task_id, delivery) = dispatched_task(&db, &steward, &worker, "steward");
+    let (task_id, delivery) = dispatched_task(&db, &sender, &worker, "steward");
     // A turn was running when the application stopped.
     db.conn()
         .execute(
@@ -756,15 +687,14 @@ fn an_interrupted_task_is_announced_and_starts_again_once() {
     assert_eq!(get(&db, &delivery).unwrap().unwrap().status, "interrupted");
     let task = crate::tasks::get_task(&db, &task_id).unwrap().unwrap();
     assert_eq!(task.delivery_status.as_deref(), Some("interrupted"));
-    let notices = all_stage_notices(&db, &steward);
-    assert_eq!(notices.len(), 1);
-    let payload: Value = serde_json::from_str(&notices[0].content).unwrap();
-    assert_eq!(payload["stage"], json!("interrupted"));
+    let alerts = stage_alerts(&db, &task.session_id);
+    assert_eq!(alerts.len(), 1, "{alerts:?}");
+    assert_eq!(alerts[0].1.as_deref(), Some("TASK_INTERRUPTED"));
     // A second fence (another restart) adds nothing.
     recover(&db).unwrap();
-    assert_eq!(all_stage_notices(&db, &steward).len(), 1);
+    assert_eq!(stage_alerts(&db, &task.session_id).len(), 1);
 
-    // The person clicks "重新开工".
+    // The person clicks the restart button.
     let restarted = handle_task(&db, "task.restart", &json!({"taskId": task_id})).unwrap();
     let new_delivery = restarted["delivery"]["id"].as_str().unwrap().to_string();
     assert_ne!(new_delivery, delivery);
@@ -791,150 +721,92 @@ fn an_interrupted_task_is_announced_and_starts_again_once() {
     assert!(refused.to_string().contains("CONFLICT"), "{refused}");
 }
 
-/// Reassigning moves a proposed card, narrows it to the new employee's ceiling,
-/// and leaves it for the person to start.
+/// `task.reassign` hands the work to another employee: a new task there, at
+/// `origin = direct`, with the goal and the repository carried over.
 #[test]
-fn reassigning_a_card_narrows_it_and_keeps_it_proposed() {
+fn reassigning_creates_the_work_under_the_other_employee() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let steward = employee(&db, "秘书", Some("steward"), false);
-    let wide = employee(&db, "界面", None, false);
-    let narrow = sessions::create_session_with_options(
+    let sender = employee(&db, "调度员", None, false);
+    let owner = employee(&db, "Router 后端", None, false);
+    let other = employee(&db, "界面", None, false);
+    let (task_id, _delivery) = dispatched_task(&db, &sender, &owner, "steward");
+    let blocked_session = crate::tasks::get_task(&db, &task_id)
+        .unwrap()
+        .unwrap()
+        .session_id;
+    crate::tasks::report_blocked(
         &db,
-        sessions::SessionCreateOptions {
-            title: Some("后端".into()),
-            mode: Some("agent".into()),
-            permission_mode: Some("ask".into()),
-            role: Some("bot".into()),
-            bot_profile_json: Some(
-                json!({"name": "后端", "permissionMode": "ask", "observe": false}).to_string(),
-            ),
-            ..Default::default()
-        },
-    )
-    .unwrap()
-    .id;
-    let proposed = handle(
-        &db,
-        "taskCard.propose",
         &json!({
-            "sessionId": steward,
-            "targetSessionId": wide,
-            "sourceUtterance": "登录超时今天修掉",
-            "card": {
-                "goal": "Fix the login timeout",
-                "criteria": [{"id": "c1", "text": "A failing repro exists"}],
-                "permissionMode": "accept-edits",
-                "mustAsk": [],
-                "risk": "low",
-                "reason": "页面与交互是它的活；你提到了 Desktop；它空闲",
-            },
+            "sessionId": blocked_session,
+            "status": "blocked",
+            "where": "缺 staging 凭据",
+            "tried": "问了两次",
+            "suggestion": "换个能拿到凭据的人",
         }),
     )
     .unwrap();
-    let draft_id = proposed["draft"]["id"].as_str().unwrap();
-    let before = proposed["draft"]["cardHash"].as_str().unwrap().to_string();
-    let reassigned = handle(
+
+    let reassigned = crate::tasks::reassign(
         &db,
-        "taskCard.reassign",
-        &json!({"draftId": draft_id, "targetSessionId": narrow}),
+        &json!({ "taskId": task_id, "employeeSessionId": other }),
     )
     .unwrap();
-    let draft = &reassigned["draft"];
-    assert_eq!(draft["targetSessionId"], json!(narrow));
+    assert_eq!(reassigned["task"]["employeeSessionId"], json!(other));
+    assert_eq!(reassigned["task"]["origin"], json!("direct"));
+    assert_ne!(reassigned["task"]["id"], json!(task_id));
+    // The goal travels: the mandate's own words, not a summary of them.
     assert_eq!(
-        draft["status"],
-        json!("proposed"),
-        "the person still starts it"
+        reassigned["task"]["sourceUtterance"],
+        json!("Fix the login timeout")
     );
-    // `ask` is narrower than `accept-edits`, so the card may only ask for `ask`.
-    assert_eq!(draft["card"]["permissionMode"], json!("ask"));
-    assert_ne!(
-        draft["cardHash"],
-        json!(before),
-        "the card changed, so its hash did"
-    );
-    // The reason travels with the card.
-    assert_eq!(
-        draft["card"]["reason"],
-        json!("页面与交互是它的活；你提到了 Desktop；它空闲")
-    );
-    // An employee with no repository cannot carry a card that names one.
-    assert_eq!(
-        reassigned["repoAvailable"],
-        json!(true),
-        "no repo on the card"
-    );
-    // Only a proposed card is reassignable.
-    handle(&db, "taskCard.drop", &json!({"draftId": draft_id})).unwrap();
-    let refused = handle(
+
+    // The old task is untouched: the person still decides what happens to it.
+    let after = crate::tasks::get_task(&db, &task_id).unwrap().unwrap();
+    assert_eq!(after.stage, "blocked");
+    assert!(after.archived_at.is_none());
+
+    // Handing work to the employee who already holds it is not a reassignment.
+    let refused = crate::tasks::reassign(
         &db,
-        "taskCard.reassign",
-        &json!({"draftId": draft_id, "targetSessionId": wide}),
+        &json!({ "taskId": task_id, "employeeSessionId": owner }),
     )
     .unwrap_err();
-    assert!(refused.to_string().contains("CONFLICT"), "{refused}");
+    assert!(
+        refused.to_string().contains("INVALID_ARGUMENT"),
+        "{refused}"
+    );
 }
 
 /// A follow-up carries no new authority: it is checked against the task's own
-/// authorization, never against the steward's mode (review S2).
+/// authorization, never against the sender's mode (review S2).
 ///
-/// Before this rule the ceiling was the sender's `ask`, so a steward could not
-/// continue even the task she had just handed out at `accept-edits`: the send
-/// was refused as `PERMISSION_DENIED: target permission mode exceeds the sending
-/// session's authorization`.
+/// Before this rule the ceiling was the sender's `ask`, so a session running at
+/// `ask` could not continue even the work it had just handed out at
+/// `accept-edits`: the send was refused as `PERMISSION_DENIED: target permission
+/// mode exceeds the sending session's authorization`.
 #[test]
 fn a_follow_up_is_checked_against_the_tasks_own_authorization() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let steward = sessions::create_session_with_options(
-        &db,
-        sessions::SessionCreateOptions {
-            title: Some("秘书".into()),
-            mode: Some("agent".into()),
-            permission_mode: Some("ask".into()),
-            ..Default::default()
-        },
-    )
-    .unwrap()
-    .id;
+    let sender = session(&db, "秘书");
     let employee = employee(&db, "界面", None, false);
-    let proposed = handle(
+    let created = crate::tasks::create(
         &db,
-        "taskCard.propose",
         &json!({
-            "sessionId": steward,
-            "targetSessionId": employee,
-            "sourceUtterance": "任务列表加个筛选",
-            "card": {
-                "goal": "Add a filter to the task list",
-                "criteria": [{"id": "c1", "text": "The list filters"}],
-                "permissionMode": "accept-edits",
-                "mustAsk": [],
-                "risk": "low",
-                "reason": "页面与交互是它的活；你提到了 Desktop",
-            },
+            "employeeSessionId": employee,
+            "title": "任务列表加个筛选",
+            "origin": "direct",
         }),
     )
     .unwrap();
-    let confirmed = handle(
-        &db,
-        "taskCard.confirm",
-        &json!({
-            "draftId": proposed["draft"]["id"],
-            "cardHash": proposed["draft"]["cardHash"],
-            "confirmedBy": "user",
-            "idempotencyKey": "confirm-follow-up",
-        }),
-    )
-    .unwrap();
-    let task_session = confirmed["task"]["sessionId"].as_str().unwrap().to_string();
-    let task_id = confirmed["task"]["id"].as_str().unwrap().to_string();
+    let task_session = created["task"]["sessionId"].as_str().unwrap().to_string();
+    let task_id = created["task"]["id"].as_str().unwrap().to_string();
     let sent = handle(
         &db,
         "session.collaboration.send",
         &json!({
-            "sourceSessionId": steward,
+            "sourceSessionId": sender,
             "pluginId": "builtin:session-messaging",
             "content": "Also handle the empty list",
             "kind": "task",
@@ -955,6 +827,6 @@ fn a_follow_up_is_checked_against_the_tasks_own_authorization() {
     assert_eq!(
         sent["message"]["permissionCeiling"],
         json!("accept-edits"),
-        "the task's own authorization, not the steward's"
+        "the task's own authorization, not the sender's"
     );
 }

@@ -23,7 +23,11 @@
 use super::{anyhow, Connection, Path, Result};
 use rusqlite::{params, Transaction};
 
-use crate::session_collaboration::bots::STEWARD_DEFAULT_NAME;
+/// The name this step wrote, recorded here because it is a fact about v36 and
+/// not about the current employee surface: the live code no longer has a
+/// default steward, and a migration must mean exactly what it meant the day it
+/// ran.
+pub(crate) const STEWARD_DEFAULT_NAME: &str = "Super Agent";
 
 /// Every name this product ever wrote as the steward's default.
 ///
@@ -136,17 +140,23 @@ mod tests {
             ),
             "an untouched default becomes the new default, in both places"
         );
-        // Nothing else about the row changed: the profile still describes the
-        // same employee, down to its definition.
-        let definition: String = db
+        // Nothing about the rest of the profile changed here. Its `definition`
+        // is gone by the time the file is current, and that is v41 -> v42's
+        // decision, not this step's: the steward layer no longer exists.
+        let profile: String = db
             .conn()
             .query_row(
-                "SELECT json_extract(bot_profile_json, '$.definition') FROM sessions WHERE id='steward'",
+                "SELECT bot_profile_json FROM sessions WHERE id='steward'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(definition, "steward");
+        let profile: serde_json::Value = serde_json::from_str(&profile).unwrap();
+        assert!(
+            profile.get("definition").is_none(),
+            "v42 clears the steward definition: {profile}"
+        );
+        assert_eq!(profile["permissionMode"], "ask", "{profile}");
     }
 
     #[test]

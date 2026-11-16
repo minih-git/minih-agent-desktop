@@ -267,7 +267,7 @@ pub fn recover(db: &Database) -> Result<()> {
         params![now_ms()],
     )?;
     for (id, _seq) in &interrupted {
-        super::notices::delivery_interrupted(db, &tx, id)?;
+        super::notices::delivery_interrupted(&tx, id)?;
     }
     tx.commit()?;
     Ok(())

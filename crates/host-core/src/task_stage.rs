@@ -8,7 +8,7 @@
 //! every one of those paths goes through [`move_stage`].
 
 use crate::db::{ms_to_ts, now_ms, Database};
-use crate::tasks::{get_task, is_valid_stage, short_id};
+use crate::tasks::{get_task, is_valid_stage};
 use anyhow::{anyhow, Result};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
@@ -182,7 +182,7 @@ fn read_waiting(conn: &rusqlite::Connection, task_id: &str) -> Result<Vec<TaskWa
 /// - **A change is announced once**, under the key (task, stage, `stage_seq`),
 ///   in this same transaction; `silent` exists only for the person's own stop.
 pub(crate) fn move_stage(
-    db: &Database,
+    _db: &Database,
     conn: &rusqlite::Connection,
     task_id: &str,
     stage: Option<&str>,
@@ -235,13 +235,7 @@ pub(crate) fn move_stage(
         return Ok(None);
     }
     if !silent {
-        crate::session_collaboration::notices::stage_change(
-            db,
-            conn,
-            task_id,
-            &next_stage,
-            next_seq,
-        )?;
+        crate::session_collaboration::notices::stage_change(conn, task_id, &next_stage, next_seq)?;
     }
     Ok(Some(StageMove {
         task_id: task_id.to_owned(),
@@ -381,9 +375,9 @@ const INTERRUPTED_BLOCKER: &str = r#"{"reason":"interrupted"}"#;
 /// So: every open task whose stage says "in flight" and whose own session has no
 /// running turn becomes `blocked` with `reason: "interrupted"`. Three rules:
 ///
-/// - **Silent.** A task a steward dispatched was already announced once by
-///   `delivery_interrupted`, and a directly dispatched task wakes nobody ever;
-///   announcing here would be a second message about one interruption.
+/// - **Silent.** A task whose delivery was interrupted was already announced
+///   once by `delivery_interrupted`, announcing here would be a second message
+///   about one interruption.
 /// - **Only stages that claim work is happening.** `person/accept`, `failed` and
 ///   an already `blocked` task are not claims about a live turn.
 /// - **Only tasks with no running turn.** A task whose turn really is running is
@@ -427,8 +421,8 @@ pub fn recover_interrupted(db: &Database, conn: &rusqlite::Connection) -> Result
 /// task is the ordinary case (a worker, a plain message) and does nothing.
 ///
 /// Returns the move when the stage actually changed: a repeated write of the
-/// stage the task already holds is not a change, and only a change may wake the
-/// steward (`session_collaboration::notices`).
+/// stage the task already holds is not a change, and only a change may reach
+/// the person (`session_collaboration::notices`).
 pub fn sync_stage(
     db: &Database,
     conn: &rusqlite::Connection,
@@ -522,7 +516,7 @@ pub fn waiting_open(db: &Database, input: &Value) -> Result<Value> {
 ///
 /// The request is named by its own id, so a resolution handler that only knows
 /// the id does not have to remember which session it came from — and answering
-/// from the phone, the task session or the steward's dock closes the same entry.
+/// from the phone, the task session or the dock closes the same entry.
 pub fn waiting_close(db: &Database, input: &Value) -> Result<Value> {
     let request_id = required_text(input, "requestId", 256)?;
     let session_id = input
@@ -586,8 +580,8 @@ pub fn waiting_close(db: &Database, input: &Value) -> Result<Value> {
     } else {
         None
     };
-    // Closing is not news: the person already acted, and the steward was told
-    // when the question opened.
+    // Closing is not news: the person already acted, and the prompt was the
+    // thing that told them.
     move_stage(db, &tx, &task_id, stage, Column::Keep, column, true)?;
     tx.commit()?;
     Ok(json!({
@@ -642,50 +636,37 @@ pub fn report_blocked(db: &Database, input: &Value) -> Result<Value> {
         "blocker": serde_json::from_str::<Value>(&blocker).unwrap_or(Value::Null),
     }))
 }
-/// The steward a card can be proposed on when the caller did not name one.
-fn default_steward(db: &Database) -> Result<Option<String>> {
-    Ok(db
-        .conn()
-        .query_row(
-            "SELECT id FROM sessions
-              WHERE role='bot' AND deleted_at IS NULL
-                AND json_extract(bot_profile_json, '$.definition') = 'steward'
-              ORDER BY created_at LIMIT 1",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?)
-}
-
 /// `task.reassign`: hand a stuck task's work to somebody else.
 ///
-/// Reassigning is a **new dispatch**, so it goes through the same confirmation a
-/// first dispatch does: a fresh card on the steward's own conversation, carrying
-/// the original goal and nobody assigned — the person picks the employee and
-/// clicks, and only that click authorizes the new work.
+/// Reassigning is a **new dispatch**: a task of its own under the employee the
+/// person picked, created at `origin = direct` because a task a person starts is
+/// exactly what `task.create` writes. There is no card to propose and no
+/// dispatcher conversation to propose it on: the click that names the employee is
+/// the decision, and the new task runs at that employee's own permission mode.
 ///
-/// The original task is left exactly as it was. It is not archived: the person
-/// still decides what happens to it, and a card nobody confirmed dispatches
-/// nothing, so a reassignment that was reconsidered costs no cleanup.
+/// The goal travels with the work: the mandate's `goal` when the old task was
+/// authorized by one, else the words the person used, else its title. The
+/// repository travels too, so the new employee reads the same checkout.
+///
+/// The original task is left exactly as it was. It is not archived — the person
+/// still decides what happens to it — so a reassignment that was reconsidered
+/// leaves nothing to clean up. Main starts the new task's first turn, the same
+/// way it starts any task it just created.
 pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
     let task_id = required_text(input, "taskId", 256)?;
     let task = get_task(db, task_id)?.ok_or_else(|| anyhow!("NOT_FOUND: task"))?;
     if task.archived_at.is_some() {
         return Err(anyhow!("CONFLICT: this task is archived"));
     }
-    let steward = match input
-        .get("stewardSessionId")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        Some(steward) => steward.to_owned(),
-        None => default_steward(db)?
-            .ok_or_else(|| anyhow!("CONFLICT: no steward session is available to propose on"))?,
-    };
-    // The goal the new card carries: the card the task came from, else the words
-    // the person used, else its title. Never a summary — a dispatcher needs the
-    // original instruction, not one rendered again.
+    let employee = required_text(input, "employeeSessionId", 256)?.to_owned();
+    if employee == task.employee_session_id {
+        return Err(anyhow!(
+            "INVALID_ARGUMENT: this task already belongs to that employee"
+        ));
+    }
+    // The goal the new work carries: the card the task came from, else the words
+    // the person used, else its title. Never a summary — the next employee needs
+    // the original instruction, not one rendered again.
     let mandate_goal: Option<String> = match task.delivery_id.as_deref() {
         Some(delivery) => db
             .conn()
@@ -707,46 +688,29 @@ pub fn reassign(db: &Database, input: &Value) -> Result<Value> {
                 .filter(|value| !value.trim().is_empty())
         })
         .unwrap_or_else(|| task.title.clone());
-    // The new work starts at the mode the old work ran at: nothing about the new
-    // employee is known yet, and `propose` narrows the card to what the person
-    // picks can do.
-    let session_mode: String = db
-        .conn()
-        .query_row(
-            "SELECT permission_mode FROM sessions WHERE id=?1",
-            params![task.session_id],
-            |row| row.get(0),
-        )
-        .optional()?
-        .unwrap_or_else(|| "ask".to_owned());
-    let permission_mode = match session_mode.as_str() {
-        "accept-edits" | "auto" | "ask" => session_mode,
-        _ => "ask".to_owned(),
-    };
-    // The one sentence the card carries. Main renders it in the person's own
-    // language, because a stored row cannot be translated later.
-    let reason = bounded(input, "reason", 300)
-        .unwrap_or_else(|| format!("Reassigned from task #{}", short_id(task_id)));
-    let proposed = crate::session_collaboration::drafts::propose(
+    let tx = db.conn().unchecked_transaction()?;
+    let created = crate::tasks::create_in(
         db,
-        &json!({
-            "sessionId": steward,
-            "sourceUtterance": goal,
-            "card": {
-                "goal": goal,
-                "criteria": [],
-                "boundaries": [],
-                "permissionMode": permission_mode,
-                "mustAsk": [],
-                "risk": "medium",
-                "reason": reason,
-            },
-        }),
+        &tx,
+        crate::tasks::CreateRequest {
+            employee_session_id: &employee,
+            title: &task.title,
+            origin: "direct",
+            project_path: task.project_path.clone(),
+            branch: None,
+            source_utterance: Some(goal),
+            delivery_id: None,
+            // The new employee's own mode: no card was confirmed here, so there
+            // is nothing narrower to run at.
+            permission_mode: None,
+            relay_parent_task_id: None,
+            relay_state: None,
+        },
     )?;
+    tx.commit()?;
     Ok(json!({
-        "draft": proposed.get("draft").cloned().unwrap_or(Value::Null),
-        "created": proposed.get("created").cloned().unwrap_or(Value::Bool(false)),
-        "task": task,
+        "task": created,
+        "reassignedFrom": task,
     }))
 }
 

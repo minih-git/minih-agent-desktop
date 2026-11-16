@@ -233,21 +233,20 @@ pub fn inspect(db: &Database, now: i64) -> Result<Value> {
     if findings.is_empty() {
         return Ok(json!({ "findings": [], "notified": 0 }));
     }
-    // One notice for the whole batch, and the batch stamp is its idempotency
-    // suffix: the same run cannot announce itself twice.
+    // One inbox row per finding, and the batch stamp is part of its key: the
+    // same run cannot announce itself twice.
     let batch = now;
-    let entries = serde_json::to_value(&findings)?;
-    let mut notified = 0;
+    let notified;
     {
         let tx = db.conn().unchecked_transaction()?;
-        let message = notices::inspection(db, &tx, &entries, batch)?;
+        let written = notices::inspection(&tx, &findings, batch)?;
         for finding in &findings {
             record_reminder(db, &finding.task_id, finding.condition, now)?;
         }
         tx.commit()?;
-        if message.is_some() {
-            notified = findings.len();
-        }
+        // What was actually written: a row another retry already wrote is not
+        // a count of the person being told.
+        notified = written;
     }
     let mut findings_value = serde_json::to_value(&findings)?;
     if let Some(items) = findings_value.as_array_mut() {

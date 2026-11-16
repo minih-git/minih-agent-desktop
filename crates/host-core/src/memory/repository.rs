@@ -239,7 +239,7 @@ impl Database {
     /// scope. `None` means the session does not exist.
     ///
     /// Only `role = 'task'` reads the `bot` scope, and only the employee that
-    /// owns it: the employee container and the steward are not tasks, so their
+    /// owns it: the employee container is not a task, so its
     /// own lessons never reach their context — an employee would otherwise
     /// recall yesterday's work as if it were the person's request.
     pub fn learned_memory_scopes_for_session(

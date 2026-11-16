@@ -189,6 +189,73 @@ pub fn insert_for_prompt(
     }))
 }
 
+/// Record one thing about a task that the person has to act on: the work
+/// failed, it is blocked, the startup fence interrupted it, or the hourly
+/// inspection found it stuck.
+///
+/// It belongs to the `task.failed` family rather than a kind of its own: that
+/// row already means "this task stopped and it is yours to unblock", the
+/// renderer already draws it, and the schema's kind check stays as it is. What
+/// stopped is named by `error_code`, which is the vocabulary
+/// `session_collaboration::notices` writes and `tasks.stage` already uses.
+///
+/// `event_key` is the host's own idempotency string, stored in `request_id`:
+/// its unique index is what makes one stage change one row across replays and
+/// restarts. Nothing here names a delivery, a sender or a policy — the person
+/// owns the task, and its own session is where they look.
+pub fn insert_for_task_alert(
+    conn: &rusqlite::Connection,
+    session_id: &str,
+    event_key: &str,
+    error_code: &str,
+) -> Result<Option<Notification>> {
+    let Some(session_title) = conn
+        .query_row(
+            "SELECT title FROM sessions WHERE id = ?1",
+            params![session_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+
+    let id = Uuid::new_v4().to_string();
+    let created_at = now_ms();
+    let inserted = conn
+        .prepare_cached(
+            "INSERT INTO notifications
+                (id, kind, session_id, session_title, request_id, error_code, created_at)
+             VALUES (?1, 'task.failed', ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT DO NOTHING",
+        )?
+        .execute(params![
+            id,
+            session_id,
+            session_title,
+            event_key,
+            error_code,
+            created_at
+        ])?;
+    if inserted == 0 {
+        return Ok(None);
+    }
+    prune_oldest(conn)?;
+
+    Ok(Some(Notification {
+        id,
+        kind: "task.failed".to_string(),
+        session_id: session_id.to_string(),
+        session_title,
+        turn_id: None,
+        request_id: Some(event_key.to_string()),
+        tool_name: None,
+        error_code: Some(error_code.to_string()),
+        created_at: ms_to_ts(created_at),
+        read_at: None,
+    }))
+}
+
 /// Keep the newest `NOTIFICATION_KEEP` rows globally. Prompt rows share the
 /// same budget: a pending prompt is the newest reminder at the moment it is
 /// written, and its row is cheap to re-read from the transcript afterwards.

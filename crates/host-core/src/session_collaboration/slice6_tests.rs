@@ -1,9 +1,8 @@
 //! Slice 6 domain tests: hiring, team norms, and the two reads that make a task
 //! run as its role.
 //!
-//! They live in their own file because they are one change: the crew narrowed to
-//! the steward, the norms row, the employee of a task, and the job a roster row
-//! names. `bots.rs` keeps only the code.
+//! They live in their own file because they are one change: hiring, the norms
+//! row, and the employee of a task. `bots.rs` keeps only the code.
 
 use crate::db::Database;
 use crate::session_collaboration::{bots, norms};
@@ -49,141 +48,56 @@ fn employees(db: &Database) -> Vec<(String, String, String)> {
         .unwrap()
 }
 
-/// The empty database is the fresh install: one employee, the dispatcher.
+/// A fresh host has no employees at all: hiring is the only way one appears.
 ///
-/// The failure this replaces: the old `seedDefaults` created four rows, so
-/// "give me the defaults" hired three people the person never asked for.
+/// The failure this replaces: the old `seedDefaults` created a built-in
+/// dispatcher on first use, so a person who never hired anybody still had an
+/// employee the host had made up for them.
 #[test]
-fn seeding_an_empty_host_creates_only_the_super_agent() {
+fn a_fresh_host_starts_with_no_employees() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-
-    let seeded = bots::seed_defaults(&db).unwrap();
-    let created = seeded["created"].as_array().unwrap();
-    assert_eq!(created.len(), 1, "only the steward is created: {seeded}");
-    assert_eq!(created[0]["name"], json!(bots::STEWARD_DEFAULT_NAME));
-    assert_eq!(created[0]["definition"], json!("steward"));
-    assert_eq!(seeded["skipped"], json!([]));
-
-    let rows = employees(&db);
-    assert_eq!(rows.len(), 1, "one employee exists: {rows:?}");
-    assert!(rows[0].2.contains("\"steward\""));
-}
-
-/// A host that already has employees keeps every one of them, unchanged.
-///
-/// This is the hard rule of slice 6: hiring replaces the fixed crew, and nothing
-/// that already exists may be renamed, edited or removed by it. The comparison is
-/// of the stored profile bytes, so a "helpful" rewrite would fail here too.
-#[test]
-fn seeding_leaves_an_existing_crew_untouched() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    employee(&db, bots::STEWARD_DEFAULT_NAME, Some("steward"));
-    employee(&db, "Router 后端", None);
-    employee(&db, "Desktop 前端", None);
-    employee(&db, "调研与文档", None);
-    let before = employees(&db);
-    assert_eq!(before.len(), 4);
-
-    let seeded = bots::seed_defaults(&db).unwrap();
-    assert_eq!(seeded["created"], json!([]), "nothing is created: {seeded}");
-    assert_eq!(
-        seeded["skipped"],
-        json!([{ "name": bots::STEWARD_DEFAULT_NAME, "reason": "exists" }]),
+    assert!(
+        employees(&db).is_empty(),
+        "nothing is hired behind the person's back"
     );
-
-    let after = employees(&db);
-    assert_eq!(after, before, "every existing employee is byte-identical");
 }
 
-/// A person who renamed or dismissed the steward is not overridden either: the
-/// lookup is by the name only the steward has, and a dismissed one is a `user`
-/// session, so seeding creates one dispatcher rather than resurrecting theirs.
+/// Hiring writes exactly the profile the form carried, and nothing else.
 #[test]
-fn seeding_does_not_resurrect_a_dismissed_employee() {
+fn hiring_creates_the_employee_the_form_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+
+    let hired = employee(&db, "审查员", Some("code-reviewer"));
+    let rows = employees(&db);
+    assert_eq!(rows.len(), 1, "one hire, one employee: {rows:?}");
+    assert_eq!(rows[0].0, hired);
+    assert_eq!(rows[0].1, "审查员");
+    assert!(rows[0].2.contains("\"code-reviewer\""));
+    assert!(rows[0].2.contains("审查员 does its job"));
+}
+
+/// Dismissing an employee gives the conversation back: the transcript and the
+/// memory stay, only the role and the profile go.
+#[test]
+fn dismissing_an_employee_keeps_the_conversation() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
     let id = employee(&db, "Router 后端", None);
     bots::dismiss(&db, &json!({ "sessionId": id })).unwrap();
 
-    let seeded = bots::seed_defaults(&db).unwrap();
-    assert_eq!(seeded["created"].as_array().unwrap().len(), 1);
-    let rows = employees(&db);
-    assert_eq!(rows.len(), 1, "the dismissed one stays a conversation");
-}
-
-/// A renamed steward is still the steward.
-///
-/// #254 made the name the person's own, and the first version of this lookup went
-/// by name — so renaming the dispatcher to «阿福» and clicking "enable Super
-/// Agent" hired a second one, and the roster then hid both (it never offers a
-/// `steward` as a candidate). The crew's identity is the definition, never a name.
-#[test]
-fn renaming_the_steward_does_not_hire_a_second_one() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let seeded = bots::seed_defaults(&db).unwrap();
-    let steward = seeded["created"][0]["sessionId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-
-    bots::update(
-        &db,
-        &json!({ "sessionId": steward, "profile": { "name": "阿福" } }),
-    )
-    .unwrap();
-    let renamed = employees(&db);
-    assert_eq!(renamed.len(), 1);
-    assert!(
-        renamed[0].2.contains("\"阿福\""),
-        "the name is the person's"
-    );
-
-    let again = bots::seed_defaults(&db).unwrap();
-    assert_eq!(
-        again["created"],
-        json!([]),
-        "a rename is not a missing steward"
-    );
-    assert_eq!(
-        again["skipped"],
-        json!([{ "name": "阿福", "reason": "exists" }]),
-        "the reply names the employee the person actually has",
-    );
-    let rows = employees(&db);
-    assert_eq!(rows.len(), 1, "no second dispatcher: {rows:?}");
-    let stewards = rows
-        .iter()
-        .filter(|row| row.2.contains("\"definition\":\"steward\""))
-        .count();
-    assert_eq!(stewards, 1);
-}
-
-/// A dismissed steward is gone, so enabling it again creates one.
-///
-/// Dismissing flips the role back to `user` and clears the profile, which is why
-/// this is *not* the malformed-row case: nothing in the crew claims the role.
-#[test]
-fn a_dismissed_steward_is_created_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let first = bots::seed_defaults(&db).unwrap()["created"][0]["sessionId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    bots::dismiss(&db, &json!({ "sessionId": first })).unwrap();
-    assert!(
-        employees(&db).is_empty(),
-        "nothing claims the role any more"
-    );
-
-    let again = bots::seed_defaults(&db).unwrap();
-    assert_eq!(again["created"].as_array().unwrap().len(), 1);
-    assert_eq!(again["created"][0]["definition"], json!("steward"));
-    assert_ne!(again["created"][0]["sessionId"], json!(first));
-    assert_eq!(employees(&db).len(), 1);
+    assert!(employees(&db).is_empty(), "the role is gone");
+    let (role, profile): (String, Option<String>) = db
+        .conn()
+        .query_row(
+            "SELECT role, bot_profile_json FROM sessions WHERE id = ?1",
+            rusqlite::params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(role, "user");
+    assert!(profile.is_none());
 }
 
 #[test]
@@ -292,26 +206,4 @@ fn a_task_session_answers_with_its_employee() {
         sessions::create_session(&db, Some("Chat".into()), None, None, None, None).unwrap();
     let none = bots::for_task_session(&db, &json!({ "sessionId": ordinary.id })).unwrap();
     assert_eq!(none["employee"], Value::Null);
-}
-
-/// The steward picks by job, so the roster has to name it.
-#[test]
-fn the_roster_names_each_employees_job() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let steward = employee(&db, bots::STEWARD_DEFAULT_NAME, Some("steward"));
-    let reviewer = employee(&db, "审查员", Some("code-reviewer"));
-    let plain = employee(&db, "小工", None);
-
-    let roster = bots::roster(&db, &json!({ "sessionId": steward })).unwrap();
-    let rows = roster["employees"].as_array().unwrap();
-    assert_eq!(rows.len(), 2, "the steward never lists herself");
-    let of = |id: &str| {
-        rows.iter()
-            .find(|row| row["sessionId"] == json!(id))
-            .cloned()
-            .expect("employee is on the roster")
-    };
-    assert_eq!(of(&reviewer)["definition"], json!("code-reviewer"));
-    assert_eq!(of(&plain)["definition"], Value::Null);
 }

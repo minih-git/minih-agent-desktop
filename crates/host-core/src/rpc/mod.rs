@@ -1972,23 +1972,16 @@ async fn handle_request(
             remote_tools::handle(state, method, params, tx).await
         }
         // The collaboration surface keeps its own prefix, and the employee
-        // surface answers to `bot.*` / `taskCard.*`; the team norms the person
-        // writes ride under `team.*` (slice 6). All of them are served by the
-        // same handler, so they must share one routing arm: a prefix the router
-        // does not forward falls through to `method not found`, which is exactly
-        // how `bot.list` broke in the running app.
+        // surface answers to `bot.*`; the team norms the person writes ride
+        // under `team.*` (slice 6). All of them are served by the same handler,
+        // so they must share one routing arm: a prefix the router does not
+        // forward falls through to `method not found`, which is exactly how
+        // `bot.list` broke in the running app.
         method
             if method.starts_with("session.collaboration.")
                 || method.starts_with("bot.")
-                || method.starts_with("taskCard.")
                 || method.starts_with("team.") =>
         {
-            if method == "taskCard.confirm" {
-                // Confirming resolves the card's repository to a checkout on
-                // this machine and prepares the task's workspace, both of which
-                // need git — so they cannot run inside the database call below.
-                return task_rpc::confirm_card(&state, params).await;
-            }
             let st = state.lock().await;
             crate::session_collaboration::handle(&st.db, method, &params)
                 .map_err(session_collaboration_rpc_err)
@@ -6195,32 +6188,22 @@ mod tests {
         );
     }
 
-    /// Every `bot.*` / `taskCard.*` method the desktop calls, spelled exactly
-    /// as the desktop sends it. Kept beside the routing test so a method that
-    /// never reaches `handle_request` fails here instead of in the running app.
+    /// Every `bot.*` method the desktop calls, spelled exactly as the desktop
+    /// sends it. Kept beside the routing test so a method that never reaches
+    /// `handle_request` fails here instead of in the running app.
     ///
     /// Source: `apps/desktop/electron/main/ipc/bot-ipc.ts` and
     /// `apps/desktop/electron/main/services/session-collaboration.ts`.
-    const DESKTOP_BOT_METHODS: [&str; 17] = [
+    const DESKTOP_BOT_METHODS: [&str; 7] = [
         "bot.list",
-        "bot.roster",
         "bot.create",
         "bot.update",
         "bot.dismiss",
-        "bot.seedDefaults",
         // A task's employee, and the role its session runs as (slice 6).
         "bot.forTaskSession",
         // The team norms the person writes, under their own prefix (slice 6).
         "team.norms.get",
         "team.norms.set",
-        "taskCard.list",
-        "taskCard.get",
-        "taskCard.propose",
-        "taskCard.revise",
-        "taskCard.drop",
-        "taskCard.reassign",
-        "taskCard.autoStart",
-        "taskCard.confirm",
     ];
 
     /// The employee surface is reachable over the real RPC route, not only
@@ -6236,43 +6219,38 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut app = AppState::open(dir.path()).unwrap();
         app.handshook = true;
-        let session =
-            sessions::create_session(&app.db, Some("Chat".into()), None, None, None, None).unwrap();
         let state = Arc::new(Mutex::new(app));
         let tx = mpsc::unbounded_channel().0;
 
-        let seeded = handle_request(state.clone(), "bot.seedDefaults", json!({}), tx.clone())
-            .await
-            .unwrap_or_else(|error| panic!("bot.seedDefaults must be routed: {error:?}"));
-        let created = seeded["created"]
-            .as_array()
-            .expect("seeding reports created");
+        // A person hires an employee: the profile comes from the hire form, and
+        // nothing is created behind their back.
+        let created = handle_request(
+            state.clone(),
+            "bot.create",
+            json!({
+                "profile": {
+                    "name": "Router 后端",
+                    "duty": "Router 后端 duty",
+                    "permissionMode": "accept-edits",
+                    "mustAsk": [],
+                    "observe": false,
+                },
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("bot.create must be routed: {error:?}"));
         assert!(
-            !created.is_empty(),
-            "seeding must create employees: {seeded}"
+            created["session"]["id"].is_string(),
+            "hiring reports the new employee: {created}"
         );
 
         let listed = handle_request(state.clone(), "bot.list", json!({}), tx.clone())
             .await
             .unwrap_or_else(|error| panic!("bot.list must be routed: {error:?}"));
         let bots = listed["bots"].as_array().expect("bot.list returns bots");
-        assert_eq!(
-            bots.len(),
-            created.len(),
-            "every seeded employee is listed back: {listed}"
-        );
-
-        // `taskCard.list` shares the same missing route. An empty session is a
-        // valid answer, so this asserts the lookup, not the payload shape.
-        let drafts = handle_request(
-            state.clone(),
-            "taskCard.list",
-            json!({ "sessionId": session.id }),
-            tx.clone(),
-        )
-        .await
-        .unwrap_or_else(|error| panic!("taskCard.list must be routed: {error:?}"));
-        assert_eq!(drafts["drafts"], json!([]));
+        assert_eq!(bots.len(), 1, "every employee is listed back: {listed}");
+        assert_eq!(bots[0]["title"], json!("Router 后端"));
     }
 
     /// Every `task.*` method the desktop calls, spelled exactly as it sends it.
@@ -6403,17 +6381,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut app = AppState::open(dir.path()).unwrap();
         app.handshook = true;
-        let session =
-            sessions::create_session(&app.db, Some("Chat".into()), None, None, None, None).unwrap();
         let state = Arc::new(Mutex::new(app));
         let tx = mpsc::unbounded_channel().0;
 
         for method in DESKTOP_BOT_METHODS {
-            let params = match method {
-                "taskCard.list" => json!({ "sessionId": session.id }),
-                _ => json!({}),
-            };
-            let error = match handle_request(state.clone(), method, params, tx.clone()).await {
+            let error = match handle_request(state.clone(), method, json!({}), tx.clone()).await {
                 Ok(_) => continue,
                 Err(error) => error,
             };

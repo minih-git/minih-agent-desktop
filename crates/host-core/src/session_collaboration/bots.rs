@@ -1,40 +1,16 @@
-//! The employee surface: list, create, update, dismiss, and seed defaults
-//! (ADR bot-sessions-and-steward §5).
+//! The employee surface: list, create, update, and dismiss (ADR
+//! bot-sessions-and-steward §5).
 //!
 //! Everything here edits a `sessions` row's `role` and `bot_profile_json`. There
 //! is no second lifecycle to keep in sync, which is the whole reason a bot is a
 //! session: dismissing an employee flips the role back to `user` and the
 //! conversation — with its transcript and memory — stays where it was.
 
-use super::drafts;
 use crate::db::{now_ms, Database};
 use crate::sessions;
 use anyhow::{anyhow, Result};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
-/// The name the default crew gives the steward, and the name a person sees
-/// before one exists.
-///
-/// It is only a default: the name lives in the employee's own
-/// `bot_profile_json.name` (with `sessions.title` kept equal), the person can
-/// change it in Settings → Employees, and every label that refers to this role
-/// interpolates that value. `steward_name_migration` moves rows that still carry
-/// the previous default to this one.
-pub const STEWARD_DEFAULT_NAME: &str = "Super Agent";
-
-/// The one employee the host ever creates by itself: the steward.
-///
-/// Slice 6 removed the fixed crew. A person hires the jobs they need from the
-/// hiring templates, so "give me the defaults" now means exactly one thing —
-/// make sure the dispatcher exists — and nothing else is created behind their
-/// back. `bot.seedDefaults` keeps its name and its reply shape because the
-/// renderer and the older builds call it; only what it creates changed.
-pub const STEWARD_SEED: (&str, Option<&str>, &str) = (
-    STEWARD_DEFAULT_NAME,
-    Some("steward"),
-    "Dispatch work, track it, and report back in chat.",
-);
-
 fn string(input: &Value, key: &str, limit: usize) -> Result<String> {
     super::string(input, key, limit).map(str::to_owned)
 }
@@ -275,171 +251,4 @@ pub fn for_task_session(db: &Database, input: &Value) -> Result<Value> {
     Ok(json!({
         "employee": { "sessionId": employee_id, "profile": profile }
     }))
-}
-
-/// Make sure the steward exists — the only employee `bot.seedDefaults` creates
-/// (employee mode 0.5 slice 6).
-///
-/// It keeps the old method name and the old reply shape (`created` /
-/// `skipped`) because the settings page and older builds call it, but it no
-/// longer creates a crew: a person hires the jobs they need from the templates.
-///
-/// **Nothing existing is ever touched.** The steward is identified by its
-/// **role in the crew** (`definition = 'steward'`), not by its name: #254 made the
-/// name the person's own, so a lookup by name would hand a renamed steward a
-/// second dispatcher — two employees whose definition is `steward`, which the
-/// roster then refuses to offer. A dismissed steward is a `user` session with no
-/// profile, so the next call creates one again, which is what the button says.
-/// No other row is read, renamed or edited.
-pub fn seed_defaults(db: &Database) -> Result<Value> {
-    let (name, definition, duty) = STEWARD_SEED;
-    let existing: Option<Option<String>> = db
-        .conn()
-        .prepare_cached(
-            "SELECT json_extract(bot_profile_json, '$.name') FROM sessions
-              WHERE role='bot' AND deleted_at IS NULL
-                AND json_extract(bot_profile_json, '$.definition') = 'steward'
-              ORDER BY created_at, id LIMIT 1",
-        )?
-        .query_row([], |row| row.get(0))
-        .optional()?;
-    if let Some(current) = existing {
-        // Report the name the person gave it: the reply is read by a human, and
-        // "already there" about a name they never used would be confusing.
-        let reported = current
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| name.to_owned());
-        return Ok(json!({
-            "created": [],
-            "skipped": [{ "name": reported, "reason": "exists" }],
-        }));
-    }
-    let observe = definition != Some("steward");
-    let mut profile = json!({
-        "name": name,
-        "duty": duty,
-        "permissionMode": "ask",
-        "mustAsk": [],
-        "observe": observe,
-    });
-    if let Some(definition) = definition {
-        profile["definition"] = json!(definition);
-    }
-    let profile_json = serde_json::to_string(&sessions::normalize_bot_profile(&profile)?)?;
-    let session = sessions::create_session_with_options(
-        db,
-        sessions::SessionCreateOptions {
-            title: Some(name.into()),
-            mode: Some("agent".into()),
-            permission_mode: Some("ask".into()),
-            role: Some("bot".into()),
-            bot_profile_json: Some(profile_json),
-            ..Default::default()
-        },
-    )?;
-    Ok(json!({
-        "created": [{
-            "sessionId": session.id,
-            "name": name,
-            "definition": definition,
-        }],
-        "skipped": [],
-    }))
-}
-
-/// The crew a steward may hand work to (employee mode 0.5 slice 3).
-///
-/// This is the read the steward's `Roster` tool stands on, and it exists because
-/// picking an employee by guessing a session title is how the old
-/// `SessionList`-based steward went wrong. One row per employee, carrying
-/// exactly what a choice needs: who they are, what they are for, which model and
-/// permission they run at, which repository they read, how much work they hold,
-/// whether any of it is waiting on the person, and whether they are idle.
-///
-/// Two employees are never offered:
-///
-/// - the caller itself, because a card must name someone else;
-/// - every other `steward` — the secretary is the one asking, not a candidate.
-pub fn roster(db: &Database, input: &Value) -> Result<Value> {
-    let caller = input.get("sessionId").and_then(Value::as_str);
-    let mut statement = db.conn().prepare_cached(
-        "SELECT id, title FROM sessions
-             WHERE role='bot' AND deleted_at IS NULL
-             ORDER BY updated_at DESC, id DESC LIMIT 200",
-    )?;
-    let rows = statement
-        .query_map([], bot_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    let mut employees = Vec::new();
-    for (id, title) in rows {
-        if caller == Some(id.as_str()) {
-            continue;
-        }
-        let Some(summary) = sessions::session_summary(db, &id)? else {
-            continue;
-        };
-        let Some(profile) = summary.bot_profile else {
-            // A bot row with no usable profile is not an employee anybody can
-            // dispatch to, and inventing a name would offer a choice the host
-            // then refuses.
-            continue;
-        };
-        if profile.get("definition").and_then(Value::as_str) == Some("steward") {
-            continue;
-        }
-        let tasks = crate::tasks::employee_tasks(db, &id)?;
-        let waiting = tasks
-            .iter()
-            .filter(|task| task.stage.starts_with("person/"))
-            .count();
-        let mut entry = json!({
-            "sessionId": id,
-            "name": profile.get("name").cloned().unwrap_or_else(|| json!(title)),
-            "duty": profile.get("duty").cloned().unwrap_or(Value::Null),
-            // The job this employee was hired for (slice 6). The steward has to
-            // tell "who reviews" from "who researches" before she names anyone,
-            // and a name like «阿福» says nothing about that.
-            "definition": profile.get("definition").cloned().unwrap_or(Value::Null),
-            "permissionMode": profile.get("permissionMode").cloned().unwrap_or(Value::Null),
-            "observe": profile.get("observe").cloned().unwrap_or(json!(true)),
-            // Reserved for the repositories an employee is responsible for. One
-            // employee reads one repository today; a list here is what a later
-            // multi-repository crew needs, and an empty array is the honest
-            // answer until then.
-            "repos": json!([]),
-            "openTaskCount": tasks.len(),
-            "waitingCount": waiting,
-            // Idle means "holding nothing open", not "not running a turn": an
-            // employee no longer runs turns of its own (ADR §7).
-            "idle": tasks.is_empty(),
-            "status": crate::tasks::task_status_point(&tasks),
-        });
-        if let Some(path) = summary.project_path {
-            entry["projectPath"] = json!(path);
-        }
-        if let (Some(provider), Some(model)) = (summary.provider_id, summary.model_id) {
-            entry["modelKey"] = json!(format!("{provider}/{model}"));
-        }
-        employees.push(entry);
-    }
-    Ok(json!({ "employees": employees }))
-}
-
-/// The drafts of one steward session, with the target's title for display.
-pub fn list_drafts(db: &Database, session_id: &str) -> Result<Value> {
-    let drafts = drafts::list(db, session_id)?;
-    let mut out = Vec::new();
-    for draft in drafts {
-        let mut value = serde_json::to_value(&draft)?;
-        if let Ok(title) = db.conn().query_row(
-            "SELECT title FROM sessions WHERE id=?1",
-            params![draft.target_session_id],
-            |row| row.get::<_, String>(0),
-        ) {
-            value["targetTitle"] = json!(title);
-        }
-        out.push(value);
-    }
-    Ok(json!({ "drafts": out }))
 }

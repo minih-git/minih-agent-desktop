@@ -179,6 +179,9 @@ pub(super) async fn handle(
         // which of those files this one changes too. A hint the card shows,
         // never a refusal: a person who is told can still decide the two changes
         // are unrelated.
+        // Handing a stuck task's work to another employee creates a new task
+        // there, so its workspace is built before Main starts it.
+        "task.reassign" => reassign(state, params.clone()).await,
         "task.overlap" => crate::task_overlap::overlap(state, &git, &params)
             .await
             .map_err(internal),
@@ -190,42 +193,18 @@ pub(super) async fn handle(
     }
 }
 
-/// `taskCard.confirm`: resolve the card's repository to a checkout on this
-/// machine, confirm, then prepare the task's workspace before the caller
-/// dispatches the delivery.
-///
-/// The resolution has to happen here because it runs git, and the confirmation
-/// itself is a database transaction that must not hold the state lock across a
-/// subprocess.
-pub(super) async fn confirm_card(
+/// `task.reassign` hands a stuck task's work to another employee, so the result
+/// names a new task whose workspace is built here — the resolution and the
+/// preparation both run git, and neither may hold the state lock across the
+/// other. The rest of `task.reassign` is the database write `tasks` owns.
+pub(super) async fn reassign(
     state: &Arc<Mutex<AppState>>,
     params: Value,
 ) -> Result<Value, JsonRpcError> {
     let git = GitRunner::default();
-    let draft_id = param(&params, "draftId")?;
-    let (origin, paths) = {
-        let st = state.lock().await;
-        let draft =
-            crate::session_collaboration::drafts::get(&st.db, draft_id).map_err(internal)?;
-        let origin = draft
-            .as_ref()
-            .and_then(|draft| draft.card.pointer("/repo/origin"))
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let paths = crate::task_workspace::project_paths(&st.db).map_err(internal)?;
-        (origin, paths)
-    };
-    let project = match origin.as_deref() {
-        Some(origin) => crate::task_workspace::project_for_origin(&git, &paths, origin).await,
-        None => None,
-    };
-    let mut enriched = params.clone();
-    if let Some(project) = project.as_deref() {
-        enriched["projectPath"] = json!(project);
-    }
     let result = {
         let st = state.lock().await;
-        crate::session_collaboration::handle(&st.db, "taskCard.confirm", &enriched)
+        crate::session_collaboration::handle_task(&st.db, "task.reassign", &params)
             .map_err(session_collaboration_rpc_err)?
     };
     let Some(task_id) = result

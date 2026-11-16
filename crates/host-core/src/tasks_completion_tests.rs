@@ -165,67 +165,40 @@ fn a_new_turn_clears_the_acceptance_and_the_previous_result() {
     assert_eq!(task.stage, "working");
 }
 
-/// The batch a task belongs to is read from the card it came from, not copied:
-/// one sentence split into three cards is one batch by construction, and a task
-/// whose card had no batch is never grouped.
+/// The batch a task belonged to is read from the card it came from, never
+/// copied onto the task: one sentence split into three cards is one batch by
+/// construction, and a task whose card had no batch is never grouped.
+///
+/// A new task is created by the person (`task.create`), so a card row only
+/// exists for work that predates that. It is seeded here exactly as a
+/// confirmation left it, because the subject of this test is the read.
 #[test]
 fn the_batch_of_a_task_is_read_from_its_card() {
     let (_dir, db) = database();
     let owner = employee(&db);
-    let steward = crate::sessions::create_session_with_options(
-        &db,
-        crate::sessions::SessionCreateOptions {
-            title: Some("Super Agent".into()),
-            mode: Some("agent".into()),
-            permission_mode: Some("auto".into()),
-            role: Some("bot".into()),
-            bot_profile_json: Some(
-                json!({"name": "Super Agent", "definition": "steward", "permissionMode": "auto", "observe": false})
-                    .to_string(),
-            ),
-            ..Default::default()
-        },
-    )
-    .unwrap()
-    .id;
-    let card = json!({
-        "goal": "把三个仓库的依赖对齐",
-        "criteria": [],
-        "boundaries": [],
-        "permissionMode": "accept-edits",
-        "mustAsk": [],
-        "risk": "low",
-    });
-    let proposed = crate::session_collaboration::drafts::propose(
+    let created = tasks::create(
         &db,
         &json!({
-            "sessionId": steward,
-            "targetSessionId": owner,
-            "sourceUtterance": "三个仓库的依赖对齐",
-            "card": card,
-            "batchId": "turn-42",
+            "employeeSessionId": owner,
+            "title": "把三个仓库的依赖对齐",
+            "origin": "steward",
+            "deliveryId": "delivery-1",
         }),
     )
     .unwrap();
-    let draft_id = proposed["draft"]["id"].as_str().unwrap().to_string();
-    assert_eq!(proposed["draft"]["batchId"], json!("turn-42"));
-    let hash = proposed["draft"]["cardHash"].as_str().unwrap().to_string();
-    let confirmed = crate::session_collaboration::drafts::confirm(
-        &db,
-        crate::session_collaboration::drafts::ConfirmRequest {
-            draft_id: &draft_id,
-            card_hash: &hash,
-            confirmed_by: crate::session_collaboration::drafts::CONFIRMED_BY_USER,
-            host_id: Some("mac-mini"),
-            device_id: None,
-            policy_version: "steward-1",
-            notify_on_completion: true,
-            idempotency_key: "confirm-batch-1",
-            project_path: None,
-        },
-    )
-    .unwrap();
-    let task_id = confirmed["task"]["id"].as_str().unwrap();
-    let task = read(&db, task_id);
-    assert_eq!(task.batch_id.as_deref(), Some("turn-42"));
+    let task_id = created["task"]["id"].as_str().unwrap().to_string();
+    assert!(read(&db, &task_id).batch_id.is_none(), "no card, no batch");
+
+    db.conn()
+        .execute(
+            "INSERT INTO task_card_drafts
+               (id, session_id, status, card_json, card_hash, source_utterance,
+                target_session_id, confirmed_by, confirmed_at, delivery_id, batch_id,
+                created_at, updated_at)
+             VALUES ('draft-1', ?1, 'confirmed', '{}', 'hash-1', '三个仓库的依赖对齐',
+                     ?1, 'user', 1, 'delivery-1', 'turn-42', 1, 1)",
+            params![owner],
+        )
+        .unwrap();
+    assert_eq!(read(&db, &task_id).batch_id.as_deref(), Some("turn-42"));
 }

@@ -389,6 +389,15 @@ impl Database {
             // tables and no rewrite of any note, so it is additive and
             // idempotent like the steps above.
             migrate_v40_to_v41(&conn, path)?;
+            migrated_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        }
+        if migrated_version <= 41 {
+            // The built-in Super Agent layer is gone: a session that still
+            // carries `definition = 'steward'` loses that one key and keeps its
+            // name, duty, role, transcript and memory (1.7.0). One UPDATE over
+            // one table, and the step refuses only *new* foreign-key violations,
+            // so a long-lived file with historical orphans still opens.
+            super::steward_profile_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;

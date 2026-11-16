@@ -4228,7 +4228,7 @@ pub fn begin_turn(
     // A task's own turn is the host's fact that the work is running (employee
     // mode 0.5 slice 4a). It is written here, at the one place every turn of
     // every session goes through, so a task follows its turns whether or not a
-    // steward dispatched it and whether or not a delivery exists.
+    // delivery exists.
     //
     // A failure to write it is logged, not raised: the turn row above is the
     // caller's answer to "may this turn run", and refusing to start work because

@@ -1,23 +1,23 @@
-//! Relay between steps: the card edge, the handoff, and what an abandoned step
-//! does to the one behind it (employee mode 0.5 slice 7).
+//! Relay between steps: the chain, the handoff, and what an abandoned step does
+//! to the one behind it (employee mode 0.5 slice 7).
 //!
-//! Everything here is database work except the workspace test, which needs real
-//! git: a chain is about branches, and the only honest way to prove "the next
-//! step starts where this one stopped" is to look at the commits.
+//! Everything here is database work except the workspace tests at the end,
+//! which need real git: a chain is about branches, and the only honest way to
+//! prove "the next step starts where this one stopped" is to look at the
+//! commits.
 
 use serde_json::{json, Value};
 
 use crate::db::Database;
-use crate::session_collaboration::drafts::{self, Draft};
 use crate::sessions;
 use crate::task_relay;
 use crate::tasks;
 
 /// A database and one registered project.
 ///
-/// The project is a real directory because a card that names a repository is
-/// only confirmable when this computer has a checkout of it, and resolving a
-/// path is what that check does.
+/// The project is a real directory because a relay step is only dispatchable
+/// when this computer has a checkout of it, and resolving a path is what that
+/// check does.
 fn database() -> (tempfile::TempDir, Database, String) {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
@@ -49,221 +49,90 @@ fn session(db: &Database, title: &str, role: Option<&str>, mode: &str) -> String
     .id
 }
 
-fn card(goal: &str) -> Value {
-    json!({
-        "goal": goal,
-        "criteria": [{"id": "c1", "text": "The step is done"}],
-        "boundaries": ["Stay inside the repository"],
-        "permissionMode": "accept-edits",
-        "readOnly": false,
-        "mustAsk": [],
-        "risk": "medium",
-        "repo": {"origin": "github.com/minih-git/minih-agent-desktop"},
-    })
-}
-
-fn propose(
-    db: &Database,
-    steward: &str,
-    target: &str,
-    goal: &str,
-    batch: &str,
-    after: Option<&str>,
-) -> Draft {
-    let result = drafts::propose(
-        db,
-        &json!({
-            "sessionId": steward,
-            "targetSessionId": target,
-            "sourceUtterance": "把这件事分三步做完",
-            "batchId": batch,
-            "card": card(goal),
-            "after": after,
-        }),
-    )
-    .unwrap();
-    serde_json::from_value(result["draft"].clone()).unwrap()
-}
-
-fn propose_fails(
-    db: &Database,
-    steward: &str,
-    target: &str,
-    goal: &str,
-    batch: &str,
-    after: &str,
-) -> String {
-    let error = drafts::propose(
-        db,
-        &json!({
-            "sessionId": steward,
-            "targetSessionId": target,
-            "sourceUtterance": "把这件事分三步做完",
-            "batchId": batch,
-            "card": card(goal),
-            "after": after,
-        }),
-    )
-    .unwrap_err();
-    error.to_string()
-}
-
-fn confirm(db: &Database, draft: &Draft, key: &str, project: &str) -> tasks::Task {
-    let result = drafts::confirm(
-        db,
-        drafts::ConfirmRequest {
-            draft_id: &draft.id,
-            card_hash: &draft.card_hash,
-            confirmed_by: drafts::CONFIRMED_BY_USER,
-            host_id: Some("mac-mini"),
-            device_id: None,
-            policy_version: "steward-1",
-            notify_on_completion: false,
-            idempotency_key: key,
-            project_path: Some(project),
-        },
-    )
-    .unwrap();
-    let task_id = result["task"]["id"].as_str().unwrap();
-    tasks::get_task(db, task_id).unwrap().unwrap()
-}
-
 fn reread(db: &Database, task_id: &str) -> tasks::Task {
     tasks::get_task(db, task_id).unwrap().unwrap()
 }
 
-/// **The chain is declared by the cards, so the edge is checked when it is made.**
-#[test]
-fn a_card_can_only_follow_a_card_from_the_same_batch() {
-    let (_dir, db, _project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
-    let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
-    let message = propose_fails(&db, &steward, &worker, "Backfill it", "turn-2", &first.id);
-    assert!(
-        message.contains("same turn"),
-        "the refusal does not name the batch: {message}"
-    );
-}
-
-/// **Two repositories can never be chained**, because a relay is one branch
-/// continued: the second step's base has to be in the same history.
-#[test]
-fn a_relay_stays_inside_one_repository() {
-    let (_dir, db, _project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
-    let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
-    let mut other = card("Backfill it");
-    other["repo"] = json!({"origin": "github.com/minih-git/minih-router"});
-    let error = drafts::propose(
-        &db,
+/// One step of a chain: a task of `employee` in `project`, carrying the delivery
+/// a dispatch writes and the link to the step it continues.
+///
+/// A relay is two facts on the task row — the predecessor and the state of the
+/// edge — so both are written here. `None` makes the step the head of a chain.
+fn step(
+    db: &Database,
+    employee: &str,
+    project: &str,
+    title: &str,
+    parent: Option<&str>,
+) -> tasks::Task {
+    let created = tasks::create(
+        db,
         &json!({
-            "sessionId": steward,
-            "targetSessionId": worker,
-            "sourceUtterance": "把这件事分三步做完",
-            "batchId": "turn-1",
-            "card": other,
-            "after": first.id,
+            "employeeSessionId": employee,
+            "title": title,
+            "origin": "direct",
+            "projectPath": project,
         }),
     )
-    .unwrap_err()
+    .unwrap();
+    let id = created["task"]["id"].as_str().unwrap().to_string();
+    let task_session = created["task"]["sessionId"].as_str().unwrap().to_string();
+    // A dispatched step is authorized work: the mandate is what makes the
+    // delivery something Main may start, and what `task.restart` reads.
+    let mandate = json!({
+        "version": 1,
+        "taskId": uuid::Uuid::new_v4().to_string(),
+        "goal": title,
+        "criteria": [],
+        "boundaries": [],
+        "permissionMode": "accept-edits",
+        "mustAsk": [],
+        "risk": "low",
+        "requestedBy": {"kind": "user", "hostId": "mac-mini"},
+        "sourceUtterance": title,
+        "createdAt": crate::db::ms_to_ts(crate::db::now_ms()),
+        "policyVersion": "1",
+    })
     .to_string();
-    assert!(
-        error.contains("one repository"),
-        "the refusal does not name the repository: {error}"
-    );
-}
-
-/// **A chain of five is the limit**, and the sixth step is refused rather than
-/// accepted into a shape nothing can display.
-#[test]
-fn a_chain_holds_at_most_five_steps() {
-    let (_dir, db, _project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
-    let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let mut previous = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
-    for step in 2..=task_relay_max() {
-        previous = propose(
-            &db,
-            &steward,
-            &worker,
-            &format!("Step {step}"),
-            "turn-1",
-            Some(&previous.id),
-        );
-    }
-    let message = propose_fails(&db, &steward, &worker, "Step 6", "turn-1", &previous.id);
-    assert!(
-        message.contains("at most 5"),
-        "the refusal does not name the limit: {message}"
-    );
-}
-
-fn task_relay_max() -> usize {
-    drafts::MAX_RELAY_CHAIN
-}
-
-/// **A revise cannot close a loop**, and the refusal says so rather than walking
-/// the chain forever.
-#[test]
-fn a_revise_cannot_close_a_loop() {
-    let (_dir, db, _project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
-    let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
-    let second = propose(&db, &steward, &worker, "Step 2", "turn-1", Some(&first.id));
-    let error = drafts::revise(
-        &db,
+    let delivery = crate::session_collaboration::dispatch_send_for_test(
+        db,
         &json!({
-            "draftId": first.id,
-            "card": card("Step 1"),
-            "after": second.id,
+            "sourceSessionId": employee,
+            "pluginId": "builtin:session-messaging",
+            "content": title,
+            "idempotencyKey": format!("step:{title}"),
+            "notifyOnCompletion": false,
+            "mandate": mandate,
         }),
+        &task_session,
+        "task",
     )
-    .unwrap_err()
-    .to_string();
-    assert!(
-        error.contains("loops back"),
-        "the refusal does not name the loop: {error}"
-    );
+    .unwrap();
+    db.conn()
+        .execute(
+            "UPDATE tasks SET delivery_id=?2, relay_parent_task_id=?3, relay_state=?4 WHERE id=?1",
+            rusqlite::params![id, delivery.id, parent, parent.map(|_| "waiting")],
+        )
+        .unwrap();
+    reread(db, &id)
 }
 
-/// **Confirming the second card waits for the first.** The card that follows a
-/// card nobody started has no branch to continue, so the click is refused with
-/// the instruction that names what to do.
+/// **A step that continues another waits for it.** The edge is recorded when the
+/// task is written, so the card can say "step 2 of 3" and the drain knows the
+/// work behind it is not ready.
 #[test]
-fn a_card_cannot_be_confirmed_before_the_card_it_follows() {
+fn a_step_continues_the_one_before_it() {
     let (_dir, db, project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
-    let second = propose(&db, &steward, &worker, "Step 2", "turn-1", Some(&first.id));
-    let error = drafts::confirm(
-        &db,
-        drafts::ConfirmRequest {
-            draft_id: &second.id,
-            card_hash: &second.card_hash,
-            confirmed_by: drafts::CONFIRMED_BY_USER,
-            host_id: Some("mac-mini"),
-            device_id: None,
-            policy_version: "steward-1",
-            notify_on_completion: false,
-            idempotency_key: "confirm-second-first",
-            project_path: Some(&project),
-        },
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(
-        error.contains("start that card first"),
-        "the refusal does not tell the person what to do: {error}"
-    );
-    // Nothing was created: the refusal is not a half-confirmed card.
-    let listed = tasks::list(&db, &json!({})).unwrap();
-    assert!(
-        listed["tasks"].as_array().unwrap().is_empty(),
-        "a task was created for a card whose predecessor was never started"
+    let step_one = step(&db, &worker, &project, "Step 1", None);
+    let step_two = step(&db, &worker, &project, "Step 2", Some(&step_one.id));
+
+    assert!(step_one.relay_parent_task_id.is_none());
+    assert!(step_one.relay_state.is_none());
+    assert_eq!(step_two.relay_state.as_deref(), Some("waiting"));
+    assert_eq!(
+        step_two.relay_parent_task_id.as_deref(),
+        Some(step_one.id.as_str())
     );
 }
 
@@ -273,25 +142,17 @@ fn a_card_cannot_be_confirmed_before_the_card_it_follows() {
 #[test]
 fn a_handoff_is_idempotent() {
     let (_dir, db, project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
-    let second = propose(&db, &steward, &worker, "Step 2", "turn-1", Some(&first.id));
-    let step_one = confirm(&db, &first, "confirm-1", &project);
-    let step_two = confirm(&db, &second, "confirm-2", &project);
-    assert_eq!(step_two.relay_state.as_deref(), Some("waiting"));
-    assert_eq!(
-        step_two.relay_parent_task_id.as_deref(),
-        Some(step_one.id.as_str())
-    );
+    let step_one = step(&db, &worker, &project, "Step 1", None);
+    let step_two = step(&db, &worker, &project, "Step 2", Some(&step_one.id));
 
     // The step is finished, which is what the completion card shows.
-    let st = db.conn();
-    st.execute(
-        "UPDATE tasks SET stage='person/accept' WHERE id=?1",
-        rusqlite::params![step_one.id],
-    )
-    .unwrap();
+    db.conn()
+        .execute(
+            "UPDATE tasks SET stage='person/accept' WHERE id=?1",
+            rusqlite::params![step_one.id],
+        )
+        .unwrap();
 
     let once = task_relay::handoff(&db, &json!({ "taskId": step_one.id })).unwrap();
     let twice = task_relay::handoff(&db, &json!({ "taskId": step_one.id })).unwrap();
@@ -311,12 +172,9 @@ fn a_handoff_is_idempotent() {
 #[test]
 fn a_waiting_step_is_not_drained_and_survives_a_restart() {
     let (_dir, db, project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
-    let second = propose(&db, &steward, &worker, "Step 2", "turn-1", Some(&first.id));
-    confirm(&db, &first, "confirm-1", &project);
-    let step_two = confirm(&db, &second, "confirm-2", &project);
+    let step_one = step(&db, &worker, &project, "Step 1", None);
+    let step_two = step(&db, &worker, &project, "Step 2", Some(&step_one.id));
 
     let pending = crate::session_collaboration::repository::pending_dispatch(&db).unwrap();
     assert!(
@@ -345,12 +203,9 @@ fn a_waiting_step_is_not_drained_and_survives_a_restart() {
 #[test]
 fn abandoning_a_step_orphans_the_next_one_and_starting_from_main_recovers() {
     let (_dir, db, project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
-    let second = propose(&db, &steward, &worker, "Step 2", "turn-1", Some(&first.id));
-    let step_one = confirm(&db, &first, "confirm-1", &project);
-    let step_two = confirm(&db, &second, "confirm-2", &project);
+    let step_one = step(&db, &worker, &project, "Step 1", None);
+    let step_two = step(&db, &worker, &project, "Step 2", Some(&step_one.id));
 
     tasks::archive(&db, &json!({ "taskId": step_one.id })).unwrap();
 
@@ -384,14 +239,10 @@ fn abandoning_a_step_orphans_the_next_one_and_starting_from_main_recovers() {
 #[test]
 fn the_chain_and_its_positions_are_read_from_the_links() {
     let (_dir, db, project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Step 1", "turn-1", None);
-    let second = propose(&db, &steward, &worker, "Step 2", "turn-1", Some(&first.id));
-    let third = propose(&db, &steward, &worker, "Step 3", "turn-1", Some(&second.id));
-    let step_one = confirm(&db, &first, "confirm-1", &project);
-    let step_two = confirm(&db, &second, "confirm-2", &project);
-    let step_three = confirm(&db, &third, "confirm-3", &project);
+    let step_one = step(&db, &worker, &project, "Step 1", None);
+    let step_two = step(&db, &worker, &project, "Step 2", Some(&step_one.id));
+    let step_three = step(&db, &worker, &project, "Step 3", Some(&step_two.id));
 
     let chain = tasks::relay_chain(&db, &step_two.id).unwrap();
     assert_eq!(
@@ -408,169 +259,23 @@ fn the_chain_and_its_positions_are_read_from_the_links() {
     assert!(!tasks::relay_has_successor(&db, &step_three.id).unwrap());
 }
 
-/// **A chain is a line: a card is followed by at most one card.**
-///
-/// Two cards that both name the same card would fork it, and then nothing
-/// downstream can answer "which step is last" — so the second one is refused
-/// where it is proposed, naming the rule rather than the fork it leaves behind.
-#[test]
-fn a_card_cannot_be_the_next_step_of_two_cards() {
-    let (_dir, db, _project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
-    let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
-    propose(
-        &db,
-        &steward,
-        &worker,
-        "Backfill it",
-        "turn-1",
-        Some(&first.id),
-    );
-    let message = propose_fails(
-        &db,
-        &steward,
-        &worker,
-        "Switch the reader",
-        "turn-1",
-        &first.id,
-    );
-    assert!(
-        message.contains("a step can have only one next step"),
-        "the refusal does not name the rule: {message}"
-    );
-}
-
-/// The same rule on the revise path: a card cannot be moved onto a place that is
-/// already taken, even though it was legal where it stood.
-#[test]
-fn a_revise_cannot_move_a_card_onto_a_taken_place() {
-    let (_dir, db, _project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
-    let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
-    propose(
-        &db,
-        &steward,
-        &worker,
-        "Backfill it",
-        "turn-1",
-        Some(&first.id),
-    );
-    let free = propose(&db, &steward, &worker, "Switch the reader", "turn-1", None);
-    let error = drafts::revise(
-        &db,
-        &json!({
-            "sessionId": steward,
-            "draftId": free.id,
-            "card": card("Switch the reader"),
-            "after": first.id,
-        }),
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(
-        error.contains("a step can have only one next step"),
-        "the revise was allowed to fork the chain: {error}"
-    );
-}
-
-/// **Two clicks cannot both take the one place.**
-///
-/// Two drafts proposed before either is confirmed are both legal, so the entry
-/// check cannot see the fork they would make at the moment of the click: the
-/// confirmation is where the second one finds the step in front of it already
-/// followed, and it refuses there.
-#[test]
-fn a_second_confirmation_cannot_fork_the_chain() {
-    let (_dir, db, project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
-    let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
-    let second = propose(
-        &db,
-        &steward,
-        &worker,
-        "Backfill it",
-        "turn-1",
-        Some(&first.id),
-    );
-    confirm(&db, &first, "confirm-1", &project);
-    confirm(&db, &second, "confirm-2", &project);
-    // The draft a concurrent click would have confirmed: legal when it was
-    // proposed, and a fork by the time it is clicked.
-    db.conn()
-        .execute(
-            "INSERT INTO task_card_drafts
-               (id, session_id, status, card_json, card_hash, source_utterance,
-                target_session_id, batch_id, after_draft_id, created_at, updated_at)
-             SELECT 'forged-sibling', session_id, 'proposed', card_json, card_hash,
-                    source_utterance, target_session_id, batch_id, after_draft_id,
-                    created_at, updated_at
-               FROM task_card_drafts WHERE id=?1",
-            rusqlite::params![second.id],
-        )
-        .unwrap();
-    let forged = drafts::get(&db, "forged-sibling").unwrap().unwrap();
-    let error = drafts::confirm(
-        &db,
-        drafts::ConfirmRequest {
-            draft_id: &forged.id,
-            card_hash: &forged.card_hash,
-            confirmed_by: drafts::CONFIRMED_BY_USER,
-            host_id: Some("mac-mini"),
-            device_id: None,
-            policy_version: "steward-1",
-            notify_on_completion: false,
-            idempotency_key: "confirm-forged",
-            project_path: Some(&project),
-        },
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(
-        error.contains("a step can have only one next step"),
-        "a second confirmation forked the chain: {error}"
-    );
-}
-
 /// **A fork that is already in the database is refused, not guessed at.**
 ///
-/// The entry points now keep it from being written, but a row can arrive another
-/// way — a repair, a hand-written link. Both readers that decide anything about
-/// a chain answer "no" instead of picking one branch.
+/// Nothing here writes a fork on purpose any more — the entry points that did
+/// are gone — but a row can arrive another way: a repair, a hand-written link.
+/// Both readers that decide anything about a chain answer "no" instead of
+/// picking one branch.
 #[test]
 fn a_forked_chain_has_no_answer_for_the_readers() {
     let (_dir, db, project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
-    let second = propose(
-        &db,
-        &steward,
-        &worker,
-        "Backfill it",
-        "turn-1",
-        Some(&first.id),
-    );
-    let step_one = confirm(&db, &first, "confirm-1", &project);
-    let step_two = confirm(&db, &second, "confirm-2", &project);
-    // The fork the entry checks would refuse: a second step behind step one.
-    let created = tasks::create(
-        &db,
-        &json!({
-            "employeeSessionId": worker,
-            "title": "Another step",
-            "origin": "direct",
-            "projectPath": project,
-        }),
-    )
-    .unwrap();
-    let other = created["task"]["id"].as_str().unwrap().to_string();
+    let step_one = step(&db, &worker, &project, "Add the column", None);
+    let step_two = step(&db, &worker, &project, "Backfill it", Some(&step_one.id));
+    let extra = step(&db, &worker, &project, "Another step", None);
     db.conn()
         .execute(
             "UPDATE tasks SET relay_parent_task_id=?2, relay_state='waiting' WHERE id=?1",
-            rusqlite::params![other, step_one.id],
+            rusqlite::params![extra.id, step_one.id],
         )
         .unwrap();
 
@@ -604,21 +309,11 @@ fn a_forked_chain_has_no_answer_for_the_readers() {
 #[test]
 fn a_chain_that_cannot_be_walked_is_refused() {
     let (_dir, db, project) = database();
-    let steward = session(&db, "Super Agent", None, "auto");
     let worker = session(&db, "后端", Some("bot"), "accept-edits");
-    let first = propose(&db, &steward, &worker, "Add the column", "turn-1", None);
-    let second = propose(
-        &db,
-        &steward,
-        &worker,
-        "Backfill it",
-        "turn-1",
-        Some(&first.id),
-    );
-    let step_one = confirm(&db, &first, "confirm-1", &project);
-    let step_two = confirm(&db, &second, "confirm-2", &project);
-    // A -> B -> A. Nothing the entry points can write, and exactly what a repair
-    // or a hand-written link can leave behind.
+    let step_one = step(&db, &worker, &project, "Add the column", None);
+    let step_two = step(&db, &worker, &project, "Backfill it", Some(&step_one.id));
+    // A -> B -> A. Nothing the UI can write, and exactly what a repair or a
+    // hand-written link can leave behind.
     db.conn()
         .execute(
             "UPDATE tasks SET relay_parent_task_id=?2 WHERE id=?1",
@@ -646,6 +341,7 @@ fn a_chain_that_cannot_be_walked_is_refused() {
         "the handoff walked a cycle and chose a step: {error}"
     );
 }
+
 // ---- the workspace a relay step starts in -----------------------------------
 
 /// The repository a relay test works in: one base commit, a data directory, and
@@ -741,7 +437,6 @@ async fn a_relay_step_starts_from_the_end_of_the_previous_branch() {
         .unwrap()
         .unwrap();
     let first_workspace = first.workspace_branch.clone().unwrap();
-    let first_path = std::path::PathBuf::from(first.project_path.clone().unwrap());
     let worktree = crate::tasks::get_task(&repo.state.lock().await.db, &first.id)
         .unwrap()
         .unwrap();
@@ -768,7 +463,6 @@ async fn a_relay_step_starts_from_the_end_of_the_previous_branch() {
         &["commit", "-q", "-m", "feat: step one"],
     );
     let first_tip = git_out(std::path::Path::new(&row.path), &["rev-parse", "HEAD"]);
-    let _ = first_path;
 
     let second = task_in(&repo, "Step two").await;
     {
