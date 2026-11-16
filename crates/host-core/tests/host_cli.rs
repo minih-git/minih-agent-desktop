@@ -524,7 +524,9 @@ fn an_interrupted_task_is_visible_and_restarts_when_the_host_restarts() {
         .as_array()
         .expect("pendingDispatch returns messages");
     assert!(
-        pending_messages.iter().all(|message| message["kind"] != serde_json::json!("stage")),
+        pending_messages
+            .iter()
+            .all(|message| message["kind"] != serde_json::json!("stage")),
         "interruption is no longer a ledger stage message: {pending}"
     );
     assert_eq!(
@@ -651,21 +653,31 @@ fn a_task_restarting_claims_nothing_and_announces_one_interruption() {
         assert_eq!(task["waiting"], serde_json::json!([]), "{row}");
         // The person can still act on it: a blocked card, not a dead row.
         assert_eq!(task["archivedAt"], serde_json::Value::Null, "{row}");
-        let session_id = if task_id == "task-1" { "task-session-1" } else { "direct-session" };
+        let session_id = if task_id == "task-1" {
+            "task-session-1"
+        } else {
+            "direct-session"
+        };
         let notifications = count_rows(
             &data_dir,
             "SELECT COUNT(*) FROM notifications
               WHERE kind='task.failed' AND error_code='TASK_INTERRUPTED' AND session_id=?1",
             session_id,
         );
-        assert_eq!(notifications, expected_notices, "{task_id} notification count");
+        assert_eq!(
+            notifications, expected_notices,
+            "{task_id} notification count"
+        );
         let stage_messages = count_rows(
             &data_dir,
             "SELECT COUNT(*) FROM session_collaboration_messages
               WHERE kind='stage' AND content LIKE '%\"taskId\":\"' || ?1 || '\"%'",
             task_id,
         );
-        assert_eq!(stage_messages, 0, "{task_id} still has a legacy stage message");
+        assert_eq!(
+            stage_messages, 0,
+            "{task_id} still has a legacy stage message"
+        );
     }
     second.shutdown();
 }
