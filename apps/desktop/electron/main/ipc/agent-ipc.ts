@@ -14,7 +14,7 @@ import type { AgentSidecar } from "../agent-sidecar";
 import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import type { PersistenceOutbox } from "../persistence-outbox";
-import { buildStewardBriefing, buildTaskSessionBriefing } from "../services/task-status";
+import { buildTaskSessionBriefing } from "../services/task-status";
 import { closeTaskWaiting, requestTaskStageReconcile } from "../runtime/task-waiting";
 import type { ComposerCommandService } from "./composer-ipc";
 import type { IpcRegistrar } from "./types";
@@ -559,33 +559,12 @@ export function registerAgentIpc({
       Boolean(sessionMessage.origin.messageId.trim() && sessionMessage.origin.replyToMessageId?.trim());
     // This provenance comes only from the Host ledger, never from prompt text.
     if (isTrustedCompletionNotice) completionNoticeTurns.add(durableTurnId);
-    // The secretary's standing brief (employee mode 0.5 slice 3): generated for
-    // this turn from the ledger and sent with this request only. It is not part
-    // of the persisted transcript and no compaction ever sees it, so it cannot
-    // accumulate, cannot go stale, and cannot be mistaken for history. It is
-    // built here because `task.*` / `bot.*` are deliberately outside the
-    // sidecar's proxy allowlist — Main is the only process allowed to read them.
-    // `host` is captured once: the closure below must not observe a later
-    // reconnect (or a null) between the check and the read.
+    // Task-session rules are generated for this turn only and are never persisted.
     const briefingHost = host;
-    const isSteward =
-      session.role === "bot" && session.botProfile?.definition?.trim() === "steward";
-    const turnBriefing = isSteward
-      ? await buildStewardBriefing(
-          (method, params) => briefingHost!.call(method, params),
-          // The name the person gave this employee, from its own profile: the
-          // brief is where the model learns what to answer to.
-          session.botProfile?.name,
-        )
-      : // A task session's rules: slice 4a's task rules, then the team norms the
-        // person wrote (slice 6). They ride with the turn and are never written to
-        // the transcript, so a norm cannot accumulate or be read back as history.
-        session.role === "task"
+    const turnBriefing =
+      session.role === "task"
         ? await buildTaskSessionBriefing(
             (method, params) => briefingHost!.call(method, params),
-            // The task's session, so the brief can say which step of a relay
-            // chain this turn is: a middle step commits and stops, the last one
-            // pushes and opens one pull request for the whole chain.
             session.id,
           )
         : undefined;

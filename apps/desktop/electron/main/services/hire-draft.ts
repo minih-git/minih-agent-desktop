@@ -238,17 +238,6 @@ export function draftFromAnswer(
   };
   return { ok: true, draft };
 }
-/** The Super Agent's configured model, from the employees the host lists. */
-async function stewardModelKey(host: HireDraftHost): Promise<string | undefined> {
-  const listed = (await host.call("bot.list", {})) as
-    | { bots?: Array<{ modelKey?: string; profile?: { definition?: string } }> }
-    | undefined;
-  const steward = (listed?.bots ?? []).find(
-    (bot) => bot.profile?.definition?.trim() === "steward",
-  );
-  const key = steward?.modelKey?.trim();
-  return key || undefined;
-}
 
 async function existingProjects(
   host: HireDraftHost,
@@ -294,13 +283,16 @@ export function createHireDrafter(deps: HireDraftDeps): HireDrafter {
             message: "No model is configured, so no draft can be written.",
           };
         }
-        const modelKey = await stewardModelKey(host);
+        const modelKey =
+          settings.learnedMemory?.model?.trim() ||
+          (settings.defaultProviderId?.trim() && settings.defaultModelId?.trim()
+            ? `${settings.defaultProviderId.trim()}/${settings.defaultModelId.trim()}`
+            : undefined);
         if (!modelKey) {
           return {
             ok: false,
             code: "HIRE_DRAFT_NO_MODEL",
-            message:
-              "The Super Agent has no model yet. Create it in Employees and choose a model, then draft again.",
+            message: "No learning or default model is configured. Choose a model in Settings, then draft again.",
           };
         }
         const provider = await resolveExtractionProvider(
@@ -312,7 +304,7 @@ export function createHireDrafter(deps: HireDraftDeps): HireDrafter {
           return {
             ok: false,
             code: "HIRE_DRAFT_NO_MODEL",
-            message: `The Super Agent's model (${modelKey}) is not available. Check the provider's key in Models.`,
+            message: `The selected model (${modelKey}) is not available. Check the provider's key in Models.`,
           };
         }
         const projects = options.projects ?? (await existingProjects(host));

@@ -32,15 +32,12 @@ import { overlapRows, relayPosition } from "./task-relay";
 export function TaskCompletionCard({
   task,
   employeeName,
-  stewardSessionId,
   onChanged,
   variant = "session",
 }: {
   task: TaskView;
   /** The employee's name; the heading names who delivered it. */
   employeeName?: string;
-  /** Where 「追加要求」 goes; without it the button is not offered. */
-  stewardSessionId?: string | null;
   /** Called after the host answered, so the caller can refetch its own rows. */
   onChanged?: () => void;
   /** `session` sits in the task's own composer; `dock` sits in the steward's. */
@@ -56,7 +53,7 @@ export function TaskCompletionCard({
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [writing, setWriting] = useState<"reject" | "append" | null>(null);
+  const [writing, setWriting] = useState<"reject" | null>(null);
   const [text, setText] = useState("");
 
   /**
@@ -142,7 +139,7 @@ export function TaskCompletionCard({
       }
     });
 
-  const write = (kind: "reject" | "append") => {
+  const write = (kind: "reject") => {
     setWriting(kind);
     setText("");
   };
@@ -163,26 +160,6 @@ export function TaskCompletionCard({
       });
       return;
     }
-    if (!stewardSessionId) {
-      setError(t("bots.completion.noSteward"));
-      return;
-    }
-    await run("append", async () => {
-      // The steward decides whether this is still the same scope: inside it she
-      // hands it to the same employee, outside it she proposes a new card.
-      const accepted = await sendPrompt(
-        t("bots.completion.appendMessage", {
-          title: task.title,
-          taskId: task.id,
-          text: words,
-        }),
-        undefined,
-        stewardSessionId,
-      );
-      if (!accepted) throw new Error(t("bots.completion.sendBusy"));
-      setWriting(null);
-      setText("");
-    });
   };
 
   const openChanges = () => {
@@ -427,11 +404,7 @@ export function TaskCompletionCard({
             className="task-completion-input"
             value={text}
             autoFocus
-            placeholder={
-              writing === "reject"
-                ? t("bots.completion.rejectPlaceholder")
-                : t("bots.completion.appendPlaceholder")
-            }
+            placeholder={t("bots.completion.rejectPlaceholder")}
             onChange={(event) => setText(event.target.value)}
             data-completion-input={writing}
           />
@@ -498,16 +471,6 @@ export function TaskCompletionCard({
         >
           {t("bots.completion.reject")}
         </Button>
-        {stewardSessionId ? (
-          <Button
-            variant="ghost"
-            disabled={Boolean(busy)}
-            onClick={() => write("append")}
-            data-completion-append=""
-          >
-            {t("bots.completion.append")}
-          </Button>
-        ) : null}
       </div>
     </section>
   );

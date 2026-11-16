@@ -3,8 +3,6 @@ import type { TaskView } from "@minih-agent/shared";
 import { useAppStore } from "../../stores/app-store";
 import { useBots } from "./use-bots";
 import { useTasks } from "./use-tasks";
-import { isStewardSession } from "./bot-status";
-import { stewardNameOf } from "./steward-name";
 
 /**
  * What a task session's composer has to say, if anything (ADR
@@ -45,7 +43,7 @@ export function useTaskComposer(
   return {
     placeholder: t("bots.tasks.composerPlaceholder", {
       name: employee?.profile.name ?? t("bots.group.title"),
-      agent: stewardNameOf(bots.bots),
+      agent: employee?.profile.name ?? t("bots.group.title"),
     }),
     archived: false,
   };
@@ -70,10 +68,6 @@ export function useBotSidebarHandlers(
   const setWorkbenchEmployee = useAppStore((state) => state.setWorkbenchEmployee);
   return {
     onOpenBot: (bot) => {
-      if (isStewardSession({ role: "bot", botProfile: bot.profile })) {
-        void selectSession(bot.sessionId).catch(reportError);
-        return;
-      }
       setWorkbenchEmployee(bot.sessionId);
     },
     onOpenTask: (task) => {

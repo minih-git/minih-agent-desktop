@@ -30,8 +30,6 @@ import { blockedFields } from "./task-waiting";
 export function TaskBlockedCard({
   task,
   employeeName,
-  stewardName,
-  stewardSessionId,
   onChanged,
 }: {
   task: TaskView;
@@ -50,7 +48,6 @@ export function TaskBlockedCard({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDrop, setConfirmingDrop] = useState(false);
-  const [reassignedTo, setReassignedTo] = useState(false);
 
   const fields = blockedFields(task);
   const interrupted = isTaskInterrupted(task);
@@ -96,15 +93,6 @@ export function TaskBlockedCard({
       if (!accepted) setError(t("bots.blocked.retryBusy"));
     });
 
-  const reassign = () =>
-    run("reassign", async () => {
-      await api.reassignTask({
-        taskId: task.id,
-        reason: t("bots.blocked.reassignReason", { shortId: task.shortId }),
-        ...(stewardSessionId ? { stewardSessionId } : {}),
-      });
-      setReassignedTo(true);
-    });
 
   /**
    * 「改从 main 开工」: drop the edge to the step that cannot be continued and
@@ -216,11 +204,6 @@ export function TaskBlockedCard({
         </dl>
       ) : null}
 
-      {reassignedTo ? (
-        <p className="task-blocked-note" data-blocked-reassigned="" role="status">
-          {t("bots.blocked.reassigned", { agent: stewardName || t("bots.card.targetUnknown") })}
-        </p>
-      ) : null}
       {error ? (
         <p className="task-blocked-error" role="alert">
           {error}
@@ -252,13 +235,6 @@ export function TaskBlockedCard({
                 {t("bots.blocked.retry")}
               </Button>
             )}
-            <Button
-              variant="secondary"
-              disabled={Boolean(busy)}
-              onClick={() => void reassign()}
-            >
-              {t("bots.blocked.reassign")}
-            </Button>
           </>
         )}
         {confirmingDrop ? (

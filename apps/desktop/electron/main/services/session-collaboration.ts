@@ -5,7 +5,6 @@ import type {
   SessionCollaborationDelivery,
   SessionCollaborationMessage,
   SessionCollaborationSummary,
-  TaskView,
 } from "@minih-agent/shared";
 import {
   decodeMandate,
@@ -13,9 +12,7 @@ import {
   imageGenerationBindings,
   isImageGenerationModel,
   modelWireIdsEqual,
-  taskStartsOnConfirm,
 } from "@minih-agent/shared";
-import { readTaskBoard } from "./task-status";
 import { DESKTOP_PRINCIPAL, type AgentHostBridge } from "../agent-host-bridge";
 import { listReadyPluginModels, parsePluginModelKey } from "../plugin-agent-complete";
 import type { McpControlInvokeInput } from "../mcp-control";
@@ -177,79 +174,6 @@ function senderFields(sender: Sender): Record<string, string> {
 
 /**
  * A task-card draft as host-core reports it (ADR bot-sessions-and-steward §3).
- *
- * `status` is the host's own word: a model cannot set it, and `confirmedBy`
- * distinguishes a person's click from the host's auto-start policy, so an audit
- * never has to trust what a caller claims.
- */
-export type TaskCardDraftRecord = {
-  id: string;
-  sessionId: string;
-  status: "proposed" | "confirmed" | "dropped";
-  card: Record<string, unknown>;
-  cardHash: string;
-  sourceUtterance: string;
-  targetSessionId: string;
-  confirmedBy?: "user" | "policy";
-  confirmedAt?: string;
-  deliveryId?: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-/**
- * Confirm a freshly proposed card when — and only when — the host's own policy
- * allows starting it without a person.
- *
- * The decision is asked of the host (`taskCard.autoStart`), not computed here:
- * the rule reads the employee's stored `observe` flag and the card's narrowed
- * ceiling, and both live in host-core. A refusal leaves the card proposed, which
- * is what a person then sees in the UI.
- */
-/**
- * Confirm a freshly proposed card when — and only when — the host's own policy
- * allows starting it without a person.
- *
- * The decision is asked of the host (`taskCard.autoStart`), not computed here:
- * the rule reads the employee's stored `observe` flag and the card's narrowed
- * ceiling, and both live in host-core. A refusal leaves the card proposed, which
- * is what a person then sees in the UI.
- *
- * A confirmation writes the delivery; starting it is a separate step, so it is
- * handed to the caller's `start` (the same `dispatch` an ordinary send uses).
- * Without that step the card is confirmed but nothing ever runs.
- */
-async function autoConfirmIfAllowed(
-  host: Host,
-  draft: TaskCardDraftRecord,
-  start: (message: SessionCollaborationMessage) => Promise<unknown>,
-): Promise<TaskCardDraftRecord> {
-  if (draft.status !== "proposed") return draft;
-  const decision = await host.call<{ refusal?: string | null }>("taskCard.autoStart", {
-    targetSessionId: draft.targetSessionId,
-    card: draft.card,
-  });
-  if (decision.refusal) return draft;
-  const started = await host.call<{
-    draft: TaskCardDraftRecord;
-    delivery?: SessionCollaborationMessage;
-    task?: TaskView;
-  }>("taskCard.confirm", {
-    draftId: draft.id,
-    cardHash: draft.cardHash,
-    confirmedBy: "policy",
-    policyVersion: "steward-1",
-    notifyOnCompletion: true,
-    // One confirmation per card: the draft id is the natural key, so a retried
-    // auto-start cannot deliver the same work twice.
-    idempotencyKey: `taskcard:${draft.id}`,
-  });
-  // A card that follows another is confirmed now and starts at that step's
-  // handoff, not before (employee mode 0.5 slice 7). The policy decides whether
-  // the person has to be asked; it never decides an order the steward declared.
-  if (started.delivery && taskStartsOnConfirm(started.task)) await start(started.delivery);
-  return started.draft;
-}
 
 /** Coordinates reviewed operations; Rust owns all identity and outcome state. */
 export function createSessionCollaborationService(deps: SessionCollaborationDependencies) {
@@ -564,15 +488,6 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         | "send"
         | "result"
         | "create"
-        | "propose"
-        | "revise"
-        | "drop"
-        // The steward's two reads (employee mode 0.5 slice 3): her roster, and
-        // the task board. Both stay out of the sidecar's allowlist, so the model
-        // cannot call `bot.*` / `task.*` itself; these operations are how the
-        // tools she does have reach them.
-        | "roster"
-        | "taskStatus";
       args: Record<string, unknown>;
       signal?: AbortSignal;
     }): Promise<unknown> {
@@ -592,17 +507,6 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         case "list":
           await drain();
           return host.call("session.collaboration.list", {});
-        case "roster":
-          // The steward must not see herself among the people she hands work
-          // to; the host applies that from the caller's own session id.
-          return host.call("bot.roster", { sessionId: sourceSessionId });
-        case "taskStatus": {
-          const board = await readTaskBoard((method, params) => host.call(method, params));
-          const only = text(input.args, "employeeSessionId", false);
-          return only
-            ? { ...board, tasks: board.tasks.filter((task) => task.employeeSessionId === only) }
-            : board;
-        }
         case "result": {
           const messageId = text(input.args, "messageId", false);
           await drain();
@@ -737,53 +641,6 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           deps.onChanged();
           return { sessionId: createdId, title: created.session?.title ?? title };
         }
-        case "propose": {
-          const targetSessionId = text(input.args, "targetSessionId");
-          if (targetSessionId === sourceSessionId) {
-            fail("INVALID_ARGUMENT", "A card cannot target its own session");
-          }
-          const result = await host.call<{ draft: TaskCardDraftRecord; created?: boolean }>(
-            "taskCard.propose",
-            {
-              sessionId: sourceSessionId,
-              targetSessionId,
-              sourceUtterance: text(input.args, "sourceUtterance"),
-              card: input.args.card,
-              // The turn, not the card: one sentence split into three cards is
-              // one batch, and the summary card appears when all three finish.
-              batchId: sourceTurnId,
-              // The card this one follows, when the steward declared an order
-              // (employee mode 0.5 slice 7). The host validates the edge: same
-              // batch, no loop, one repository, at most five steps.
-              after: text(input.args, "after"),
-            },
-          );
-          // Auto-start is the host's own rule, never the model's judgement: a
-          // narrow card for an employee that is not observing is dispatched at
-          // once and recorded as confirmed by policy (ADR §4).
-          const confirmed = await autoConfirmIfAllowed(
-            host,
-            result.draft,
-            (message) => dispatch(message, input.signal),
-          );
-          return { draft: confirmed };
-        }
-        case "revise": {
-          const result = await host.call<{ draft: TaskCardDraftRecord }>("taskCard.revise", {
-            draftId: text(input.args, "draftId"),
-            card: input.args.card,
-            // Re-checked by the host like a first proposal: either side of the
-            // edge can have moved since the card was proposed.
-            after: text(input.args, "after"),
-          });
-          return { draft: result.draft };
-        }
-        case "drop": {
-          const result = await host.call<{ draft: TaskCardDraftRecord }>("taskCard.drop", {
-            draftId: text(input.args, "draftId"),
-          });
-          return { draft: result.draft };
-        }
         default:
           return fail("NOT_FOUND", "Unknown session tool operation");
       }
@@ -820,12 +677,6 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
       return dispatch(message, signal);
     },
     drain,
-    /**
-     * Identity a confirmed card is stamped with, or undefined when this build
-     * has no host identity to offer. It is audit data only and never an
-     * authorization, so an absent value is honest and better than a guess.
-     */
-    taskCardHostId: (): string | undefined => deps.hostId?.(),
   };
 }
 

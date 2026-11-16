@@ -84,40 +84,13 @@ const TONE_ORDER: Record<BotStatusTone, number> = {
   offline: 5,
 };
 
-/**
- * Whether this employee is the steward — the person's default entry point.
- *
- * Read from the definition, never from the name: the person can rename her.
- */
-export function isStewardBot(bot: BotListItem): boolean {
-  return bot.profile?.definition === "steward";
-}
 
 export function sortBots(bots: readonly BotListItem[]): BotListItem[] {
-  return [...bots].sort((left, right) => {
-    // The steward is always the first row. Her status is "what the board is
-    // doing", not "an employee waiting for work", so ordering her by tone put an
-    // idle steward under three busy employees and hid the door the person came
-    // in through. Everyone else is still ordered by tone.
-    const stewardOrder = Number(isStewardBot(right)) - Number(isStewardBot(left));
-    if (stewardOrder !== 0) return stewardOrder;
-    return (
-      TONE_ORDER[botStatusView(left.status).tone] - TONE_ORDER[botStatusView(right.status).tone]
-    );
-  });
+  return [...bots].sort(
+    (left, right) => TONE_ORDER[botStatusView(left.status).tone] - TONE_ORDER[botStatusView(right.status).tone],
+  );
 }
 
-/**
- * Whether a session is the steward — the one employee that proposes task cards
- * (ADR bot-sessions-and-steward §2). A plain bot has no `TaskCard` tool, so its
- * session can never have a draft to show; rendering the dock there would only
- * add an empty region above the composer.
- */
-export function isStewardSession(
-  session: { role?: string; botProfile?: { definition?: string } } | null | undefined,
-): boolean {
-  return session?.role === "bot" && session.botProfile?.definition === "steward";
-}
 
 /** Initials for the avatar fallback: first character of the name. */
 export function botInitials(name: string): string {

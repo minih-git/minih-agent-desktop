@@ -1,113 +1,25 @@
 import {
-  isTaskStuck,
   isTaskWaitingForAnswer,
   taskCountsAsWaiting,
   waitingTaskCount,
   type TaskView,
-  type TaskWaiting,
 } from "@minih-agent/shared";
-import { deliveryFailure, showsCompletionCard, taskBatches } from "./task-delivery";
+import { deliveryFailure } from "./task-delivery";
 import { isRelayBlocked } from "./task-relay";
 
-/**
- * What the waiting channel shows, without React (employee mode 0.5 slice 4a).
- *
- * The rules are what the person can observe, so they live here where they can be
- * proven directly: which tasks the steward's dock shows, in what order, what one
- * row says, and which sources add up to the sidebar's number. The components
- * render; this module decides.
- */
-
-/** One row of the steward's dock. */
-export type DockEntry =
-  | { kind: "waiting"; task: TaskView; waiting: TaskWaiting }
-  | { kind: "stuck"; task: TaskView }
-  | { kind: "done"; task: TaskView };
-
-/**
- * The entries the steward's dock holds for the tasks she dispatched.
- *
- * The order is the ADR's: **a question or an approval first, then a stuck task,
- * then the cards**, because that is the order in which the work stops moving.
- * Only `origin = steward` work appears here — a task the person started in an
- * employee's own workbench is theirs to answer in that task, and the steward must
- * not be pulled into it.
- *
- * A task with several open requests is several rows: each one is a question that
- * needs its own answer.
- */
-export function stewardDockEntries(
-  tasks: readonly TaskView[],
-  options: { stewardSessionId?: string | null } = {},
-): DockEntry[] {
-  // A batch is summarised as one card, so its members do not also appear as
-  // their own rows: the person acts on the summary, or expands it on purpose.
-  const batched = new Set(
-    taskBatches(tasks).flatMap((batch) => batch.tasks.map((task) => task.id)),
-  );
-  const entries: DockEntry[] = [];
-  for (const task of tasks) {
-    if (task.archivedAt) continue;
-    if (task.origin !== "steward") continue;
-    // A task's own conversation is not the steward's dock.
-    if (options.stewardSessionId && task.sessionId === options.stewardSessionId) continue;
-    for (const waiting of task.waiting ?? []) {
-      entries.push({ kind: "waiting", task, waiting });
-    }
-    if (isTaskStuck(task)) entries.push({ kind: "stuck", task });
-    // 完成 comes last, which is the ADR's order: a question stops the work, a
-    // stuck task has stopped, and finished work has not stopped anything. An
-    // accepted task keeps its card in its own conversation — it is no longer
-    // something the person has to act on — so the dock leaves it out.
-    if (showsCompletionCard(task) && !task.acceptedAt && !batched.has(task.id)) {
-      entries.push({ kind: "done", task });
-    }
-  }
-  return entries;
+/** Count task states that require the person's attention. */
+export function waitingTotal(tasks: readonly TaskView[]): number {
+  return waitingTaskCount(tasks);
 }
 
-/**
- * How many things wait on the person, from **every** source.
- *
- * `pendingCards` is the steward's unconfirmed cards; the tasks contribute their
- * questions, their finished work and their stuck rows. One number, computed once,
- * so the sidebar, the badge and the tests cannot disagree.
- */
-export function waitingTotal(
-  tasks: readonly TaskView[],
-  pendingCards: number = 0,
-): number {
-  return waitingTaskCount(tasks) + Math.max(0, pendingCards);
-}
-
-/** The tasks behind the sidebar's number, for the list it opens. */
 export function waitingTasks(tasks: readonly TaskView[]): TaskView[] {
   return tasks.filter((task) => taskCountsAsWaiting(task));
 }
 
-/** Whether one task is the question-shaped kind of waiting. */
 export function isAsking(task: TaskView): boolean {
   return isTaskWaitingForAnswer(task);
 }
 
-/**
- * What one dock row says: the employee, the repository and the task, then the
- * question itself.
- *
- * The employee's name comes from the task's own employee row when the caller has
- * it; the repository is the folder's name, which is what a person recognises. A
- * missing piece is left out rather than printed as `undefined`.
- */
-export function waitingRowText(
-  task: TaskView,
-  employeeName: string | undefined,
-): { meta: string; question: string } {
-  const repo = repositoryName(task.projectPath);
-  return {
-    meta: [employeeName, repo, task.title].filter(Boolean).join(" · "),
-    question: task.waiting?.[0]?.question ?? task.waiting?.[0]?.toolName ?? "",
-  };
-}
 
 /** The last path segment of a project, which is how people name a repository. */
 export function repositoryName(path: string | undefined): string {

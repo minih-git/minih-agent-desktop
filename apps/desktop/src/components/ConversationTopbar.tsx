@@ -34,7 +34,6 @@ import { useBots } from "../features/bots/use-bots";
 import { useTasks } from "../features/bots/use-tasks";
 import { taskStageLabelKey } from "../features/bots/bot-task-stage";
 import { taskStatusTone } from "../features/bots/bot-status";
-import { stewardNameOf } from "../features/bots/steward-name";
 import { taskRepoName } from "../features/bots/BotTaskList";
 import { TaskRestartButton } from "../features/bots/TaskRestartButton";
 import { TaskWorkspaceStatus } from "../features/bots/TaskWorkspaceStatus";
@@ -128,7 +127,6 @@ export function ConversationTopbar({
   const bots = useBots();
   // The task's origin chip names the steward by its current name, which is the
   // employee's own profile name — not a word this build wrote down.
-  const stewardName = stewardNameOf(bots.bots);
   const taskEmployee = task
     ? bots.bots.find((bot) => bot.sessionId === task.employeeSessionId)
     : undefined;
@@ -391,9 +389,7 @@ export function ConversationTopbar({
                   row says what happened, the action group is what the person
                   can do about it (same place #252 put the archive button). */}
               <span className="ct-chip" data-task-optional="early">
-                {task.origin === "steward"
-                  ? t("bots.workbench.originSteward", { name: stewardName })
-                  : t("bots.workbench.originDirect")}
+                {t("bots.workbench.originDirect")}
               </span>
               <span className="ct-chip" data-task-optional="early">
                 #{task.shortId}

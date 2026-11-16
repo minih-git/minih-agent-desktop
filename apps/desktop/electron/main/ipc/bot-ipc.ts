@@ -4,34 +4,19 @@ import {
   type BotsChangedEvent,
   type SessionCollaborationMessage,
   type TaskArchiveResult,
-  type TaskCardConfirmResult,
-  type TaskCardDraftView,
   type TaskCreateResult,
   type TaskDeliveryMergeResult,
   type TaskRelayDetachResult,
   type TaskRelayHandoffResult,
   type TaskView,
   type TeamNormsSetRequest,
-  taskStartsOnConfirm,
 } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
 import type { HireDraftOutcome } from "../services/hire-draft";
 import type { SessionCollaborationService } from "../services/session-collaboration";
 import type { IpcRegistrar } from "./types";
-import { taskCardsChangedSender } from "../services/task-cards-changed";
 import type { TaskChangeAnnouncer } from "../services/task-changes";
-/**
- * The employee surface (ADR bot-sessions-and-steward §5).
- *
- * Two rules are why this is its own module rather than more `session.*` calls:
- *
- * - **Confirming a card is a person's click.** `taskCardConfirm` is reachable
- *   only from the renderer, and the model has no tool that reaches it, no
- *   `confirm` action on `TaskCard` and no `mandate` argument on `SessionSend`.
- *   This module is the only place in the product that confirms.
- * - **Seeding is explicit.** `botSeedDefaults` runs when the user asks for it
- *   and never at startup, so no install silently grows four sessions.
- */
+/** Employee, task, relay and notification IPC handlers. */
 export function registerBotIpc({
   registrar,
   getHost,
@@ -69,7 +54,6 @@ export function registerBotIpc({
   draftHire: (utterance: string) => Promise<HireDraftOutcome>;
 }): void {
   const { handle } = registrar;
-  const notifyTaskCardsChanged = taskCardsChangedSender(sendToRenderer);
   const { announce: announceTask, reconcileStages: reconcileTaskStages } = tasks;
   const host = (): HostProcess => {
     const current = getHost();
@@ -102,11 +86,6 @@ export function registerBotIpc({
     return result;
   });
 
-  handle(IPC.invoke.botSeedDefaults, async () => {
-    const result = await host().call("bot.seedDefaults", {});
-    sendToRenderer(IPC.event.botsChanged, { reason: "seeded" } satisfies BotsChangedEvent);
-    return result;
-  });
 
   // One-sentence hiring (slice 6). A draft, never a create: the renderer fills
   // the form with it and the person still has to save it. A failure is thrown
@@ -129,75 +108,6 @@ export function registerBotIpc({
     return host().call("team.norms.set", { norms });
   });
 
-  handle(IPC.invoke.taskCardList, async (request) => {
-    const { sessionId } = (request ?? {}) as { sessionId?: string };
-    if (!sessionId) throw new Error("sessionId is required");
-    return host().call("taskCard.list", { sessionId });
-  });
-
-  // The click. `cardHash` is the hash of the card the person was looking at, so
-  // a revise between render and click is refused by the host instead of
-  // approving text nobody read.
-  handle(IPC.invoke.taskCardConfirm, async (request) => {
-    const { draftId, cardHash, notifyOnCompletion } = (request ?? {}) as {
-      draftId?: string;
-      cardHash?: string;
-      notifyOnCompletion?: boolean;
-    };
-    if (!draftId || !cardHash) throw new Error("draftId and cardHash are required");
-    const result = (await host().call("taskCard.confirm", {
-      draftId,
-      cardHash,
-      confirmedBy: "user",
-      ...(typeof notifyOnCompletion === "boolean" ? { notifyOnCompletion } : {}),
-      // The host scopes this key to (plugin, source session), so the draft id is
-      // the natural identity: a retried click cannot dispatch the work twice.
-      idempotencyKey: `taskcard-confirm:${draftId}`,
-      policyVersion: "steward-1",
-    })) as {
-      draft?: TaskCardDraftView;
-      delivery?: SessionCollaborationMessage;
-      task?: TaskView;
-    };
-    // Confirming writes the delivery and stops there. Starting it is the same
-    // step an ordinary send takes, so it goes through the same dispatch; without
-    // it the work stays queued and the person sees a card that did nothing.
-    // A start failure must not undo the person's decision: the card says the
-    // work was dispatched but did not start, and the delivery keeps whatever
-    // state the ledger recorded.
-    // A relay step is confirmed but must not start yet: the step before it has
-    // not handed off, so there is no branch to continue (employee mode 0.5
-    // slice 7). Its delivery stays queued until that handoff, or until the
-    // person starts it from main.
-    let startError: string | undefined;
-    if (result.delivery && taskStartsOnConfirm(result.task)) {
-      try {
-        await sessionCollaboration.dispatchConfirmed(result.delivery);
-      } catch (error) {
-        startError = error instanceof Error ? error.message : String(error);
-      }
-    }
-    // The confirmed card created a task under its employee (the host does that
-    // in the confirmation's own transaction), so the work now lives in that
-    // task's session. Announced once, before anything else can report it.
-    if (result.task) announceTask(result.task, "created");
-    // A dispatch moves the task's stage from `queued` to `working`; the
-    // reconcile reads it back rather than guessing, and emits once.
-    await reconcileTaskStages();
-    // The person's click is one of three ways a card changes; the emitter keeps
-    // every direction on one channel, so the dock has a single thing to listen to.
-    notifyTaskCardsChanged({
-      sessionId: result.draft?.sessionId ?? "",
-      draftId: draftId ?? "",
-    });
-    sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
-    if (!result.draft) throw new Error("the host confirmed a card but returned no draft");
-    return {
-      draft: result.draft,
-      deliveryId: result.delivery?.id ?? "",
-      ...(startError ? { startError } : {}),
-    } satisfies TaskCardConfirmResult;
-  });
 
   // Tasks under an employee (ADR bot-sessions-and-steward §7). Creating one also
   // makes its session, so the renderer opens the session the host returned; the
@@ -262,30 +172,6 @@ export function registerBotIpc({
     return { task: result.task, ...(startError ? { startError } : {}) };
   });
 
-  // 「改派给…」: the person hands a stuck task's work to somebody else (employee
-  // mode 0.5 slice 4a). The host writes a fresh card on the steward's own
-  // conversation — same goal, nobody assigned — and the dock shows it for
-  // confirmation. Nothing is dispatched here: starting it is that click.
-  handle(IPC.invoke.taskReassign, async (request) => {
-    const { taskId, reason, stewardSessionId } = (request ?? {}) as {
-      taskId?: string;
-      reason?: string;
-      stewardSessionId?: string;
-    };
-    if (!taskId) throw new Error("taskId is required");
-    const result = (await host().call("task.reassign", {
-      taskId,
-      ...(reason ? { reason } : {}),
-      ...(stewardSessionId ? { stewardSessionId } : {}),
-    })) as { draft?: { sessionId?: string; id?: string } };
-    // The steward's dock holds the new card, so the conversation that renders it
-    // repaints from the host rather than from this reply.
-    notifyTaskCardsChanged({
-      sessionId: result.draft?.sessionId ?? "",
-      draftId: result.draft?.id ?? "",
-    });
-    return result;
-  });
 
   // The completion card (employee mode 0.5 slice 4b). Accepting is the person's
   // own click and nothing else: the host writes `accepted_at`, which is what
@@ -386,38 +272,5 @@ export function registerBotIpc({
     host().call("task.overlap", (request ?? {}) as Record<string, unknown>),
   );
 
-  handle(IPC.invoke.taskCardDrop, async (request) => {
-    const { draftId } = (request ?? {}) as { draftId?: string };
-    if (!draftId) throw new Error("draftId is required");
-    const result = (await host().call("taskCard.drop", { draftId })) as {
-      draft?: { sessionId?: string };
-    };
-    notifyTaskCardsChanged({
-      sessionId: result.draft?.sessionId ?? "",
-      draftId,
-    });
-    return result;
-  });
 
-  // The person changes the employee on a proposed card (employee mode 0.5 slice
-  // 3). It is their click, like confirming: the host narrows the card to what
-  // the new employee may do, recomputes the hash, and leaves the card proposed,
-  // so starting it is still a separate act nobody can do for them.
-  handle(IPC.invoke.taskCardReassign, async (request) => {
-    const { draftId, targetSessionId } = (request ?? {}) as {
-      draftId?: string;
-      targetSessionId?: string;
-    };
-    if (!draftId || !targetSessionId) throw new Error("draftId and targetSessionId are required");
-    const result = (await host().call("taskCard.reassign", { draftId, targetSessionId })) as {
-      draft?: TaskCardDraftView;
-      repoAvailable?: boolean;
-      projectPath?: string;
-    };
-    // The card on screen changed, so the dock has to re-read the version the
-    // host now holds; a stale hash would refuse the person's next click.
-    notifyTaskCardsChanged({ sessionId: result.draft?.sessionId ?? "", draftId });
-    sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
-    return result;
-  });
 }

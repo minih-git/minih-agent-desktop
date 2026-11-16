@@ -23,13 +23,11 @@ import { batchRows, rowLabel } from "./task-relay";
 export function TaskBatchCard({
   batch,
   names,
-  stewardSessionId,
   onChanged,
 }: {
   batch: TaskBatch;
   /** Employee display names, keyed by session id. */
   names: Record<string, string>;
-  stewardSessionId?: string | null;
   onChanged?: () => void;
 }) {
   const { t } = useTranslation();
@@ -211,7 +209,6 @@ export function TaskBatchCard({
               key={task.id}
               task={task}
               employeeName={names[task.employeeSessionId]}
-              stewardSessionId={stewardSessionId}
               onChanged={onChanged}
               variant="dock"
             />

@@ -22,7 +22,7 @@ import {
 import { useBots } from "./use-bots";
 import { BotFormCard } from "./BotFormCard";
 import { EmployeeExperienceSection } from "./EmployeeExperienceSection";
-import { HireSection, hasSteward } from "./HireSection";
+import { HireSection } from "./HireSection";
 import { TeamNormsSection } from "./TeamNormsSection";
 import { useBotDefinitions } from "./use-bot-definitions";
 /**
@@ -83,7 +83,6 @@ export function BotsSettingsPage({
     };
   }, []);
   const [pendingDismiss, setPendingDismiss] = useState<string | null>(null);
-  const [enablingSteward, setEnablingSteward] = useState(false);
   const [seedNote, setSeedNote] = useState<string | null>(null);
 
   const editingBot = editing && editing !== "new" ? bots.find((bot) => bot.sessionId === editing) : undefined;
@@ -133,29 +132,6 @@ export function BotsSettingsPage({
     }
   };
 
-  /** The one host action left in this page: make sure the dispatcher exists. */
-  const enableSteward = async () => {
-    setEnablingSteward(true);
-    setSeedNote(null);
-    try {
-      const result = await api.seedDefaultBots();
-      const created = result.created.map((item) => item.name).join(", ");
-      const skipped = result.skipped.map((item) => item.name).join(", ");
-      setSeedNote(
-        [
-          created ? t("bots.settings.seedCreated", { names: created }) : null,
-          skipped ? t("bots.settings.seedSkipped", { names: skipped }) : null,
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      );
-      await reload();
-    } catch (cause) {
-      setSeedNote(t("bots.settings.seedFailed", { reason: reasonOf(cause) }));
-    } finally {
-      setEnablingSteward(false);
-    }
-  };
 
   /** A template card was clicked: open its prefilled form. */
   const openTemplate = (template: HireTemplate) => {
@@ -214,7 +190,6 @@ export function BotsSettingsPage({
 
       <SettingsCard title={t("bots.hiring.title")} description={t("bots.hiring.description")}>
         <HireSection
-          bots={bots}
           onTemplate={openTemplate}
           onDraft={openDraft}
           onBlank={() => {
@@ -223,8 +198,6 @@ export function BotsSettingsPage({
             setNewDraft(EMPTY_BOT_DRAFT);
             setEditing("new");
           }}
-          onEnableSteward={() => void enableSteward()}
-          enabling={enablingSteward}
           note={seedNote}
         />
       </SettingsCard>
@@ -396,4 +369,3 @@ function reasonOf(cause: unknown): string {
 }
 
 export type { BotDraft };
-export { hasSteward };

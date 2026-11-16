@@ -1,15 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
-  isReadOnlyDefinition,
-  roleWordForDefinition,
-  type BotRosterEntry,
   type SessionCollaborationDelivery,
   type SessionCollaborationList,
   type SessionCollaborationMessage,
 } from "@minih-agent/shared";
 import type { LocalToolHandler, LocalToolResult } from "../agent-sidecar";
 import type { SessionCollaborationService } from "./session-collaboration";
-import { describeTaskBoard, type TaskBoard } from "./task-status";
 
 /**
  * Main's built-in tools for handing work to another Agent session.
@@ -147,88 +143,6 @@ export function createSessionListTool(service: SessionCollaborationService): Loc
   };
 }
 
-/**
- * The steward's roster (employee mode 0.5 slice 3): who she may hand work to.
- *
- * This is the read that replaces guessing from session titles. One line per
- * employee, carrying exactly what a choice needs and nothing else — the only
- * internal identifier is the `sessionId` a task card has to name.
- */
-export function createRosterTool(service: SessionCollaborationService): LocalToolHandler {
-  return async ({ sessionId, turnId, args, signal }) => {
-    const parsed = parseArgs(args, []);
-    if ("rejected" in parsed) return parsed.rejected;
-    try {
-      const roster = (await service.invokeBuiltin({
-        sessionId,
-        turnId: turnId ?? "",
-        operation: "roster",
-        args: {},
-        signal,
-      })) as { employees?: BotRosterEntry[] };
-      const employees = roster?.employees ?? [];
-      if (employees.length === 0) {
-        return success(
-          "No employee is available to dispatch to. The person hires employees in employee settings; until then, answer the request yourself and say that nobody is hired.",
-        );
-      }
-      const lines = employees.map((entry) => {
-        // The job, first: a name the person invented («阿福») says nothing about
-        // whether this employee reviews, researches or writes code, and the
-        // steward chooses by job (employee mode 0.5 slice 6). A read-only job is
-        // marked here because that is what makes a card startable without a
-        // click, and the steward must not have to infer it from the duty text.
-        const role = roleWordForDefinition(entry.definition);
-        const readOnly = isReadOnlyDefinition(entry.definition);
-        const facts = [
-          role ? `role=${role}${readOnly ? " (read-only)" : ""}` : undefined,
-          entry.duty ? entry.duty : "no stated duty",
-          entry.modelKey ? `model=${entry.modelKey}` : "no model bound",
-          entry.permissionMode ? `permission=${entry.permissionMode}` : undefined,
-          entry.projectPath ? `repo=${entry.projectPath}` : "no repository",
-          `open=${entry.openTaskCount}${entry.waitingCount ? ` (${entry.waitingCount} waiting on the person)` : ""}`,
-          entry.idle ? "idle" : "busy",
-          `sessionId=${entry.sessionId}`,
-        ].filter((part): part is string => typeof part === "string");
-        return `- ${entry.name} — ${facts.join("; ")}`;
-      });
-      return success(
-        `${employees.length} employee(s) you may dispatch to:\n${lines.join("\n")}`,
-      );
-    } catch (error) {
-      return failure(errorCodeOf(error), errorMessageOf(error));
-    }
-  };
-}
-
-/**
- * The steward's view of the ledger (employee mode 0.5 slice 3): `task.list`,
- * grouped the way a supervisor reads it.
- *
- * It includes the tasks the person dispatched themselves: she knows about those
- * and does not act on them, and a board that hid them would make her report
- * incomplete.
- */
-export function createTaskStatusTool(service: SessionCollaborationService): LocalToolHandler {
-  return async ({ sessionId, turnId, args, signal }) => {
-    const parsed = parseArgs(args, []);
-    if ("rejected" in parsed) return parsed.rejected;
-    try {
-      const board = (await service.invokeBuiltin({
-        sessionId,
-        turnId: turnId ?? "",
-        operation: "taskStatus",
-        args: { employeeSessionId: stringArg(parsed.record, "employeeSessionId") },
-        signal,
-      })) as TaskBoard;
-      return success(
-        describeTaskBoard(board, { employeeSessionId: stringArg(parsed.record, "employeeSessionId") }),
-      );
-    } catch (error) {
-      return failure(errorCodeOf(error), errorMessageOf(error));
-    }
-  };
-}
 
 /**
  * Deliver a follow-up, or a task, to another session.

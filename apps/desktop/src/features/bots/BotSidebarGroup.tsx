@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BotListItem, TaskView } from "@minih-agent/shared";
 import { TooltipButton } from "../../components/ui";
@@ -6,8 +6,6 @@ import { IconChevronDown } from "../../components/icons";
 import { botInitials, botStatusFromTasks, botStatusView } from "./bot-status";
 import { BotTaskList } from "./BotTaskList";
 import { taskStageLabelKey } from "./bot-task-stage";
-import { api } from "../../lib/api";
-import { stewardSessionIdOf } from "./steward-name";
 import { waitingTasks, waitingTotal } from "./task-waiting";
 import { useBots } from "./use-bots";
 import { useTasks } from "./use-tasks";
@@ -54,12 +52,6 @@ export function BotSidebarGroup({
   // The list behind 「等你 N 件」: it opens in place, because a number a person
   // cannot act on is only a worry (employee mode 0.5 slice 4a).
   const [waitingOpen, setWaitingOpen] = useState(false);
-  /**
-   * The steward's unconfirmed start cards. They are one of the four sources the
-   * ADR counts, and they are the only one that does not live in `task.list`:
-   * a card is a draft until somebody starts it.
-   */
-  const [pendingCards, setPendingCards] = useState(0);
 
   const byEmployee = useMemo(() => {
     const grouped = new Map<string, TaskView[]>();
@@ -71,32 +63,8 @@ export function BotSidebarGroup({
     return grouped;
   }, [tasks]);
 
-  const stewardId = stewardSessionIdOf(bots);
-  useEffect(() => {
-    if (!stewardId) {
-      setPendingCards(0);
-      return undefined;
-    }
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const result = await api.listTaskCards(stewardId);
-        if (cancelled) return;
-        setPendingCards((result.drafts ?? []).filter((draft) => draft.status === "proposed").length);
-      } catch {
-        // A failed read never invents a number downward: the cards are counted
-        // when they can be read, and the tasks still count in the meantime.
-      }
-    };
-    void load();
-    const stop = api.onTaskCardsChanged(() => void load());
-    return () => {
-      cancelled = true;
-      stop?.();
-    };
-  }, [stewardId]);
 
-  const waiting = waitingTotal(tasks, pendingCards);
+  const waiting = waitingTotal(tasks);
   const waitingRows = waitingTasks(tasks);
 
   // No employee yet: the group stays out of the sidebar until the person
@@ -146,20 +114,6 @@ export function BotSidebarGroup({
           aria-label={t("bots.waiting.title", { count: waiting })}
           data-testid="sidebar-waiting-list"
         >
-          {pendingCards > 0 ? (
-            <button
-              type="button"
-              className="sidebar-waiting-row"
-              data-sidebar-waiting-row="cards"
-              onClick={() => {
-                const steward = bots.find((bot) => bot.sessionId === stewardId);
-                setWaitingOpen(false);
-                if (steward) onOpenBot(steward);
-              }}
-            >
-              {t("bots.waiting.cards", { count: pendingCards })}
-            </button>
-          ) : null}
           {waitingRows.map((task) => (
             <button
               key={task.id}
@@ -245,8 +199,6 @@ function BotRow({
         </span>
         <span className="sidebar-bot-copy">
           <span className="sidebar-bot-name">{name}</span>
-          {/* The subtitle is the status word, not the duty: on a sidebar the
-              question is "is it doing something", and a duty never changes. */}
           <span className="sidebar-bot-subtitle">{label}</span>
         </span>
         {openCount > 0 ? (

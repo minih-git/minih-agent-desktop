@@ -24,15 +24,8 @@ import type {
   BotSeedDefaultsResult,
   BotUpdateRequest,
   BotsChangedEvent,
-  TaskCardConfirmRequest,
-  TaskCardConfirmResult,
   TeamNormsSetRequest,
   TeamNormsView,
-  TaskCardDraftView,
-  TaskCardReassignRequest,
-  TaskCardReassignResult,
-  TaskCardList,
-  TaskCardsChangedEvent,
   ScheduledTaskRun,
   AgentCapabilityMove,
   AgentCapabilityQuery,
@@ -1663,18 +1656,6 @@ export const api = {
   getTeamNorms: () => invoke<TeamNormsView>(IPC.invoke.teamNormsGet),
   setTeamNorms: (norms: TeamNormsSetRequest["norms"]) =>
     invoke<TeamNormsView>(IPC.invoke.teamNormsSet, { norms }),
-  /** Task-card drafts of one steward session, newest first. */
-  listTaskCards: (sessionId: string) =>
-    invoke<TaskCardList>(IPC.invoke.taskCardList, { sessionId }),
-  /**
-   * The person's click. `cardHash` is the hash of the card the screen showed,
-   * so a revise between render and click is refused with `CONFLICT` instead of
-   * approving text nobody read.
-   */
-  confirmTaskCard: (request: TaskCardConfirmRequest) =>
-    invoke<TaskCardConfirmResult>(IPC.invoke.taskCardConfirm, request),
-  dropTaskCard: (draftId: string) =>
-    invoke<{ draft: TaskCardDraftView }>(IPC.invoke.taskCardDrop, { draftId }),
   // --- Tasks under an employee (ADR bot-sessions-and-steward §7) -----------
   /**
    * Start one task. The host creates the task and its session in one
@@ -1754,15 +1735,6 @@ export const api = {
    */
   checkTaskOverlap: (request: TaskOverlapRequest) =>
     invoke<TaskOverlap>(IPC.invoke.taskOverlap, request),
-  /**
-   * Move a proposed card to another employee (employee mode 0.5 slice 3).
-   *
-   * The host narrows the card to what the new employee may do and answers with
-   * the hash the dock must send back, so the person still confirms exactly what
-   * they are looking at.
-   */
-  reassignTaskCard: (request: TaskCardReassignRequest) =>
-    invoke<TaskCardReassignResult>(IPC.invoke.taskCardReassign, request),
   onTasksChanged: (listener: (event: TasksChangedEvent) => void) => {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.tasksChanged, (payload) =>
@@ -1784,12 +1756,6 @@ export const api = {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.botsChanged, (payload) =>
       listener((payload ?? { reason: "updated" }) as BotsChangedEvent),
-    );
-  },
-  onTaskCardsChanged: (listener: (event: TaskCardsChangedEvent) => void) => {
-    if (!window.minihAgent?.on) return () => undefined;
-    return window.minihAgent.on(IPC.event.taskCardsChanged, (payload) =>
-      listener((payload ?? { sessionId: "" }) as TaskCardsChangedEvent),
     );
   },
   openPluginPanel: (id: string) => invoke(IPC.invoke.pluginOpenPanel, id),

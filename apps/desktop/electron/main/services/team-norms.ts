@@ -18,10 +18,8 @@
  */
 
 import {
-  MAX_TEAM_NORMS_BRIEF_CHARS,
   TEAM_NORM_SECTIONS,
   teamNormsAreEmpty,
-  teamNormsSummary,
   type TeamNorms,
 } from "@minih-agent/shared";
 
@@ -74,22 +72,4 @@ export function teamNormsBriefing(norms: TeamNorms): string {
   }
   lines.push("[/Team norms]");
   return lines.join("\n");
-}
-
-/**
- * The line the steward's brief carries: what the employees she dispatches to
- * will be following.
- *
- * Truncated to `MAX_TEAM_NORMS_BRIEF_CHARS` because her brief is bounded and a
- * norm set can be two and a half thousand characters; the ellipsis is the honest
- * way to say "there is more, ask the person".
- */
-export function stewardNormsLine(norms: TeamNorms): string {
-  const summary = teamNormsSummary(norms);
-  if (!summary) return "";
-  const text =
-    summary.length > MAX_TEAM_NORMS_BRIEF_CHARS
-      ? `${summary.slice(0, MAX_TEAM_NORMS_BRIEF_CHARS - 1).trimEnd()}…`
-      : summary;
-  return `The team norms every employee follows: ${text}`;
 }

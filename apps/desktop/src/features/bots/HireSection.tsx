@@ -4,25 +4,12 @@ import {
   HIRE_TEMPLATES,
   MAX_HIRE_UTTERANCE_CHARS,
   type BotHireDraft,
-  type BotListItem,
   type HireTemplate,
 } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { Button, Input } from "../../components/ui";
 import { IconPlus } from "../../components/icons";
-import { stewardSessionIdOf } from "./steward-name";
 
-/**
- * Whether the crew already has a dispatcher: the enable button is for "none".
- *
- * The question is the same one every other surface asks — "is there a session
- * whose role is `steward`" — so it goes through the same helper. It must never be
- * a name comparison: the person can rename their dispatcher (#254), and a rename
- * that made this answer "none" would offer to hire a second one.
- */
-export function hasSteward(bots: readonly BotListItem[]): boolean {
-  return stewardSessionIdOf(bots) !== null;
-}
 
 /**
  * Hiring (employee mode 0.5 slice 6).
@@ -40,24 +27,10 @@ export function hasSteward(bots: readonly BotListItem[]): boolean {
  * crew, the button would be a second way to do what already exists, and the host
  * has nothing left to create.
  */
-export function HireSection({
-  bots,
-  onTemplate,
-  onDraft,
-  onBlank,
-  onEnableSteward,
-  enabling,
-  note,
-}: {
-  bots: readonly BotListItem[];
-  /** A template was clicked: open the prefilled form. */
+export function HireSection({ onTemplate, onDraft, onBlank, note }: {
   onTemplate: (template: HireTemplate) => void;
-  /** A draft came back from Main: open the form with it. */
   onDraft: (draft: BotHireDraft) => void;
   onBlank: () => void;
-  onEnableSteward: () => void;
-  enabling: boolean;
-  /** The outcome of the last "enable Super Agent" click. */
   note: string | null;
 }) {
   const { t } = useTranslation();
@@ -120,15 +93,7 @@ export function HireSection({
           <IconPlus size={14} />
           {t("bots.hiring.fromBlank")}
         </Button>
-        {hasSteward(bots) ? null : (
-          <Button variant="primary" disabled={enabling} onClick={onEnableSteward}>
-            {enabling ? t("bots.hiring.enablingSteward") : t("bots.hiring.enableSteward")}
-          </Button>
-        )}
       </div>
-      {hasSteward(bots) ? null : (
-        <p className="bot-form-note">{t("bots.hiring.enableStewardHint")}</p>
-      )}
       {note ? (
         <p className="bot-form-note" role="status">
           {note}

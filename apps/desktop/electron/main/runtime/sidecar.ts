@@ -14,16 +14,12 @@ import {
 import { createImageGenerationTool } from "../services/image-generation-service";
 import type { SessionCollaborationService } from "../services/session-collaboration";
 import {
-  createRosterTool,
   createSessionCreateTool,
   createSessionListTool,
   createSessionResultTool,
   createSessionSendTool,
-  createTaskStatusTool,
 } from "../services/session-messaging-tools";
-import { createTaskCardTool } from "../services/task-card-tool";
 import { openTaskWaiting } from "./task-waiting";
-import { taskCardsChangedSender } from "../services/task-cards-changed";
 import { registerPluginDevTools } from "../plugin-dev-tools";
 import { resolveLocalFile } from "../browser-view";
 import { catalogModelConfigFor } from "../models-dev-catalog";
@@ -735,22 +731,11 @@ export function createSidecarRuntime({
   s.setLocalTool("SessionList", createSessionListTool(sessionCollaboration));
   s.setLocalTool("SessionSend", createSessionSendTool(sessionCollaboration));
   s.setLocalTool("SessionResult", createSessionResultTool(sessionCollaboration));
-  // The steward's own two reads (employee mode 0.5 slice 3). They are declared
-  // only by her persona (`STEWARD_ONLY_TOOLS`), so an ordinary session cannot
-  // call them even though every sidecar registers them.
-  s.setLocalTool("Roster", createRosterTool(sessionCollaboration));
-  s.setLocalTool("TaskStatus", createTaskStatusTool(sessionCollaboration));
   // A hand-off to a session that does not exist yet: the Agent creates the
   // session the user will see (ADR session-create-tool), then delivers to it
   // through SessionSend. The model names only the title; the sender, project,
   // model and permission mode come from the host and the user's settings.
   s.setLocalTool("SessionCreate", createSessionCreateTool(sessionCollaboration));
-  // The steward's task card (ADR bot-sessions-and-steward §3). It holds no
-  // workspace capability; confirming freezes the card the person was shown.
-  s.setLocalTool(
-    "TaskCard",
-    createTaskCardTool(sessionCollaboration, taskCardsChangedSender(sendToRenderer)),
-  );
   // Agent-driven work panel preview (D100): open a workspace HTML file in
   // the embedded browser; live reload keeps it current through later edits.
   s.setLocalTool("GenerateImages", createImageGenerationTool({

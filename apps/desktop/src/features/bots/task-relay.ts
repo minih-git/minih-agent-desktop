@@ -1,112 +1,12 @@
-import type { TaskCardDraftView, TaskOverlap, TaskView } from "@minih-agent/shared";
+import type { TaskOverlap, TaskView } from "@minih-agent/shared";
+type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-/**
- * The relay's reading rules, without React (employee mode 0.5 slice 7).
- *
- * A relay is one change delivered in ordered steps: each step's branch starts
- * where the previous one ended, and only the last step is merged. Everything a
- * person reads about that — which card follows which, where a task sits in its
- * chain, which other tasks are editing the same files — is a pure function of
- * the rows the host returns, so it lives here where it can be proven directly
- * instead of inside a component's render.
- */
-
-/** The short label a person quotes: the same six characters the host uses. */
 export function shortLabel(id: string | undefined): string {
   if (!id) return "";
   return id.split("-")[0].slice(0, 6);
 }
 
-type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-/** How much of a card's own words the "follows" line quotes. */
-export const FOLLOWS_TITLE_CHARS = 24;
-
-/**
- * 「接在「加上 active 列」之后」, or null for a card that starts a chain.
- *
- * The line quotes the *previous card's goal*, because that is what a person can
- * recognise: a draft id is a handle the app made up, and a chain read as
- * "#draft-1" tells them nothing about which step they are on. When the previous
- * card is not in the dock's list any more (it was evicted, or the card was
- * proposed in an earlier turn), the id's short form is the only honest label.
- */
-export function followsLine(
-  draft: TaskCardDraftView,
-  drafts: readonly TaskCardDraftView[],
-  translate: Translate,
-): { shortId: string; title: string | null; text: string } | null {
-  const after = draft.afterDraftId;
-  if (!after) return null;
-  const shortId = shortLabel(after);
-  const previous = drafts.find((candidate) => candidate.id === after);
-  const title = previous?.card.goal.trim() ?? "";
-  if (!title) {
-    return { shortId, title: null, text: translate("bots.card.followsShort", { shortId }) };
-  }
-  return {
-    shortId,
-    title,
-    text: translate("bots.card.follows", { title: clampTitle(title) }),
-  };
-}
-
-/** A quoted goal, cut at the dock's limit with the ellipsis the UI expects. */
-function clampTitle(title: string): string {
-  return title.length > FOLLOWS_TITLE_CHARS
-    ? `${title.slice(0, FOLLOWS_TITLE_CHARS - 1)}…`
-    : title;
-}
-
-/**
- * Whether this card can be started yet.
- *
- * The card it follows has to have been started first: the second step's branch
- * is built on the first one's, so confirming it early would authorize work with
- * nothing to continue from. The host refuses that confirmation; the dock says so
- * before the click instead of after it.
- */
-export function predecessorStarted(
-  draft: TaskCardDraftView,
-  drafts: readonly TaskCardDraftView[],
-): boolean {
-  if (!draft.afterDraftId) return true;
-  const previous = drafts.find((candidate) => candidate.id === draft.afterDraftId);
-  return previous?.status === "confirmed";
-}
-
-/** The task a draft produced, matched by the delivery the confirmation wrote. */
-export function taskOfDraft(
-  draft: TaskCardDraftView,
-  tasks: readonly TaskView[],
-): TaskView | undefined {
-  if (!draft.deliveryId) return undefined;
-  return tasks.find((task) => task.deliveryId === draft.deliveryId);
-}
-
-/**
- * 「已确认，等 <employee> 的 #a」 for a card that is confirmed but not started.
- *
- * A relay step is authorized the moment its card is confirmed, and the host
- * deliberately does not start it: it waits for the step before it to hand off.
- * The one line says exactly that, so the person is not left thinking the click
- * did nothing.
- */
-export function waitingForPreviousLine(
-  task: TaskView,
-  tasks: readonly TaskView[],
-  employeeName: (sessionId: string) => string,
-  translate: Translate,
-): string | null {
-  if (task.relayState !== "waiting") return null;
-  const parent = task.relayParentTaskId
-    ? tasks.find((candidate) => candidate.id === task.relayParentTaskId)
-    : undefined;
-  return translate("bots.card.waitingPrevious", {
-    name: parent ? employeeName(parent.employeeSessionId) : "",
-    shortId: shortLabel(task.relayParentTaskId),
-  });
-}
 
 /** Where a task sits in its chain; a task in no chain is 1 of 1. */
 export function relayPosition(task: TaskView): { step: number; total: number; isLast: boolean } {
