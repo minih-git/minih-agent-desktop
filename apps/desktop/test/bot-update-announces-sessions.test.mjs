@@ -35,9 +35,6 @@ function load(relative, imports, globals = {}) {
 const shared = { IPC };
 const { registerBotIpc } = load("../electron/main/ipc/bot-ipc.ts", {
   "@minih-agent/shared": shared,
-  "../services/task-cards-changed": load("../electron/main/services/task-cards-changed.ts", {
-    "@minih-agent/shared": shared,
-  }),
 });
 
 function harness(answer = async () => ({ ok: true })) {

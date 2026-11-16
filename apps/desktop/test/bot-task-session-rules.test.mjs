@@ -58,7 +58,10 @@ test("the rules are attached as this turn's briefing and never appended to the t
   // Slice 6 moved the text behind one builder, which now returns the rules plus
   // whatever team norms the person wrote.
   assert.match(near, /buildTaskSessionBriefing/);
-  assert.match(source, /const turnBriefing = isSteward/);
+  // The task branch is the only branch that builds a briefing: no employee in
+  // 1.7.0 needs one, so the ternary has no other arm to reach.
+  assert.match(source, /const turnBriefing =\s*session\.role === "task"/);
+  assert.doesNotMatch(source, /isSteward/);
   // A persisted copy would be the bug: neither the rules nor the norms may go
   // through the transcript path.
   const appendedRules = source.match(/appendMessage[\s\S]{0,200}TASK_SESSION_BRIEFING/);
@@ -68,14 +71,6 @@ test("the rules are attached as this turn's briefing and never appended to the t
   // Both ride in the per-turn field only, which the sidecar injects into this
   // request and nothing else reads.
   assert.match(source, /\.\.\.\(turnBriefing \? \{ turnBriefing \} : \{\}\)/);
-});
-
-test("the steward is told to relay a question and never to answer it", async () => {
-  const source = await read("apps/desktop/electron/main/services/task-status.ts");
-  const at = source.indexOf("export function stewardBriefing");
-  const block = source.slice(at, at + 4000);
-  assert.match(block, /never answer it yourself/);
-  assert.match(block, /quote it exactly/);
 });
 
 test("TaskReport is declared only for a task session's Agent turn", async () => {

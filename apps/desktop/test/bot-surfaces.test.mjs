@@ -187,8 +187,7 @@ test("the settings page shows each employee's name, duty, home, level and defini
     createElement(BotsSettingsPage, {
       bots: [
         bot({
-          sessionId: "s-1",
-          name: "Steward",
+          name: "Router 后端",
           profile: {
             duty: "Dispatch work",
             observe: false,
@@ -200,64 +199,32 @@ test("the settings page shows each employee's name, duty, home, level and defini
     }),
   );
 
-  assert.match(html, /Steward/);
+  assert.match(html, /Router 后端/);
   assert.match(html, /Dispatch work/);
   // No cross-host routing yet, so home reads as this computer.
   assert.match(html, /This computer/);
   assert.match(html, /Accept edits/);
-  // The bound definition is named on the row (the picker also offers it).
-  assert.match(html, /steward/);
+  // The bound definition is named on the row. With no definition catalog read
+  // back (this page takes the list from the host), the handle itself is shown.
+  assert.match(html, /backend/);
 });
 
-test("opening the settings page never seeds the default crew", async (t) => {
+test("opening the settings page never creates an employee by itself", async (t) => {
   const h = await harness(t);
   const { BotsSettingsPage } = await h.server.ssrLoadModule(
     "/src/features/bots/BotsSettingsPage.tsx",
   );
   const html = h.render(createElement(BotsSettingsPage, { bots: [] }));
 
-  // Slice 6 replaced the fixed crew with hiring: the jobs are offered as
-  // templates, and the one employee the host still creates for the person is
-  // its own prominent button.
+  // Hiring offers jobs as templates; nothing is created until the person saves
+  // the form a template (or a one-sentence draft) prefilled.
   assert.match(html, /data-template-id="review"/);
   assert.match(html, /data-template-id="research"/);
-  assert.match(html, /Enable Super Agent/);
-  assert.match(html, /btn-primary/);
   assert.doesNotMatch(html, /Create the default crew/);
-  // …and it is only ever a click: mounting the page asks for nothing.
+  // …and mounting the page asks the host for nothing but its lists.
   assert.equal(h.callsTo(IPC.invoke.botSeedDefaults).length, 0);
-});
-
-test("an existing team is not offered the crew as its starting point", async (t) => {
-  const h = await harness(t);
-  const { BotsSettingsPage } = await h.server.ssrLoadModule(
-    "/src/features/bots/BotsSettingsPage.tsx",
-  );
-  const html = h.render(
-    createElement(BotsSettingsPage, {
-      bots: [bot({ sessionId: "s-1", name: "Steward", profile: { definition: "backend" } })],
-    }),
-  );
-  // With a dispatcher on the crew there is nothing left for the host to create.
-  assert.doesNotMatch(html, /Enable Super Agent/);
-  assert.equal(h.callsTo(IPC.invoke.botSeedDefaults).length, 0);
-});
-
-test("a renamed steward still counts as the crew's dispatcher", async (t) => {
-  const h = await harness(t);
-  const { BotsSettingsPage } = await h.server.ssrLoadModule(
-    "/src/features/bots/BotsSettingsPage.tsx",
-  );
-  // #254 lets the person rename the steward. The page's question is "is a
-  // steward installed", answered by the definition — so a rename must not bring
-  // the enable button back, which would hire a second dispatcher.
-  const html = h.render(
-    createElement(BotsSettingsPage, {
-      bots: [bot({ sessionId: "s-1", name: "阿福", profile: { definition: "backend" } })],
-    }),
-  );
-  assert.doesNotMatch(html, /Enable Super Agent/);
-  assert.match(html, /阿福/);
+  assert.equal(h.callsTo(IPC.invoke.botCreate).length, 0);
+  assert.equal(h.callsTo(IPC.invoke.botDraftHire).length, 0);
 });
 
 test("dismissing an employee is not the first click", async (t) => {
@@ -266,7 +233,7 @@ test("dismissing an employee is not the first click", async (t) => {
     "/src/features/bots/BotsSettingsPage.tsx",
   );
   const html = h.render(
-    createElement(BotsSettingsPage, { bots: [bot({ sessionId: "s-1", name: "Steward" })] }),
+    createElement(BotsSettingsPage, { bots: [bot({ sessionId: "s-1", name: "Router 后端" })] }),
   );
 
   // The row offers a dismiss control, and the confirmation — which states that

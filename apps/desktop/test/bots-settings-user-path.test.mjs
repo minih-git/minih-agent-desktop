@@ -14,8 +14,7 @@ import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot
  *
  * Three promises are tested, and none of them can be shown by rendering HTML:
  *
- * - opening the page creates nothing; the crew button calls `bot.seedDefaults`
- *   exactly once when clicked;
+ * - opening the page creates nothing;
  * - one click on dismiss only asks; `bot.dismiss` is called after the second;
  * - deploy, delete and spend stay checked when they are clicked, because the
  *   executing side adds them regardless.
@@ -92,33 +91,17 @@ const clearCalls = () => { calls.length = 0; };
 window.botsSettingsProbe = async () => {
   const report = {};
 
-  // 1. With no employees, the page offers the one employee the host still
-  //    creates for the person, and mounting it creates nothing.
+  // 1. Hiring, not a fixed crew: the page offers a blank form and the template
+  //    jobs, and mounting it creates nothing.
   bots = [];
   flushSync(() => rootNode.render(React.createElement(BotsSettingsPage, { bots: [] })));
   await settle();
-  check(button("Enable Super Agent"), "the Super Agent button was not offered");
+  check(button("Start from blank"), "hiring lost its blank path");
   check(!button("Create the default crew"), "the fixed crew button is back");
   check(callsTo(IPC.invoke.botSeedDefaults).length === 0, "mounting the page seeded an employee");
 
-  // 2. One click creates exactly the Super Agent, once.
-  flushSync(() => button("Enable Super Agent").click());
-  await until(() => callsTo(IPC.invoke.botSeedDefaults).length === 1, "the seed call");
-  await settle();
-  check(callsTo(IPC.invoke.botSeedDefaults).length === 1, "seeding ran more than once");
-  report.seedCalls = callsTo(IPC.invoke.botSeedDefaults).length;
-  // With a dispatcher on the crew the button is gone: there is nothing left for
-  // the host to create, and a second way to do it would be a second surprise.
-  const steward = employee("steward-1", "Super Agent");
-  steward.profile.definition = "steward";
-  bots = [steward];
-  flushSync(() => rootNode.render(React.createElement(BotsSettingsPage, { bots })));
-  await settle();
-  check(!button("Enable Super Agent"), "the button survived having a Super Agent");
-  check(button("Start from blank"), "hiring lost its blank path");
-
-  // 3. Dismiss asks first: the first click issues no dismiss call.
-  bots = [employee("s-1", "Steward")];
+  // 2. Dismiss asks first: the first click issues no dismiss call.
+  bots = [employee("s-1", "Router 后端")];
   clearCalls();
   flushSync(() => rootNode.render(React.createElement(BotsSettingsPage, { bots })));
   await settle();
@@ -130,8 +113,7 @@ window.botsSettingsProbe = async () => {
     "the confirmation does not say the conversation is kept");
   check(callsTo(IPC.invoke.botDismiss).length === 0, "one click already dismissed the employee");
   report.dismissAfterFirstClick = callsTo(IPC.invoke.botDismiss).length;
-
-  // 4. Confirming dismisses exactly once.
+  // 3. Confirming dismisses exactly once.
   const confirm = [...document.querySelectorAll("[role='alertdialog'] button")]
     .find((node) => node.textContent.trim() === "Dismiss");
   flushSync(() => confirm.click());
@@ -188,12 +170,11 @@ window.botsFormProbe = async () => {
 };
 `;
 
-test("employee settings: seeding needs a click and dismissing needs two", {
+test("employee settings: dismissing needs two clicks", {
   skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false,
 }, async () => {
   await runProbe("BOTS_SETTINGS_PROBE", "window.botsSettingsProbe()", (report) => {
     assert.equal(report.passed, true);
-    assert.equal(report.seedCalls, 1);
     assert.equal(report.dismissAfterFirstClick, 0);
     assert.equal(report.dismissAfterConfirm, 1);
   });

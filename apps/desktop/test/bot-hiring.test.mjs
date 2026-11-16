@@ -150,29 +150,24 @@ test("a model draft is narrowed to its template, never widened", () => {
   );
 });
 
-test("one sentence becomes a draft through the Super Agent's model", async () => {
+test("a learning or default model drafts one sentence into an employee", async () => {
   const calls = [];
   const drafter = hireDraft.createHireDrafter({
     getHost: () => ({
       call: async (method) => {
-        if (method === "bot.list") {
-          return {
-            bots: [
-              {
-                sessionId: "steward",
-                modelKey: "google/gemini-3-pro",
-                profile: { name: "Super Agent" },
-              },
-            ],
-          };
-        }
         if (method === "projects.list") {
           return { projects: [{ path: "/repo/Minih-Router", name: "Minih-Router" }] };
         }
         throw new Error(`unexpected call ${method}`);
       },
     }),
-    getSettings: async () => ({ models: {} }),
+    // The learning model wins when the person configured one: it is the model
+    // they already pay for extraction, so hiring reuses it.
+    getSettings: async () => ({
+      learnedMemory: { model: "google/gemini-3-pro" },
+      defaultProviderId: "anthropic",
+      defaultModelId: "claude-x",
+    }),
     resolveRuntimeModel: async () => ({ provider: { id: "google", modelId: "gemini-3-pro" } }),
     vendorOAuth: { resolveAuth: async () => null },
     logger: { app: () => {} },
@@ -215,9 +210,10 @@ test("one sentence becomes a draft through the Super Agent's model", async () =>
   assert.match(calls[0].user, /Router 计费的后端/);
 });
 
-test("without a Super Agent model the draft says what to do instead", async () => {
+test("with no learning or default model the draft names the missing model", async () => {
   const drafter = hireDraft.createHireDrafter({
-    getHost: () => ({ call: async () => ({ bots: [] }) }),
+    getHost: () => ({ call: async () => ({ projects: [] }) }),
+    // Neither a learning model nor a default one: nothing to draft with.
     getSettings: async () => ({}),
     resolveRuntimeModel: async () => {
       throw new Error("must not resolve a model");
@@ -231,7 +227,7 @@ test("without a Super Agent model the draft says what to do instead", async () =
   const outcome = await drafter.draft("招一个后端");
   assert.equal(outcome.ok, false);
   assert.equal(outcome.code, "HIRE_DRAFT_NO_MODEL");
-  assert.match(outcome.message, /Super Agent/);
+  assert.match(outcome.message, /No learning or default model/);
 
   // An empty sentence never reaches a model either.
   const empty = await drafter.draft("   ");
@@ -299,37 +295,9 @@ test("the norms block says what it is, and a task turn carries it after the rule
   assert.match(unreadable, /could not be read/);
 });
 
-test("the steward's brief carries one truncated line of the norms", async () => {
-  const long = {
-    version: 1,
-    communication: "字".repeat(700),
-    scope: "",
-    delivery: "",
-  };
-  const line = teamNorms.stewardNormsLine(long);
-  assert.match(line, /^The team norms every employee follows: /);
-  assert.ok(line.endsWith("…"), "a cut line says it was cut");
-  assert.ok(
-    line.length <= "The team norms every employee follows: ".length + 600,
-    `line is ${line.length} characters`,
-  );
-
-  const board = { tasks: [], employees: [] };
-  const call = async (method) => {
-    if (method === "task.list") return { tasks: [] };
-    if (method === "bot.list") return { bots: [] };
-    if (method === "team.norms.get") return { norms: { version: 1, communication: "先说结论" } };
-    throw new Error(`unexpected call ${method}`);
-  };
-  const briefing = await taskStatus.buildStewardBriefing(call, "Super Agent");
-  assert.match(briefing, /The team norms every employee follows: 先说结论/);
-
-  // A board with no tasks still produces a brief, and it is still the same one.
-  assert.equal(taskStatus.stewardBriefing(board, "Super Agent"), taskStatus.stewardBriefing(board, "Super Agent"));
-});
-
 test("a task session runs as its employee's role", () => {
   const definitions = [definition("code-reviewer"), definition("explorer"), definition("fixer")];
+
 
   const reviewer = persona.resolveTaskPersona(
     { name: "审查员", permissionMode: "ask", mustAsk: [], observe: false, definition: "code-reviewer" },

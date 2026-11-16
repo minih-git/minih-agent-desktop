@@ -123,6 +123,13 @@
   gap: 6px;
 }
 
+.task-blocked-reassign {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .task-blocked-confirm {
   color: var(--ds-text-secondary);
   font-size: var(--text-2xs);

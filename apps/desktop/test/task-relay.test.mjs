@@ -5,14 +5,12 @@ import { catalogs } from "@minih-agent/i18n";
 import { createServer } from "vite";
 
 /*
- * The line that says which step a chained card continues (employee mode 0.5
- * slice 7).
+ * The relay copy: what a chained step's card says (employee mode 0.5 slice 7).
  *
- * It quotes the *previous card's goal*, not its draft id: the id is a handle the
- * app made up, so 「接在 #7d1c9f2a 之后」 tells the person nothing about which
- * step they are looking at, while 「接在「加上 active 列」之后」 does. A goal
- * longer than the dock's limit is cut, and a previous card that is no longer in
- * the list falls back to the short id rather than to an empty quote.
+ * 1.7.0 removed the task card dock, and with it the "Follows …" line that
+ * quoted the previous card's goal. What remains is the chain itself: a batch
+ * row that labels steps in order, and a blocked step that names the predecessor
+ * it cannot continue from. Both are copy, so they are asserted as text.
  */
 
 async function load(t) {
@@ -38,53 +36,80 @@ const translate = (key, options = {}) => {
   return value.replace(/\{\{(\w+)\}\}/g, (_, name) => String(options[name] ?? ""));
 };
 
-const PREVIOUS = "7d1c9f2a-4b6e-4d1f-9a02-0b8f3c5e7a11";
-const NEXT = "b2e4a8c6-1f3d-4a97-8c55-6d0e2b9f4c33";
-
-const card = (id, goal, afterDraftId) => ({
-  id,
-  sessionId: "steward",
-  status: "proposed",
-  card: { goal },
-  afterDraftId,
+const task = (patch) => ({
+  id: patch.id,
+  employeeSessionId: patch.employeeSessionId ?? "router-backend",
+  sessionId: `session-${patch.id}`,
+  title: patch.title ?? "Billing",
+  origin: "direct",
+  stage: patch.stage ?? "working",
+  shortId: patch.shortId ?? patch.id.slice(0, 6),
+  createdAt: "2026-11-11T00:00:00.000Z",
+  ...patch,
 });
 
-test("the line quotes the previous card's goal, not its id", async (t) => {
-  const { followsLine } = await load(t);
-  const previous = card(PREVIOUS, "加上 active 列");
-  const next = card(NEXT, "回填并切换读路径", PREVIOUS);
-  assert.deepEqual(followsLine(next, [previous, next], translate), {
-    shortId: "7d1c9f",
-    title: "加上 active 列",
-    text: "Follows “加上 active 列”",
+test("a blocked step names the predecessor it cannot continue from", async (t) => {
+  const { relayBlockerText } = await load(t);
+  assert.equal(
+    relayBlockerText({ reason: "relay-orphaned", parent: "7d1c9f" }, translate),
+    "The step before this one (#7d1c9f) was abandoned",
+  );
+  assert.equal(
+    relayBlockerText({ reason: "relay-base", parent: "7d1c9f" }, translate),
+    "The branch of step #7d1c9f is gone",
+  );
+  // Any other blocker is not a relay one, so the relay card says nothing.
+  assert.equal(relayBlockerText({ reason: "workspace" }, translate), null);
+  assert.equal(relayBlockerText(null, translate), null);
+});
+
+test("only a lost predecessor counts as a relay block", async (t) => {
+  const { isRelayBlocked } = await load(t);
+  assert.equal(isRelayBlocked({ reason: "relay-orphaned" }), true);
+  assert.equal(isRelayBlocked({ reason: "relay-base" }), true);
+  assert.equal(isRelayBlocked({ reason: "workspace" }), false);
+  assert.equal(isRelayBlocked(undefined), false);
+});
+
+test("a chain is one row, labelled in step order", async (t) => {
+  const { chainLines, rowLabel, batchRows } = await load(t);
+  const first = task({ id: "a1111111", shortId: "a11111", relayStep: 1, relayTotal: 3 });
+  const second = task({ id: "b2222222", shortId: "b22222", relayStep: 2, relayTotal: 3, relayParentTaskId: first.id });
+  const third = task({ id: "c3333333", shortId: "c33333", relayStep: 3, relayTotal: 3, relayParentTaskId: second.id });
+  const alone = task({ id: "d4444444", shortId: "d44444" });
+
+  // One row for the whole chain, one for the task that stands alone.
+  const rows = batchRows([first, second, third, alone], [first, second, third, alone]);
+  assert.deepEqual(
+    rows.map((row) => ({ chain: row.chain, label: rowLabel(row) })),
+    [
+      { chain: true, label: "#a11111 → #b22222 → #c33333" },
+      { chain: false, label: "#d44444" },
+    ],
+  );
+
+  // The summary card's own line names the chain once, not one per step.
+  assert.deepEqual(chainLines([first, second, third], translate), [
+    {
+      ids: [first.id, second.id, third.id],
+      text: "Chain: #a11111 → #b22222 → #c33333 (merged at the last step)",
+    },
+  ]);
+  assert.deepEqual(chainLines([alone], translate), [], "a single task is no chain");
+});
+
+test("a step knows where it sits in its chain", async (t) => {
+  const { relayPosition } = await load(t);
+  assert.deepEqual(relayPosition(task({ id: "x1", relayStep: 2, relayTotal: 3 })), {
+    step: 2,
+    total: 3,
+    isLast: false,
   });
-});
-
-test("a goal longer than the dock's limit is cut with an ellipsis", async (t) => {
-  const { followsLine, FOLLOWS_TITLE_CHARS } = await load(t);
-  const goal = "把 active 列加上并回填，再切换所有读路径，最后删掉旧的读路径";
-  const previous = card(PREVIOUS, goal);
-  const next = card(NEXT, "回填并切换读路径", PREVIOUS);
-  const line = followsLine(next, [previous, next], translate);
-  assert.equal(line.title, goal, "the raw title is kept for the caller");
-  const quoted = line.text.slice("Follows “".length, -"”".length);
-  assert.equal(quoted.length, FOLLOWS_TITLE_CHARS);
-  assert.ok(quoted.endsWith("…"), `not cut with an ellipsis: ${quoted}`);
-  assert.ok(goal.startsWith(quoted.slice(0, -1)), "the cut does not start at the goal");
-});
-
-test("a previous card that is gone falls back to the short id", async (t) => {
-  const { followsLine } = await load(t);
-  const next = card(NEXT, "回填并切换读路径", PREVIOUS);
-  assert.deepEqual(followsLine(next, [next], translate), {
-    shortId: "7d1c9f",
-    title: null,
-    text: "Follows #7d1c9f",
+  assert.deepEqual(relayPosition(task({ id: "x2", relayStep: 3, relayTotal: 3 })), {
+    step: 3,
+    total: 3,
+    isLast: true,
   });
-});
-
-test("a card that starts a chain says nothing about following", async (t) => {
-  const { followsLine } = await load(t);
-  const first = card(NEXT, "加上 active 列");
-  assert.equal(followsLine(first, [first], translate), null);
+  // A task in no chain is 1 of 1, so nothing about a chain is said about it.
+  assert.deepEqual(relayPosition(task({ id: "x3" })), { step: 1, total: 1, isLast: true });
 });

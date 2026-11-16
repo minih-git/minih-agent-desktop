@@ -4,13 +4,17 @@ import test from "node:test";
 import ts from "typescript";
 
 /*
- * From a confirmed card to work that actually starts.
+ * From the person's click to work that actually starts.
  *
- * Confirming used to write the ledger row and stop there: the card said
- * "dispatched" while the delivery sat `queued` forever, and nothing ever picked
- * it up. These tests drive the real IPC handler and the real collaboration
- * service, stubbing only the host and the turn starter, because that seam is
- * exactly where the step was missing.
+ * 1.7.0 removed the task card, so the click is no longer "confirm this draft":
+ * work starts from the employee's own workbench (`task.create` plus the normal
+ * send path) and, for work that was stuck, from a reassignment. Both end in the
+ * same ledger row, and that row only runs once something starts a turn in the
+ * target session.
+ *
+ * These tests drive the real IPC handlers and the real collaboration service,
+ * stubbing only the host and the turn starter, because that seam is where the
+ * step used to be missing.
  *
  * Same transpile-and-inject loader as session-collaboration-service.test.mjs:
  * the Electron-main modules are TypeScript with runtime imports of their own.
@@ -30,12 +34,7 @@ function load(relative, imports) {
 }
 
 const shared = await import("@minih-agent/shared");
-const taskCardsChanged = load("../electron/main/services/task-cards-changed.ts", {
-  "@minih-agent/shared": shared,
-});
-// The steward's task board (employee mode 0.5 slice 3): pure derivations over
-// `task.list` + `bot.list`, so it loads with no host at all. Slice 6 split the
-// team norms out of it, and that module is pure too.
+// The task board's pure derivations: host rows in, briefing text out.
 const teamNorms = load("../electron/main/services/team-norms.ts", {
   "@minih-agent/shared": shared,
 });
@@ -54,25 +53,21 @@ const { createSessionCollaborationService } = load(
     "./task-status": taskStatus,
   },
 );
-const { createTaskCardTool } = load("../electron/main/services/task-card-tool.ts", {
-  "@minih-agent/shared": shared,
-});
 const { createTaskChangeAnnouncer } = load("../electron/main/services/task-changes.ts", {
   "@minih-agent/shared": shared,
 });
 const { registerBotIpc } = load("../electron/main/ipc/bot-ipc.ts", {
   "@minih-agent/shared": shared,
-  "../services/task-cards-changed": taskCardsChanged,
 });
 
 function ledgerRow(overrides = {}) {
   return {
     id: "delivery-1",
     pluginId: "minih-agent-desktop",
-    sourceSessionId: "steward-session",
-    sourceTitle: "阿福",
-    targetSessionId: "router-backend",
-    targetTitle: "Router 后端",
+    sourceSessionId: "employee-session",
+    sourceTitle: "Router 后端",
+    targetSessionId: "task-session-1",
+    targetTitle: "查一下 router 项目进度",
     kind: "task",
     content: "查一下 router 项目进度",
     status: "queued",
@@ -83,12 +78,13 @@ function ledgerRow(overrides = {}) {
   };
 }
 
-/** A host that holds one ledger row, like host-core does for a confirmed card. */
+/** A host that holds one ledger row, like host-core does for a dispatched task. */
 function harness({ startTurnError } = {}) {
   let row = ledgerRow();
   // What `task.list` reports for the task bound to this delivery. It moves when
   // the delivery settles or fails, exactly as the host's own row would.
   let taskStage = "working";
+  let sentTo;
   const failCalls = [];
   const startTurn = async () => {
     if (startTurnError) throw startTurnError;
@@ -97,33 +93,12 @@ function harness({ startTurnError } = {}) {
   };
   let turnStarts = 0;
   const settleCalls = [];
+  const reassignCalls = [];
   const host = {
     isAvailable: () => true,
     calls: [],
     async call(method, params) {
       host.calls.push({ method, params });
-      if (method === "taskCard.confirm") {
-        return {
-          draft: {
-            id: "draft-1", sessionId: "steward-session", status: "confirmed",
-            card: { goal: row.content, criteria: [], boundaries: [], permissionMode: "ask", mustAsk: [], risk: "low" },
-            cardHash: "a".repeat(64), sourceUtterance: "帮我查查 router 进度",
-            targetSessionId: row.targetSessionId,
-            createdAt: row.createdAt, updatedAt: row.updatedAt,
-          },
-          delivery: { ...row },
-          task: {
-            id: "task-1",
-            employeeSessionId: row.targetSessionId,
-            sessionId: "task-session-1",
-            title: row.content,
-            origin: "steward",
-            stage: "queued",
-            createdAt: row.createdAt,
-            shortId: "task-1",
-          },
-        };
-      }
       // Reading the open tasks is how Main notices a stage moved on its own.
       if (method === "task.list") {
         return {
@@ -133,7 +108,7 @@ function harness({ startTurnError } = {}) {
               employeeSessionId: "router-backend",
               sessionId: "task-session-1",
               title: row.content,
-              origin: "steward",
+              origin: "direct",
               stage: taskStage,
               createdAt: row.createdAt,
               shortId: "task-1",
@@ -141,7 +116,38 @@ function harness({ startTurnError } = {}) {
           ],
         };
       }
+      if (method === "task.reassign") {
+        reassignCalls.push(params);
+        return {
+          task: {
+            id: "task-2",
+            employeeSessionId: "ui-coder",
+            sessionId: "task-session-2",
+            title: row.content,
+            origin: "direct",
+            stage: "working",
+            createdAt: row.createdAt,
+            shortId: "task-2",
+            sourceUtterance: row.content,
+          },
+          reassignedFrom: {
+            id: "task-1",
+            employeeSessionId: "router-backend",
+            sessionId: "task-session-1",
+            title: row.content,
+            origin: "direct",
+            stage: "failed",
+            createdAt: row.createdAt,
+            shortId: "task-1",
+          },
+        };
+      }
       if (method === "session.collaboration.message") return { message: { ...row } };
+      if (method === "session.collaboration.send") {
+        row = { ...row, id: "delivery-2", content: params.content };
+        sentTo = params.sessionId;
+        return { message: { ...row } };
+      }
       // Nothing else waits for a turn: the drain only has this settlement.
       if (method === "session.collaboration.pendingDispatch") return { messages: [] };
       if (method === "session.collaboration.settle") {
@@ -200,144 +206,30 @@ function harness({ startTurnError } = {}) {
     sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
     sessionCollaboration: service,
     tasks: taskChanges,
+    draftHire: async () => ({ ok: false, code: "HIRE_DRAFT_NO_MODEL", message: "no model" }),
   });
   return {
     emitted,
     taskChanges,
     settleCalls,
+    reassignCalls,
+    sentTo: () => sentTo,
     setStage: (stage) => {
       taskStage = stage;
     },
-    confirm: handlers.get(shared.IPC.invoke.taskCardConfirm),
     service,
     row: () => row,
     failCalls,
     turnStarts: () => turnStarts,
     startTurn: () => startTurn(),
+    createTask: handlers.get(shared.IPC.invoke.taskCreate),
+    reassign: handlers.get(shared.IPC.invoke.taskReassign),
   };
 }
 
-test("clicking start on a card starts a turn and stamps the delivery", async () => {
-  const h = harness();
-  assert.equal(typeof h.confirm, "function");
-
-  await h.confirm({ draftId: "draft-1", cardHash: "a".repeat(64) });
-
-  assert.equal(h.turnStarts(), 1, "the work must actually start");
-  // Employee mode 0.5: the confirmed card's work runs in the task's own session,
-  // not in the employee's transcript (ADR bot-sessions-and-steward §7). The
-  // turn is still stamped on the same delivery row.
-  assert.equal(h.row().status, "running");
-  assert.equal(h.row().turnId, "turn-1");
-  // The host moves the delivery's target to the task session and records the
-  // turn on the same delivery row; the stub keeps the row it was given, so the
-  // identity asserted here is that one delivery, one turn.
-  assert.equal(h.row().id, "delivery-1");
-});
-
-test("a confirmation is never started twice", async () => {
-  const h = harness();
-  const delivery = { ...h.row() };
-
-  await h.service.dispatchConfirmed(delivery);
-  await h.service.dispatchConfirmed(delivery);
-
-  // The row is no longer queued after the first claim, so the retry is a no-op
-  // rather than a second turn for the same work.
-  assert.equal(h.turnStarts(), 1);
-});
-
-test("a start failure leaves the confirmation standing and says why", async () => {
-  const h = harness({
-    startTurnError: Object.assign(new Error("The Agent runtime is unavailable"), {
-      errorCode: "HOST_UNAVAILABLE",
-    }),
-  });
-
-  const result = await h.confirm({ draftId: "draft-1", cardHash: "a".repeat(64) });
-
-  // The person's click is not rolled back, and the delivery stays queued so the
-  // next drain can start it: this failure can succeed later.
-  assert.equal(result.draft.status, "confirmed");
-  assert.match(result.startError, /runtime is unavailable/);
-  assert.equal(h.row().status, "queued");
-  assert.deepEqual(h.failCalls, []);
-});
-
-test("a refusal is recorded as a failure instead of being retried forever", async () => {
-  const h = harness({
-    startTurnError: Object.assign(new Error("PERMISSION_DENIED: ceiling"), {
-      errorCode: "PERMISSION_DENIED",
-    }),
-  });
-
-  await assert.rejects(() => h.service.dispatchConfirmed({ ...h.row() }));
-  assert.equal(h.failCalls.length, 1, "the ledger learns the delivery failed");
-  assert.equal(h.row().status, "failed");
-});
-test("a card the model proposes is announced to the app", async () => {
-  const changed = [];
-  const draft = {
-    id: "draft-1",
-    sessionId: "steward-session",
-    status: "proposed",
-    card: {
-      goal: "查一下 router 项目进度", criteria: [{ id: "c1", text: "有结论" }],
-      boundaries: [], permissionMode: "ask", mustAsk: [], risk: "low",
-      // Why this employee (employee mode 0.5 slice 3): required on every card.
-      reason: "只有 Router 后端读那个仓库；它空闲。",
-    },
-    cardHash: "a".repeat(64),
-    sourceUtterance: "帮我查查 router 进度",
-    targetSessionId: "router-backend",
-    createdAt: "2026-11-11T09:00:00.000Z",
-    updatedAt: "2026-11-11T09:00:00.000Z",
-  };
-  const tool = createTaskCardTool(
-    { invokeBuiltin: async () => ({ draft, created: true }) },
-    (change) => changed.push(change),
-  );
-
-  const result = await tool({
-    sessionId: "steward-session",
-    turnId: "turn-1",
-    toolCallId: "call-1",
-    args: {
-      action: "propose",
-      targetSessionId: "router-backend",
-      sourceUtterance: "帮我查查 router 进度",
-      draft: draft.card,
-    },
-    signal: new AbortController().signal,
-  });
-
-  assert.equal(result.ok, true);
-  // Without this the dock keeps the list it fetched on mount, so a card proposed
-  // afterwards stays invisible until the person switches sessions.
-  assert.deepEqual(changed, [{ sessionId: "steward-session", draftId: "draft-1" }]);
-});
-
-test("starting a card announces its new task exactly once", async () => {
-  const h = harness();
-
-  await h.confirm({ draftId: "draft-1", cardHash: "a".repeat(64) });
-
-  // One creation per confirmation: the task was created once, so the sidebar is
-  // told once that it exists. A later stage change is a separate, equally
-  // legitimate notice — what must not repeat is the creation.
-  const taskEvents = h.emitted.filter((event) => event.channel === shared.IPC.event.tasksChanged);
-  const created = taskEvents.filter((event) => event.payload.reason === "created");
-  assert.equal(created.length, 1);
-  assert.deepEqual(taskEvents[0].payload, {
-    employeeSessionId: "router-backend",
-    taskId: "task-1",
-    reason: "created",
-  });
-});
-
-test("a task create announces the new task once and opens nothing else", async () => {
-  const calls = [];
+test("the workbench's own task is created in one host call and announced once", async () => {
   const emitted = [];
+  const calls = [];
   const host = {
     isAvailable: () => true,
     async call(method, params) {
@@ -376,6 +268,7 @@ test("a task create announces the new task once and opens nothing else", async (
       getHost: () => host,
       log: () => undefined,
     }),
+    draftHire: async () => ({ ok: false, code: "HIRE_DRAFT_NO_MODEL", message: "no model" }),
   });
 
   await handlers.get(shared.IPC.invoke.taskCreate)({
@@ -396,6 +289,65 @@ test("a task create announces the new task once and opens nothing else", async (
     taskId: "task-9",
     reason: "created",
   });
+});
+
+test("a dispatched task runs one turn and stamps the delivery", async () => {
+  const h = harness();
+
+  const delivery = await h.service.dispatchConfirmed({ ...h.row() });
+
+  assert.equal(h.turnStarts(), 1, "the work must actually start");
+  assert.equal(delivery.status, "running");
+  assert.equal(delivery.turnId, "turn-1");
+  // One delivery, one turn: the row it started is the row that was queued.
+  assert.equal(delivery.messageId, "delivery-1");
+});
+
+test("a delivery is never started twice", async () => {
+  const h = harness();
+  const delivery = { ...h.row() };
+
+  await h.service.dispatchConfirmed(delivery);
+  await h.service.dispatchConfirmed(delivery);
+
+  // The row is no longer queued after the first claim, so the retry is a no-op
+  // rather than a second turn for the same work.
+  assert.equal(h.turnStarts(), 1);
+});
+
+test("a refusal is recorded as a failure instead of being retried forever", async () => {
+  const h = harness({
+    startTurnError: Object.assign(new Error("PERMISSION_DENIED: ceiling"), {
+      errorCode: "PERMISSION_DENIED",
+    }),
+  });
+
+  await assert.rejects(() => h.service.dispatchConfirmed({ ...h.row() }));
+  assert.equal(h.failCalls.length, 1, "the ledger learns the delivery failed");
+  assert.equal(h.row().status, "failed");
+});
+
+test("reassigning a blocked task starts the work under the new employee", async () => {
+  const h = harness();
+
+  const result = await h.reassign({
+    taskId: "task-1",
+    employeeSessionId: "ui-coder",
+    reason: "the router changed hands",
+  });
+
+  assert.deepEqual(h.reassignCalls, [
+    { taskId: "task-1", employeeSessionId: "ui-coder", reason: "the router changed hands" },
+  ]);
+  assert.equal(result.task.id, "task-2");
+  // The new task's work is dispatched through the ordinary delivery path — the
+  // only starter — so the person's click is the authorization that it runs.
+  assert.equal(h.sentTo(), "task-session-2");
+  assert.equal(h.turnStarts(), 1, "the reassigned work must actually start");
+  const created = h.emitted.filter(
+    (event) => event.channel === shared.IPC.event.tasksChanged && event.payload.reason === "created",
+  );
+  assert.equal(created.length, 1, "the new task is announced once");
 });
 
 /**

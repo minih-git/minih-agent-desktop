@@ -21,14 +21,15 @@ const read = (relative) => readFileSync(join(here, "..", relative), "utf8");
 test("the dock docks above the composer, outside the transcript stream", () => {
   const composer = read("src/components/Composer.tsx");
   const taskDock = composer.indexOf("<TaskDock sessionId=");
-  const cardDock = composer.indexOf("<TaskCardDock sessionId=");
   const planBar = composer.indexOf("<PlanApprovalBar");
   assert.ok(taskDock > 0, "TaskDock is mounted");
-  assert.ok(cardDock > taskDock, "the card dock follows the todo/background-task dock");
-  assert.ok(planBar > cardDock, "and precedes the plan approval bar");
+  // The dock stack sits between the input and the plan approval bar, and it is
+  // not inside the transcript: a card row above the composer is the whole point
+  // of a dock, and one rendered into the message stream would scroll away.
+  assert.ok(planBar > taskDock, "the dock stack precedes the plan approval bar");
   assert.doesNotMatch(
     composer,
-    /ChatTranscript[\s\S]{0,200}TaskCardDock/,
+    /ChatTranscript[\s\S]{0,200}TaskDock/,
     "the dock is not inserted into the transcript's message stream",
   );
 });

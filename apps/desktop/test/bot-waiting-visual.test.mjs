@@ -41,7 +41,7 @@ import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { ConversationTopbar } from "../../apps/desktop/src/components/ConversationTopbar";
 import { AskToolCard } from "../../apps/desktop/src/components/AskToolCard";
-import { StewardTaskDock, TaskBlockedCardForSession } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
+import { TaskBlockedCardForSession } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
 import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
 import { Composer } from "../../apps/desktop/src/components/Composer";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
@@ -298,15 +298,8 @@ async function render(kind) {
       },
       dock: React.createElement(AskToolCard, { request: askRequest }),
     }),
-    // 2. The steward's conversation: one orange row per open question.
-    "dock-question": () => shell({
-      sessionId: "steward",
-      conversation: {
-        user: "Desktop 的登录超时要今天修掉。",
-        answer: "已派给 Router 后端，她在改；有结果我叫你。",
-      },
-    }),
-    // 3. The task session of a stuck task.
+    // 2. A task session whose work is stuck: the blocked card is the one the
+    //    person has to act on, and it sits above the composer's input.
     blocked: () => shell({
       sessionId: "sess-blocked",
       conversation: {
@@ -315,31 +308,15 @@ async function render(kind) {
       },
       dock: React.createElement(TaskBlockedCardForSession, { sessionId: "sess-blocked" }),
     }),
-    // 4. The steward's conversation holding that card.
-    "dock-blocked": () => shell({
-      sessionId: "steward",
-      conversation: {
-        user: "remote_gateway 那批单测也补上。",
-        answer: "交给 Router 后端了；有一项卡在 staging 权限上。",
-      },
-    }),
-    // 5. The sidebar's count and the list it opens.
+    // 3. The sidebar's count and the list it opens.
     sidebar: () => React.createElement("div", { className: "shot-sidebar" },
       React.createElement(BotSidebarGroup, {
         activeSessionId: "sess-question",
         onOpenBot: noop,
         onOpenTask: noop,
-        bots: [steward, employee],
+        bots: [employee],
         tasks,
       })),
-    // 6. The dock when this screen cannot read the request.
-    "dock-fallback": () => shell({
-      sessionId: "steward",
-      conversation: {
-        user: "缓存命中率也看一下。",
-        answer: "在查；有个预热的问题要你定。",
-      },
-    }),
   };
   const scene = scenes[kind]();
   // A task's own question is the card the runtime raised, so it rides in the
@@ -358,13 +335,6 @@ async function render(kind) {
   }
   if (kind === "question" || kind === "blocked") {
     await until(() => document.querySelector(".composer-dock"), "the composer slot");
-  }
-  if (kind === "dock-question" || kind === "dock-blocked" || kind === "dock-fallback") {
-    await until(() => document.querySelector("[data-testid='task-waiting-dock']"), "the dock");
-  }
-  if (kind === "dock-fallback") {
-    // Only the unreadable request is left in this scene.
-    await until(() => document.querySelector("[data-waiting-can-answer='false']"), "the fallback row");
   }
   if (kind === "sidebar") {
     await until(() => document.querySelector("[data-sidebar-waiting]"), "the waiting count");
@@ -485,7 +455,7 @@ test(
          <div id="root"></div><script type="module" src="renderer.js"></script>`,
       );
 
-      const scenes = ["question", "dock-question", "blocked", "dock-blocked", "sidebar", "dock-fallback"];
+      const scenes = ["question", "blocked", "sidebar"];
       const plan = [];
       for (const theme of ["dark", "light"]) {
         for (const width of [1440, 1024]) {

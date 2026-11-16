@@ -9,11 +9,18 @@ import { fileURLToPath } from "node:url";
  * (employee mode 0.5 slice 2).
  *
  * host-core bounds the project's setup command, and the desktop transport bounds
- * the call that waits for it (`task.create`, `task.workspace.retry`,
- * `taskCard.confirm`). If the transport deadline is the shorter one, the client
- * gives up while the host is still installing dependencies: the first message is
- * never sent, and a confirmed card is never dispatched. The constants live in
- * Rust and TypeScript, so this reads both sources.
+ * the call that waits for it (`task.create`, `task.workspace.retry`). If the
+ * transport deadline is the shorter one, the client gives up while the host is
+ * still installing dependencies: the first message is never sent and the task
+ * looks started while nothing runs. The constants live in Rust and TypeScript,
+ * so this reads both sources.
+ *
+ * 1.7.0 removed the task card, so the removed card-confirmation path is no
+ * longer a call that waits for a preparation. `task.reassign` does prepare a
+ * workspace (host-core
+ * `rpc::task_rpc::reassign` calls `task_workspace::prepare`), which is asserted
+ * below from the host source: it is the same preparation the two deadlines
+ * above bound.
  */
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const source = (path) => readFileSync(join(repoRoot, path), "utf8");
@@ -90,8 +97,8 @@ test("the workspace deadline outlasts the setup command it waits for", () => {
 
 test("every call that waits for a preparation uses that deadline", () => {
   // The constants can be right while `rpcTimeoutMs` forgets a method, which is
-  // exactly how the flat default applied to all three of them.
-  for (const method of ["task.create", "task.workspace.retry", "taskCard.confirm"]) {
+  // exactly how the flat default applied to all of them.
+  for (const method of ["task.create", "task.workspace.retry"]) {
     assert.match(
       sharedTimeouts,
       new RegExp(`method === "${method.replaceAll(".", "\\.")}"`),
@@ -111,4 +118,17 @@ test("every call that waits for a preparation uses that deadline", () => {
       `${method} must keep the flat default`,
     );
   }
+});
+
+test("a reassignment prepares a workspace the same deadline has to cover", () => {
+  const taskRpc = source("crates/host-core/src/rpc/task_rpc.rs");
+  const at = taskRpc.indexOf("pub(super) async fn reassign(");
+  assert.ok(at > 0, "task.reassign is no longer routed");
+  const body = taskRpc.slice(at, taskRpc.indexOf("\n}", at));
+  // Handing work to another employee builds the new task's workspace before
+  // Main starts it, so the wait is a preparation and not a plain database write.
+  assert.match(body, /task_workspace::prepare\(state, &git, &task_id\)/);
+  // The deadline itself outlasts that preparation; a transport bound shorter
+  // than the setup command would time out a worktree that is still installing.
+  assert.ok(deadlineMs > setupMs);
 });

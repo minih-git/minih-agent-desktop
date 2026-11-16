@@ -33,7 +33,6 @@ import { IPC } from "@minih-agent/shared";
 import { ConversationTopbar } from "../../apps/desktop/src/components/ConversationTopbar";
 import { Composer } from "../../apps/desktop/src/components/Composer";
 import {
-  StewardTaskDock,
   TaskCompletionCardForSession,
   TaskBlockedCardForSession,
 } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
