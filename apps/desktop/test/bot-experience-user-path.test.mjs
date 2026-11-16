@@ -48,7 +48,7 @@ await i18n.use(initReactI18next).init({ lng: "zh-CN", keySeparator: false,
 
 const steward = {
   sessionId: "steward", title: "Super Agent",
-  profile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
+  profile: { name: "Super Agent", permissionMode: "ask", mustAsk: [], observe: false },
   status: { kind: "idle" }, projectPath: "/repo/Minih-Agent-Desktop",
   updatedAt: "2026-11-13T02:00:00.000Z", createdAt: "2026-11-01T00:00:00.000Z",
 };

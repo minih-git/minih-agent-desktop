@@ -58,7 +58,7 @@ const employee = {
 };
 const steward = {
   sessionId: "steward", title: "Super Agent",
-  profile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
+  profile: { name: "Super Agent", permissionMode: "ask", mustAsk: [], observe: false },
   status: { kind: "idle" }, projectPath: "/repo/Minih-Agent-Desktop",
   updatedAt: "2026-11-13T02:00:00.000Z", createdAt: "2026-11-01T00:00:00.000Z",
 };
@@ -145,7 +145,7 @@ window.minihAgent = {
 
 const sessions = [
   { id: "steward", title: "Super Agent", role: "bot", projectPath: "/repo/Minih-Agent-Desktop",
-    botProfile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
+    botProfile: { name: "Super Agent", permissionMode: "ask", mustAsk: [], observe: false },
     createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-13T02:00:00.000Z" },
   { id: "sess-question", title: "修一下登录超时", role: "task", projectPath: "/repo/Minih-Agent-Desktop",
     createdAt: "2026-11-13T01:00:00.000Z", updatedAt: "2026-11-13T01:40:00.000Z" },

@@ -50,7 +50,7 @@ function emit(channel, payload) {
 
 const bots = [
   { sessionId: "steward", title: "Super Agent",
-    profile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
+    profile: { name: "Super Agent", permissionMode: "ask", mustAsk: [], observe: false },
     status: { kind: "idle" }, projectPath: "/repo/desktop", updatedAt: "2026-11-13T00:00:00.000Z", createdAt: "2026-11-13T00:00:00.000Z" },
   { sessionId: "router", title: "Router 后端",
     profile: { name: "Router 后端", permissionMode: "accept-edits", mustAsk: [], observe: false },

@@ -161,7 +161,7 @@ test("one sentence becomes a draft through the Super Agent's model", async () =>
               {
                 sessionId: "steward",
                 modelKey: "google/gemini-3-pro",
-                profile: { name: "Super Agent", definition: "steward" },
+                profile: { name: "Super Agent" },
               },
             ],
           };
@@ -356,7 +356,7 @@ test("a task session runs as its employee's role", () => {
   // task runs as.
   assert.deepEqual(
     persona.resolveTaskPersona(
-      { name: "Super Agent", permissionMode: "ask", mustAsk: [], observe: false, definition: "steward" },
+      { name: "Super Agent", permissionMode: "ask", mustAsk: [], observe: false },
       definitions,
     ),
     { kind: "none" },

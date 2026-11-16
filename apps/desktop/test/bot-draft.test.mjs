@@ -72,7 +72,7 @@ test("editing an employee keeps what it stored, except the session-only mode", (
       permissionMode: "inherit",
       mustAsk: ["merge"],
       observe: false,
-      definition: "steward",
+      definition: "backend",
     },
     status: { kind: "idle" },
     updatedAt: "2026-11-11T00:00:00.000Z",
@@ -80,7 +80,7 @@ test("editing an employee keeps what it stored, except the session-only mode", (
   });
   assert.equal(draft.permissionMode, "ask");
   assert.equal(draft.observe, false);
-  assert.equal(draft.definition, "steward");
+  assert.equal(draft.definition, "backend");
   assert.deepEqual(draft.mustAsk, ["merge", "deploy", "delete", "spend"]);
 });
 
@@ -95,14 +95,14 @@ test("the payload trims the name and omits an empty duty or definition", () => {
     },
   );
   assert.deepEqual(
-    botProfileInput({ ...EMPTY_BOT_DRAFT, name: "阿福", duty: "派活", definition: "steward" }),
+    botProfileInput({ ...EMPTY_BOT_DRAFT, name: "阿福", duty: "派活", definition: "backend" }),
     {
       name: "阿福",
       duty: "派活",
       permissionMode: "ask",
       mustAsk: ["deploy", "delete", "spend"],
       observe: true,
-      definition: "steward",
+      definition: "backend",
     },
   );
 });

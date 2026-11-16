@@ -520,22 +520,23 @@ fn an_interrupted_task_is_visible_and_restarts_when_the_host_restarts() {
         "session.collaboration.pendingDispatch",
         serde_json::json!({}),
     );
-    let notices: Vec<&serde_json::Value> = pending["result"]["messages"]
+    let pending_messages = pending["result"]["messages"]
         .as_array()
-        .expect("pendingDispatch returns messages")
-        .iter()
-        .filter(|message| message["kind"] == serde_json::json!("stage"))
-        .collect();
-    assert_eq!(notices.len(), 1, "the steward was not told: {pending}");
-    assert_eq!(
-        notices[0]["targetSessionId"],
-        serde_json::json!("steward-1")
+        .expect("pendingDispatch returns messages");
+    assert!(
+        pending_messages.iter().all(|message| message["kind"] != serde_json::json!("stage")),
+        "interruption is no longer a ledger stage message: {pending}"
     );
-    let payload: serde_json::Value =
-        serde_json::from_str(notices[0]["content"].as_str().expect("content")).expect("json");
-    assert_eq!(payload["taskId"], serde_json::json!("task-1"));
-    assert_eq!(payload["stage"], serde_json::json!("interrupted"));
-    assert_eq!(payload["employee"], serde_json::json!("Router 后端"));
+    assert_eq!(
+        count_rows(
+            &data_dir,
+            "SELECT COUNT(*) FROM notifications
+              WHERE kind='task.failed' AND error_code='TASK_INTERRUPTED' AND session_id=?1",
+            "task-session-1",
+        ),
+        1,
+        "the task interruption notification is missing"
+    );
 
     // The person clicks "重新开工": one new delivery from the same mandate.
     let restarted = host.call("task.restart", serde_json::json!({ "taskId": "task-1" }));
@@ -573,23 +574,22 @@ fn an_interrupted_task_is_visible_and_restarts_when_the_host_restarts() {
     assert_eq!(
         count_rows(
             &data_dir,
-            "SELECT COUNT(*) FROM session_collaboration_messages
-              WHERE kind = 'stage'
-                AND content LIKE '%\"deliveryId\":\"' || ?1 || '\"%'",
-            "delivery-1"
+            "SELECT COUNT(*) FROM notifications
+              WHERE kind='task.failed' AND error_code='TASK_INTERRUPTED' AND session_id=?1",
+            "task-session-1",
         ),
-        1,
-        "the steward heard the same interruption twice"
+        2,
+        "one notification per interruption, and there were two"
     );
     assert_eq!(
         count_rows(
             &data_dir,
             "SELECT COUNT(*) FROM session_collaboration_messages
-              WHERE kind = 'stage' AND content LIKE '%\"taskId\":\"' || ?1 || '\"%'",
-            "task-1"
+              WHERE kind='stage' AND content LIKE '%\"taskId\":\"' || ?1 || '\"%'",
+            "task-1",
         ),
-        2,
-        "one notice per interruption, and there were two"
+        0,
+        "the task still has legacy stage interruption messages"
     );
 }
 
@@ -651,27 +651,21 @@ fn a_task_restarting_claims_nothing_and_announces_one_interruption() {
         assert_eq!(task["waiting"], serde_json::json!([]), "{row}");
         // The person can still act on it: a blocked card, not a dead row.
         assert_eq!(task["archivedAt"], serde_json::Value::Null, "{row}");
-        let notices = count_rows(
+        let session_id = if task_id == "task-1" { "task-session-1" } else { "direct-session" };
+        let notifications = count_rows(
+            &data_dir,
+            "SELECT COUNT(*) FROM notifications
+              WHERE kind='task.failed' AND error_code='TASK_INTERRUPTED' AND session_id=?1",
+            session_id,
+        );
+        assert_eq!(notifications, expected_notices, "{task_id} notification count");
+        let stage_messages = count_rows(
             &data_dir,
             "SELECT COUNT(*) FROM session_collaboration_messages
               WHERE kind='stage' AND content LIKE '%\"taskId\":\"' || ?1 || '\"%'",
             task_id,
         );
-        assert_eq!(
-            notices, expected_notices,
-            "{task_id} announced the interruption {notices} time(s)"
-        );
+        assert_eq!(stage_messages, 0, "{task_id} still has a legacy stage message");
     }
-    // The steward's task is announced once, about the interruption, and never a
-    // second time when the stage recovery moves it.
-    let stage: Option<String> = open_db(&data_dir)
-        .query_row(
-            "SELECT json_extract(content, '$.stage') FROM session_collaboration_messages
-              WHERE kind='stage' AND content LIKE '%\"taskId\":\"task-1\"%'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("read the one interruption notice");
-    assert_eq!(stage.as_deref(), Some("interrupted"));
     second.shutdown();
 }

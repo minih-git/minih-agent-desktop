@@ -11,7 +11,7 @@ import test from "node:test";
  */
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
-const { botStatusView, botStatusFromTasks, sortBots, botInitials, isStewardSession, taskStatusTone } =
+const { botStatusView, botStatusFromTasks, sortBots, botInitials, taskStatusTone } =
   await import("../src/features/bots/bot-status.ts");
 
 test("a task the person has to act on is the attention dot", () => {
@@ -83,14 +83,6 @@ test("the avatar falls back to the first character of the name", () => {
   assert.equal(botInitials(""), "?");
 });
 
-test("only a steward bot offers the task-card dock", () => {
-  assert.equal(isStewardSession({ role: "bot", botProfile: { definition: "steward" } }), true);
-  assert.equal(isStewardSession({ role: "bot", botProfile: { definition: "fixer" } }), false);
-  assert.equal(isStewardSession({ role: "bot" }), false);
-  assert.equal(isStewardSession({ role: "bot", botProfile: { definition: "steward" } }), true);
-  assert.equal(isStewardSession({ botProfile: { definition: "steward" } }), false);
-  assert.equal(isStewardSession(undefined), false);
-});
 
 test("a stuck task makes its employee the one to look at first", () => {
   // The same order the host's `task_status_point` uses: whatever the person has

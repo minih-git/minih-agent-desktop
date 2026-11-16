@@ -51,13 +51,11 @@ function employee(sessionId, name, duty, extra = {}) {
   };
 }
 
-// The crew a person already had before this slice: the steward plus the three
-// jobs the old seed created. Scene 5 exists to prove none of them disappear.
+// The crew a person already had before this slice: three ordinary employees.
 const existingCrew = [
-  employee("steward", "Super Agent", "接你的话、拟卡片、回报进展", { definition: "steward" }),
+  employee("employee", "普通员工", "接任务并完成工作"),
   employee("router", "Router 后端", "Minih-Router 网关、账号与计费", { permissionMode: "accept-edits" }),
   employee("desktop", "Desktop 前端", "桌面端渲染层与外壳", { permissionMode: "accept-edits" }),
-  employee("docs", "调研与文档", "调研、笔记与文档"),
 ];
 const reviewCrew = [
   existingCrew[0],
@@ -233,9 +231,12 @@ async function render(kind) {
   }
 
   if (kind === "existing-crew") {
-    // The point of the scene: four employees, all of them, none renamed.
-    for (const name of ["Super Agent", "Router 后端", "Desktop 前端", "调研与文档"]) {
+    // The point of the scene: ordinary employees remain visible, with no steward row.
+    for (const name of ["普通员工", "Router 后端", "Desktop 前端"]) {
       await until(() => document.body.textContent.includes(name), "employee " + name);
+    }
+    if (document.body.textContent.includes("Super Agent")) {
+      throw new Error("the employee page still renders Super Agent");
     }
     const card = [...document.querySelectorAll(".settings-card-block")]
       .find((element) => element.textContent.includes("你的员工"));

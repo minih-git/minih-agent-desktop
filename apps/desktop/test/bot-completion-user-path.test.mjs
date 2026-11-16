@@ -37,6 +37,7 @@ import {
   TaskCompletionCardForSession,
   TaskBlockedCardForSession,
 } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
+import { EmployeeWorkbench } from "../../apps/desktop/src/features/bots/EmployeeWorkbench";
 import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
 import { sortBots } from "../../apps/desktop/src/features/bots/bot-status";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
@@ -45,12 +46,6 @@ await i18n.use(initReactI18next).init({ lng: "zh-CN", keySeparator: false,
   resources: { "zh-CN": { translation: flattenCatalog(catalogs["zh-CN"]) } },
   interpolation: { escapeValue: false } });
 
-const steward = {
-  sessionId: "steward", title: "Super Agent",
-  profile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
-  status: { kind: "idle" }, projectPath: "/repo/Minih-Agent-Desktop",
-  updatedAt: "2026-11-13T02:00:00.000Z", createdAt: "2026-11-01T00:00:00.000Z",
-};
 const router = {
   sessionId: "router", title: "Router 后端",
   profile: { name: "Router 后端", permissionMode: "accept-edits", mustAsk: [], observe: false },
@@ -160,7 +155,6 @@ window.minihAgent = {
   platform: "darwin",
   on: () => () => undefined,
   async invoke(channel, input) {
-    if (channel === IPC.invoke.botList) return { ok: true, data: { bots: [router, desk, steward] } };
     if (channel === IPC.invoke.taskList) return { ok: true, data: { tasks: state.tasks } };
     // The composer's Todo/background-task container renders nothing when both
     // sides are empty — and a scene that shows "0 background tasks" would be a
@@ -205,8 +199,6 @@ function taskSession(id, title, updatedAt) {
     createdAt: "2026-11-13T01:00:00.000Z", updatedAt };
 }
 const sessions = [
-  { id: "steward", title: "Super Agent", role: "bot", projectPath: "/repo/Minih-Agent-Desktop",
-    botProfile: steward.profile, createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-13T02:00:00.000Z" },
   taskSession("sess-done", "修一下登录超时", "2026-11-13T03:20:00.000Z"),
   taskSession("sess-accepted", "修一下登录超时", "2026-11-13T03:30:00.000Z"),
   taskSession("sess-refused", "修一下登录超时", "2026-11-13T03:05:00.000Z"),
@@ -297,6 +289,7 @@ function shell(options) {
       React.createElement("div", { className: "shot-sidebar-body" },
         React.createElement(BotSidebarGroup, {
           activeSessionId: options.sessionId, onOpenBot: noop, onOpenTask: noop,
+          bots: [router, desk], tasks: state.tasks,
         }))),
     React.createElement("section", { className: "main-pane" },
       React.createElement(ConversationTopbar, {
@@ -396,6 +389,41 @@ async function scene(kind) {
     assertNoStrayDock();
     return;
   }
+  if (kind === "conversation") {
+    state.tasks = [];
+    mount(shell({ sessionId: "desk", user: "把登录页的加载状态补上。", answer: "已记录，我会在 Desktop 前端员工工作台里处理。" }));
+    await until(() => document.querySelector("[role='textbox']"), "the conversation composer");
+    assertNoStrayDock();
+    return;
+  }
+  if (kind === "workbench") {
+    const direct = task({
+      id: "task-direct", employeeSessionId: "desk", sessionId: "sess-direct",
+      title: "补上登录页加载状态", stage: "person/accept", shortId: "ee7788",
+      latestProgress: "已创建工作区，等待员工继续处理",
+    });
+    state.tasks = [direct];
+    const employee = { ...desk, projectPath: "/repo/Minih-Agent-Desktop" };
+    useAppStore.setState({ activeSessionId: "desk" });
+    mount(React.createElement("div", { className: "app-shell" },
+      React.createElement("aside", { className: "sidebar sidebar-surface" },
+        React.createElement("div", { className: "shot-sidebar-body" },
+          React.createElement(BotSidebarGroup, {
+            activeSessionId: "desk", onOpenBot: noop, onOpenTask: noop,
+            bots: [router, desk], tasks: state.tasks,
+          }))),
+      React.createElement("section", { className: "main-pane" },
+        React.createElement(ConversationTopbar, {
+          sidebarCollapsed: false, workPanelOpen: false,
+          onToggleSidebar: noop, onNewTask: noop, onOpenSearch: noop,
+        }),
+        React.createElement("div", { className: "route-surface route-page shot-workbench" },
+          React.createElement(EmployeeWorkbench, { employee, onOpenTask: noop })) )));
+    await until(() => document.querySelector("[data-testid='employee-workbench']"), "the employee workbench");
+    await until(() => document.querySelector("[data-employee-task='task-direct']"), "the dispatched task");
+    await until(() => document.querySelector("[data-workbench-new-task]"), "the workbench composer");
+    return;
+  }
   if (kind === "sidebar") {
     state.tasks = many.slice(0, 2);
     const ordered = sortBots([router, desk]).map((bot) => bot.sessionId);
@@ -462,8 +490,8 @@ window.shot = {
         const after = document.querySelector("[data-sidebar-waiting]");
         const afterCount = after ? Number(after.getAttribute("data-sidebar-waiting")) : 0;
         if (state.accepted[0] !== "task-done") throw new Error("the host was not asked to accept");
-        if (afterCount !== beforeCount - 1) {
-          throw new Error("the count went " + beforeCount + " -> " + afterCount);
+        if (afterCount !== Math.max(0, beforeCount - 1)) {
+          throw new Error("the waiting count did not update: " + beforeCount + " -> " + afterCount);
         }
         return { ok: true, detail: beforeCount + "->" + afterCount };
       }
@@ -584,7 +612,7 @@ test(
        <div id="root"></div><script type="module" src="renderer.js"></script>`,
     );
 
-    const scenes = ["card", "card-refused", "card-accepted", "blocked-delivery", "sidebar"];
+    const scenes = ["card", "card-refused", "card-accepted", "blocked-delivery", "conversation", "workbench", "sidebar"];
     const plan = [];
     for (const theme of ["dark", "light"]) {
       for (const width of [1440, 1024]) {

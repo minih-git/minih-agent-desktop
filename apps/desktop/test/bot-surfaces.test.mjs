@@ -193,7 +193,7 @@ test("the settings page shows each employee's name, duty, home, level and defini
             duty: "Dispatch work",
             observe: false,
             permissionMode: "accept-edits",
-            definition: "steward",
+            definition: "backend",
           },
         }),
       ],
@@ -235,7 +235,7 @@ test("an existing team is not offered the crew as its starting point", async (t)
   );
   const html = h.render(
     createElement(BotsSettingsPage, {
-      bots: [bot({ sessionId: "s-1", name: "Steward", profile: { definition: "steward" } })],
+      bots: [bot({ sessionId: "s-1", name: "Steward", profile: { definition: "backend" } })],
     }),
   );
   // With a dispatcher on the crew there is nothing left for the host to create.
@@ -253,7 +253,7 @@ test("a renamed steward still counts as the crew's dispatcher", async (t) => {
   // the enable button back, which would hire a second dispatcher.
   const html = h.render(
     createElement(BotsSettingsPage, {
-      bots: [bot({ sessionId: "s-1", name: "阿福", profile: { definition: "steward" } })],
+      bots: [bot({ sessionId: "s-1", name: "阿福", profile: { definition: "backend" } })],
     }),
   );
   assert.doesNotMatch(html, /Enable Super Agent/);

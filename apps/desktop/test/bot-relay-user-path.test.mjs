@@ -55,7 +55,7 @@ const noop = () => undefined;
 
 const steward = {
   sessionId: "steward", title: "Super Agent",
-  profile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
+  profile: { name: "Super Agent", permissionMode: "ask", mustAsk: [], observe: false },
   status: { kind: "idle" }, projectPath: "/repo/Minih-Agent-Desktop",
   updatedAt: "2026-11-14T02:00:00.000Z", createdAt: "2026-11-01T00:00:00.000Z",
 };
@@ -75,7 +75,7 @@ const desk = {
 /** The summaries the store reads to decide whether a conversation is the steward's. */
 const summaries = [
   { id: "steward", title: "Super Agent", role: "bot",
-    botProfile: { name: "Super Agent", definition: "steward", permissionMode: "ask", mustAsk: [], observe: false },
+    botProfile: { name: "Super Agent", permissionMode: "ask", mustAsk: [], observe: false },
     projectPath: "/repo/Minih-Agent-Desktop", updatedAt: "2026-11-14T02:00:00.000Z",
     createdAt: "2026-11-01T00:00:00.000Z", mode: "agent" },
   { id: "sess-step-one", title: "加上 active 列", role: "task",
