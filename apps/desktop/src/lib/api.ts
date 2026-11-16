@@ -1693,7 +1693,7 @@ export const api = {
    * it, exactly like a first dispatch. The original task is left as it was.
    */
   reassignTask: (request: TaskReassignRequest) =>
-    invoke<TaskReassignResult>(IPC.invoke.taskReassign, request),
+    invoke<TaskReassignResult & { reassignedFrom?: TaskView; startError?: string }>(IPC.invoke.taskReassign, request),
   /**
    * The completion card (employee mode 0.5 slice 4b).
    *

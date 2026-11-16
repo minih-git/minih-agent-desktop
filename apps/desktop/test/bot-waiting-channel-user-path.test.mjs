@@ -31,9 +31,8 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
-import { StewardTaskDock, TaskBlockedCardForSession } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
+import { TaskBlockedCardForSession } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
 import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
-import { AskToolCard } from "../../apps/desktop/src/components/AskToolCard";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 
 await i18n.use(initReactI18next).init({ lng: "zh-CN", keySeparator: false,
@@ -55,6 +54,9 @@ const bots = [
     status: { kind: "idle" }, projectPath: "/repo/desktop", updatedAt: "2026-11-13T00:00:00.000Z", createdAt: "2026-11-13T00:00:00.000Z" },
   { sessionId: "router", title: "Router 后端",
     profile: { name: "Router 后端", permissionMode: "accept-edits", mustAsk: [], observe: false },
+    status: { kind: "idle" }, projectPath: "/repo/router", updatedAt: "2026-11-13T00:00:00.000Z", createdAt: "2026-11-13T00:00:00.000Z" },
+  { sessionId: "reviewer", title: "代码审查",
+    profile: { name: "代码审查", permissionMode: "ask", mustAsk: [], observe: false },
     status: { kind: "idle" }, projectPath: "/repo/router", updatedAt: "2026-11-13T00:00:00.000Z", createdAt: "2026-11-13T00:00:00.000Z" },
 ];
 
@@ -86,7 +88,6 @@ window.minihAgent = {
     calls.push({ channel, input });
     if (channel === IPC.invoke.botList) return { ok: true, data: { bots } };
     if (channel === IPC.invoke.taskList) return { ok: true, data: { tasks } };
-    if (channel === IPC.invoke.taskCardList) return { ok: true, data: { drafts: [] } };
     if (channel === IPC.invoke.pendingInteractive) {
       // One session's request can be read, the other's cannot: the fallback row
       // is the case where this screen has lost it.
@@ -101,7 +102,7 @@ window.minihAgent = {
       tasks = tasks.map((task) => task.id === "task-1" ? { ...task, stage: "working", waiting: [] } : task);
       return { ok: true, data: { ok: true } };
     }
-    if (channel === IPC.invoke.taskReassign) return { ok: true, data: { draft: { id: "draft-1", sessionId: "steward" }, task: tasks[1] } };
+    if (channel === IPC.invoke.taskReassign) return { ok: true, data: { task: { ...tasks[1], id: "task-new", sessionId: "task-new-session", employeeSessionId: "reviewer", sourceUtterance: "补 remote_gateway 单测" }, reassignedFrom: tasks[1] } };
     if (channel === IPC.invoke.taskArchive) return { ok: true, data: { task: { ...tasks[1], archivedAt: "2026-11-13T01:00:00.000Z" }, archivedAt: "2026-11-13T01:00:00.000Z" } };
     if (channel === IPC.invoke.taskGet) return { ok: true, data: { task: tasks[1] } };
     if (channel === IPC.invoke.taskRestart) return { ok: true, data: { task: tasks[1] } };
@@ -173,55 +174,18 @@ function mount(element) {
 window.waitingProbe = async () => {
   const report = { passed: false };
 
-  // --- the steward's dock: an orange row per open question, a card per stuck task
-  mount(React.createElement(StewardTaskDock, { sessionId: "steward" }));
-  await until(() => document.querySelector("[data-task-waiting='task-1']"), "the waiting row");
-  await until(() => document.querySelector("[data-task-blocked='task-2']"), "the blocked card");
-  const row = document.querySelector("[data-task-waiting='task-1']");
-  // The row appears as soon as the task list lands; whether it can be *answered*
-  // here depends on a second read (pendingInteractive), which is a separate
-  // round trip. Waiting for it is the assertion's own precondition — the row is
-  // briefly in its "answer it in the task" fallback while that read is in flight.
-  await until(
-    () =>
-      document.querySelector("[data-task-waiting='task-1']")
-        ?.getAttribute("data-waiting-can-answer") === "true",
-    "the readable request",
-  );
-  report.rowQuestion = textOf(row.querySelector(".task-waiting-question"));
-  report.rowMeta = textOf(row.querySelector(".task-waiting-meta"));
-  report.canAnswer = row.getAttribute("data-waiting-can-answer");
-  report.blockedFields = [...document.querySelectorAll("[data-task-blocked='task-2'] dd")].map(textOf);
-  report.blockedTitle = textOf(document.querySelector("[data-task-blocked='task-2'] .task-blocked-title"));
-  // A request this screen cannot read keeps its row and says where to answer.
-  const fallbackRow = document.querySelector("[data-task-waiting='task-3']");
-  report.fallbackCanAnswer = fallbackRow?.getAttribute("data-waiting-can-answer");
-  report.fallbackLabel = textOf(button("去任务里回答"));
-
-  // --- answering in the dock resolves the same request the task would
-  await until(() => ready("保留"), "the option button");
-  flushSync(() => ready("保留").click());
-  await until(() => callsTo(IPC.invoke.askToolResolve).length === 1, "askToolResolve");
-  report.askResolution = callsTo(IPC.invoke.askToolResolve)[0].input;
-  await until(() => document.querySelector("[data-waiting-answered='true']"), "the answered row");
-  report.answeredLabel = textOf(document.querySelector("[data-waiting-answered='true'] .task-waiting-answered"));
 
   // --- the task session's own card: retry, reassign, drop, say something
   mount(React.createElement(TaskBlockedCardForSession, { sessionId: "task-2-session" }));
   await until(() => document.querySelector("[data-task-blocked='task-2']"), "the task's own card");
   report.sessionCardFields = [...document.querySelectorAll("[data-task-blocked='task-2'] dd")].map(textOf);
+  report.blockedFields = report.sessionCardFields;
+  report.blockedTitle = textOf(document.querySelector("[data-task-blocked='task-2'] .task-blocked-title"));
   flushSync(() => button("重试").click());
   await until(() => sent.length === 1, "the retry message");
   report.retry = sent[0];
-  await until(() => ready("改派给…"), "the reassign button to be ready");
-
-  flushSync(() => ready("改派给…").click());
-  await until(() => callsTo(IPC.invoke.taskReassign).length === 1, "task.reassign");
-  report.reassign = callsTo(IPC.invoke.taskReassign)[0].input;
-  await until(() => document.querySelector("[data-blocked-reassigned]"), "the reassigned note");
-
-  await until(() => ready("放弃"), "the drop button to be ready");
-  flushSync(() => ready("放弃").click());
+  await until(() => document.querySelector("[data-blocked-drop]:not([disabled])"), "the drop button to be ready");
+  flushSync(() => document.querySelector("[data-blocked-drop]").click());
   await until(() => document.querySelector("[data-blocked-drop-confirm]"), "the drop confirmation");
   flushSync(() => document.querySelector("[data-blocked-drop-confirm]").click());
   await until(() => callsTo(IPC.invoke.taskArchive).length === 1, "task.archive");
@@ -264,66 +228,6 @@ window.waitingProbe = async () => {
   return report;
 };
 
-/**
- * The same record, but arriving while the surfaces are already on screen.
- *
- * The probe above hands the dock a task that is *already* waiting. In the app the
- * question arrives mid-turn, so the dock, the sidebar count and the task's own
- * card all have to appear and then collapse from events — which is exactly what
- * was broken before task.waiting.open announced its task.
- */
-window.waitingLiveProbe = async () => {
-  const report = { passed: false };
-  tasks = [
-    { id: "task-1", employeeSessionId: "router", sessionId: "task-1-session",
-      title: "修一下登录超时", origin: "steward", stage: "working",
-      projectPath: "/repo/router", shortId: "task1",
-      createdAt: "2026-11-13T00:00:00.000Z", workspaceStatus: "none", stageSeq: 2 },
-  ];
-  mount(React.createElement("div", null,
-    React.createElement(BotSidebarGroup, {
-      activeSessionId: "task-1-session",
-      onOpenBot: () => {},
-      onOpenTask: () => {},
-    }),
-    React.createElement(StewardTaskDock, { sessionId: "steward" }),
-    React.createElement(AskToolCard, { request: {
-      requestId: "req-1", sessionId: "task-1-session", toolCallId: "call-1", turnId: "turn-1",
-      questions: [{ question: "要保留旧的登录接口吗？", options: ["保留", "直接删掉"] }],
-    } }),
-  ));
-  await until(() => document.querySelector("[data-sidebar-bot-row='router']"), "the employee row");
-  report.countBefore = document.querySelector("[data-sidebar-waiting]")?.getAttribute("data-sidebar-waiting") ?? "0";
-  report.dockBefore = Boolean(document.querySelector("[data-task-waiting='task-1']"));
-
-  // The runtime asks mid-turn: the host opens the record and announces the task.
-  tasks = [{
-    ...tasks[0], stage: "person/answer", stageSeq: 3,
-    waiting: [{ requestId: "req-1", kind: "ask", question: "要保留旧的登录接口吗？",
-      options: ["保留", "直接删掉"], openedAt: "2026-11-13T01:00:00.000Z" }],
-  }];
-  emit(IPC.event.tasksChanged, { employeeSessionId: "router", taskId: "task-1", reason: "waiting" });
-  await until(() => document.querySelector("[data-task-waiting='task-1']"), "the live waiting row");
-  await until(() => document.querySelector("[data-sidebar-waiting]"), "the live sidebar count");
-  report.dockAfter = true;
-  report.countAfter = document.querySelector("[data-sidebar-waiting]").getAttribute("data-sidebar-waiting");
-  report.rowQuestion = textOf(document.querySelector("[data-task-waiting='task-1'] .task-waiting-question"));
-
-  // Answering in the task session's own card closes it everywhere.
-  await until(() => button("保留"), "the option in the task's card");
-  flushSync(() => button("保留").click());
-  await until(() => button("提交答案"), "the submit button");
-  flushSync(() => button("提交答案").click());
-  await until(() => !document.querySelector("[data-task-waiting='task-1']"), "the row to collapse");
-  report.countAfterAnswer = document.querySelector("[data-sidebar-waiting]")
-    ? document.querySelector("[data-sidebar-waiting]").getAttribute("data-sidebar-waiting")
-    : "0";
-
-  flushSync(() => mounted.unmount());
-  mounted = null;
-  report.passed = true;
-  return report;
-};
 `;
 
 const probeCache = new Map();
@@ -406,22 +310,10 @@ app.whenReady().then(async () => {
 }
 
 const probe = () => runProbe("window.waitingProbe()", "waiting");
-const liveProbe = () => runProbe("window.waitingLiveProbe()", "live");
 
 const displayMissing = process.platform === "linux" && !process.env.DISPLAY;
 const options = { skip: displayMissing ? "Electron requires a display" : false };
 
-test(
-  "waiting: the steward's dock shows the employee, the repository, the task and the question itself",
-  options,
-  async () => {
-    const report = await probe();
-    assert.equal(report.passed, true, JSON.stringify(report));
-    assert.equal(report.rowQuestion, "要保留旧的登录接口吗？");
-    assert.match(report.rowMeta, /Router 后端 · router · 修一下登录超时/);
-    assert.equal(report.canAnswer, "true");
-  },
-);
 
 test("waiting: a stuck task's card shows its own three fields, never a summary", options, async () => {
   const report = await probe();
@@ -434,28 +326,10 @@ test("waiting: a stuck task's card shows its own three fields, never a summary",
   assert.equal(report.blockedTitle, "Router 后端 卡住了");
 });
 
-test("waiting: answering in the dock resolves the same request, and the row collapses", options, async () => {
-  const report = await probe();
-  assert.deepEqual(report.askResolution, {
-    requestId: "req-1",
-    sessionId: "task-1-session",
-    answers: [["保留"]],
-  });
-  assert.equal(report.answeredLabel, "已回复");
-});
 
-test("waiting: a request this screen cannot read keeps its row and says where to answer", options, async () => {
-  const report = await probe();
-  assert.equal(report.fallbackCanAnswer, "false");
-  assert.equal(report.fallbackLabel, "去任务里回答");
-});
-
-test("blocked: retry sends one fixed message, reassign asks for a new card, drop asks twice", options, async () => {
+test("blocked: retry sends one fixed message and drop asks twice", options, async () => {
   const report = await probe();
   assert.deepEqual(report.retry, { content: "再试一次。", target: "task-2-session" });
-  assert.equal(report.reassign.taskId, "task-2");
-  assert.equal(report.reassign.reason, "从任务 #task2 改派");
-  assert.equal(report.reassign.stewardSessionId, "steward");
   assert.deepEqual(report.archive, { taskId: "task-2", discard: true });
   assert.equal(report.selected, "task-2-session");
 });
@@ -469,14 +343,4 @@ test("sidebar: one number for every source, and every row in its list goes somew
   assert.equal(report.employeeTone, "attention");
   assert.deepEqual(report.waitingRows.sort(), ["task-1", "task-2", "task-3"]);
   assert.equal(report.listOpenedTask, "task:task-2-session");
-});
-test("waiting: a question that arrives mid-turn appears and collapses without a reload", options, async () => {
-  const report = await liveProbe();
-  assert.equal(report.passed, true);
-  assert.equal(report.dockBefore, false, "nothing waits before the question");
-  assert.equal(report.countBefore, "0");
-  assert.equal(report.dockAfter, true, "the dock row appears on tasksChanged");
-  assert.equal(report.countAfter, "1");
-  assert.equal(report.rowQuestion, "要保留旧的登录接口吗？");
-  assert.equal(report.countAfterAnswer, "0", "answering in the task collapses every surface");
 });

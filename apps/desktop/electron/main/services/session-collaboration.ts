@@ -670,6 +670,29 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
      * persisted ceiling, and failed-delivery bookkeeping, so a retried
      * confirmation and a concurrent drain cannot start the same work twice.
      */
+    async dispatchReassignedTask(input: {
+      sourceSessionId: string;
+      targetSessionId: string;
+      content: string;
+      idempotencyKey: string;
+    }): Promise<SessionDelivery> {
+      const host = requireHost();
+      const message = await host.call<{ message: SessionCollaborationMessage }>(
+        "session.collaboration.send",
+        {
+          sourceSessionId: input.sourceSessionId,
+          sourceTurnId: randomUUID(),
+          pluginId: BUILTIN_SESSION_OWNER,
+          sessionId: input.targetSessionId,
+          content: input.content,
+          kind: "task",
+          idempotencyKey: input.idempotencyKey,
+          notifyOnCompletion: true,
+        },
+      );
+      checkCurrent(host);
+      return dispatch(message.message);
+    },
     dispatchConfirmed(
       message: SessionCollaborationMessage,
       signal?: AbortSignal,

@@ -371,7 +371,7 @@ test(
          <div id="root"></div><script type="module" src="renderer.js"></script>`,
       );
 
-      const scenes = ["hiring", "template-form", "draft-form", "enable-steward", "existing-crew"];
+      const scenes = ["hiring", "template-form", "draft-form", "existing-crew"];
       const plan = [];
       for (const theme of ["dark", "light"]) {
         for (const width of [1440, 1024]) {

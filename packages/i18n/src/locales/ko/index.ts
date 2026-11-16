@@ -905,6 +905,11 @@ export const ko = {
       startFromMain: "main에서 시작하기",
       startFromMainBusy: "main에서 시작하는 중…",
       startFromMainFailed: "main에서 시작 실패: {{reason}}",
+      reassigned: "{{agent}}에게 재할당됨",
+      reassign: "재할당",
+      reassigning: "재할당 중…",
+      reassignTarget: "직원 선택",
+      reassignReason: "작업 #{{shortId}} 재할당",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {

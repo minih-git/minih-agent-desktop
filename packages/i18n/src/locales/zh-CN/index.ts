@@ -910,6 +910,11 @@ export const zhCN = {
       startFromMain: "改从 main 开工",
       startFromMainBusy: "正在从 main 开工…",
       startFromMainFailed: "从 main 开工失败：{{reason}}",
+      reassigned: "已改派给 {{agent}}",
+      reassign: "改派给…",
+      reassigning: "正在改派…",
+      reassignTarget: "选择员工",
+      reassignReason: "改派任务 #{{shortId}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {

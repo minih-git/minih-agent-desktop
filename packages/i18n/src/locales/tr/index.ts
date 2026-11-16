@@ -912,6 +912,11 @@ export const tr = {
       startFromMain: "Bunun yerine main'den başlat",
       startFromMainBusy: "main'den başlatılıyor…",
       startFromMainFailed: "main'den başlatma başarısız: {{reason}}",
+      reassigned: "{{agent}} kullanıcısına yeniden atandı",
+      reassign: "Yeniden ata",
+      reassigning: "Yeniden atanıyor…",
+      reassignTarget: "Çalışan seç",
+      reassignReason: "#{{shortId}} görevi yeniden ata",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {

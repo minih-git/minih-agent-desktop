@@ -8,6 +8,7 @@ import {
   type TaskDeliveryMergeResult,
   type TaskRelayDetachResult,
   type TaskRelayHandoffResult,
+  type TaskReassignResult,
   type TaskView,
   type TeamNormsSetRequest,
 } from "@minih-agent/shared";
@@ -172,6 +173,37 @@ export function registerBotIpc({
     return { task: result.task, ...(startError ? { startError } : {}) };
   });
 
+
+  handle(IPC.invoke.taskReassign, async (request) => {
+    const { taskId, employeeSessionId, reason } = (request ?? {}) as {
+      taskId?: string;
+      employeeSessionId?: string;
+      reason?: string;
+    };
+    if (!taskId || !employeeSessionId) throw new Error("taskId and employeeSessionId are required");
+    const result = (await host().call("task.reassign", {
+      taskId,
+      employeeSessionId,
+      ...(reason ? { reason } : {}),
+    })) as TaskReassignResult & { reassignedFrom?: TaskView };
+    if (!result.task || !result.reassignedFrom) throw new Error("the host returned an incomplete reassignment");
+    const content = result.task.sourceUtterance?.trim() || result.task.title;
+    let startError: string | undefined;
+    try {
+      await sessionCollaboration.dispatchReassignedTask({
+        sourceSessionId: result.reassignedFrom.employeeSessionId,
+        targetSessionId: result.task.sessionId,
+        content,
+        idempotencyKey: `task-reassign:${result.reassignedFrom.id}:${result.task.id}`,
+      });
+    } catch (error) {
+      startError = error instanceof Error ? error.message : String(error);
+    }
+    announceTask(result.task, "created");
+    await reconcileTaskStages();
+    sendToRenderer(IPC.event.botsChanged, { reason: "status" } satisfies BotsChangedEvent);
+    return { task: result.task, reassignedFrom: result.reassignedFrom, ...(startError ? { startError } : {}) };
+  });
 
   // The completion card (employee mode 0.5 slice 4b). Accepting is the person's
   // own click and nothing else: the host writes `accepted_at`, which is what

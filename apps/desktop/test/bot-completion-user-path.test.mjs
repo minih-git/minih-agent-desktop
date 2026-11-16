@@ -162,7 +162,6 @@ window.minihAgent = {
   async invoke(channel, input) {
     if (channel === IPC.invoke.botList) return { ok: true, data: { bots: [router, desk, steward] } };
     if (channel === IPC.invoke.taskList) return { ok: true, data: { tasks: state.tasks } };
-    if (channel === IPC.invoke.taskCardList) return { ok: true, data: { drafts: [] } };
     // The composer's Todo/background-task container renders nothing when both
     // sides are empty — and a scene that shows "0 background tasks" would be a
     // picture of a failure, not of the product.
@@ -397,56 +396,18 @@ async function scene(kind) {
     assertNoStrayDock();
     return;
   }
-  if (kind === "batch") {
-    state.tasks = batch.slice();
-    mount(shell({ sessionId: "steward", user: "三个仓库的依赖对齐一下。",
-      answer: "拆成三张卡派出去了：Desktop、Router、文档站，各一个员工。",
-      followUp: { user: "都回来了吗？", answer: "三份都做完了，按顺序收一下就行：" } }));
-    await until(() => document.querySelector("[data-task-batch]"), "the batch summary");
-    await until(() => document.querySelectorAll("[data-batch-row]").length === 3, "three rows");
-    if (document.body.textContent.indexOf("拆成三张卡") < 0) {
-      throw new Error("the steward's own words are missing above the summary");
-    }
-    assertNoStrayDock();
-    return;
-  }
-  if (kind === "dock-many") {
-    state.tasks = many.slice();
-    mount(shell({ sessionId: "steward", user: "这几件事都看一下。",
-      answer: "八件都派下去了，有四件在等你的回答。",
-      followUp: { user: "先看最要紧的。", answer: "最上面的那条是登录接口的取舍，答完其余就通了。" } }));
-    const dock = await until(() => document.querySelector("[data-testid='task-waiting-dock']"), "the dock");
-    await settle(3);
-    const style = window.getComputedStyle(dock);
-    const limit = Math.round(window.innerHeight * 0.5);
-    const height = Math.round(dock.getBoundingClientRect().height);
-    if (dock.scrollHeight <= dock.clientHeight) throw new Error("the dock did not overflow");
-    if (height > limit + 2) throw new Error("the dock is " + height + "px, over the " + limit + "px ceiling");
-    if (style.overflowY !== "auto") throw new Error("the dock does not scroll internally: " + style.overflowY);
-    if (document.body.textContent.indexOf("八件都派下去了") < 0) {
-      throw new Error("the steward's own words are missing above the dock");
-    }
-    assertNoStrayDock();
-    return;
-  }
   if (kind === "sidebar") {
     state.tasks = many.slice(0, 2);
-    // The regression this scene protects: the steward is idle while one employee
-    // is busy and another is blocked, so ordering everyone by tone alone put her
-    // last — below the employees she dispatches to.
-    const ordered = sortBots([router, desk, steward]).map((bot) => bot.sessionId);
-    if (ordered[0] !== "steward") throw new Error("sortBots put her last: " + ordered.join(","));
-    if (ordered.length !== 3) throw new Error("sortBots dropped a row: " + ordered.join(","));
+    const ordered = sortBots([router, desk]).map((bot) => bot.sessionId);
+    if (ordered.length !== 2) throw new Error("sortBots dropped a row: " + ordered.join(","));
     mount(React.createElement("div", { className: "shot-sidebar" },
       React.createElement(BotSidebarGroup, {
-        activeSessionId: "steward", onOpenBot: noop, onOpenTask: noop,
-        // useBots hands the group the sorted roster, so the scene does too.
-        bots: sortBots([router, desk, steward]), tasks: state.tasks,
+        activeSessionId: "desk", onOpenBot: noop, onOpenTask: noop,
+        bots: sortBots([router, desk]), tasks: state.tasks,
       })));
-    const first = await until(() => document.querySelector("[data-sidebar-bot-entry]"), "the bot rows");
+    await until(() => document.querySelector("[data-sidebar-bot-entry]"), "the bot rows");
     const rows = Array.from(document.querySelectorAll("[data-sidebar-bot-entry]")).map((node) => node.getAttribute("data-sidebar-bot-entry"));
-    if (rows[0] !== "steward") throw new Error("the steward is not first: " + rows.join(","));
-    void first;
+    if (rows.includes("steward")) throw new Error("the sidebar still rendered Super Agent");
     return;
   }
   throw new Error("unknown scene " + kind);
@@ -506,14 +467,14 @@ window.shot = {
         }
         return { ok: true, detail: beforeCount + "->" + afterCount };
       }
-      if (name === "reject" || name === "append") {
+      if (name === "reject") {
         state.tasks = [done];
         state.sent = [];
         await scene("card");
-        click(name === "reject" ? "[data-completion-reject]" : "[data-completion-append]");
+        click("[data-completion-reject]");
         const input = await until(() => document.querySelector("[data-completion-input='" + name + "']"), "the writer");
         const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-        flushSync(() => setter.call(input, name === "reject" ? "超时改成 30s 就行" : "顺手把文档也改了"));
+        flushSync(() => setter.call(input, "超时改成 30s 就行"));
         input.dispatchEvent(new Event("input", { bubbles: true }));
         await frame();
         click("[data-completion-send='" + name + "']");
@@ -522,36 +483,8 @@ window.shot = {
         if (name === "reject") {
           if (sent.sessionId !== "sess-done") throw new Error("reject went to " + sent.sessionId);
           if (sent.text.indexOf("30s") < 0) throw new Error("the words were lost: " + sent.text);
-        } else {
-          if (sent.sessionId !== "steward") throw new Error("append went to " + sent.sessionId);
-          if (sent.text.indexOf("task-done") < 0) throw new Error("no taskId in " + sent.text);
-          if (sent.text.indexOf("文档") < 0) throw new Error("the words were lost: " + sent.text);
         }
         return { ok: true, detail: sent.sessionId };
-      }
-      if (name === "batch-accept-all") {
-        state.tasks = batch.slice(0, 3);
-        state.merges = [];
-        state.accepted = [];
-        await scene("batch");
-        click("[data-batch-accept-all]");
-        await until(() => state.merges.length > 0, "the first merge");
-        await settle(6);
-        if (state.merges.join(",") !== "task-batch-1,task-batch-2") {
-          throw new Error("the batch did not stop at the failure: " + state.merges.join(","));
-        }
-        // The summary dissolves as soon as one task stops being finished — that
-        // task is a blocked task now — so the proof is the blocked card it left
-        // behind, plus the third task never being touched.
-        const blocked = await until(
-          () => document.querySelector("[data-blocked-delivery='push-remotes']"),
-          "the blocked card the failure left",
-        );
-        void blocked;
-        if (state.merges.indexOf("task-batch-3") >= 0) {
-          throw new Error("the batch continued past the failure: " + state.merges.join(","));
-        }
-        return { ok: true, detail: state.merges.join(",") };
       }
       if (name === "reject-writer") {
         state.tasks = [done];
@@ -610,7 +543,7 @@ const harnessCss = `
 `;
 
 test(
-  "completion: the seven screens, dark and light, at 1440 and 1024",
+  "completion: the five screens, dark and light, at 1440 and 1024",
   { skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false, timeout: 300_000 },
   async () => {
     await mkdir(artifactRoot, { recursive: true });
@@ -651,14 +584,14 @@ test(
        <div id="root"></div><script type="module" src="renderer.js"></script>`,
     );
 
-    const scenes = ["card", "card-refused", "card-accepted", "blocked-delivery", "batch", "dock-many", "sidebar"];
+    const scenes = ["card", "card-refused", "card-accepted", "blocked-delivery", "sidebar"];
     const plan = [];
     for (const theme of ["dark", "light"]) {
       for (const width of [1440, 1024]) {
         for (const scene of scenes) plan.push({ kind: "shot", theme, width, scene });
       }
     }
-    const actions = ["refresh", "accept", "reject", "append", "batch-accept-all", "reject-writer"];
+    const actions = ["refresh", "accept", "reject", "reject-writer"];
     for (const name of actions) plan.push({ kind: "act", name });
 
     await writeFile(

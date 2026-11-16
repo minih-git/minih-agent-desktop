@@ -894,6 +894,11 @@ export const es = {
       startFromMain: "Empezar desde main",
       startFromMainBusy: "Empezando desde main…",
       startFromMainFailed: "No se pudo empezar desde main: {{reason}}",
+      reassigned: "Reasignado a {{agent}}",
+      reassign: "Reasignar",
+      reassigning: "Reasignando…",
+      reassignTarget: "Elegir empleado",
+      reassignReason: "Reasignar tarea #{{shortId}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {

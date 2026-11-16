@@ -3,10 +3,11 @@ import { useTranslation } from "react-i18next";
 import { isTaskInterrupted, type TaskView } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
-import { Button } from "../../components/ui";
+import { Button, Select } from "../../components/ui";
 import { TaskRestartButton } from "./TaskRestartButton";
 import { retryResumesDelivery } from "./task-delivery";
 import { isRelayBlocked, relayBlockerText } from "./task-relay";
+import { useBots } from "./use-bots";
 import { blockedFields } from "./task-waiting";
 
 /**
@@ -43,11 +44,14 @@ export function TaskBlockedCard({
   onChanged?: () => void;
 }) {
   const { t } = useTranslation();
+  const { bots } = useBots();
   const sendPrompt = useAppStore((state) => state.sendPrompt);
   const selectSession = useAppStore((state) => state.selectSession);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDrop, setConfirmingDrop] = useState(false);
+  const [reassignedTo, setReassignedTo] = useState<string | null>(null);
+  const [reassignTarget, setReassignTarget] = useState("");
 
   const fields = blockedFields(task);
   const interrupted = isTaskInterrupted(task);
@@ -91,6 +95,16 @@ export function TaskBlockedCard({
       // sentence they had to write.
       const accepted = await sendPrompt(t("bots.blocked.retryMessage"), undefined, task.sessionId);
       if (!accepted) setError(t("bots.blocked.retryBusy"));
+    });
+  const reassign = (employeeSessionId: string) =>
+    run("reassign", async () => {
+      const result = await api.reassignTask({
+        taskId: task.id,
+        targetSessionId: employeeSessionId,
+        reason: t("bots.blocked.reassignReason", { shortId: task.shortId }),
+      });
+      if (result.startError) setError(result.startError);
+      setReassignedTo(bots.find((bot) => bot.sessionId === employeeSessionId)?.profile.name || employeeSessionId);
     });
 
 
@@ -211,6 +225,38 @@ export function TaskBlockedCard({
       ) : null}
 
       <div className="task-blocked-actions">
+        {!relayStuck && !reassignedTo ? (
+          <div className="task-blocked-reassign">
+            <Select
+              aria-label={t("bots.blocked.reassignTarget")}
+              value={reassignTarget}
+              disabled={Boolean(busy)}
+              onChange={(event) => setReassignTarget(event.target.value)}
+              data-blocked-reassign-target=""
+            >
+              <option value="">{t("bots.blocked.reassignTarget")}</option>
+              {bots
+                .filter((bot) => bot.sessionId !== task.employeeSessionId)
+                .map((bot) => (
+                  <option key={bot.sessionId} value={bot.sessionId}>
+                    {bot.profile.name || bot.title}
+                  </option>
+                ))}
+            </Select>
+            <Button
+              variant="secondary"
+              disabled={!reassignTarget || Boolean(busy)}
+              onClick={() => void reassign(reassignTarget)}
+              data-blocked-reassign=""
+            >
+              {busy === "reassign" ? t("bots.blocked.reassigning") : t("bots.blocked.reassign")}
+            </Button>
+          </div>
+        ) : reassignedTo ? (
+          <p className="task-blocked-note" data-blocked-reassigned="" role="status">
+            {t("bots.blocked.reassigned", { agent: reassignedTo })}
+          </p>
+        ) : null}
         {relayStuck ? (
           // Neither retry nor reassignment helps a step whose predecessor cannot
           // be continued: the two decisions are the person's, and the host picks

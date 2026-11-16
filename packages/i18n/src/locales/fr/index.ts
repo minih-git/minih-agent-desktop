@@ -894,6 +894,11 @@ export const fr = {
       startFromMain: "Démarrer depuis main",
       startFromMainBusy: "Démarrage depuis main…",
       startFromMainFailed: "Le démarrage depuis main a échoué : {{reason}}",
+      reassigned: "Réaffectée à {{agent}}",
+      reassign: "Réaffecter",
+      reassigning: "Réaffectation…",
+      reassignTarget: "Choisir un employé",
+      reassignReason: "Réaffecter la tâche #{{shortId}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {

@@ -923,6 +923,11 @@ export const en = {
       startFromMain: "Start from main instead",
       startFromMainBusy: "Starting from main…",
       startFromMainFailed: "Starting from main failed: {{reason}}",
+      reassigned: "Reassigned to {{agent}}",
+      reassign: "Reassign",
+      reassigning: "Reassigning…",
+      reassignTarget: "Choose an employee",
+      reassignReason: "Reassign task #{{shortId}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {

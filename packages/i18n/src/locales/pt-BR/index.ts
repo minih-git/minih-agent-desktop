@@ -900,6 +900,11 @@ export const ptBR = {
       startFromMain: "Começar a partir da main",
       startFromMainBusy: "Começando a partir da main…",
       startFromMainFailed: "Falha ao começar a partir da main: {{reason}}",
+      reassigned: "Reatribuído a {{agent}}",
+      reassign: "Reatribuir",
+      reassigning: "Reatribuindo…",
+      reassignTarget: "Escolher funcionário",
+      reassignReason: "Reatribuir tarefa #{{shortId}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {

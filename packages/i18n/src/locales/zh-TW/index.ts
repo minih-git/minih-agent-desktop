@@ -901,6 +901,11 @@ export const zhTW = {
       startFromMain: "改從 main 開工",
       startFromMainBusy: "正在從 main 開工…",
       startFromMainFailed: "從 main 開工失敗：{{reason}}",
+      reassigned: "已改派給 {{agent}}",
+      reassign: "改派給…",
+      reassigning: "正在改派…",
+      reassignTarget: "選擇員工",
+      reassignReason: "改派工作 #{{shortId}}",
     },
     // The completion card and the batch summary (employee mode 0.5 slice 4b).
     completion: {
