@@ -2271,9 +2271,16 @@ Renderer: `apps/desktop/src/components/Markdown.tsx` + `apps/desktop/src/lib/shi
   allowed roots, remote workspaces, the binary check, and the text cap stay in
   the host. Only `text` within 100,000 characters becomes a page; a binary,
   missing, empty, unreadable, or oversized file leaves the link, and scripts
-  still start off. The card adds one action the fence lacks: open the same page
-  in the work-panel browser, which is where a click on the link went before. A
-  relative link (`./page.html`) keeps its existing destination.
+  still start off. The card adds two actions the fence lacks, because both need
+  a file: open the same page in the work-panel browser, which is where a click
+  on the link went before, and reveal that file in the system file manager
+  (`chat.revealInFileManager`, the transcript's existing Finder wording), which
+  resolves the reference and reveals it through the same destination a file
+  reference's menu uses. A relative link (`./page.html`) keeps its existing
+  destination and still carries its markdown base into that reveal. The reveal
+  action appears only where a local file of this computer is behind the page —
+  not on a fence, and not for a remote workspace or a session that may not touch
+  local files.
 - **Syntax highlighting**: Shiki singleton with the JavaScript regex engine
   (no wasm), themes `one-light`/`one-dark-pro` following `data-theme`.
   A coding-focused local catalog exposes 48 canonical grammars plus common

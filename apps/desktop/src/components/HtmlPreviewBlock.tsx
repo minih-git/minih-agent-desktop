@@ -6,6 +6,7 @@ import {
   IconCode,
   IconCopy,
   IconExternal,
+  IconFolderOpen,
   IconGlobe,
   IconPlay,
 } from "./icons";
@@ -33,6 +34,7 @@ export function HtmlPreviewBlock({
   code,
   title = "html",
   onOpenInPanel,
+  onRevealInFolder,
   ...position
 }: {
   code: string;
@@ -40,6 +42,12 @@ export function HtmlPreviewBlock({
   title?: string;
   /** Opens the same page in the work-panel browser, when the row has one. */
   onOpenInPanel?: () => void;
+  /**
+   * Shows the file the page was read from in the system file manager. A fence
+   * has no file, and a session that may not touch local files has no local
+   * folder, so the action exists only where a link names a local file.
+   */
+  onRevealInFolder?: () => void;
 } & SourcePositionProps) {
   const { t } = useTranslation();
   const { copied, copy } = useCopy();
@@ -99,6 +107,17 @@ export function HtmlPreviewBlock({
               onClick={onOpenInPanel}
             >
               <IconExternal size={13} />
+            </TooltipButton>
+          ) : null}
+          {onRevealInFolder ? (
+            <TooltipButton
+              type="button"
+              className="html-action-btn"
+              tooltip={t("chat.revealInFileManager")}
+              ariaLabel={t("chat.revealInFileManager")}
+              onClick={onRevealInFolder}
+            >
+              <IconFolderOpen size={13} />
             </TooltipButton>
           ) : null}
           <TooltipButton

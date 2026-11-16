@@ -5486,6 +5486,30 @@ window; opening a normal panel afterward must still work.
   `apps/desktop/test/html-block-renderer.test.mjs` cover the sandbox, the
   script-free default, the size cap and the locale strings.
 
+#### E2E-CHAT-linked-page-reveal: A linked local page reveals its file in the file manager
+
+- **Preconditions**: Isolated Electron profile; a project folder holding an
+  `.html` page; an answer linking it; a remote-workspace session and a session
+  that may not touch local files for the negative cases.
+- **Steps**: Read the answer, then press the page card's reveal action. Repeat
+  from a `./page.html` link inside a markdown file, and open the same card in
+  the remote-workspace and local-files-denied sessions.
+- **Expected**: The system file manager opens with that file selected, resolved
+  from the reference including the markdown base. The remote and denied cards
+  show no reveal action and no OS call is made; a plain `html` fence shows none
+  either. The panel, source/script and copy actions are unchanged.
+- **Automation**: `node scripts/e2e-html-preview-reveal.mjs`. It bundles the real
+  card components, resolver and store into a hidden `Electron` window with an
+  isolated profile and a synthetic preload bridge, clicks the reveal action, and
+  asserts the resolved reference, the `fs/reveal` target, the panel action's own
+  destination, and the three shapes that offer no action. Unit contracts remain
+  in `apps/desktop/test/local-html-page-link.test.mjs`; the base-directory
+  resolution and reveal destination it shares with file references are covered
+  by `apps/desktop/test/chat-file-open-with-menu.test.mjs`.
+- **Status**: Automated on macOS (hidden renderer, synthetic bridge). The visible
+  system file manager opening itself is out of scope for the harness; the
+  `fs/reveal` call it would trigger is asserted instead.
+
 #### E2E-BROWSER-capture-resize: Capture preserves live placement and restores the latest viewport
 
 - **Preconditions**: Isolated Electron profile and a local responsive page
