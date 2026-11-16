@@ -46,6 +46,9 @@ pub struct ScheduledTask {
     /// Presence distinguishes a saved project (including null) from legacy tasks.
     #[serde(skip)]
     pub(crate) workspace_bound: bool,
+    /// Whether the task config explicitly contains `workspacePath`, including null.
+    #[serde(skip)]
+    pub(crate) workspace_configured: bool,
     /// Calendar intent is independent from Hourly's compatibility schedule.
     #[serde(skip)]
     pub(crate) calendar_configured: bool,
@@ -218,6 +221,7 @@ fn task_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScheduledTask> {
             .get("workspacePath")
             .and_then(Value::as_str)
             .is_some_and(|path| !path.trim().is_empty()),
+        workspace_configured: config.get("workspacePath").is_some(),
         calendar_configured,
         workspace_path: config
             .get("workspacePath")

@@ -45,6 +45,7 @@ fn handle_with_workspace_policy(
                 if let Some(object) = params.as_object_mut() {
                     object.remove("workspacePath");
                 }
+                params["workspacePath"] = json!(workspace);
             }
             if params.get("schedule").is_some() && params.get("workspacePath").is_none() {
                 params["workspacePath"] = json!(workspace);
@@ -79,10 +80,9 @@ fn handle_with_workspace_policy(
                 if allow_workspace_override && params.get("workspacePath").is_some() {
                     // The desktop form may explicitly move a task to another
                     // saved project. Conversation tools stay project-scoped.
-                } else if !allow_workspace_override
-                    && existing
-                        .as_ref()
-                        .is_some_and(|task| !task.workspace_bound && task.schedule.is_none())
+                } else if existing
+                    .as_ref()
+                    .is_some_and(|task| !task.workspace_configured && task.schedule.is_none())
                 {
                     params["workspacePath"] = json!(workspace);
                 } else if let Some(object) = params.as_object_mut() {
@@ -184,7 +184,10 @@ fn handle_with_workspace_policy(
                         .and_then(|v| v.as_str())
                         .map(str::to_string)
                 }),
-                project_path: if task.workspace_bound || task.schedule.is_some() {
+                project_path: if task.workspace_bound
+                    || task.schedule.is_some()
+                    || task.workspace_configured
+                {
                     task.workspace_path.clone()
                 } else {
                     st.workspace.get().map(|w| w.path)

@@ -154,7 +154,7 @@ export function ScheduledEditor({
           ScheduledDraft,
           "workspacePath" | "permissionMode" | "providerId" | "modelId" | "thinkingLevel" | "sessionMode"
         > = {};
-        if (!task || task.workspacePath !== undefined || workspaceTouched) {
+        if (workspaceTouched) {
           executionSettings.workspacePath = workspacePath || null;
         }
         if (!task || task.permissionMode || permissionTouched) {

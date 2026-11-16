@@ -30,6 +30,14 @@ async fn removal_pauses_only_bound_tasks_and_preserves_definitions_and_history()
     )
     .unwrap()["task"]
         .clone();
+    let moved = handle(
+        &st,
+        "scheduled.update",
+        json!({"id":unrelated["id"],"workspacePath":null}),
+    )
+    .unwrap()["task"]
+        .clone();
+    assert!(moved["workspacePath"].is_null());
     let general = handle(
         &st,
         "scheduled.create",
@@ -78,12 +86,12 @@ async fn removal_pauses_only_bound_tasks_and_preserves_definitions_and_history()
         let rejected = handle(&st, "scheduled.run", json!({"id":id,"automatic":true})).unwrap_err();
         assert_eq!(rejected.data.unwrap()["errorCode"], "SCHEDULE_NOT_DUE");
     }
-    assert!(
-        scheduled::get_task(&st.db, unrelated["id"].as_str().unwrap())
-            .unwrap()
-            .unwrap()
-            .enabled
-    );
+    let moved_task = scheduled::get_task(&st.db, unrelated["id"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    assert!(moved_task.enabled);
+    assert!(moved_task.workspace_path.is_none());
+    assert!(!moved_task.workspace_bound);
     let general_task = scheduled::get_task(&st.db, general["id"].as_str().unwrap())
         .unwrap()
         .unwrap();
