@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.7.0",
+    date: "2026-11-17",
+    highlights: [
+      "The built-in Super Agent and its task cards have been removed as a deliberate change in direction; Super Agent is planned to return as a plugin. Existing Super Agent sessions become ordinary employees, keeping their conversations and memory.",
+      "Give work directly to employees in their workspace. The notification center alerts you to stuck, failed or interrupted tasks, and reassigning a blocked task starts work directly with the chosen employee.",
+      "Scheduled tasks can now be General (not tied to a project), so deleting a project will not stop them.",
+      "In AI settings, configure the thinking level for sessions created by an agent, or leave it to inherit from the source session.",
+      "HTML previews can now reveal their file in Finder.",
+    ],
+  },
+
+  {
     version: "1.6.0",
     date: "2026-11-15",
     highlights: [

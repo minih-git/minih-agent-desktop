@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.7.0",
+    date: "2026-11-17",
+    highlights: [
+      "内置 Super Agent 和它的任务卡已移除，这是有意的方向调整，后续计划以插件形式重做。原有 Super Agent 会话升级后成为普通员工，对话和记忆都会保留。",
+      "现在可以直接在员工工作台给员工派活。任务卡住、失败或被中断时由通知中心提醒；阻塞任务改派后，新员工会直接开始工作。",
+      "定时任务现在可以选择「通用（不绑定项目）」，删除项目也不会停止这些任务。",
+      "在 AI 设置中，可以配置 Agent 创建的会话使用的思考强度，也可以继承来源会话的设置。",
+      "HTML 预览现在可以在 Finder 中定位对应文件。",
+    ],
+  },
+
+  {
     version: "1.6.0",
     date: "2026-11-15",
     highlights: [
