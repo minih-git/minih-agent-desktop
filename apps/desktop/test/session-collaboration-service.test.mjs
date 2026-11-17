@@ -867,3 +867,21 @@ test("a built-in create is refused once its own turn has ended", async () => {
   );
   assert.deepEqual(methodCalls(host, "session.create"), []);
 });
+
+test("a built-in create uses the configured thinking level instead of the source or tool arguments", async () => {
+  for (const thinkingLevel of ["off", "minimal", "low", "medium", "high", "xhigh", "max", "omit"]) {
+    const host = createHostFor({
+      sessionCreateModel: { providerId: "p1", modelId: "m1", thinkingLevel },
+    }, [READY_PROVIDER]);
+    const { service } = createService({
+      getHost: () => host,
+      activeTurns: { "source-session": "turn-1" },
+    });
+
+    await invokeBuiltinCreate(service, { title: "Review the diff", thinkingLevel: "low" });
+    const [created] = methodCalls(host, "session.create");
+    assert.equal(created.params.thinkingLevel, thinkingLevel);
+    assert.equal(created.params.inheritPermissionFromSessionId, "source-session");
+    assert.equal(created.params.projectPath, "/work/app");
+  }
+});

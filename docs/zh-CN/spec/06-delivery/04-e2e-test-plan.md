@@ -2,6 +2,23 @@
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/06-delivery/04-e2e-test-plan) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
+## E2E-SESSION-create-thinking-setting
+
+- **前提：** 使用任务工作树、复用依赖、隔离 Electron profile 和合成模型配置，
+  不访问真实用户数据或付费模型。
+- **步骤：** 选择新建会话模型与 low/high/omit，重新挂载配置行，恢复继承，
+  切换为仅 off 或已知非推理模型，清空模型，并验证保存中和不可用状态。
+  通过 Host 设置保存各合法档位，再调用内置会话创建入口。
+- **预期：** 保存的强度在设置往返后保留，并覆盖来源会话；工具参数不能覆盖它。
+  缺省或 null 保持继承。切换模型重置强度，清空模型移除强度；菜单复用 Composer
+  能力投影，非推理模型仅提供继承和 off；保存中禁止操作，不再支持的已存档位
+  明确标记不可用，非法强度被拒绝。项目与权限继承不变。
+- **自动化：** `apps/desktop/test/session-create-thinking-user-path.test.mjs`
+  在隔离 Chromium 中操作生产 React 菜单；创建服务回归覆盖全部八种强度；
+  Host 的 `session_create_model_setting_roundtrips_and_validates_shape` 验证持久化。
+- **规格与验收：** 模型设置 IA、运行时 §5f.4a、C/E、品质与无障碍。
+  这是隔离组件与 Host 覆盖，不代表已安装应用验收。
+
 
 > 范围：MVP 接受场景加上 Minih-Agent-Desktop 当前发货的产品增量
 > 状态：已接受（protocol/Electron 自动化已激活；完整桌面 Playwright 仍在计划中）
@@ -5958,6 +5975,7 @@ eleven-tool-round desktop paths are verified by
 
 | 验收 | 应用场景 |
 |---|---|
+| C / E / 品质 / 无障碍 — Agent 新建会话思考强度 | E2E-SESSION-create-thinking-setting |
 | B / C / E / F / 品质 / 无障碍 — 2026-10-28 选择性能力迁移 | E2E-UPSTREAM-20261028-selected-capabilities |
 | C / E / F / 品质 / 无障碍 — 2026-10-26 选择性上游修复 | E2E-UPSTREAM-20261026-selected-reliability |
 | B / C / E / 品质 / 无障碍 — 2026-10-25 选择性上游修复 | E2E-UPSTREAM-20261025-selected-reliability |

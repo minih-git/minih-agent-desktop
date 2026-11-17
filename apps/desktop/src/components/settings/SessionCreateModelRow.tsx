@@ -2,9 +2,12 @@ import { useTranslation } from "react-i18next";
 import {
   imageGenerationBindings,
   modelWireIdsEqual,
+  sessionThinkingMenuLevels,
   type AppSettings,
+  type ModelInfo,
   type ProviderPublic,
   type SessionCreateModelBinding,
+  type SessionThinkingLevel,
 } from "@minih-agent/shared";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
 import {
@@ -12,6 +15,8 @@ import {
   providerServesChatModels,
   type DefaultModelOption,
 } from "./default-model";
+import { thinkingProviderForModel } from "../../features/chat/composer/model";
+import { providerThinkingLevels } from "../../lib/session-thinking";
 
 /**
  * The models a session the Agent creates may run on.
@@ -75,11 +80,13 @@ export function sessionCreateModelOptionBinding(
 export function SessionCreateModelRow({
   settings,
   providers,
+  providerModels = {},
   busy = false,
   onChange,
 }: {
   settings: AppSettings;
   providers: ProviderPublic[];
+  providerModels?: Record<string, ModelInfo[]>;
   busy?: boolean;
   onChange?: (binding: SessionCreateModelBinding | null) => void;
 }) {
@@ -106,44 +113,78 @@ export function SessionCreateModelRow({
   const checkedId = active
     ? sessionCreateModelOptionId({ providerId: active.provider.id, modelId: active.modelId })
     : SESSION_CREATE_MODEL_NONE;
+  const thinkingProvider = active
+    ? thinkingProviderForModel(active.provider, active.modelId, providerModels[active.provider.id])
+    : undefined;
+  const thinkingLevels = sessionThinkingMenuLevels(providerThinkingLevels(thinkingProvider));
+  const thinkingLevel = binding?.thinkingLevel ?? "";
 
   return (
-    <div className="settings-row model-default-row">
-      <div className="settings-row-copy model-default-copy">
-        <div
-          className="settings-row-title model-default-label"
-          title={t("settings.sessionCreateModelHint")}
-        >
-          {t("settings.sessionCreateModel")}
+    <>
+      <div className="settings-row model-default-row">
+        <div className="settings-row-copy model-default-copy">
+          <div
+            className="settings-row-title model-default-label"
+            title={t("settings.sessionCreateModelHint")}
+          >
+            {t("settings.sessionCreateModel")}
+          </div>
+          <div className="settings-row-detail model-default-value">
+            {active ? (
+              <>
+                <span className="model-default-provider">{active.provider.name}</span>
+                <span className="model-default-sep" aria-hidden>·</span>
+                <span className="model-default-model font-mono">{active.modelId}</span>
+              </>
+            ) : (
+              <span className="model-default-empty" role="status">
+                {t(binding ? "settings.sessionCreateModelUnavailable" : "settings.sessionCreateModelUnset")}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="settings-row-detail model-default-value">
-          {active ? (
-            <>
-              <span className="model-default-provider">{active.provider.name}</span>
-              <span className="model-default-sep" aria-hidden>·</span>
-              <span className="model-default-model font-mono">{active.modelId}</span>
-            </>
-          ) : (
-            <span className="model-default-empty" role="status">
-              {t(binding ? "settings.sessionCreateModelUnavailable" : "settings.sessionCreateModelUnset")}
-            </span>
-          )}
-        </div>
+        {onChange ? (
+          <SettingsMenuSelect
+            className="model-image-selector"
+            label={t("settings.sessionCreateModel")}
+            value={checkedId}
+            options={options}
+            busy={busy}
+            onChange={(id) => {
+              const next = sessionCreateModelOptionBinding(candidates, id);
+              if (next) onChange(next);
+              else if (id === SESSION_CREATE_MODEL_NONE) onChange(null);
+            }}
+          />
+        ) : null}
       </div>
-      {onChange ? (
-        <SettingsMenuSelect
-          className="model-image-selector"
-          label={t("settings.sessionCreateModel")}
-          value={checkedId}
-          options={options}
-          busy={busy}
-          onChange={(id) => {
-            const next = sessionCreateModelOptionBinding(candidates, id);
-            if (next) onChange(next);
-            else if (id === SESSION_CREATE_MODEL_NONE) onChange(null);
-          }}
-        />
+      {active && binding ? (
+        <div className="settings-row model-default-row">
+          <div className="settings-row-copy model-default-copy">
+            <div className="settings-row-title">{t("chat.reasoningLevel")}</div>
+          </div>
+          <SettingsMenuSelect
+            label={t("chat.reasoningLevel")}
+            value={thinkingLevel}
+            busy={busy}
+            disabled={!onChange}
+            options={[
+              { id: "", label: t("extensions.subagents.thinkingInherit") },
+              ...thinkingLevels.map((level) => ({ id: level, label: level })),
+              ...(thinkingLevel && !thinkingLevels.includes(thinkingLevel)
+                ? [{ id: thinkingLevel, label: `${thinkingLevel} · ${t("settings.sessionCreateModelUnavailable")}`, disabled: true }]
+                : []),
+            ]}
+            onChange={(id) => {
+              const next = { providerId: binding.providerId, modelId: binding.modelId };
+              if (id === "") onChange?.(next);
+              else if (thinkingLevels.includes(id as SessionThinkingLevel)) {
+                onChange?.({ ...next, thinkingLevel: id as SessionThinkingLevel });
+              }
+            }}
+          />
+        </div>
       ) : null}
-    </div>
+    </>
   );
 }

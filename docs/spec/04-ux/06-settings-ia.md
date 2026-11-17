@@ -582,6 +582,15 @@ a usage tab.
   refuses, so the Agent cannot create a session at all. A stored pairing the
   provider list no longer serves keeps showing as currently unavailable, so the
   user can see what changed and pick another one.
+  When that model is available, a separate reasoning selector offers inheritance
+  from the source session (the backward-compatible default), `omit` and the
+  model's enabled thinking levels, using the same capability projection as the
+  Composer. Non-reasoning models offer only inheritance and `off`. An explicit
+  choice is stored as `sessionCreateModel.thinkingLevel`; inheritance removes
+  that field. Switching models resets it to inheritance, and clearing the model
+  clears both choices. Both controls are disabled while saving. A stored level
+  that is no longer supported is labeled unavailable rather than disguised as
+  inheritance. The whole binding stays device-local and outside config sync.
 - Each chosen card shows the gateway's published record (vendor, category,
   copyable id, input/output prices per 1M tokens, context window, cache price,
   tiered-pricing marker), plus **Configure** and **Remove**, without an app-default

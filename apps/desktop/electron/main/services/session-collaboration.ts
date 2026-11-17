@@ -623,6 +623,7 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
               `The configured session creation model "${binding.providerId}/${binding.modelId}" is not available. Pick another one in Settings > AI.`,
             );
           }
+          const thinkingLevel = binding.thinkingLevel ?? source.session?.thinkingLevel;
           const created = await host.call<{ session?: { id?: string; title?: string } }>("session.create", {
             title,
             mode: "agent",
@@ -632,7 +633,7 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
             // the Agent creates must not carry a wider permission mode than
             // the one it was started from.
             ...(source.session?.projectPath ? { projectPath: source.session.projectPath } : {}),
-            ...(source.session?.thinkingLevel ? { thinkingLevel: source.session.thinkingLevel } : {}),
+            ...(thinkingLevel ? { thinkingLevel } : {}),
             inheritPermissionFromSessionId: sourceSessionId,
           });
           checkCurrent(host, input.signal);

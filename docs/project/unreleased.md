@@ -1,4 +1,8 @@
 # Unreleased changes
+- Session creation settings now include a reasoning-effort selector. Agent-created
+  sessions use the configured level (including off and omit), while inheritance
+  remains the default for existing settings. Available choices follow the target
+  model, and changing the model clears the previous effort override.
 - Cloud sync no longer aborts when an acknowledged configuration record is
   missing on one side: edited values remain reviewable beside the deletion.
   The Plugins category now includes declared portable settings with local

@@ -1134,6 +1134,7 @@ fn validate_settings_value(value: &Value) -> Result<(), JsonRpcError> {
                 ));
             }
         }
+        thinking_level_param(binding)?;
     }
     if let Some(binding) = object.get("imageGeneration").filter(|v| !v.is_null()) {
         for (key, max) in [("providerId", 128), ("modelId", 256)] {
@@ -8935,6 +8936,28 @@ mod tests {
             .unwrap();
         assert_eq!(stored["sessionCreateModel"]["providerId"], "p1");
         assert_eq!(stored["sessionCreateModel"]["modelId"], "m1");
+        assert!(stored["sessionCreateModel"].get("thinkingLevel").is_none());
+
+        for level in sessions::THINKING_LEVELS
+            .iter()
+            .map(|level| json!(level))
+            .chain(std::iter::once(Value::Null))
+        {
+            handle_request(
+                state.clone(),
+                "settings.set",
+                json!({ "sessionCreateModel": {
+                    "providerId": "p1", "modelId": "m1", "thinkingLevel": level
+                } }),
+                tx.clone(),
+            )
+            .await
+            .unwrap();
+            let stored = handle_request(state.clone(), "settings.get", json!({}), tx.clone())
+                .await
+                .unwrap();
+            assert_eq!(stored["sessionCreateModel"]["thinkingLevel"], level);
+        }
 
         // Clearing the choice is a real value, not an invalid one: it is how
         // the user turns Agent-created sessions off again.
@@ -8956,6 +8979,10 @@ mod tests {
             json!({ "sessionCreateModel": { "providerId": "p1" } }),
             json!({ "sessionCreateModel": { "providerId": "p1", "modelId": 7 } }),
             json!({ "sessionCreateModel": "p1/m1" }),
+            json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1", "thinkingLevel": "ultra" } }),
+            json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1", "thinkingLevel": 7 } }),
+            json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1", "thinkingLevel": true } }),
+            json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1", "thinkingLevel": "" } }),
         ] {
             let error = handle_request(state.clone(), "settings.set", invalid, tx.clone())
                 .await
