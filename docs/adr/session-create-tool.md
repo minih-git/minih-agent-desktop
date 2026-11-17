@@ -47,9 +47,15 @@ reachable from the built-in tools.
    must not spend a model the user never named for it.
 3. **Host-derived context, one argument.** Only `title` (1–80 characters) comes
    from the call. The new session inherits the sending session's project,
-   thinking level and permission mode (`inheritPermissionFromSessionId`) and is
-   created in `agent` mode, so a created session can neither work in a project
-   nor hold a permission mode the session it came from did not have.
+   permission mode (`inheritPermissionFromSessionId`) and is created in `agent`
+   mode, so a created session can neither work in a project nor hold a permission
+   mode the session it came from did not have. The optional user setting
+   `sessionCreateModel.thinkingLevel` selects its reasoning effort, including
+   explicit `off` and `omit`. Absent/null preserves the original source-session
+   inheritance. The model cannot override this value through tool arguments.
+   Models settings exposes the target's enabled levels plus inheritance; changing
+   the model resets the override. Existing runtime capability clamping remains
+   authoritative, and host-core validates the optional level on `settings.set`.
 4. **The same gate as the other session tools.** `SessionCreate` passes
    host-core's `tools.execute` gate as `High` risk (Ask shows an approval card,
    Auto proceeds), is Agent-only, is denied in Plan and Goal, is never handed to

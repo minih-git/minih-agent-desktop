@@ -5,7 +5,7 @@ import type { NetworkPolicySettings } from "../network-policy.js";
 import type { NetworkProxySettings } from "../network-proxy.js";
 import type { Mode } from "./common.js";
 import type { LiveVoiceSettings } from "./live-voice.js";
-import type { ThinkingLevel } from "./models.js";
+import type { SessionThinkingLevel, ThinkingLevel } from "./models.js";
 import type { GlobalPermissionMode } from "./permissions.js";
 import type { UpdatePreference } from "./platform.js";
 import type { PluginMarketSource } from "./plugins.js";
@@ -57,6 +57,8 @@ export type CloseBehavior = "ask" | "tray" | "quit";
 export type SessionCreateModelBinding = {
   providerId: string;
   modelId: string;
+  /** Absent inherits the source session's thinking level. */
+  thinkingLevel?: SessionThinkingLevel;
 };
 
 export type AppSettings = {

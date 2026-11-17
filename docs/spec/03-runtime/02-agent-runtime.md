@@ -1570,8 +1570,12 @@ never another sender's. Cancelling another sender's delivery stays plugin-only.
 its Session ID; the delivery follows as a separate `SessionSend`, so creation
 never starts a turn, sends content, or spends quota on its own. The session runs
 on `settings.sessionCreateModel` — a provider/model binding the user selects in
-AI settings — and inherits the sending session's project, thinking level and
-permission mode. While that setting is unset the tool fails with
+Models settings — and inherits the sending session's project and permission
+mode. The optional `sessionCreateModel.thinkingLevel` overrides the source
+session's thinking level, including explicit `off` and `omit`; when absent or
+null, the source session's level is inherited as before. This value comes only
+from settings, never from tool arguments. The existing runtime capability
+clamping still applies. While that setting is unset the tool fails with
 `MODEL_NOT_CONFIGURED`; while the binding is not one the settings row offers, it
 fails with `MODEL_UNAVAILABLE`. Both sides resolve that offer list the same way:
 a provider that is enabled, credentialed and configuring at least one model,

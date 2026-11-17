@@ -888,10 +888,13 @@ accepts no more input. A refused promotion does not fail an accepted delivery:
 it stays queued, the tool reports no insertion, and Main logs the refusal.
 
 `SessionCreate({ title })` creates one ordinary Agent-mode session in the
-caller's project with the caller's thinking level and permission mode, runs it
-on the provider/model binding in AI settings (`sessionCreateModel`), and returns
-its Session ID for a following `SessionSend`. While that setting is unset the
-call fails with `MODEL_NOT_CONFIGURED`, and while the binding is not one the
+caller's project with the caller's permission mode, runs it on the provider/model
+binding in Models settings (`sessionCreateModel`), and returns its Session ID
+for a following `SessionSend`. An optional `sessionCreateModel.thinkingLevel`
+selects the created session's reasoning effort (including `off` and `omit`);
+absent/null preserves inheritance from the caller. Tool arguments cannot
+override that user setting, and existing runtime capability clamping remains.
+While that setting is unset the call fails with `MODEL_NOT_CONFIGURED`, and while the binding is not one the
 settings row offers it fails with `MODEL_UNAVAILABLE`; there is no fallback to
 the app default model. Both sides resolve that offer list the same way: an
 enabled, credentialed provider configuring at least one model, minus every image

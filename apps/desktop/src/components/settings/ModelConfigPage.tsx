@@ -95,6 +95,7 @@ export function ModelsPage() {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const providers = useAppStore((s) => s.providers);
+  const providerModels = useAppStore((s) => s.providerModels);
   const settings = useAppStore((s) => s.settings);
   const refreshProviders = useAppStore((s) => s.refreshProviders);
   const showToast = useAppStore((s) => s.showToast);
@@ -781,6 +782,7 @@ export function ModelsPage() {
               settings={settings}
               providers={providers}
               busy={changingSessionCreateModel}
+              providerModels={providerModels}
               onChange={setSessionCreateModel}
             />
           </div>

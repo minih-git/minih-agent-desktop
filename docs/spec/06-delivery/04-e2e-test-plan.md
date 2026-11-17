@@ -1,5 +1,26 @@
 # 04. E2E Test Plan
 
+## E2E-SESSION-create-thinking-setting
+
+- **Preconditions:** Request worktree, reused dependencies, isolated Electron
+  profile, synthetic provider/model bindings and local settings only.
+- **Steps:** Select a creation model, choose low/high/omit, remount the row,
+  return to inheritance, switch to an off-only or known non-reasoning model,
+  clear the model, and test busy/unavailable states. Save each legal level
+  through Host settings and invoke built-in session creation.
+- **Expected:** The selected effort survives binding round-trip and overrides
+  the source session, never tool arguments. Missing/null preserves inheritance.
+  Model switches reset the override; clear removes it. Menus use the Composer
+  capability projection, non-reasoning offers only off/inherit, busy controls
+  reject interaction, unsupported stored levels remain visibly unavailable,
+  and malformed levels are refused. Project/permission inheritance is unchanged.
+- **Automation:** `apps/desktop/test/session-create-thinking-user-path.test.mjs`
+  exercises production React menus in isolated Chromium; the creation service
+  regression covers all eight selectors, and Host
+  `session_create_model_setting_roundtrips_and_validates_shape` covers storage.
+- **Specs / acceptance:** Settings IA models page; runtime §5f.4a; C/E, quality,
+  accessibility. Isolated component/Host coverage, not installed-app acceptance.
+
 ## E2E-PROVIDER-anthropic-fallback-preserves-version-path
 
 - **Preconditions:** Request worktree with reused dependencies; local synthetic
@@ -11228,6 +11249,7 @@ selection already in place shows it without waiting for another event.
 
 | Acceptance | Scenarios |
 |---|---|
+| C / E / Quality / Accessibility — Agent-created session effort | E2E-SESSION-create-thinking-setting |
 | B / C / E / F / Quality / Accessibility — Selected capabilities 2026-10-28 | E2E-UPSTREAM-20261028-selected-capabilities |
 | C / E / F / Quality / Accessibility — Selected upstream fixes 2026-10-26 | E2E-UPSTREAM-20261026-selected-reliability |
 | B / C / E / Quality / Accessibility — Selected upstream fixes 2026-10-25 | E2E-UPSTREAM-20261025-selected-reliability |
@@ -15986,8 +16008,11 @@ are withdrawn with ADR 0165.
   `MODEL_NOT_CONFIGURED`, adds no session, and tells the model where to configure
   one. With a configured model, exactly one Agent-mode session appears in the
   session list (through `sessionsChanged`), carries the title the call asked for,
-  runs in the caller's project with the caller's thinking level and permission
-  mode, and runs on the configured provider/model — never the app default.
+  runs in the caller's project with the caller's permission mode, and runs on
+  the configured provider/model — never the app default. A configured
+  `sessionCreateModel.thinkingLevel` takes precedence over the caller's effort,
+  including `off` and `omit`; absent/null keeps the caller's level. The Agent's
+  tool arguments cannot override this user choice.
   Creation alone starts no turn and sends no task; the target runs only after the
   `SessionSend` that follows, and its transcript labels that input as a session
   message. Stopping the turn retracts a pending creation approval and adds no

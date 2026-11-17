@@ -47,7 +47,7 @@ function provider(id, modelIds, over = {}) {
     hasSecret: true,
     authKind: "api_key_and_base_url",
     baseUrl: "https://example.test/v1",
-    models: modelIds.map((modelId) => ({ id: modelId })),
+    models: modelIds.map((modelId) => ({ id: modelId, thinkingLevels: [] })),
     ...over,
   };
 }
