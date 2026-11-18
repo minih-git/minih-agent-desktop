@@ -1,12 +1,19 @@
 use super::{create_migration_backup, Connection, Context, Path, Result};
 use rusqlite::Transaction;
 
-/// Shared verbatim by the fresh schema and the v24 -> v25 migration.
+/// Shared verbatim by the fresh schema and every step that rebuilds the inbox.
 ///
 /// v25 widens the durable inbox from task outcomes to interactive prompts. A
 /// prompt row has no settled turn to deduplicate on, so `turn_id` becomes
 /// nullable and `request_id` carries its own uniqueness; `tool_name` lets the
 /// renderer name the tool that asked without persisting the prompt text itself.
+///
+/// v43 adds the plugin family: two more `kind` values (`plugin.alert`,
+/// `plugin.digest`), no conversation to hang the row on (`session_id` and
+/// `session_title` become nullable), and the plugin's own title, body, link and
+/// dedupe key. The `CHECK` on `kind` is what forces that rebuild, and it is also
+/// why the two families are tied together here: a `plugin.%` row names a plugin,
+/// and no other kind may.
 ///
 /// The two unique indexes own one family each. `turn_id` is unique only across
 /// the task rows: a prompt row records the turn it blocks, and one turn both
@@ -17,16 +24,28 @@ CREATE TABLE IF NOT EXISTS notifications (
   id         TEXT PRIMARY KEY,
   kind       TEXT NOT NULL CHECK (kind IN (
     'task.completed', 'task.failed',
-    'prompt.ask', 'prompt.permission', 'prompt.plan'
+    'prompt.ask', 'prompt.permission', 'prompt.plan',
+    'plugin.alert', 'plugin.digest'
   )),
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  session_title TEXT NOT NULL,
+  -- NULL for a plugin notification: it points at a plugin, not a conversation.
+  session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+  session_title TEXT,
   turn_id    TEXT,
   request_id TEXT,
   tool_name  TEXT,
   error_code TEXT,
+  -- The plugin family (schema v43): who delivered the row, the plugin's own
+  -- title and body, and what activating it opens.
+  plugin_id    TEXT,
+  title        TEXT,
+  body         TEXT,
+  link_json    TEXT,
+  -- The plugin's own id for the event, so a retried delivery lands on the row
+  -- that is already there instead of a second copy.
+  dedupe_key   TEXT,
   created_at INTEGER NOT NULL,
-  read_at    INTEGER
+  read_at    INTEGER,
+  CHECK ((kind LIKE 'plugin.%') = (plugin_id IS NOT NULL))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_turn
   ON notifications(turn_id)
@@ -38,6 +57,8 @@ CREATE INDEX IF NOT EXISTS idx_notifications_created
   ON notifications(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_unread
   ON notifications(created_at DESC) WHERE read_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_plugin_dedupe
+  ON notifications(plugin_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
 "#;
 
 /// The old table constrains `kind` to the two task values and makes `turn_id`

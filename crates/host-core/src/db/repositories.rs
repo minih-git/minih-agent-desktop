@@ -180,6 +180,13 @@ impl Database {
                 // works from (schema v41): the same DDL the v40 -> v41 step
                 // applies, so a new file ends up where the chain does.
                 tx.execute_batch(MEMORY_CURATION_DDL)?;
+                // The plugin host capability layer (schema v43): the plugin a
+                // task came from, and the three tables webhook deliveries,
+                // schedules and TCP usage live in. The same DDL the v42 -> v43
+                // step applies, so a new file ends up where the chain does.
+                tx.execute_batch(&plugin_task_ddl())?;
+                tx.execute_batch(TASK_PLUGIN_INDEXES)?;
+                tx.execute_batch(PLUGIN_CAPABILITY_TABLES_DDL)?;
                 tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 tx.commit()?;
             }
@@ -398,6 +405,15 @@ impl Database {
             // one table, and the step refuses only *new* foreign-key violations,
             // so a long-lived file with historical orphans still opens.
             super::steward_profile_migration::migrate(&conn, path)?;
+        }
+        if migrated_version <= 42 {
+            // The plugin host capability layer (design: 插件宿主能力六项, phase
+            // 2B — B-0). The inbox learns one plugin kind, a task can name the
+            // plugin that created it, and three tables hold webhook deliveries,
+            // schedules and TCP usage. The notifications rebuild is the only
+            // rewrite, and the only rows it drops are the ones whose session is
+            // already gone.
+            super::plugin_capabilities_migration::migrate(&conn, path)?;
         }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;
