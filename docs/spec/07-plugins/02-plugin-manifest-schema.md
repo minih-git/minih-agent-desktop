@@ -437,8 +437,9 @@ type PluginPermission =
  | "speech.adapter.register"
  | "keyboard.globalShortcut"
  | "net.websocket"
- // Host capabilities (phase 2B); inbound.webhook is implemented, and the
- // implementation status of the others is in 03-plugin-api.md.
+ // Host capabilities (phase 2B); inbound.webhook, notify.center and scheduler
+ // are implemented, and the implementation status of the others is in
+ // 03-plugin-api.md.
  | "credentials.use"
  | "net.tcp"
  | "inbound.webhook"
@@ -640,8 +641,9 @@ grant the permission only to code you trust. See
 Four fields describe a resource the host holds on the plugin's behalf. All four
 are validated at install, all four fail closed when absent, and each requires
 its permission ([ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md)).
-`contributes.webhooks` has host behavior; the implementation status of the
-other declarations is recorded in [03-plugin-api.md](03-plugin-api.md).
+`contributes.webhooks` has host behavior and `contributes.schedules` drives
+host-owned timers; the implementation status of the other declarations is
+recorded in [03-plugin-api.md](03-plugin-api.md).
 
 ```ts
 type PluginCredentialContrib = {

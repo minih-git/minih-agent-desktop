@@ -1336,11 +1336,11 @@ credential, a socket, a listening path, a clock, a draft or inbox entry, a task
 section is the API contract and [04-plugin-security.md](04-plugin-security.md)
 §8.3 is the enforcement.
 
-**Implementation status.** `pi.notify.center`, `pi.inbound.getReceivers`, and
-`inbound:webhook` are implemented. Other entries below remain registration only:
-`pi.net.tcp`, `pi.mail`, `pi.tasks`, and `schedule:fire` are not implemented,
-and `pi.net.fetch` ignores `credentialRef`. Plugins must check for unavailable
-methods before calling them (§8).
+**Implementation status.** `pi.notify.center`, `pi.inbound.getReceivers`,
+`inbound:webhook`, and the `schedule:fire` event are implemented. Other entries
+below remain registration only: `pi.net.tcp`, `pi.mail`, and `pi.tasks` are not
+implemented, and `pi.net.fetch` ignores `credentialRef`. Plugins must check for
+unavailable methods before calling them (§8).
 
 ```ts
 // credentials.use — no call of its own. The user fills the slot in Settings;
@@ -1440,6 +1440,22 @@ Semantics:
   is disabled or unloaded, and one that keeps failing is paused by the host
   after a bounded number of attempts (`plugin_schedules.paused`) until the user
   or a new plugin load resumes it — the failure does not silently retry forever.
+  An `every` timer with no previous attempt is due immediately after load with
+  `missed: 0`; an unrun cron first waits for the next matching local time. The
+  host writes `last_run_at` when an actual attempt starts, then derives its next
+  tick from that timestamp. A restart during the first attempt therefore retains
+  its real start time. An idle timer waits until system idle time reaches 60
+  seconds; ticks accumulated while waiting are coalesced. The host awaits all
+  `schedule:fire` handlers for at most five minutes, counts an exception or
+  timeout as failure, and ignores a late result. Five consecutive failures
+  pause the timer. Explicit resume or a plugin reload clears that failure count;
+  an application restart alone does not clear the paused state. Manual runs use
+  the same accounting and do not require user idle. Cron uses the local time
+  zone, with conventional day-of-month/day-of-week OR semantics when both are
+  restricted. The host polls at most every 15 seconds while active.
+  With no eligible loaded schedules the host does not start the polling clock;
+  a confirmed quit cancels polling and outstanding deadlines, and timer handles
+  do not keep the process alive. Cancelling the quit leaves the scheduler running.
 - **`mail.draft` never sends.** There is no send call in this API and none
   behind a second permission; the draft lands in the host's list, where the
   user reviews it.

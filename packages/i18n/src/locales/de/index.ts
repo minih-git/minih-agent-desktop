@@ -2993,6 +2993,7 @@ sklm: {
   },
   "plugins": {
     webhook: en.plugins.webhook,
+    schedules: en.plugins.schedules,
     interruptionTitle: "Plugin-Arbeit wird beendet",
     interruptionBody: "Diese Plugins führen noch Arbeit aus. Fortfahren beendet sie:",
     interruptionContinue: "Beenden und fortfahren",

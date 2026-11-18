@@ -6,6 +6,7 @@ import { SearchField } from "../features/plugins/presentation";
 import { InstalledPluginsPanel } from "../features/plugins/InstalledPluginsPanel";
 import { MarketplacePanel } from "../features/plugins/MarketplacePanel";
 import { PluginDetailSheet } from "../features/plugins/PluginDetailSheet";
+import { PluginSchedulesPanel } from "../features/plugins/PluginSchedulesPanel";
 import { PluginDialogs } from "../features/plugins/PluginDialogs";
 import { usePluginsPage } from "../features/plugins/usePluginsPage";
 
@@ -142,6 +143,17 @@ export function PluginsPage() {
                 <span className="plugins-segment-count">{market.length}</span>
               ) : null}
             </button>
+            <button
+              type="button"
+              role="tab"
+              id="plugins-tab-schedules"
+              aria-selected={tab === "schedules"}
+              aria-controls="plugins-panel-schedules"
+              className={cx("plugins-segment-btn", tab === "schedules" && "active")}
+              onClick={() => setTab("schedules")}
+            >
+              {t("plugins.schedules.tab")}
+            </button>
           </div>
           {tab === "installed" ? (
             plugins.length ? (
@@ -161,7 +173,7 @@ export function PluginsPage() {
                 />
               </div>
             ) : null
-          ) : (
+          ) : tab === "market" ? (
             <div className="plugins-toolbar-end">
               {marketLoading ? (
                 <span className="plugins-result-count" aria-live="polite">
@@ -174,13 +186,13 @@ export function PluginsPage() {
                 placeholder={t("plugins.marketSearchPlaceholder")}
               />
             </div>
-          )}
+          ) : null}
         </div>
         {tab === "installed" ? (
           <InstalledPluginsPanel {...page} />
-        ) : (
+        ) : tab === "market" ? (
           <MarketplacePanel {...page} />
-        )}
+        ) : <PluginSchedulesPanel />}
       </div>
 
       <PluginDetailSheet {...page} />

@@ -37,6 +37,7 @@ import { createFsConsentService } from "../plugin-fs-consent";
 import { pluginWorkspaceInfo, projectFolderPaths } from "../workspace-roots";
 import { createDesktopConsentService } from "../plugin-desktop-consent";
 import { PluginRuntime } from "../plugin-runtime";
+import { createPluginSchedulerService } from "../plugin-scheduler-service";
 import { confirmPluginInterruption } from "../plugin-active-work";
 import { listPluginMemoryWhenEnabled } from "../plugin-memory-read";
 import {
@@ -612,6 +613,7 @@ export function createPluginServices({
       // surface. Drop it; the renderer re-opens it on the pluginChanged event if
       // the tab is still active and the plugin came back.
       pluginViews.closePlugin(pluginId);
+      schedulerService.unloaded(pluginId);
       if (pluginId === BROWSER_PLUGIN_ID) browserHost.disposeGuest();
       void webhooks.reconcile().catch(() => logger.app("plugin", "error", "webhook listener update failed", { pluginId }));
       sendToRenderer(IPC.event.pluginChanged,{ reason: "crash", pluginId });
@@ -809,7 +811,14 @@ export function createPluginServices({
   pluginViews.onSurface = (surface) => {
     browserHost.setChromeSurface(surface);
   };
+  const schedulerService = createPluginSchedulerService({
+    plugins,
+    getHost,
+    onChange: () => sendToRenderer(IPC.event.pluginChanged, { reason: "schedule" }),
+    onError: (error) => logger.app("plugin", "error", "plugin scheduler failed", { data: String(error) }),
+  });
   plugins.setServices({
+    onPluginLoaded: (pluginId) => schedulerService.loaded(pluginId),
     /**
      * The richer workspace payload, so `pi.workspace.get` and the
      * `workspace:changed` event both expose the open project's folder roots
@@ -884,6 +893,7 @@ export function createPluginServices({
       cdp: (method, params, sessionId, tabId) => browserHost.cdpCommand(method, params, sessionId, tabId),
     },
     onPluginUnload: (pluginId) => {
+      schedulerService.unloaded(pluginId);
       if (pluginId === BROWSER_PLUGIN_ID) browserHost.disposeGuest();
       void webhooks.reconcile().catch(() => logger.app("plugin", "error", "webhook listener update failed", { pluginId }));
     },
@@ -904,6 +914,7 @@ export function createPluginServices({
   return {
     plugins,
     webhooks,
+    disposePluginScheduler: schedulerService.dispose,
     userMcp,
     mcpOAuth,
     pluginScopes,

@@ -1060,9 +1060,9 @@ type PluginGlobalShortcut = {
 API 契约，强制方式见
 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
 
-**实现状态。** `pi.notify.center`、`pi.inbound.getReceivers` 和
-`inbound:webhook` 已实现。以下其他能力仍仅注册：`pi.net.tcp`、`pi.mail`、
-`pi.tasks` 和 `schedule:fire` 尚未实现，`pi.net.fetch` 也不会读 `credentialRef`。
+**实现状态。** `pi.notify.center`、`pi.inbound.getReceivers`、`inbound:webhook`
+与 `schedule:fire` 事件已实现。以下其他能力仍仅注册：`pi.net.tcp`、`pi.mail`、
+`pi.tasks` 尚未实现，`pi.net.fetch` 也不会读 `credentialRef`。
 使用尚未实现的方法前应检查其是否存在（§8）。
 
 ```ts
@@ -1150,6 +1150,16 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   跳过了多少个时间点；宿主把积压合并成一次事件，而不是重放。插件被禁用或卸载时
   不触发；持续失败的定时器在达到有界次数后被宿主暂停（`plugin_schedules.paused`），
   直到用户或下一次插件加载恢复它——失败不会无声地永远重试
+  没有上次尝试记录的 `every` 定时器加载后立即到期，`missed: 0`；从未运行的
+  cron 则先等待下一个本地时间匹配点。宿主在实际尝试开始时写入 `last_run_at`，
+  此后据此推算下次触发；首次尝试中途重启仍保留真实开始时间。`idle` 定时器等到
+  系统空闲达到 60 秒，等待期间到期的时间点合并。宿主最多等待全部
+  `schedule:fire` handler 五分钟，异常或超时记为失败，迟到结果被忽略。连续失败
+  五次后暂停；用户手动恢复或插件重新加载会清零失败次数，单纯重启应用不会清除
+  暂停状态。手动立即运行使用相同记录规则，不要求用户空闲。cron 使用本地时区；
+  日期和星期字段都受限时按常规 cron 的 OR 语义匹配。宿主运行时最多每 15 秒轮询一次。
+  没有符合条件的已加载定时器时，宿主不启动轮询时钟；确认退出时取消轮询及尚未
+  完成的超时计时器，计时器句柄本身不会阻止进程退出。取消退出则保持调度器运行。
 - **`mail.draft` 从不发送。** 这个 API 里没有发送调用，也不存在由第二个权限打开
   的发送调用；草稿落在宿主列表里，等用户审阅
 - **`notify.center` 写的是持久通知中心。** 记录的 kind 是 `plugin.alert`（默认）

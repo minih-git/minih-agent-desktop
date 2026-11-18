@@ -2993,6 +2993,7 @@ sklm: {
   },
   "plugins": {
     webhook: en.plugins.webhook,
+    schedules: en.plugins.schedules,
     interruptionTitle: "Le travail du greffon va s'arrêter",
     interruptionBody: "Ces greffons exécutent encore du travail. Continuer l'arrêtera :",
     interruptionContinue: "Arrêter et continuer",

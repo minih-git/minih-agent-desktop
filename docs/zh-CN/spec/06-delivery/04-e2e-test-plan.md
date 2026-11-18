@@ -14,6 +14,21 @@
   外壳中测试插件进程、通知中心、视图与命令并截取四种布局；Rust RPC 和桌面测试
   分别覆盖去重、安全、限速、生命周期与已读竞态。
 
+## E2E-PLUGIN-scheduler-delivers-without-model-turn
+
+- **前提：** 隔离 profile 和 Host 数据库；启用的插件持有 `scheduler`，声明两个
+  定时器并注册 `schedule:fire` handler。
+- **步骤：** 触发定时器，查看「扩展 → 定时」，暂停、恢复并立即运行；重新加载、
+  禁用、卸载插件。用受控时钟验证错过触发、空闲门槛、五次失败与 handler 超时。
+- **预期：** 一次事件送达插件，不启动模型回合；列表显示上次尝试及结果。错过的
+  触发合并，暂停和恢复正确持久化，禁用时不触发，卸载后删除状态；迟到结果不能
+  覆盖超时结果。
+- **自动化：** `apps/desktop/test/plugin-scheduler.test.mjs`、
+  `apps/desktop/test/plugin-scheduler-lifecycle.test.mjs` 与
+  `apps/desktop/test/plugin-scheduler-user-path.test.mjs`；后者需要将
+  `MINIH_AGENT_HOST_BIN` 指向隔离构建的 host-core。生命周期测试覆盖两个退出事件及
+  不阻止进程退出的计时器句柄。完整应用外壳视觉交互另行验收。
+
 ## E2E-SESSION-create-thinking-setting
 
 - **前提：** 使用任务工作树、复用依赖、隔离 Electron profile 和合成模型配置，

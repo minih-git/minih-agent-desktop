@@ -3006,6 +3006,7 @@ sklm: {
   },
   plugins: {
     webhook: en.plugins.webhook,
+    schedules: en.plugins.schedules,
     interruptionTitle: "플러그인 작업이 종료됩니다",
     interruptionBody: "다음 플러그인이 아직 작업 중입니다. 계속하면 종료됩니다:",
     interruptionContinue: "종료하고 계속",

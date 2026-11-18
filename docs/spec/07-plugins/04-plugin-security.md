@@ -583,6 +583,13 @@ one fire instead of a catch-up storm, and consecutive failures pause the timer
 after a bounded number of attempts (`plugin_schedules.paused`) instead of
 retrying forever; the pause and its state survive a restart and surface on the
 Plugins page. A tick runs plugin code with no model turn and no quota spend.
+An idle timer waits for 60 seconds of system idle time. The handler deadline is
+five minutes; an exception or timeout counts as one failure and a late answer is
+ignored. Five consecutive failures pause the timer; the user may resume it or
+reload the plugin, clearing the failure count. Restarting the app alone does not
+clear a pause. The first `every` attempt is immediately due; the first cron
+attempt waits for its next local-time match. `last_run_at` is written at the
+start of an actual attempt, not at registration.
 
 **`mail.draft` and `notify.center` — writing into a host-owned list.** Neither
 sends anything: `mail.draft` has no send path, and `notify.center` writes one
@@ -698,10 +705,11 @@ because this host has no device backend yet, so nothing reaches a device.
 `net.websocket` is implemented: connections are host-owned, allowlist-checked,
 bounded, and released with the plugin (§8.1).
 `notify.center` is implemented with its own permission gate and durable inbox.
-The remaining §8.3 capabilities (`credentials.use`, `net.tcp`,
-`inbound.webhook`, `mail.draft`, `scheduler`, `tasks.read` and `tasks.manage`)
-are registered but not implemented. Their manifest fields are validated at
-install; their methods and resources are not yet available.
+`scheduler` is implemented by the host-owned clock and `schedule:fire` event.
+`inbound.webhook` is implemented by the host-owned receiver and event delivery.
+The remaining §8.3 capabilities (`credentials.use`, `net.tcp`, `mail.draft`,
+`tasks.read` and `tasks.manage`) are registered but not implemented. Their
+manifest fields are validated at install; their methods and resources are not yet available.
 
 
 Not enforced yet:

@@ -2965,6 +2965,7 @@ export const ptBR = {
   },
   plugins: {
     webhook: en.plugins.webhook,
+    schedules: en.plugins.schedules,
     interruptionTitle: "O trabalho do plugin será encerrado",
     interruptionBody: "Estes plugins ainda estão executando trabalho. Continuar irá encerrá-lo:",
     interruptionContinue: "Encerrar e continuar",

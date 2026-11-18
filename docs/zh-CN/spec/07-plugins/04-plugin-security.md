@@ -405,6 +405,10 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 合并为一次，而不是补跑一串；连续失败达到有界次数后定时器被暂停
 （`plugin_schedules.paused`），而不是永远重试，暂停状态跨重启保留并在插件页面
 显示。一次触发运行插件代码，不消耗模型回合，也不消耗额度。
+`idle` 定时器等待系统空闲 60 秒。handler 的时限为五分钟；异常或超时算一次
+失败，迟到结果被忽略。连续失败五次后暂停；用户手动恢复或插件重新加载会清零
+失败次数，单纯重启应用不会清除暂停状态。首次 `every` 尝试立即到期，首次 cron
+尝试等待下一个本地时间匹配点。`last_run_at` 在真实尝试开始时写入，不冒充注册时间。
 
 **`mail.draft` 与 `notify.center` —— 写入宿主列表。** 两者都不发送任何东西：
 `mail.draft` 没有发送路径，`notify.center` 只写一条 `plugin.%` 家族的通知中心
@@ -498,10 +502,10 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 插件 API 中：这些方法由这两个权限把关，获得授权的调用会以带错误码的
 `UNSUPPORTED` 拒绝并记入审计，因为当前宿主还没有设备后端，所以没有任何东西
 能到达设备。
-`notify.center` 已实现，由独立权限把关并写入持久通知中心。§8.3 其余能力
-`credentials.use`、`net.tcp`、`inbound.webhook`、`mail.draft`、`scheduler`、
-`tasks.read` 与 `tasks.manage` 仍只完成注册，相关 manifest 字段在安装时校验，
-对应方法及资源尚不可用。
+`notify.center` 已实现，由独立权限把关并写入持久通知中心；`scheduler` 已由
+宿主时钟与 `schedule:fire` 事件实现；`inbound.webhook` 已由宿主接收器与事件投递实现。
+§8.3 其余能力 `credentials.use`、`net.tcp`、`mail.draft`、`tasks.read` 与
+`tasks.manage` 仍只完成注册，相关 manifest 字段在安装时校验，对应方法及资源尚不可用。
 `net.websocket` 已实现：连接由宿主持有、经过白名单检查、有界，并随插件一起
 释放（§8.1）。
 
