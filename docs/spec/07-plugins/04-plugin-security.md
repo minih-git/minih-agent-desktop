@@ -498,6 +498,103 @@ released on disable, unload, and crash.
 Across all four capabilities, an undeclared or ungranted permission denies the
 call and is audited before any device, accelerator, or socket is reached.
 
+## 8.3 Raw TCP, inbound webhooks, and host-held resources
+
+Six host capabilities ([ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md))
+move a resource out of the plugin process and into the host: a credential, a
+socket, a listening path, a clock, a host-owned list entry, a task. The
+security property is the same in all six — **the plugin names what it wants and
+receives events; the host holds the secret, the socket, the port and the
+clock.** Registered in this change; the enforcement below is the contract the
+implementation answers to, and §11 records what exists today.
+
+**`net.tcp` — host-owned raw sockets.** `manifest.net.tcp` is a list of literal
+`{ host, port, tls }` endpoints. A wildcard, a port range, a bare `*`, a
+duplicate `host:port`, or a missing `tls` fails manifest validation, so the
+allowlist can never be widened after review and the host never decides for the
+author whether a connection is encrypted.
+
+- `pi.net.tcp.connect` matches the requested endpoint against that list after
+  the manifest's own normalization; anything else is `PERMISSION_DENIED` before
+  a socket exists.
+- **At most four connections open at once per plugin.** This is a concurrency
+  ceiling that bounds the host's descriptors and buffers; it is deliberately
+  *not* a cap on the allowlist, which stays unbounded so an author with ten
+  servers declares ten instead of reaching for Node's own `net` module.
+- The plugin gets a `connectionId` and events, never a socket, a stream, a TLS
+  session, or a certificate handle. `tls` comes from the manifest, and the host
+  performs the handshake itself, so there is no API to downgrade a connection
+  or to skip verification.
+- Every connection closes on unload, disable, and crash; `connect` and `close`
+  are audited with the endpoint and the outcome, never with payload bytes.
+- The user's outbound HTTP proxy is not consulted for raw sockets. The install
+  review says so, because an author expecting proxy enforcement would otherwise
+  assume it.
+
+**`inbound.webhook` — a host-owned listener.**
+
+- A webhook receiver is registered only when its token exists. The token is a
+  host-generated secret stored in the secret store (spec `03-runtime/04` §10),
+  compared in constant time, and never returned by any API — not even to the
+  plugin that asked for the receiver. Rotating it is a Settings action, and
+  rotation invalidates the old token immediately.
+- The listener binds loopback and the local network interface only. There is no
+  public bind, no port-forward helper, and no hosted relay, so enabling a plugin
+  cannot expose the machine to the internet.
+- Transport is plain HTTP, disclosed at install and in Settings with the same
+  wording as a non-loopback HTTP MCP endpoint (§8.1, ADR 0142): an eavesdropper
+  on the path reads the body. The token is a filter against drive-by posts, not
+  confidentiality.
+- Bodies above 256 KiB are refused with `413` and never buffered; the request
+  past 120 accepted per minute is answered `429`. The manifest may lower either
+  ceiling and cannot raise it.
+- The plugin receives only requests the host already accepted, as one-way
+  events; the host answers `202` and the plugin cannot set the status, the
+  headers, or the body, so a receiver is not a request-forwarding proxy.
+  Header names come from a bounded set, values are truncated, and the body is
+  handed over as text — the host never interprets it. The accepted body is kept
+  as a host-named file (`plugin_webhook_events.body_ref`), never as a database
+  row, and the peer address (`source_ip`) is recorded for diagnosis only.
+
+**`credentials.use` — the secret never crosses.**
+
+- The user fills the slot in Settings; the plugin cannot write it, cannot read
+  it, and receives no error text containing it. There is no read API at all.
+- An injection happens only on a host-owned egress call that names the slot by
+  `credentialRef`, and only when the target is inside both the slot's `scope`
+  and `manifest.net.domains`. A request outside that intersection is refused
+  rather than sent unauthenticated, so a slot cannot become an authenticated
+  beacon to an undeclared host.
+- Values live in the encrypted secret store, never in SQLite (spec
+  `03-runtime/04` §10); the database records only that a slot exists. An
+  injection is audited with the slot id and the destination, never the value.
+
+**`scheduler` — the host owns the clock.** A declared timer is either an
+interval of at least one minute or a five-field cron expression, never both. It
+does not fire while the plugin is disabled or unloaded, a backlog collapses into
+one fire instead of a catch-up storm, and consecutive failures pause the timer
+after a bounded number of attempts (`plugin_schedules.paused`) instead of
+retrying forever; the pause and its state survive a restart and surface on the
+Plugins page. A tick runs plugin code with no model turn and no quota spend.
+
+**`mail.draft` and `notify.center` — writing into a host-owned list.** Neither
+sends anything: `mail.draft` has no send path, and `notify.center` writes one
+inbox row of the `plugin.%` family (`plugin.alert` for one event, `plugin.digest`
+for a rolled-up batch) that the user can read, clear, and delete with the
+plugin. The inbox keeps its 200-row cap, so a plugin cannot use it as unbounded
+storage, and a plugin uninstall removes its rows. Both calls are rate-braked
+like every other host queue.
+
+**`tasks.read` and `tasks.manage` — a narrower employee.** `tasks.read` is a
+read-only roster projection. `tasks.manage` creates and drives only tasks this
+plugin created, and the new task runs at
+`min(manifest.tasks.manage.maxPermission, the employee's own mode)`. `auto` is
+never implied: when a manifest declares it, the install review asks for it
+separately from the permission list, because it removes the user's own approval
+step from work they did not type. A lookup for a task the plugin does not own
+answers `NOT_FOUND`, so the API cannot be used to enumerate other employees'
+work.
+
 ## 9. Auditing and emergency response
 
 Users should be able to:
@@ -528,7 +625,16 @@ The host should be able to:
    a non-loopback plain-HTTP URL is accepted only when its host is declared in
    `manifest.net.domains` and the UI shows the unencrypted-connection warning
 10. A low-risk or granted plugin tool still fails closed in Plan
-
+10. A low-risk or granted plugin tool still fails closed in Plan
+11. A `net.tcp` endpoint with a wildcard host, a port range, or no `tls` fails
+    manifest validation; the fifth simultaneous connection is refused and every
+    connection closes when the plugin unloads
+12. A webhook receiver without a token is not registered, a body above 256 KiB
+    is answered `413`, and the plugin cannot set the response status
+13. No API and no error message returns a credential value, and an injection
+    outside the slot's `scope` or `manifest.net.domains` is refused
+14. A timer does not fire while its plugin is disabled, and a `tasks.manage`
+    task never runs above the employee's own permission mode
 
 ## 11. Implementation status
 
@@ -579,6 +685,17 @@ authorized call is refused with a coded `UNSUPPORTED` refusal that is audited,
 because this host has no device backend yet, so nothing reaches a device.
 `net.websocket` is implemented: connections are host-owned, allowlist-checked,
 bounded, and released with the plugin (§8.1).
+The six capability permissions of §8.3 are **registered and not implemented**.
+`credentials.use`, `net.tcp`, `inbound.webhook`, `mail.draft`,
+`notify.center`, `scheduler`, `tasks.read` and `tasks.manage` are accepted names
+with a risk tier, and the manifest fields behind them are validated at install
+(ADR plugin-host-capabilities §5). No `pi.*` method exists for any of them yet:
+nothing stores or injects a credential, nothing listens on a port, nothing arms
+a timer, nothing opens a socket, and nothing creates a task, a draft, or an
+inbox row. A manifest that declares one of these permissions installs and
+reviews exactly like any other; a plugin that calls an unimplemented method gets
+the same "method not present" answer as any other SDK version gap.
+
 
 Not enforced yet:
 

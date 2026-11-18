@@ -1,4 +1,4 @@
-# 04. 数据存储（架构 v30）
+# 04. 数据存储（架构 v43）
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/03-runtime/04-data-storage) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
@@ -927,6 +927,104 @@ UPDATE sessions
   写入：删一张带着外键历史的表没有收益，却要付一次重建的代价。历史
   `tasks.origin = 'steward'` 行及其 `mandate_json` 同样不动（§4.19a）。
 
+### 4.19d tasks —— 创建任务的插件（架构 v43）
+
+`tasks.plugin_id` 记录通过 `tasks.manage` 调用创建该任务的插件。它只是一个可空
+列，用 `ALTER TABLE` 加上，表的其它部分一概不变：
+
+```sql
+-- tasks（v43，用 ALTER TABLE 加上）
+plugin_id TEXT        -- NULL：由人或员工自己创建的任务
+CREATE INDEX idx_tasks_plugin
+  ON tasks(plugin_id) WHERE plugin_id IS NOT NULL;
+```
+
+- **`origin` 保留原来的两个值。** 早先的草案想给 CHECK 加一个 `'plugin'`，
+  这一条作废。`origin` 记录的是哪条工作台路径派发了任务（`steward` 是 1.7.0
+  之前确认卡片的路径，`direct` 是人自己用的那个界面），插件发起的任务同样走
+  这条 direct 路径。插件的参与是另一种来源信息，所以记在 origin 旁边，而不是
+  当成第三个值——那需要重建表、会改写历史行，而且与 `plugin_id` 已经说清的事情
+  重复。
+- 这一列是**标签，不是所有者**。删除插件不会删除任务、它的会话或转录：工作是
+  员工的，插件不在了只意味着 `tasks.manage` 不再能碰到它。卸载时清空
+  `plugin_id`（`UPDATE tasks SET plugin_id = NULL WHERE plugin_id = ?`），
+  这正是「本插件不得再驱动这个任务」的意思。
+- 生效的权限模式不存这里：它和所有其它模式一样存在会话上，`tasks.manage`
+  只限定插件能申请到什么（§4.19a，`min(声明值, 该员工自己的模式)`）。再存一份
+  就是给会话已经回答过的事情制造第二个事实来源。
+
+### 4.19e plugin_webhook_events + plugin_schedules + plugin_tcp_usage（架构 v43）
+
+三张表保存需要跨重启存活的宿主能力状态。三者在每个既有文件上都以空表创建，
+与全新架构共用同一份 DDL，而且**目前没有任何东西写入它们**：B-0 只注册 manifest
+契约，接收器、定时器与拨号器随各自的能力切片一起落地。
+
+```sql
+-- 一条已接受的入站 webhook 请求（`inbound.webhook`）。监听套接字、路径与
+-- 每个 webhook 的令牌都归宿主；这里保存的是投递本身，于是重启前刚被接受的
+-- 请求仍然欠着插件，而不是被悄悄丢掉。正文本身从不入库：`body_ref` 指出
+-- 接受副本所在，令牌存在密钥库。
+CREATE TABLE plugin_webhook_events (
+  id           TEXT PRIMARY KEY,
+  plugin_id    TEXT NOT NULL,
+  webhook_id   TEXT NOT NULL,
+  source_ip    TEXT,
+  body_ref     TEXT,
+  received_at  INTEGER,
+  delivered_at INTEGER
+);
+CREATE INDEX idx_plugin_webhook_events_delivery
+  ON plugin_webhook_events(plugin_id, webhook_id, delivered_at);
+
+-- 一个插件自己的定时器（`scheduler`）。独立于 scheduled_tasks：它调的是插件
+-- 函数，不消耗模型额度，也不需要提示词。这一行保存宿主从上次尝试知道的
+-- 事实，而不是声明本身 —— `every` / `cron` / `runWhen` 留在 manifest 里。
+CREATE TABLE plugin_schedules (
+  plugin_id   TEXT NOT NULL,
+  schedule_id TEXT NOT NULL,
+  last_run_at INTEGER,
+  last_ok     INTEGER,
+  attempts    INTEGER,
+  paused      INTEGER DEFAULT 0,
+  PRIMARY KEY (plugin_id, schedule_id)
+);
+
+-- 宿主代发的 TCP（`net.tcp`），按对端、按天累计。插件从不自持套接字，
+-- 所以这是它流量代价的唯一记录。
+CREATE TABLE plugin_tcp_usage (
+  plugin_id TEXT NOT NULL,
+  host      TEXT NOT NULL,
+  port      INTEGER NOT NULL,
+  bytes_in  INTEGER,
+  bytes_out INTEGER,
+  day       TEXT NOT NULL,
+  PRIMARY KEY (plugin_id, host, port, day)
+);
+```
+
+- `plugin_webhook_events` 每条已接受请求一行，**正文从不入表**：`body_ref` 指出
+  接受副本所在（插件自己的数据目录），于是收件表保持很小，一个大请求也不会变成
+  数据库里的一行。`source_ip` 是对端地址，仅用于诊断；令牌存在密钥库（§4.12），
+  不出现在任何列里。唯一的索引是 `(plugin_id, webhook_id, delivered_at)`，
+  一次范围扫描同时回答「这个接收器还欠着什么」（`delivered_at IS NULL`）与
+  「它已经取走了什么」。
+- `plugin_schedules` 保存尝试状态，而不是声明：`every` / `cron` / `runWhen` 留在
+  manifest 这个唯一事实来源里，这张表只放三件事 —— `last_run_at`（上次触发）、
+  `last_ok`（上次尝试是否成功）、`attempts`（当前连续失败次数）。`paused`
+  （默认 `0`）是宿主的刹车：定时器失败次数超过界限后被暂停而不是被删除，于是
+  状态能跨重启保留，插件页面也可以提示恢复。声明里不再出现的定时器会在插件加载时
+  删行，所以卸载后的定时器不可能再触发。
+- `plugin_tcp_usage` 是**按天计数器，不是事件日志**：每个
+  `(plugin_id, host, port, day)` 一行，`bytes_in` / `bytes_out` 由以该主键为准的
+  upsert 累加。它记录的是一项没有其它可见界面的能力付出了多少代价，除此之外
+  什么都没有 —— 没有逐连接的行、没有载荷、没有拒绝原因。`day` 是本地日历日
+  （`YYYY-MM-DD`），也就是用量视图分组用的口径；保留策略让它与其它用量家族一起
+  被裁剪（§8）。
+- 三张表都不引用 `sessions` 或 `tasks`：一次 webhook 投递、一个定时器、一条拨出
+  的连接都属于插件，而插件不是这个数据库里的一行（它是插件根目录下的一个目录）。
+  `plugin_id` 是与 `providers.owner_plugin_id`（§4.3）同一套生命周期的标签：
+  已卸载插件的行在卸载时删除，并在启动时核对。
+
 ### 4.7 messages — 转录索引
 
 脚本本身是每个会话的 JSONL 文件（第 2.1 节）；这张表是它的
@@ -1243,9 +1341,10 @@ CREATE INDEX idx_audit_session ON audit_log(session_id, ts)
 
 ### 4.14 notifications — 持久本地收件箱 (D117, D663)
 
-一行记录两种事实之一：一个尚未在当前聚焦聊天中可见的终端代理回合结果，
-或一个运行时正在等待用户回应的交互请求。它仅存储结构化源数据；渲染器和
-Electron 在表示边界处派生本地化的 title/body 字符串。
+一行记录三种事实之一：一个尚未在当前聚焦聊天中可见的终端代理回合结果，
+一个运行时正在等待用户回应的交互请求，或（架构 v43）一条插件放进通知中心的
+条目。它仅存储结构化源数据；渲染器和 Electron 在表示边界处派生本地化的
+title/body 字符串。
 
 ```sql
 CREATE TABLE notifications (
@@ -1253,16 +1352,24 @@ CREATE TABLE notifications (
   kind          TEXT NOT NULL
                   CHECK (kind IN ('task.completed', 'task.failed',
                                   'prompt.ask', 'prompt.permission',
-                                  'prompt.plan')),
-  session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  session_title TEXT NOT NULL,              -- 插入时的快照
+                                  'prompt.plan',
+                                  'plugin.alert', 'plugin.digest')),
+  session_id    TEXT REFERENCES sessions(id) ON DELETE CASCADE,  -- NULL：plugin.%
+  session_title TEXT,                       -- 插入时的快照；NULL：plugin.%
   turn_id       TEXT,                       -- task：每个回合恰好一行；
                                             -- prompt：被阻塞的回合，不作去重键
   request_id    TEXT,                       -- prompt：每个请求恰好一行
   tool_name     TEXT,                       -- 仅 prompt.permission
   error_code    TEXT,                       -- task.failed 已知时填充
+  -- plugin 家族（架构 v43）
+  plugin_id     TEXT,                       -- 谁投递了这一行
+  title         TEXT,                       -- 通知中心显示的那一行
+  body          TEXT,
+  link_json     TEXT,                       -- 点击这一行会打开什么
+  dedupe_key    TEXT,                       -- 插件给这次事件自己的 id
   created_at    INTEGER NOT NULL,
-  read_at       INTEGER
+  read_at       INTEGER,
+  CHECK ((kind LIKE 'plugin.%') = (plugin_id IS NOT NULL))
 );
 CREATE UNIQUE INDEX idx_notifications_turn
   ON notifications(turn_id)
@@ -1274,7 +1381,29 @@ CREATE INDEX idx_notifications_created
   ON notifications(created_at DESC);
 CREATE INDEX idx_notifications_unread
   ON notifications(created_at DESC) WHERE read_at IS NULL;
+CREATE UNIQUE INDEX idx_notifications_plugin_dedupe
+  ON notifications(plugin_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
 ```
+
+- `plugin.%` 行挂在插件上而不是对话上，所以 `session_id` 与 `session_title`
+  可为 NULL，并且表的 `CHECK` 把两个家族绑在一起：kind 以 `plugin.` 开头的行
+  才点名插件，其它 kind 一律不得点名。这类行的 `turn_id`、`request_id`、
+  `tool_name` 与 `error_code` 一律为 NULL。约束写成
+  `(kind LIKE 'plugin.%') = (plugin_id IS NOT NULL)` 而不是枚举清单，于是它跟着
+  kind 家族走，而不必把每个成员再写两遍。
+- 两个 kind，一个家族：**`plugin.alert`** 是用户当下就该看到的一件事，
+  **`plugin.digest`** 是插件汇总后代表一整批的一行。宿主只把 kind 当数据存储与
+  渲染；什么时候提示、什么时候汇总，是插件自己的策略。
+- `title` / `body` 是插件自己的文本，按插件给出的样子存储与渲染。
+  与 session 行不同，这里没有本地化派生：宿主没有可翻译的东西，也不会改写它。
+  `link_json` 记录点击这一行会打开什么，它是宿主校验过的目标，而不是插件用来
+  导航外壳的任意 URL。
+- `dedupe_key` 是插件给这次事件自己的 id。重投的事件会落在已经存在的那一行上
+  —— 唯一索引建在 `(plugin_id, dedupe_key)` —— 而不是多出一条副本，这正是
+  重复调用 `notify.center` 仍然幂等的原因。
+- plugin 家族共享收件箱的生命周期：同一条 200 行裁剪、同一个未读计数与标记已读、
+  同一个清空操作，以及卸载时的同样删除
+  （`DELETE FROM notifications WHERE plugin_id = ?`）。
 
 - `session.endTurn` 始终更新回合，并且当 `createNotification` 为
   true，为 `completed` 插入 `task.completed` 或为 `error` 插入 `task.failed`
@@ -1714,6 +1843,27 @@ assistant 行进入 outbox 之前，事件持久化会丢弃没有可见文本�
 - **架构 v14 是新增迁移。** 它增加可为空的 `sessions.deleted_at`、部分
   删除索引和 `session_import_origins`。现有会话保持活动状态且没有来源行。
   迁移使用同一个受保护事务，并在完整性检查通过前保留 v14 之前的备份。
+- **架构 v43 重建一次 `notifications`，并加上能力层。** 收件箱多了 `plugin.%`
+  家族（`plugin.alert`、`plugin.digest`），于是 `session_id` 与 `session_title`
+  变可为空，plugin 列出现（`plugin_id`、`title`、`body`、
+  `link_json`、`dedupe_key`），并用
+  `CHECK ((kind LIKE 'plugin.%') = (plugin_id IS NOT NULL))` 把两个家族绑在一起
+  （§4.14）。SQLite 改不了 `CHECK`，所以这一步把表改名、用与全新架构相同的
+  `NOTIFICATIONS_DDL` 重建、按列名复制、再删掉旧表；四个既有索引保留原名，
+  另加去重索引。
+  - **这一步始终保持外键约束开启**，与 v32 -> v33 的重建不同。复制时无法插入
+    会话已不存在的行，所以语句把那些行直接过滤掉，而不是失败或悄悄保留：
+    指向已删除会话的通知没有任何东西可打开，用户已授权丢弃它们。步骤比较复制前、
+    复制后与丢弃的条数（`after == before - orphans`），对这张表复查
+    `pragma_foreign_key_check` 且只拒绝**新增**违规，并记录三个数字。
+  - **`tasks.plugin_id` 是新增列**，先用 `pragma_table_info` 探测，所以停在写入
+    版本号之前的启动会被补完而不是重跑（§4.19d）。`origin` 不动：`'plugin'`
+    从来不是它的取值。
+  - **三张新表**（`plugin_webhook_events`、`plugin_schedules`、
+    `plugin_tcp_usage`）用与全新架构共享的一份 DDL 创建，新文件与迁移后的文件
+    因此不会漂移（§4.19e）。它们在每个既有文件上都以空表开始，目前无人写入。
+  - **步骤前会留下 `pi.sqlite.v42.bak`**，因为按 §7 的规则重建表是破坏性操作。
+    `user_version = 43` 在同一事务的最后写入，v43 文件无法被旧版应用打开。
 
 `largePasteThreshold` 是应用设置 JSON 中的新增字段，而不是数据库 schema 字段。
 主机读取设置时会将缺失、格式错误或超出范围的值规范化为 600，设置写入则验证

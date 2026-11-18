@@ -205,6 +205,12 @@ providers?: PluginProviderContrib[]; // Host-owned provider rows; needs `provide
   views?: PluginViewContrib[];
   sessionSources?: PluginSessionSourceContrib[];
   globalShortcuts?: PluginGlobalShortcutContrib[]; // needs `keyboard.globalShortcut`
+  /** Credential slots the user fills in Settings; needs `credentials.use` (§5.5). */
+  credentials?: PluginCredentialContrib[];
+  /** Host-owned inbound receivers; needs `inbound.webhook` (§5.5). */
+  webhooks?: PluginWebhookContrib[];
+  /** Plugin-owned timers; needs `scheduler` (§5.5). */
+  schedules?: PluginScheduleContrib[];
 };
 
 type PluginCommandContrib = {
@@ -430,7 +436,17 @@ type PluginPermission =
  | "audio.playback.background"
  | "speech.adapter.register"
  | "keyboard.globalShortcut"
- | "net.websocket";
+ | "net.websocket"
+ // Host capabilities (phase 2B). Registered only: see §5.5 and ADR
+ // plugin-host-capabilities; no `pi.*` method exists for any of them yet.
+ | "credentials.use"
+ | "net.tcp"
+ | "inbound.webhook"
+ | "mail.draft"
+ | "notify.center"
+ | "scheduler"
+ | "tasks.read"
+ | "tasks.manage";
 ```
 
 Unknown permission = validation failure.
@@ -506,6 +522,40 @@ declared in `net.domains` keeps today's behavior, so existing manifests are
 unaffected; a plugin without the grant sees no change either. The grant is
 an install-time permission like any other: the user sees it in the review
 dialog and nothing prompts at request time.
+
+### 5.3.2 net.tcp — literal raw endpoints (phase 2B)
+
+```ts
+type PluginTcpEndpoint = {
+  host: string   // bare hostname, no wildcard
+  port: number   // 1..65535, literal
+  tls: boolean   // required: the host neither upgrades nor downgrades
+};
+// manifest.net = { domains?: PluginNetDomain[]; tcp?: PluginTcpEndpoint[] }
+```
+
+A permission cannot bound "connect somewhere on the network" and a hostname
+allowlist does not describe a database or a mail server, so `net.tcp` is a
+second literal list next to `net.domains`. It answers to the `net.tcp`
+permission the way `net.domains` answers to `net.fetch`: the permission is the
+switch, the list is the range, and **an absent or empty list means no raw
+socket at all**.
+
+- `host` is a bare hostname (`db.example.com`, `192.168.1.10`): no scheme, no
+  port suffix, no path, no `*`, and no port range. A wildcard fails validation
+  because an endpoint the author cannot name in advance is not an endpoint a
+  reviewer can approve
+- `port` is an integer from 1 to 65535, and `tls` is required; a duplicate
+  `host:port` fails validation
+- **The list has no size limit; the host admits at most four open connections
+  per plugin.** The four bounds the host's descriptors and buffers, which is the
+  resource that actually runs out, so an author with ten servers declares ten
+  rather than falling back to Node's own `net` module
+- `net.anyHost` does not cover raw sockets (unless the grant is extended to
+  them): the answer for a host the user types in is a manifest update, not a
+  blanket grant
+- See [03-plugin-api.md](03-plugin-api.md) §3 for the connection contract and
+  [04-plugin-security.md](04-plugin-security.md) §8.3 for the enforcement
 
 ## 5.1 Bus topic grammar
 
@@ -585,6 +635,69 @@ grant the permission only to code you trust. See
 [03-plugin-api.md](03-plugin-api.md) and
 [13-plugin-permissions-matrix.md](13-plugin-permissions-matrix.md).
 
+## 5.5 Host-capability fields — credentials, webhooks, schedules, tasks
+
+Four fields describe a resource the host holds on the plugin's behalf. All four
+are validated at install, all four fail closed when absent, and each requires
+its permission ([ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md)).
+**Registration only:** the shapes below validate today, and no host behavior
+follows yet.
+
+```ts
+type PluginCredentialContrib = {
+  id: string;                                   // [a-zA-Z][a-zA-Z0-9_-]{0,63}
+  title: string | { en: string; "zh-CN": string };
+  kind: "basic" | "bearer" | "header" | "oauth2" | "imap";
+  fields: Array<{
+    key: string;                                // same grammar as id
+    label: string | { en: string; "zh-CN": string };
+    secret?: boolean;                           // rendered masked in Settings
+  }>;
+  /** Hosts the slot may be injected into; absent means injected nowhere. */
+  scope?: { domains: PluginNetDomain[] };
+};
+
+type PluginWebhookContrib = {
+  id: string;
+  title: string | { en: string; "zh-CN": string };
+  maxBodyBytes?: number;                        // 1..262144, default the cap
+  ratePerMinute?: number;                       // 1..120, default the cap
+};
+
+type PluginScheduleContrib = {
+  id: string;
+  title: string | { en: string; "zh-CN": string };
+  every?: string;                               // "<n><s|m|h|d>", at least one minute
+  cron?: string;                                // five fields, no seconds
+  runWhen?: "always" | "idle";                  // default "always"
+};
+
+type PluginTasksContrib = {
+  manage?: {
+    /** Ceiling for a task this plugin creates; omitted means accept-edits. */
+    maxPermission?: "ask" | "accept-edits" | "auto";
+  };
+};
+// manifest.tasks
+```
+
+- A credential slot the Settings sheet cannot render is refused: `kind` and at
+  least one `fields` entry are required, field keys are unique, and a `scope`
+  with no domain is invalid. The value is user-entered, never declared here
+- `scope.domains` uses the same grammar as `net.domains`, and an injection must
+  also be inside `net.domains`, so a slot can only narrow egress, never widen it
+- A webhook may lower `maxBodyBytes` (256 KiB) and `ratePerMinute` (120) and
+  cannot raise either; the receiver defaults to loopback and the local network,
+  and its token is host-generated, not a manifest field
+- A schedule declares **exactly one** of `every` / `cron`. Declaring both would
+  leave the host picking one while the author believes the other
+- `tasks.manage.maxPermission` accepts only the three known modes. An unknown
+  word is refused rather than read as `accept-edits`, and `auto` is never
+  implied: the install review asks for it separately from the permission list
+- The capability permissions (`credentials.use`, `inbound.webhook`,
+  `scheduler`, `tasks.manage`) and raw TCP (`manifest.net.tcp`, §5.3.2) are the
+  four switches that must be declared alongside the field that uses them
+
 ## 6. activationEvents (optional)
 
 Examples:
@@ -659,6 +772,22 @@ MVP may implement only:
     `rendererActions` (at most 16) and `rendererCallMethods` (at most 32) are
     lists of non-empty names and require `renderer`. Declaring any of the three
     needs the `renderer.extension` permission (§3.2)
+
+20. `contributes.credentials` needs `credentials.use`, `contributes.webhooks`
+    needs `inbound.webhook`, `contributes.schedules` needs `scheduler`, and
+    `manifest.tasks.manage` needs `tasks.manage`; `manifest.net.tcp` needs
+    `net.tcp`. Each list's ids match `[a-zA-Z][a-zA-Z0-9_-]{0,63}` and are
+    unique within their own list, and each entry's `title` (and every credential
+    field `label`) is required and, when localized, carries both `en` and
+    `zh-CN` (§5.5)
+21. A credential slot declares a known `kind` and at least one field with a
+    unique key; `scope.domains` uses the `net.domains` grammar and is
+    non-empty when present. A webhook's `maxBodyBytes` is 1..262144 and its
+    `ratePerMinute` is 1..120 — a declaration may lower the host cap, never
+    raise it
+22. A schedule declares exactly one of `every` (an interval of at least one
+    minute) and `cron` (five fields), and `runWhen` is `always` or `idle`.
+    `tasks.manage.maxPermission` is one of `ask`, `accept-edits`, `auto`
 
 ## 8. Example: minimal plugin
 

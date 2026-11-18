@@ -167,6 +167,12 @@ type PluginContributes = {
   views?: PluginViewContrib[];
   sessionSources?: PluginSessionSourceContrib[];
   globalShortcuts?: PluginGlobalShortcutContrib[]; // 需要 `keyboard.globalShortcut`
+  /** 用户在设置里填写的凭据槽位；需要 `credentials.use`（§5.5）。 */
+  credentials?: PluginCredentialContrib[];
+  /** 宿主持有的入站接收器；需要 `inbound.webhook`（§5.5）。 */
+  webhooks?: PluginWebhookContrib[];
+  /** 插件自己的定时器；需要 `scheduler`（§5.5）。 */
+  schedules?: PluginScheduleContrib[];
 };
 
 type PluginCommandContrib = {
@@ -350,7 +356,17 @@ type PluginPermission =
  | "audio.playback.background"
  | "speech.adapter.register"
  | "keyboard.globalShortcut"
- | "net.websocket";
+ | "net.websocket"
+ // 宿主能力（phase 2B）。仅注册：见 §5.5 与 ADR
+ // plugin-host-capabilities；它们都还没有对应的 `pi.*` 方法。
+ | "credentials.use"
+ | "net.tcp"
+ | "inbound.webhook"
+ | "mail.draft"
+ | "notify.center"
+ | "scheduler"
+ | "tasks.read"
+ | "tasks.manage";
 ```
 
 未知权限=验证失败。
@@ -421,6 +437,34 @@ type PluginNetDomains = string[]; // "api.example.com" 或 "*.example.com"
 不受影响；未持有该权限的插件同样零变化。它与其他权限一样在安装/更新
 确认页展示，请求时不再有任何弹窗。
 
+### 5.3.2 net.tcp —— 字面的原始端点（phase 2B）
+
+```ts
+type PluginTcpEndpoint = {
+  host: string   // 裸主机名，不接受通配符
+  port: number   // 1..65535，字面值
+  tls: boolean   // 必填：宿主既不升级也不降级
+};
+// manifest.net = { domains?: PluginNetDomain[]; tcp?: PluginTcpEndpoint[] }
+```
+
+一个权限说不清「在网络上随便连」，主机名白名单也描述不了数据库或邮件服务器，
+所以 `net.tcp` 是 `net.domains` 旁边的第二张字面清单。它与 `net.tcp` 权限的
+关系，正如 `net.domains` 与 `net.fetch`：权限是开关，清单是范围，
+**清单缺失或为空就一条原始连接都不开**。
+
+- `host` 是裸主机名（`db.example.com`、`192.168.1.10`）：不带协议、不带端口
+  后缀、不带路径、不含 `*`，也没有端口区间。通配符会校验失败，因为作者事先
+  点不出名字的端点，审查者也无法批准
+- `port` 是 1 到 65535 的整数，`tls` 必填；重复的 `host:port` 校验失败
+- **清单没有条数上限；宿主对每个插件最多同时开四条连接。** 四条限制的是宿主
+  的描述符与缓冲区——那才是真正会用尽的资源——所以有十台服务器的作者写十条，
+  而不是退回 Node 自己的 `net` 模块
+- `net.anyHost` 不覆盖原始套接字（除非该豁免被扩展到它们）：用户自己填的主机
+  要靠更新清单，而不是一次总授权
+- 连接契约见 [03-plugin-api.md](/zh-CN/spec/07-plugins/03-plugin-api) §3，
+  强制方式见 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3
+
 ## 5. 1 总线主题语法
 
 主题最多是与 `[a-zA-Z0-9][a-zA-Z0-9_-]*` 匹配的点分隔段
@@ -471,6 +515,65 @@ OAuth 登录使用宿主自有的账号界面和加密凭据存储。宿主通�
 自身 provider 的凭据。刷新令牌保留在 Electron 主进程与宿主密钥库内，Agent Runtime
 只接收请求所需的访问令牌。每个 provider 声明目前只支持一个账号；宿主插件进程不是
 操作系统沙箱，因此授予 `provider.oauth` 表示信任该插件处理此 provider 的凭据。
+## 5.5 宿主能力字段 —— 凭据、webhook、定时器、任务
+
+四个字段描述宿主代插件持有的资源。四者都在安装时校验、缺失时 fail closed，
+并且各自需要对应的权限
+（[ADR plugin-host-capabilities](/zh-CN/adr/plugin-host-capabilities)）。
+**仅注册：**下面的形状今天能通过校验，但还没有任何宿主行为跟着它落地。
+
+```ts
+type PluginCredentialContrib = {
+  id: string;                                   // [a-zA-Z][a-zA-Z0-9_-]{0,63}
+  title: string | { en: string; "zh-CN": string };
+  kind: "basic" | "bearer" | "header" | "oauth2" | "imap";
+  fields: Array<{
+    key: string;                                // 与 id 同一套语法
+    label: string | { en: string; "zh-CN": string };
+    secret?: boolean;                           // 在设置里以掩码渲染
+  }>;
+  /** 允许注入的主机；缺失表示无处注入。 */
+  scope?: { domains: PluginNetDomain[] };
+};
+
+type PluginWebhookContrib = {
+  id: string;
+  title: string | { en: string; "zh-CN": string };
+  maxBodyBytes?: number;                        // 1..262144，默认取上限
+  ratePerMinute?: number;                       // 1..120，默认取上限
+};
+
+type PluginScheduleContrib = {
+  id: string;
+  title: string | { en: string; "zh-CN": string };
+  every?: string;                               // "<n><s|m|h|d>"，至少一分钟
+  cron?: string;                                // 五段，不含秒
+  runWhen?: "always" | "idle";                  // 默认 "always"
+};
+
+type PluginTasksContrib = {
+  manage?: {
+    /** 本插件创建任务的权限上限；省略等价于 accept-edits。 */
+    maxPermission?: "ask" | "accept-edits" | "auto";
+  };
+};
+// manifest.tasks
+```
+
+- 设置面板渲染不出来的凭据槽位会被拒绝：`kind` 与至少一个 `fields` 条目必填，
+  字段 key 不得重复，`scope` 里没有域也不合法。值由用户输入，绝不在这里声明
+- `scope.domains` 与 `net.domains` 同一套语法，而且注入目标还必须落在
+  `net.domains` 内，所以槽位只能收窄出网范围，永远不能放宽
+- webhook 可以调低 `maxBodyBytes`（256 KiB）与 `ratePerMinute`（120），
+  不能调高；接收器默认只监听回环与局域网，令牌由宿主生成，不是清单字段
+- 定时器必须在 `every` / `cron` 里**恰好二选一**。两个都声明会让宿主挑一个，
+  而作者以为是另一个
+- `tasks.manage.maxPermission` 只接受三个已知模式。未知词会被拒绝而不是当作
+  `accept-edits`，`auto` 绝不隐含：安装审查会在权限列表之外单独询问
+- 能力权限（`credentials.use`、`inbound.webhook`、`scheduler`、`tasks.manage`）
+  与原始 TCP（`manifest.net.tcp`，§5.3.2）是必须与使用它们的字段一起声明的
+  四个开关
+
 ## 6. activationEvents（可选）
 
 示例：
@@ -537,6 +640,19 @@ MVP 只能实现：
 19. `renderer` 必须是包内的 `.js` 或 `.mjs` 文件；`rendererActions`（最多 16 条）与
     `rendererCallMethods`（最多 32 条）是非空名字列表，且必须先有 `renderer` 才能声明。
     三者中声明任何一个都需要 `renderer.extension` 权限（§3.2）
+
+20. `contributes.credentials` 需要 `credentials.use`，`contributes.webhooks`
+    需要 `inbound.webhook`，`contributes.schedules` 需要 `scheduler`，
+    `manifest.tasks.manage` 需要 `tasks.manage`，`manifest.net.tcp` 需要
+    `net.tcp`。各列表的 id 匹配 `[a-zA-Z][a-zA-Z0-9_-]{0,63}` 且在本列表内
+    唯一；每条的 `title`（以及凭据字段的 `label`）必填，本地化时必须同时给出
+    `en` 与 `zh-CN`（§5.5）
+21. 凭据槽位必须声明已知的 `kind` 与至少一个 key 唯一的字段；`scope.domains`
+    使用 `net.domains` 的语法，一旦出现就必须非空。webhook 的 `maxBodyBytes`
+    为 1..262144、`ratePerMinute` 为 1..120 —— 声明只能调低宿主上限，不能调高
+22. 定时器必须在 `every`（至少一分钟的间隔）与 `cron`（五段）中恰好声明一个，
+    `runWhen` 只能是 `always` 或 `idle`。`tasks.manage.maxPermission` 只能是
+    `ask`、`accept-edits`、`auto` 之一
 
 ## 8. 示例：最小插件
 

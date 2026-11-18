@@ -59,27 +59,44 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `embeddings.run` | high | `pi.embeddings.embed` | Confirm at install | Turns text into vectors with one of the user's own embedding models. The text leaves the machine and spends that provider's quota; the plugin never sees the credential. OpenAI-compatible endpoints only; 1..=64 texts, 8 KiB each, 256 KiB a call, 120 calls a minute |
 | `agent.complete` | high | `pi.agent.complete` | Confirm at install | Host-owned one-shot; spends user quota; `includeSessionContext` also needs `session.read` |
 | `speech.adapter.register` | high | `pi.speech.registerAdapter` / `unregisterAdapter` | Confirm at install | Registers a speech protocol. Handles stay in the guest; HTTP plans are executed by the host with the bound provider key and must stay on that origin. Built-in protocol ids are reserved |
+| `credentials.use` | high | `contributes.credentials` slots the user fills in Settings; the host injects the stored secret into an egress path the plugin names by `credentialRef` | Confirm at install | No read API: nothing returns the value. Injection happens only inside both the slot's `scope` and `manifest.net.domains`, so a slot without `scope` is injected nowhere. Values live in the secret store, never in SQLite |
+| `net.tcp` | high | `pi.net.tcp.connect` / `send` / `close` (host-owned sockets to the literal endpoints in `manifest.net.tcp`) | Deny by default | Literal `host`, `port` and `tls`; no wildcard, no port range. At most four connections open at once — a concurrency ceiling, not a cap on the allowlist. The plugin gets a handle, never a socket, and every connection closes on unload, disable, and crash |
+| `inbound.webhook` | high | `contributes.webhooks`; the host owns the listener, the path and the token and delivers accepted requests as `inbound:webhook` events | Confirm at install | LAN and loopback only, plain HTTP and disclosed as such. A webhook without a token is not registered. Bodies above 256 KiB get `413`, and past 120 accepted requests a minute `429`; the manifest may lower either ceiling, never raise it |
+| `mail.draft` | medium | `pi.mail.draft.create` | Confirm at install | Writes a draft into the host's draft list. There is no send path, in this grant or behind another |
+| `notify.center` | medium | `pi.notify.center` | Confirm at install | One durable row in the notification inbox, kind `plugin.alert` (one event) or `plugin.digest` (a rolled-up batch), naming the plugin; it shares the 200-row cap, the unread count and the clear action, and an uninstall removes it. Distinct from `notify`, which persists nothing |
+| `scheduler` | medium | `contributes.schedules`; the host fires `schedule:fire` for a declared timer | Confirm at install | One-minute floor, exactly one of `every` / `cron`, and `runWhen: "idle"` lets the host wait for the user. A tick calls a plugin function and spends no model tokens; missed ticks collapse into one fire, and consecutive failures pause the timer (surviving a restart) instead of retrying forever |
+| `tasks.read` | medium | `pi.tasks.list` | Confirm at install | Read-only roster and ledger facts; no prompt text and no write path |
+| `tasks.manage` | high | `pi.tasks.create` / `get` / `send` / `stop` | Confirm at install; `auto` needs its own separate confirmation | Creates and drives only tasks this plugin created, at `min(manifest.tasks.manage.maxPermission, the employee's own mode)`. Omitting the field means `accept-edits`; `auto` is never implied |
 
 ## 2A. A permission is the switch; the manifest carries the range
 
-Two capabilities are too coarse to be answered by a name alone, so the name says
-whether the plugin may act and a manifest field says how far. Both fields are
-enforced by the host, shown to the user next to the permissions, and validated at
-install time.
+Four capabilities are too coarse to be answered by a name alone, so the name
+says whether the plugin may act and a manifest field says how far. Every field
+below is enforced by the host, shown to the user next to the permissions, and
+validated at install time.
 
 | Field | Bounds | Absent or empty means |
 |---|---|---|
 | `net.domains` | Every host-owned egress path: the panel session, `pi.net.fetch`, remote HTTP MCP endpoints | No egress at all, whatever `net.fetch` says |
+| `net.tcp` | The literal `host` + `port` + `tls` endpoints raw sockets may reach | No raw connection, whatever `net.tcp` says |
+| `contributes.credentials[].scope` | Hosts a stored credential may be injected into; an injection must also be inside `net.domains` | The slot is injected nowhere |
 | `fs.read` / `fs.write` / `fs.delete` | Which paths that file mode may touch | No standing reach; every access falls to a confirmation |
 
-Failing closed on an absent field is what makes the two safe to omit: a
+Failing closed on an absent field is what makes all four safe to omit: a
 manifest that says nothing grants nothing. See
-[04-plugin-security.md](04-plugin-security.md) §6 and §8.1, and ADR 0088.
+[04-plugin-security.md](04-plugin-security.md) §6, §8.1 and §8.3, ADR 0088 and
+[ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md).
 
-The two are also linked. `fs.read` may declare the whole tree because a read
-only becomes a leak when the bytes can leave, and `net.domains` closes that
-half. `fs.write` and `fs.delete` are dangerous on their own, so a whole-tree
-pattern (`**`, `**/*`, `*/**`, `./*`) fails manifest validation for those modes.
+The file modes are also linked. `fs.read` may declare the whole tree because a
+read only becomes a leak when the bytes can leave, and `net.domains` closes
+that half. `fs.write` and `fs.delete` are dangerous on their own, so a
+whole-tree pattern (`**`, `**/*`, `*/**`, `./*`) fails manifest validation for
+those modes.
+
+`net.tcp` is bounded differently in each direction, and the two are not
+interchangeable: the endpoint list has no size limit — an author with ten
+servers names ten — while the host admits **at most four connections open at
+once**. Name the servers, and the concurrency is what the host meters.
 
 ## 2B. Deletion
 
@@ -117,6 +134,18 @@ plugin, so it carries three bounds the other modes do not:
   `session:modelChanged`, `session:turnEnded`, and `plugin:settingsChanged`
   arrive on the existing plugin event channel, and subscribing to an unknown
   event name does not error
+- `contributes.credentials` requires `credentials.use`; `contributes.webhooks`
+  requires `inbound.webhook`; `contributes.schedules` requires `scheduler`;
+  `manifest.net.tcp` requires `net.tcp`; `manifest.tasks.manage` requires
+  `tasks.manage`. Each declaration is checked in the same pass as the field it
+  belongs to, so an unusable block fails install rather than being dropped
+- `credentials.use` never substitutes for an egress permission: an injected
+  request still needs `net.fetch` (or `net.tcp`) and a host inside
+  `manifest.net.domains`. The slot only takes the secret out of the plugin's
+  hands; it does not widen the reach the plugin already had
+- `tasks.read` and `tasks.manage` are independent: listing the roster does not
+  authorize creating a task, and creating one does not authorize reading
+  another employee's tasks
 
 ## 3A. Plan operating-state rule
 
@@ -143,6 +172,14 @@ so "Modify the files it lists" is followed by the list.
 | `agent.prompt.inject` | Adjust agent instructions | 调整智能体指令 |
 | `agent.extension` | Run code inside the agent | 在 agent 内运行代码 |
 | `renderer.extension` | Draw UI in chat slots | 在聊天插槽绘制界面 |
+| `credentials.use` | Use the credentials you enter in Settings, without seeing them | 使用你在设置中填写的凭据（插件看不到明文） |
+| `net.tcp` | Connect directly to the servers it lists | 直接连接它列出的服务器 |
+| `inbound.webhook` | Receive requests on a local address | 在本地地址接收外部请求 |
+| `notify.center` | Add entries to your notification center | 向通知中心添加条目 |
+| `scheduler` | Run on its own timer | 按自己的定时器运行 |
+| `mail.draft` | Write mail drafts into your draft list | 把邮件草稿写入你的草稿列表 |
+| `tasks.read` | Read your task list | 读取你的任务列表 |
+| `tasks.manage` | Create and drive tasks in your task list | 在你的任务列表里创建并推进任务 |
 | `net.fetch` | Access the network | 访问网络 |
 | `shell.openExternal` | Open external links | 打开外部链接 |
 | `ui.theme` | Provide a theme | 提供主题 |
@@ -219,3 +256,18 @@ visible workspace for a panel call (ADR 0266).
    interrupted past 50 removals in a rolling minute
 8. A plugin declaring only the legacy `fs.*.workspace` names loses write and
    delete reach, and the Plugins page says so
+9. A manifest that declares `contributes.credentials` without `credentials.use`
+   fails validation, and no API returns a stored credential value in any form
+10. A `net.tcp` endpoint with a wildcard host, a port outside 1–65535, a
+    missing `tls`, or a repeated `host:port` fails validation; the fifth
+    simultaneous connection is refused, and every connection closes when the
+    plugin unloads
+11. A webhook without a token is not registered; a body above 256 KiB is
+    answered `413` and the request past 120 accepted in a minute `429`
+12. A schedule faster than one minute, or one declaring both `every` and
+    `cron`, fails validation, and a disabled plugin's timer does not fire
+13. `manifest.tasks.manage.maxPermission: "auto"` is asked for separately from
+    the permission list, and no plugin-created task runs above the employee's
+    own mode
+14. A plugin notice lands in the inbox with no session, is not counted as a
+    `prompt.*` row, and is removed when its plugin is uninstalled

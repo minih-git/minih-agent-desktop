@@ -1,4 +1,4 @@
-# 04. Data Storage (Schema v30)
+# 04. Data Storage (Schema v43)
 
 ### Native project path aliases (v29 to v30)
 
@@ -1327,6 +1327,122 @@ UPDATE sessions
   `tasks.origin = 'steward'` rows and their `mandate_json` are likewise left
   untouched (§4.19a).
 
+### 4.19d tasks — the plugin that created a task (schema v43)
+
+`tasks.plugin_id` names the plugin whose `tasks.manage` call created the task.
+It is one nullable column, added with `ALTER TABLE`, and it changes nothing
+else about the table:
+
+```sql
+-- tasks (v43, added with ALTER TABLE)
+plugin_id TEXT        -- NULL: a person or the employee started this task
+CREATE INDEX idx_tasks_plugin
+  ON tasks(plugin_id) WHERE plugin_id IS NOT NULL;
+```
+
+- **`origin` keeps its two values.** An earlier draft widened the check with
+  `'plugin'`; that is void. `origin` records which workbench path dispatched the
+  task (`steward` for the pre-1.7.0 confirmed card, `direct` for the surface a
+  person uses), and a plugin-initiated task arrives through that same direct
+  path. The plugin is provenance of a different kind, so it is recorded beside
+  the origin rather than as a third value — which would need a rebuild, would
+  rewrite historical rows, and would duplicate what `plugin_id` already says.
+- The column is a **label, not an owner**. Deleting the plugin does not delete
+  the task, its session, or its transcript: the work is the employee's, and a
+  plugin that is gone only means `tasks.manage` can no longer reach it. An
+  uninstall clears `plugin_id` (`UPDATE tasks SET plugin_id = NULL WHERE
+  plugin_id = ?`), which is what "this plugin may no longer drive this task"
+  already means.
+- The effective permission mode is not stored here: it lives on the session like
+  every other mode, and `tasks.manage` only bounds what the plugin may request
+  (§4.19a, `min(declared, the employee's own mode)`). A second copy would be a
+  second source of truth for something the session already answers.
+
+### 4.19e plugin_webhook_events + plugin_schedules + plugin_tcp_usage (schema v43)
+
+Three tables hold the durable side of the host capabilities that need state to
+survive a restart. All three are created empty on every existing file and by the
+fresh schema from the same DDL, and **nothing writes them yet**: B-0 registers
+the manifest contract, and the receivers, timers, and dialer land with the
+capability slice that owns them.
+
+```sql
+-- One accepted inbound webhook request (`inbound.webhook`). The host owns the
+-- listening socket, the path, and the per-webhook token; what it keeps here is
+-- the delivery, so a request accepted just before a restart is still owed to
+-- the plugin instead of being silently lost. The body itself is never stored:
+-- `body_ref` names where the accepted copy lives, and the token lives in the
+-- secret store.
+CREATE TABLE plugin_webhook_events (
+  id           TEXT PRIMARY KEY,
+  plugin_id    TEXT NOT NULL,
+  webhook_id   TEXT NOT NULL,
+  source_ip    TEXT,
+  body_ref     TEXT,
+  received_at  INTEGER,
+  delivered_at INTEGER
+);
+CREATE INDEX idx_plugin_webhook_events_delivery
+  ON plugin_webhook_events(plugin_id, webhook_id, delivered_at);
+
+-- One plugin-owned timer (`scheduler`). Independent of scheduled_tasks: this
+-- calls a plugin function, spends no model tokens, and needs no prompt. The row
+-- keeps what the host knows from the last attempt, not the declaration itself —
+-- `every` / `cron` / `runWhen` stay in the manifest.
+CREATE TABLE plugin_schedules (
+  plugin_id   TEXT NOT NULL,
+  schedule_id TEXT NOT NULL,
+  last_run_at INTEGER,
+  last_ok     INTEGER,
+  attempts    INTEGER,
+  paused      INTEGER DEFAULT 0,
+  PRIMARY KEY (plugin_id, schedule_id)
+);
+
+-- Host-mediated TCP (`net.tcp`), totalled per peer per day. The plugin never
+-- holds a socket of its own, so this is the only record of what its traffic
+-- cost.
+CREATE TABLE plugin_tcp_usage (
+  plugin_id TEXT NOT NULL,
+  host      TEXT NOT NULL,
+  port      INTEGER NOT NULL,
+  bytes_in  INTEGER,
+  bytes_out INTEGER,
+  day       TEXT NOT NULL,
+  PRIMARY KEY (plugin_id, host, port, day)
+);
+```
+
+- `plugin_webhook_events` is one row per accepted request, and it **never stores
+  the body**: `body_ref` names where the accepted copy lives (the plugin's own
+  data directory), so the inbox table stays small and a large post does not
+  become a database row. `source_ip` is the peer address, kept for diagnosis;
+  the token is in the secret store (§4.12) and appears in no column. The one
+  index is `(plugin_id, webhook_id, delivered_at)`, which answers both "what is
+  still owed to this receiver" (`delivered_at IS NULL`) and "what it already
+  took" in one range scan.
+- `plugin_schedules` keeps attempt state, not the declaration: `every` / `cron` /
+  `runWhen` stay in the manifest, the source of truth, and three facts live here
+  — `last_run_at`, `last_ok` (the last attempt succeeded), and `attempts` (the
+  current consecutive-failure count). `paused` (default `0`) is the host's brake:
+  once a timer has failed too often it is paused rather than deleted, so the
+  state survives a restart and the Plugins page can offer to resume it. A row
+  whose schedule is no longer declared is deleted when the plugin loads, so an
+  uninstalled timer cannot fire.
+- `plugin_tcp_usage` is a **daily counter, not an event log**: one row per
+  `(plugin_id, host, port, day)`, with `bytes_in` / `bytes_out` accumulated by an
+  upsert on that primary key. It records what a capability with no other visible
+  surface cost, and nothing else — no per-connection row, no payload, no
+  refusal reason. `day` is the local calendar day (`YYYY-MM-DD`), which is what
+  a usage view groups by; retention prunes it with the other usage families
+  (§8).
+- None of the three references `sessions` or `tasks`: a webhook delivery, a
+  timer, and a dialed connection belong to a plugin, and a plugin is not a row in
+  this database (it is a directory under the plugin root). `plugin_id` is a label
+  with the same lifecycle as `providers.owner_plugin_id` (§4.3): rows for a
+  plugin that is no longer installed are deleted on uninstall and reconciled at
+  boot.
+
 ### 4.7 messages — transcript index
 
 The transcript itself is the per-session JSONL file (§2.1); this table is its
@@ -1715,9 +1831,10 @@ CREATE INDEX idx_audit_session ON audit_log(session_id, ts)
 ### 4.14 notifications — durable local inbox (D117, D663)
 
 One row records either one terminal agent-turn outcome that was not already
-visible in the focused current chat, or one interactive request the runtime is
-waiting on. It stores structured source data only; renderer and Electron derive
-localized title/body strings at the presentation boundary.
+visible in the focused current chat, one interactive request the runtime is
+waiting on, or (schema v43) one entry a plugin put in the center. It stores
+structured source data only; renderer and Electron derive localized title/body
+strings at the presentation boundary.
 
 ```sql
 CREATE TABLE notifications (
@@ -1725,16 +1842,24 @@ CREATE TABLE notifications (
   kind          TEXT NOT NULL
                   CHECK (kind IN ('task.completed', 'task.failed',
                                   'prompt.ask', 'prompt.permission',
-                                  'prompt.plan')),
-  session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  session_title TEXT NOT NULL,              -- snapshot at insert time
+                                  'prompt.plan',
+                                  'plugin.alert', 'plugin.digest')),
+  session_id    TEXT REFERENCES sessions(id) ON DELETE CASCADE,  -- NULL: plugin.%
+  session_title TEXT,                       -- snapshot at insert time; NULL: plugin.%
   turn_id       TEXT,                       -- task: exactly one row per turn;
                                             -- prompt: the blocked turn, not a key
   request_id    TEXT,                       -- prompt: exactly one row per request
   tool_name     TEXT,                       -- prompt.permission only
   error_code    TEXT,                       -- populated for task.failed when known
+  -- the plugin family (schema v43)
+  plugin_id     TEXT,                       -- who delivered the row
+  title         TEXT,                       -- the one line the inbox shows
+  body          TEXT,
+  link_json     TEXT,                       -- what activating the row opens
+  dedupe_key    TEXT,                       -- the plugin's own id for the event
   created_at    INTEGER NOT NULL,
-  read_at       INTEGER
+  read_at       INTEGER,
+  CHECK ((kind LIKE 'plugin.%') = (plugin_id IS NOT NULL))
 );
 CREATE UNIQUE INDEX idx_notifications_turn
   ON notifications(turn_id)
@@ -1746,7 +1871,33 @@ CREATE INDEX idx_notifications_created
   ON notifications(created_at DESC);
 CREATE INDEX idx_notifications_unread
   ON notifications(created_at DESC) WHERE read_at IS NULL;
+CREATE UNIQUE INDEX idx_notifications_plugin_dedupe
+  ON notifications(plugin_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
 ```
+
+- A `plugin.%` row hangs on a plugin, not on a conversation, so `session_id` and
+  `session_title` are nullable and the table's `CHECK` ties the two families
+  together: a row whose kind starts with `plugin.` names a plugin, and no other
+  kind may. `turn_id`, `request_id`, `tool_name`, and `error_code` stay NULL for
+  one. The check is written as `(kind LIKE 'plugin.%') = (plugin_id IS NOT
+  NULL)` rather than an enumeration, so the constraint follows the kind family
+  instead of listing every member twice.
+- Two kinds, one family: **`plugin.alert`** is one event the user should see
+  now, and **`plugin.digest`** is one row standing for a batch the plugin rolled
+  up. The host stores the kind as data and renders it; deciding when to alert
+  and when to roll up is the plugin's policy.
+- `title` / `body` are the plugin's own text, stored as data and
+  rendered as the plugin supplied it. Unlike a session row there is no localized
+  derivation: the host has nothing to translate and does not rewrite it.
+  `link_json` records what activating the row opens, and it is a host-checked
+  target, not a URL the plugin can use to navigate the shell.
+- `dedupe_key` is the plugin's own id for the event. A retried delivery lands on
+  the row that is already there — the unique index is over
+  `(plugin_id, dedupe_key)` — instead of adding a second copy, which is what
+  makes a repeated `notify.center` call idempotent.
+- The plugin family shares the inbox's lifecycle: the same 200-row prune, the
+  same unread count and mark-read, the same clear action, and the same removal
+  on uninstall (`DELETE FROM notifications WHERE plugin_id = ?`).
 
 - `session.endTurn` always updates the turn and, when `createNotification` is
   true, inserts `task.completed` for `completed` or `task.failed` for `error`
@@ -2334,6 +2485,33 @@ truncating at a guessed position.
   active and have no origin rows. The migration runs in the same guarded
   transaction and leaves the pre-v14 backup until the new schema passes its
   integrity checks.
+- **Schema v43 rebuilds `notifications` once and adds the capability layer.**
+  The inbox gains the `plugin.%` family (`plugin.alert`, `plugin.digest`), so
+  `session_id` and `session_title` become nullable, the plugin columns appear
+  (`plugin_id`, `title`, `body`, `link_json`, `dedupe_key`), and
+  `CHECK ((kind LIKE 'plugin.%') = (plugin_id IS NOT NULL))` ties the two
+  families together (§4.14). SQLite cannot alter a `CHECK`, so the table is
+  renamed, recreated from the same `NOTIFICATIONS_DDL` the fresh schema uses,
+  copied by column name, and the old table dropped; the four existing indexes
+  keep their names and the new dedupe index is added.
+  - **Foreign-key enforcement stays ON** for this step, unlike the v32 -> v33
+    rebuild. The copy cannot insert a row whose session is missing, so the
+    statement filters exactly those rows out instead of failing or silently
+    keeping them: a notification about a deleted session has nothing to open,
+    and the user authorized discarding them. The step compares the row count
+    before, after, and dropped (`after == before - orphans`), re-checks
+    `pragma_foreign_key_check` for the table and refuses only *new* violations,
+    and logs all three counts.
+  - **`tasks.plugin_id` is additive** and probed with `pragma_table_info` first,
+    so a launch that stopped before its stamp is completed rather than restarted
+    (§4.19d). `origin` is not touched: `'plugin'` is not a value it ever takes.
+  - **Three new tables** (`plugin_webhook_events`, `plugin_schedules`,
+    `plugin_tcp_usage`) are created from one DDL shared with the fresh schema, so
+    a new file and a migrated one cannot drift (§4.19e). They start empty on
+    every existing file and nothing writes them yet.
+  - **A `pi.sqlite.v42.bak` copy precedes the step**, because a table rebuild is
+    destructive by §7's rule. `user_version = 43` is stamped last inside the same
+    transaction, and a v43 file cannot be opened by an older build.
 
 The `largePasteThreshold` app setting is additive JSON rather than a database
 schema field. Host settings reads normalize a missing, malformed, or

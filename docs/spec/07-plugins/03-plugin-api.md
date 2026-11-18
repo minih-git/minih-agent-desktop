@@ -1327,6 +1327,140 @@ does nothing for an unknown id; `listGlobalShortcuts` lists what the host
 currently holds for the calling plugin. Everything is released on disable,
 unload, and crash, and register / unregister are audited.
 
+### Host capabilities (phase 2B)
+
+Six capability groups let the host hold a resource on the plugin's behalf — a
+credential, a socket, a listening path, a clock, a draft or inbox entry, a task
+— so the plugin never holds the secret, the socket, or the clock. The decision is
+[ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md); this
+section is the API contract and [04-plugin-security.md](04-plugin-security.md)
+§8.3 is the enforcement.
+
+**Registration only.** Every name here validates in a manifest today. No method
+below is implemented: `pi.net.tcp`, `pi.inbound`, `pi.mail`, `pi.tasks`, and the
+`schedule:fire` event do not exist in the plugin host process yet, and
+`pi.net.fetch` ignores `credentialRef`. A plugin that depends on one of them
+must check for the method before calling it, exactly as for any other
+capability-added API (§8).
+
+```ts
+// credentials.use — no call of its own. The user fills the slot in Settings;
+// the host injects the value into an egress call that names the slot.
+pi.net.fetch(input: { …; credentialRef?: string })
+pi.net.tcp.connect(input: { …; credentialRef?: string })
+
+// net.tcp (requires `net.tcp`, and the endpoint must be in manifest.net.tcp)
+pi.net.tcp.connect(input: {
+  endpoint: { host: string; port: number }
+  credentialRef?: string
+  timeoutMs?: number
+}): Promise<{ connectionId: string }>
+pi.net.tcp.send(input: { connectionId: string; data: string | Uint8Array }): Promise<void>
+pi.net.tcp.close(input: { connectionId: string }): Promise<void>
+// events: net:tcp:open | net:tcp:data | net:tcp:close | net:tcp:error
+
+// inbound.webhook — no method opens the port; the host owns it.
+pi.inbound.getReceivers(): Promise<Array<{ id: string; url: string; enabled: boolean }>>
+// event: inbound:webhook { webhookId, method, headers, bodyText, receivedAt }
+
+// scheduler — no method arms the timer; the host owns the clock.
+// event: schedule:fire { scheduleId, firedAt, missed: number }
+
+// mail.draft — drafting only; there is no send call.
+pi.mail.draft.create(input: {
+  to: string[]; cc?: string[]; subject: string; bodyText: string
+}): Promise<{ draftId: string }>
+
+// notify.center — one durable inbox row, not a toast.
+pi.notify.center(input: {
+  kind?: "alert" | "digest"   // plugin.alert (default) or plugin.digest
+  title: string; body?: string
+  level?: "info" | "warning" | "error"
+  link?: { view?: string; command?: string }   // host-checked activation target
+  dedupeKey?: string          // re-posting the same key updates the row
+}): Promise<{ id: string }>
+
+// tasks
+pi.tasks.list(input?: { limit?: number; cursor?: string }): Promise<{
+  tasks: Array<{
+    taskId: string; title: string; stage: string
+    origin: "steward" | "direct"; pluginId: string | null
+    sessionId: string; projectId: number | null
+    createdAt: number; archivedAt: number | null
+  }>
+  nextCursor: string | null
+}>
+pi.tasks.create(input: {
+  title: string; prompt: string
+  projectId?: number
+  maxPermission?: "ask" | "accept-edits" | "auto"
+}): Promise<{ taskId: string; sessionId: string }>
+pi.tasks.get(input: { taskId: string }): Promise<{ … }>  // one row of list
+pi.tasks.send(input: { taskId: string; prompt: string }): Promise<void>
+pi.tasks.stop(input: { taskId: string }): Promise<void>
+```
+
+Semantics:
+
+- **Credentials are write-only from the plugin's side.** `credentialRef` names a
+  `contributes.credentials[].id`. The host adds the header, token or login only
+  when the request target is inside both the slot's `scope` and
+  `manifest.net.domains`; otherwise the call is refused
+  (`PERMISSION_DENIED`) rather than sent unauthenticated. A `credentialRef`
+  that names no declared slot is `INVALID_ARGUMENT`. No call returns a value,
+  and no error message carries one.
+- **`net.tcp` endpoints are literal.** The `endpoint` must appear in
+  `manifest.net.tcp` (host and port are compared after the manifest's own
+  normalization), or the call fails `PERMISSION_DENIED`. `tls` comes from the
+  manifest entry, never from the call. At most **four connections** may be open
+  at once per plugin: the fifth `connect` is refused with `LIMIT_EXCEEDED`.
+  `send` on an unknown or closed `connectionId` is `NOT_FOUND`. Frames are
+  addressed to the owning plugin only, every connection closes on unload,
+  disable, or crash, and `connect` / `close` are audited. `credentialRef` may
+  inject a `basic` slot during a TLS handshake setup (the host performs the
+  exchange), which is the one way to authenticate a raw socket without the
+  plugin seeing the password. Traffic is accounted as byte totals per endpoint
+  per day (`plugin_tcp_usage`), never as a per-connection log.
+- **Inbound webhooks deliver, they do not answer.** A request the host accepted
+  (token verified, under both ceilings) is queued as one `inbound:webhook`
+  event; the host answers `202` immediately. `bodyText` is the UTF-8 body
+  (at most 256 KiB), `headers` are lowercased names with one string each, and
+  `sourceIp` is the peer address. The accepted body is kept as a file the host
+  names (`body_ref` in `plugin_webhook_events`), never as a database row, so a
+  delivery still owed after a restart is replayed from that copy. The plugin
+  cannot set the status code, headers, or body of the response. `getReceivers`
+  is what a settings sheet shows the user — the URL to paste into the other
+  service — and it never includes the token.
+- **Timers spend no quota.** `schedule:fire` fires for a declared
+  `contributes.schedules[].id` with no model turn involved. `missed` reports
+  how many ticks were skipped since the last fire; the host collapses a backlog
+  into one event instead of replaying it. A timer does not fire while the plugin
+  is disabled or unloaded, and one that keeps failing is paused by the host
+  after a bounded number of attempts (`plugin_schedules.paused`) until the user
+  or a new plugin load resumes it — the failure does not silently retry forever.
+- **`mail.draft` never sends.** There is no send call in this API and none
+  behind a second permission; the draft lands in the host's list, where the
+  user reviews it.
+- **`notify.center` writes the durable inbox.** The row's kind is
+  `plugin.alert` (default) or `plugin.digest`, with the plugin's own title and
+  body, so it appears in the notification center next to turn outcomes, counts
+  in the unread badge, and is visible to the user without a toast. `alert` is
+  one event the user should see now; `digest` is one row standing for a batch
+  the plugin rolled up. `dedupeKey` makes a repeated post update the same row
+  instead of adding another. `link` is a host-checked activation target (a
+  plugin view or one of the plugin's commands), never an arbitrary URL. The
+  inbox's 200-row cap, the mark-read and clear actions and the uninstall cleanup
+  all apply unchanged; `notify` stays the transient banner with no storage.
+- **Tasks are scoped twice.** `tasks.list` and `tasks.get` are read-only over
+  the roster of the current user, and `tasks.manage` covers only the tasks this
+  plugin created (`pluginId` matches the caller); another plugin's or a
+  person's task is `NOT_FOUND`, not `PERMISSION_DENIED`, so the call cannot be
+  used to enumerate what it may not touch. `tasks.create` runs the new task's
+  session at `min(maxPermission, the employee's own mode)` with `accept-edits`
+  when the argument is omitted; `auto` is accepted only when the manifest also
+  declares it. `tasks.stop` is the same stop the person's own stop button
+  sends.
+
 ## 3.x Every declared method is reachable from the plugin process
 
 A method is part of this API only when a plugin can actually call it. Three

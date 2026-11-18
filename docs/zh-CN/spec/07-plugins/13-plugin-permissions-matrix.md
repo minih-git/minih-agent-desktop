@@ -62,26 +62,42 @@
 | `embeddings.run` | high | `pi.embeddings.embed` | 安装时确认 | 用用户自己的向量模型把文本变成向量。文本会离开本机并消耗该服务额度；插件永远看不到凭据。仅 OpenAI 兼容接口；每次 1..=64 条、单条 8 KiB、总量 256 KiB，每分钟 120 次 |
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
+| `credentials.use` | 高 | `contributes.credentials` 声明的凭据槽位，由用户在设置里填写；宿主把已保存的密钥注入插件用 `credentialRef` 指定的出网路径 | 安装时确认 | 没有读取 API：任何调用都不返回值。只有目标既在槽位 `scope` 内、又在 `manifest.net.domains` 内才注入，所以没有 `scope` 的槽位无处注入。密钥值存在密钥库，不进 SQLite |
+| `net.tcp` | 高 | `pi.net.tcp.connect` / `send` / `close`（宿主持有的套接字，目标是 `manifest.net.tcp` 里的字面端点） | 默认拒绝 | `host`、`port`、`tls` 都是字面值；不接受通配符，也不接受端口区间。同时最多四条连接——这是并发上限，不是白名单条数上限。插件拿到的是句柄而不是套接字，卸载、禁用、崩溃都会关闭全部连接 |
+| `inbound.webhook` | 高 | `contributes.webhooks`；宿主持有监听、路径与令牌，把已接受的请求以 `inbound:webhook` 事件投递 | 安装时确认 | 只绑定回环与局域网，明文 HTTP 并明确提示。没有令牌的 webhook 不会注册。请求体超过 256 KiB 返回 `413`，每分钟超过 120 次有效请求返回 `429`；manifest 只能调低这两个上限 |
+| `mail.draft` | 中 | `pi.mail.draft.create` | 安装时确认 | 只把草稿写入宿主的草稿列表，没有发送路径，也不存在由另一个权限打开的发送路径 |
+| `notify.center` | 中 | `pi.notify.center` | 安装时确认 | 在通知中心写入一条持久记录，kind 为 `plugin.alert`（一件事）或 `plugin.digest`（汇总的一批），并标明插件；共享 200 条上限、未读计数与清空操作，卸载时一并删除。与只显示一次、不落库的 `notify` 区分 |
+| `scheduler` | 中 | `contributes.schedules`；宿主按声明触发 `schedule:fire` | 安装时确认 | 最小间隔一分钟，`every` 与 `cron` 只能二选一，`runWhen: "idle"` 让宿主等用户空闲。触发只调用插件函数，不消耗模型额度；错过的时间点合并为一次触发，连续失败后定时器被暂停（跨重启保留）而不是永远重试 |
+| `tasks.read` | 中 | `pi.tasks.list` | 安装时确认 | 只读的任务清单与账本事实，不含提示词正文，没有写入路径 |
+| `tasks.manage` | 高 | `pi.tasks.create` / `get` / `send` / `stop` | 安装时确认；声明 `auto` 需单独确认 | 只能创建并推进本插件自己创建的任务，权限模式取 `min(manifest.tasks.manage.maxPermission, 该员工自己的模式)`。省略该字段等价于 `accept-edits`，`auto` 绝不隐含 |
 
 ## 2A. 权限是开关，manifest 承载范围
 
-有两种能力光靠一个权限名说不清楚：名字负责回答「插件能不能做」，
-manifest 里的字段负责回答「能做到多远」。两个字段都由主机强制执行、
+有四种能力光靠一个权限名说不清楚：名字负责回答「插件能不能做」，
+manifest 里的字段负责回答「能做到多远」。下面每个字段都由主机强制执行、
 在权限旁展示给用户，并在安装时校验。
 
 | 字段 | 限定的范围 | 缺失或为空时 |
 |---|---|---|
 | `net.domains` | 主机掌握的每一条出网路径：面板 session、`pi.net.fetch`、远程 HTTP MCP 端点 | 完全不放行出网，无论 `net.fetch` 是否声明 |
+| `net.tcp` | 原始套接字可以到达的字面端点（`host` + `port` + `tls`） | 完全不开原始连接，无论 `net.tcp` 是否声明 |
+| `contributes.credentials[].scope` | 已保存的凭据可以注入到哪些主机；注入目标还必须落在 `net.domains` 内 | 该槽位无处注入 |
 | `fs.read` / `fs.write` / `fs.delete` | 该文件模式可以触碰哪些路径 | 没有常驻可达范围；每次访问都落到确认弹窗 |
 
-字段缺失时一律 fail closed，这正是它们可以省略的原因：manifest 什么都不说，
+字段缺失时一律 fail closed，这正是它们都可以省略的原因：manifest 什么都不说，
 就什么都不授予。参见
-[04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §6 与 §8.1，以及 ADR 0088。
+[04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §6、§8.1 与 §8.3，
+ADR 0088，以及
+[ADR plugin-host-capabilities](/zh-CN/adr/plugin-host-capabilities)。
 
-两者还互相牵连。`fs.read` 之所以可以声明整棵树，是因为读取只有在字节能离开时
+文件模式之间还互相牵连。`fs.read` 之所以可以声明整棵树，是因为读取只有在字节能离开时
 才变成泄露，而 `net.domains` 已经把这一半关上了。`fs.write` 和 `fs.delete`
 本身就有破坏性，所以整棵树的模式（`**`、`**/*`、`*/**`、`./*`）在这两种模式下
 无法通过清单校验。
+
+`net.tcp` 两个方向上的约束互不相同，也不能互换：端点列表没有条数上限——有十台
+服务器的作者就写十条——而宿主**同时最多只开四条连接**。作者负责点名服务器，
+并发数由宿主计量。
 
 ## 2B. 删除
 
@@ -115,6 +131,16 @@ manifest 里的字段负责回答「能做到多远」。两个字段都由主�
   `session:turnEnded` 和 `plugin:settingsChanged` 走既有的插件事件通道，
   订阅未知的事件名也不会报错
 
+- `contributes.credentials` 需要 `credentials.use`；`contributes.webhooks`
+  需要 `inbound.webhook`；`contributes.schedules` 需要 `scheduler`；
+  `manifest.net.tcp` 需要 `net.tcp`；`manifest.tasks.manage` 需要
+  `tasks.manage`。每个声明都在它所属字段的同一趟校验里检查，所以没人能用的块
+  会让安装失败，而不是被悄悄丢掉
+- `credentials.use` 永远替代不了出网权限：被注入的请求仍然需要 `net.fetch`
+  （或 `net.tcp`）以及落在 `manifest.net.domains` 内的主机。槽位只是让密钥
+  不进插件的手，并不会扩大插件本来就有出网范围
+- `tasks.read` 与 `tasks.manage` 相互独立：能列清单不等于能建任务，
+  能建任务也不等于能读别的员工的任务
 ## 3A。 Plan 操作状态规则
 
 每个 `agentTools` 贡献都会在 Plan 中被拒绝，无论此矩阵的值如何
@@ -169,6 +195,14 @@ Agent，在 Plan 中不可见。主机返回 `PLUGIN_DISABLED_IN_PLAN`
 | `audio.playback.background` | Play audio in the background | 后台播放声音 |
 | `keyboard.globalShortcut` | Register system-wide shortcuts | 注册系统级快捷键 |
 | `net.websocket` | Open real-time connections | 建立实时双向连接 |
+| `credentials.use` | 使用你在设置里填写的凭据，但看不到明文 | 使用你在设置中填写的凭据（插件看不到明文） |
+| `net.tcp` | 直接连接它列出的服务器 | 直接连接它列出的服务器 |
+| `inbound.webhook` | 在本地地址接收外部请求 | 在本地地址接收外部请求 |
+| `notify.center` | 向你的通知中心添加条目 | 向通知中心添加条目 |
+| `scheduler` | 按自己的定时器运行 | 按自己的定时器运行 |
+| `mail.draft` | 把邮件草稿写入你的草稿列表 | 把邮件草稿写入你的草稿列表 |
+| `tasks.read` | 读取你的任务列表 | 读取你的任务列表 |
+| `tasks.manage` | 在你的任务列表里创建并推进任务 | 在你的任务列表里创建并推进任务 |
 
 ## 5. 添加升级权限
 
@@ -212,3 +246,14 @@ assertFsAccess(pluginId, mode, requestedPath, sessionId) {
 7. 删除进系统回收站、拒绝非空目录，并在滚动一分钟内超过 50 次后被打断
 8. 只声明旧权限名 `fs.*.workspace` 的插件会失去写入与删除的可达范围，
    插件页面会把这件事说出来
+9. 声明 `contributes.credentials` 却没有 `credentials.use` 的 manifest 校验失败，
+   且没有任何 API 以任何形式返回已保存的凭据值
+10. `net.tcp` 端点出现通配符主机、超出 1–65535 的端口、缺少 `tls` 或重复的
+    `host:port` 都会校验失败；第五条同时连接被拒绝，插件卸载时所有连接都会关闭
+11. 没有令牌的 webhook 不会注册；请求体超过 256 KiB 返回 `413`，一分钟内超过
+    120 次有效请求返回 `429`
+12. 间隔小于一分钟、或同时声明 `every` 与 `cron` 的定时器校验失败，被禁用的
+    插件的定时器不会触发
+13. `manifest.tasks.manage.maxPermission: "auto"` 会在权限列表之外单独征求确认，
+    插件创建的任务永远不会超过该员工自己的模式
+14. 插件通知落在通知中心时没有会话，不计入 `prompt.*`，卸载插件后一并删除

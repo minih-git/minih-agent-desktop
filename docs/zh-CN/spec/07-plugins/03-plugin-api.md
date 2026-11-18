@@ -1052,6 +1052,121 @@ type PluginGlobalShortcut = {
 未知 id 时什么都不做；`listGlobalShortcuts` 列出宿主当前为调用插件持有的
 条目。禁用、卸载和崩溃时全部释放，注册 / 注销都会记入审计。
 
+### 宿主能力（phase 2B）
+
+六组能力让宿主代插件持有一类资源 —— 密钥、套接字、监听路径、时钟、宿主列表里
+的一条记录、一个任务 —— 于是插件永远不掌握密钥、套接字或时钟。决策见
+[ADR plugin-host-capabilities](/zh-CN/adr/plugin-host-capabilities)；本节是
+API 契约，强制方式见
+[04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
+
+**仅注册。** 下面每个名字今天都能在 manifest 里通过校验，但没有任何一个方法
+落地：`pi.net.tcp`、`pi.inbound`、`pi.mail`、`pi.tasks` 和 `schedule:fire`
+事件在插件宿主进程里还不存在，`pi.net.fetch` 也不会读 `credentialRef`。
+依赖其中任何一个的插件必须先检查方法是否存在再调用，与其它靠版本差集新增的
+API 完全一致（§8）。
+
+```ts
+// credentials.use —— 自身没有调用。槽位由用户在设置里填写；
+// 宿主在点名该槽位的出网调用里注入值。
+pi.net.fetch(input: { …; credentialRef?: string })
+pi.net.tcp.connect(input: { …; credentialRef?: string })
+
+// net.tcp（需要 `net.tcp`，且端点必须在 manifest.net.tcp 内）
+pi.net.tcp.connect(input: {
+  endpoint: { host: string; port: number }
+  credentialRef?: string
+  timeoutMs?: number
+}): Promise<{ connectionId: string }>
+pi.net.tcp.send(input: { connectionId: string; data: string | Uint8Array }): Promise<void>
+pi.net.tcp.close(input: { connectionId: string }): Promise<void>
+// 事件：net:tcp:open | net:tcp:data | net:tcp:close | net:tcp:error
+
+// inbound.webhook —— 没有开放端口的方法；端口归宿主。
+pi.inbound.getReceivers(): Promise<Array<{ id: string; url: string; enabled: boolean }>>
+// 事件：inbound:webhook { webhookId, method, headers, bodyText, receivedAt }
+
+// scheduler —— 没有上定时器的方法；时钟归宿主。
+// 事件：schedule:fire { scheduleId, firedAt, missed: number }
+
+// mail.draft —— 只写草稿，没有发送调用。
+pi.mail.draft.create(input: {
+  to: string[]; cc?: string[]; subject: string; bodyText: string
+}): Promise<{ draftId: string }>
+
+// notify.center —— 写一条持久通知中心记录，不是一次性横幅。
+pi.notify.center(input: {
+  kind?: "alert" | "digest"   // plugin.alert（默认）或 plugin.digest
+  title: string; body?: string
+  level?: "info" | "warning" | "error"
+  link?: { view?: string; command?: string }   // 宿主校验过的点击目标
+  dedupeKey?: string          // 同一个 key 再次提交会更新原记录
+}): Promise<{ id: string }>
+
+// tasks
+pi.tasks.list(input?: { limit?: number; cursor?: string }): Promise<{
+  tasks: Array<{
+    taskId: string; title: string; stage: string
+    origin: "steward" | "direct"; pluginId: string | null
+    sessionId: string; projectId: number | null
+    createdAt: number; archivedAt: number | null
+  }>
+  nextCursor: string | null
+}>
+pi.tasks.create(input: {
+  title: string; prompt: string
+  projectId?: number
+  maxPermission?: "ask" | "accept-edits" | "auto"
+}): Promise<{ taskId: string; sessionId: string }>
+pi.tasks.get(input: { taskId: string }): Promise<{ … }>  // 与 list 的一行相同
+pi.tasks.send(input: { taskId: string; prompt: string }): Promise<void>
+pi.tasks.stop(input: { taskId: string }): Promise<void>
+```
+
+语义：
+
+- **凭据对插件一侧是只写的。** `credentialRef` 指向
+  `contributes.credentials[].id`。只有当请求目标同时落在槽位 `scope` 与
+  `manifest.net.domains` 之内时，宿主才会加上请求头、令牌或登录信息；否则调用
+  以 `PERMISSION_DENIED` 被拒，而不会以未认证的方式发出去。`credentialRef`
+  指向未声明的槽位是 `INVALID_ARGUMENT`。没有调用会返回值，错误信息也不会带上它
+- **`net.tcp` 端点是字面的。** `endpoint` 必须出现在 `manifest.net.tcp` 内
+  （按清单自身的规范化结果比较主机与端口），否则 `PERMISSION_DENIED`。`tls`
+  来自清单条目，绝不来自调用。每个插件**同时最多四条连接**，第五条 `connect`
+  以 `LIMIT_EXCEEDED` 被拒。对未知或已关闭的 `connectionId` 调用 `send` 是
+  `NOT_FOUND`。帧只投递给持有它的插件，卸载、禁用、崩溃都会关闭全部连接，
+  `connect` / `close` 记入审计。`credentialRef` 允许在 TLS 握手阶段注入一个
+  `basic` 槽位（握手由宿主完成），这是让原始套接字完成认证又不让插件看到密码
+  的唯一方式
+- **入站 webhook 只投递，不回答。** 宿主接受（校验令牌、未超过两个上限）之后把
+  请求排成一条 `inbound:webhook` 事件，并立刻回 `202`。`bodyText` 是 UTF-8 正文
+  （最多 256 KiB），`headers` 是小写名字、每个只带一个字符串，`sourceIp` 是对端
+  地址。已接受的正文保存成宿主命名的文件（`plugin_webhook_events.body_ref`），
+  从不作为数据库行保存，所以重启后仍欠着的投递能从那份副本补投。插件不能设置响应
+  状态码、响应头或响应体。`getReceivers` 是设置面板展示给用户的东西——要粘到
+  另一个服务里的 URL——它永远不含令牌
+- **定时器不花额度。** `schedule:fire` 针对已声明的
+  `contributes.schedules[].id` 触发，不涉及模型回合。`missed` 表示上次触发以来
+  跳过了多少个时间点；宿主把积压合并成一次事件，而不是重放。插件被禁用或卸载时
+  不触发；持续失败的定时器在达到有界次数后被宿主暂停（`plugin_schedules.paused`），
+  直到用户或下一次插件加载恢复它——失败不会无声地永远重试
+- **`mail.draft` 从不发送。** 这个 API 里没有发送调用，也不存在由第二个权限打开
+  的发送调用；草稿落在宿主列表里，等用户审阅
+- **`notify.center` 写的是持久通知中心。** 记录的 kind 是 `plugin.alert`（默认）
+  或 `plugin.digest`，带上插件自己的标题与正文，于是它和回合结果一起出现在通知
+  中心、计入未读徽标，用户不靠一次横幅也能看到。`alert` 是用户当下就该看到的一件
+  事，`digest` 是插件汇总后代表一整批的一行。`dedupeKey` 让重复提交更新同一条记录
+  而不是新增一条。`link` 是宿主校验过的点击目标（插件视图或该插件自己的命令），
+  绝不是任意 URL。通知中心 200 条上限、标记已读、清空操作与卸载清理都照旧生效；
+  `notify` 仍然是不落库的一次性横幅
+- **任务被两层限定。** `tasks.list` 与 `tasks.get` 只读当前用户的任务清单，
+  `tasks.manage` 只覆盖本插件自己创建的任务（`pluginId` 与调用方一致）；别的
+  插件或人建的任务返回 `NOT_FOUND` 而不是 `PERMISSION_DENIED`，所以这个调用
+  不能用来枚举它无权触碰的东西。`tasks.create` 让新任务的会话跑在
+  `min(maxPermission, 该员工自己的模式)`，参数省略时是 `accept-edits`；
+  只有 manifest 也声明了 `auto` 时才接受 `auto`。`tasks.stop` 与用户自己的停止
+  按钮发出的是同一种停止
+
 ## 3.x 声明的每个方法都必须能被插件真正调用
 
 一个方法只有插件真能调到，才算这个 API 的一部分。三处必须一致，改任何一处都是
