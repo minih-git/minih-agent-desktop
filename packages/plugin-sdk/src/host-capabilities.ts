@@ -1,0 +1,307 @@
+/**
+ * Host capabilities a plugin declares beyond the original permission list
+ * (design: 插件宿主能力六项, phase 2B — B-0).
+ *
+ * This module holds the manifest-side contract only: the contribution shapes the
+ * host validates at install, and the bounds each one carries. A permission is
+ * still the switch and the manifest field still carries the range; execution —
+ * injecting a credential, receiving a webhook, running a schedule — lives in the
+ * host and never in the plugin process. Nothing here performs work.
+ */
+import type { PluginLocalizedString } from "./index.js";
+import { localizedStringError } from "./localized-label.js";
+import { parseNetDomains, type PluginNetDomain } from "./net-policy.js";
+
+/** Contribution ids share the manifest's contributor-id grammar. */
+const CONTRIB_ID = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
+
+/** `contributes.credentials[].kind` — how the host injects the stored secret. */
+export const PLUGIN_CREDENTIAL_KINDS = ["basic", "bearer", "header", "oauth2", "imap"] as const;
+export type PluginCredentialKind = (typeof PLUGIN_CREDENTIAL_KINDS)[number];
+
+/** One field the user fills in for a credential slot. */
+export type PluginCredentialFieldContrib = {
+  key: string;
+  label: PluginLocalizedString | string;
+  /** Rendered masked in the Settings sheet. */
+  secret?: boolean;
+};
+
+/**
+ * One credential slot (`credentials.use`). The user fills it in Settings; the
+ * host stores it and injects it into the egress paths the plugin names by
+ * `credentialRef`. There is no read API, so the plugin never sees the secret.
+ */
+export type PluginCredentialContrib = {
+  id: string;
+  title: PluginLocalizedString | string;
+  kind: PluginCredentialKind;
+  fields: PluginCredentialFieldContrib[];
+  /**
+   * Hosts this slot may be injected into. Absent means the slot is injected
+   * nowhere: an injection also has to be inside `manifest.net.domains`, so an
+   * undeclared scope fails closed rather than opening up.
+   */
+  scope?: { domains: PluginNetDomain[] };
+};
+
+/** Largest request body a webhook receiver accepts (256 KiB). */
+export const MAX_WEBHOOK_BODY_BYTES = 262_144;
+/** Largest accepted request rate per webhook. */
+export const MAX_WEBHOOK_RATE_PER_MINUTE = 120;
+
+/**
+ * One inbound webhook receiver (`inbound.webhook`). The host owns the listening
+ * socket, the path, and the per-webhook token; the plugin only receives the
+ * events the host already accepted.
+ */
+export type PluginWebhookContrib = {
+  id: string;
+  title: PluginLocalizedString | string;
+  /** Request bodies above this are refused with 413. Defaults to the maximum. */
+  maxBodyBytes?: number;
+  /** Accepted requests per minute; past it the host answers 429. */
+  ratePerMinute?: number;
+};
+
+/** `contributes.schedules[].runWhen` — the host may wait for the user to be idle. */
+export const PLUGIN_SCHEDULE_RUN_WHEN = ["always", "idle"] as const;
+export type PluginScheduleRunWhen = (typeof PLUGIN_SCHEDULE_RUN_WHEN)[number];
+
+/** The host's scheduling floor; a faster schedule is refused at install. */
+export const MIN_SCHEDULE_INTERVAL_MINUTES = 1;
+
+/**
+ * One plugin-owned timer (`scheduler`). Independent of the app's own scheduled
+ * tasks: this calls a plugin function, and costs no model tokens.
+ */
+export type PluginScheduleContrib = {
+  id: string;
+  title: PluginLocalizedString | string;
+  /** Fixed interval, `<n><s|m|h|d>` (`"5m"`), at least one minute. */
+  every?: string;
+  /** Five-field cron expression. A cron cannot fire more than once a minute. */
+  cron?: string;
+  runWhen?: PluginScheduleRunWhen;
+};
+
+/**
+ * Highest permission mode a plugin-created task may run with
+ * (`tasks.manage.maxPermission`). The host uses
+ * `min(declared, the employee's own mode)`, so a declaration can only narrow
+ * what the employee was already allowed to do.
+ */
+export const PLUGIN_TASK_PERMISSION_MODES = ["ask", "accept-edits", "auto"] as const;
+export type PluginTaskPermissionMode = (typeof PLUGIN_TASK_PERMISSION_MODES)[number];
+/** Omitted means `accept-edits`: `auto` is never implied. */
+export const DEFAULT_PLUGIN_TASK_PERMISSION_MODE: PluginTaskPermissionMode = "accept-edits";
+
+/** `manifest.tasks` — the task surface a plugin takes part in. */
+export type PluginTasksContrib = {
+  manage?: {
+    maxPermission?: PluginTaskPermissionMode;
+  };
+};
+
+function isContribId(value: string): boolean {
+  return CONTRIB_ID.test(value);
+}
+
+function fieldLabelError(value: unknown, field: string): string | undefined {
+  const shapeError = localizedStringError(value, field);
+  if (shapeError) return shapeError;
+  if (value === undefined) return `${field} is required`;
+  if (typeof value === "string" && !value.trim()) return `${field} must not be empty`;
+  return undefined;
+}
+
+/**
+ * `contributes.credentials`. Every slot is user-filled, so the shape is
+ * validated at install: a slot the Settings sheet cannot render is a dead
+ * permission, and a scope nobody can inject into is an authoring slip.
+ */
+export function validateCredentialContributions(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) return "contributes.credentials must be an array";
+  const ids = new Set<string>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return "contributes.credentials entries must be objects";
+    }
+    const slot = entry as Partial<PluginCredentialContrib>;
+    if (typeof slot.id !== "string" || !isContribId(slot.id)) {
+      return "contributes.credentials id must match [a-zA-Z][a-zA-Z0-9_-]{0,63}";
+    }
+    if (ids.has(slot.id)) return `duplicate credential id "${slot.id}"`;
+    ids.add(slot.id);
+    const titleError = fieldLabelError(slot.title, `credential "${slot.id}" title`);
+    if (titleError) return titleError;
+    if (
+      typeof slot.kind !== "string" ||
+      !(PLUGIN_CREDENTIAL_KINDS as readonly string[]).includes(slot.kind)
+    ) {
+      return `credential "${slot.id}" has an unsupported kind`;
+    }
+    if (!Array.isArray(slot.fields) || slot.fields.length === 0) {
+      return `credential "${slot.id}" requires fields`;
+    }
+    const keys = new Set<string>();
+    for (const field of slot.fields) {
+      if (!field || typeof field !== "object" || Array.isArray(field)) {
+        return `credential "${slot.id}" fields must be objects`;
+      }
+      if (typeof field.key !== "string" || !isContribId(field.key)) {
+        return `credential "${slot.id}" field key must match [a-zA-Z][a-zA-Z0-9_-]{0,63}`;
+      }
+      if (keys.has(field.key)) {
+        return `credential "${slot.id}" declares field "${field.key}" twice`;
+      }
+      keys.add(field.key);
+      const labelError = fieldLabelError(field.label, `credential "${slot.id}" field "${field.key}" label`);
+      if (labelError) return labelError;
+      if (field.secret !== undefined && typeof field.secret !== "boolean") {
+        return `credential "${slot.id}" field "${field.key}" secret must be a boolean`;
+      }
+    }
+    if (slot.scope !== undefined) {
+      if (!slot.scope || typeof slot.scope !== "object" || Array.isArray(slot.scope)) {
+        return `credential "${slot.id}" scope must be an object`;
+      }
+      const domains = parseNetDomains(slot.scope.domains);
+      if (!domains.ok) {
+        return `credential "${slot.id}" scope.${domains.error}`;
+      }
+      if (!domains.domains?.length) {
+        return `credential "${slot.id}" scope needs at least one domain`;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * `contributes.webhooks`. The host-owned receiver defaults to LAN and requires
+ * a per-webhook token. Body and rate ceilings bound resource consumption.
+ */
+export function validateWebhookContributions(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) return "contributes.webhooks must be an array";
+  const ids = new Set<string>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return "contributes.webhooks entries must be objects";
+    }
+    const webhook = entry as Partial<PluginWebhookContrib>;
+    if (typeof webhook.id !== "string" || !isContribId(webhook.id)) {
+      return "contributes.webhooks id must match [a-zA-Z][a-zA-Z0-9_-]{0,63}";
+    }
+    if (ids.has(webhook.id)) return `duplicate webhook id "${webhook.id}"`;
+    ids.add(webhook.id);
+    const titleError = fieldLabelError(webhook.title, `webhook "${webhook.id}" title`);
+    if (titleError) return titleError;
+    if (webhook.maxBodyBytes !== undefined) {
+      const bytes = webhook.maxBodyBytes;
+      if (!Number.isInteger(bytes) || bytes < 1 || bytes > MAX_WEBHOOK_BODY_BYTES) {
+        return `webhook "${webhook.id}" maxBodyBytes must be an integer from 1 to ${MAX_WEBHOOK_BODY_BYTES}`;
+      }
+    }
+    if (webhook.ratePerMinute !== undefined) {
+      const rate = webhook.ratePerMinute;
+      if (!Number.isInteger(rate) || rate < 1 || rate > MAX_WEBHOOK_RATE_PER_MINUTE) {
+        return `webhook "${webhook.id}" ratePerMinute must be an integer from 1 to ${MAX_WEBHOOK_RATE_PER_MINUTE}`;
+      }
+    }
+  }
+  return undefined;
+}
+
+const EVERY_PATTERN = /^([1-9][0-9]*)([smhd])$/;
+const CRON_FIELD = /^[0-9*][0-9*,/-]*$/;
+
+/**
+ * Whether `every` names an interval the scheduler will honour. Seconds are
+ * accepted only at one minute or more, because the host floor is one minute and
+ * a faster declaration would silently become something else.
+ */
+function isValidEvery(value: string): boolean {
+  const match = EVERY_PATTERN.exec(value.trim());
+  if (!match) return false;
+  const amount = Number(match[1]);
+  return match[2] === "s" ? amount >= MIN_SCHEDULE_INTERVAL_MINUTES * 60 : true;
+}
+
+/** Five fields, each a cron token. Sub-minute granularity is not expressible. */
+function isValidCron(value: string): boolean {
+  const fields = value.trim().split(/\s+/);
+  return fields.length === 5 && fields.every((field) => CRON_FIELD.test(field));
+}
+
+/**
+ * `contributes.schedules`. One timer is either a fixed interval or a cron
+ * expression, never both: two declarations for one tick would leave the host
+ * picking one and the author believing the other.
+ */
+export function validateScheduleContributions(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) return "contributes.schedules must be an array";
+  const ids = new Set<string>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return "contributes.schedules entries must be objects";
+    }
+    const schedule = entry as Partial<PluginScheduleContrib>;
+    if (typeof schedule.id !== "string" || !isContribId(schedule.id)) {
+      return "contributes.schedules id must match [a-zA-Z][a-zA-Z0-9_-]{0,63}";
+    }
+    if (ids.has(schedule.id)) return `duplicate schedule id "${schedule.id}"`;
+    ids.add(schedule.id);
+    const titleError = fieldLabelError(schedule.title, `schedule "${schedule.id}" title`);
+    if (titleError) return titleError;
+    const hasEvery = schedule.every !== undefined;
+    const hasCron = schedule.cron !== undefined;
+    if (hasEvery === hasCron) {
+      return `schedule "${schedule.id}" needs exactly one of every or cron`;
+    }
+    if (hasEvery) {
+      if (typeof schedule.every !== "string" || !isValidEvery(schedule.every)) {
+        return `schedule "${schedule.id}" every must be an interval of at least one minute, e.g. "5m"`;
+      }
+    }
+    if (hasCron && (typeof schedule.cron !== "string" || !isValidCron(schedule.cron))) {
+      return `schedule "${schedule.id}" cron must be a five-field expression`;
+    }
+    if (
+      schedule.runWhen !== undefined &&
+      !(PLUGIN_SCHEDULE_RUN_WHEN as readonly string[]).includes(schedule.runWhen)
+    ) {
+      return `schedule "${schedule.id}" runWhen must be "always" or "idle"`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * `manifest.tasks`. Declaring a ceiling higher than the employee's own is
+ * harmless (the host takes the lower one), but a word the host does not know
+ * would silently become `accept-edits`, so it is refused at install instead.
+ */
+export function validateTasksContribution(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return "manifest.tasks must be an object";
+  }
+  const tasks = raw as { manage?: unknown };
+  if (tasks.manage === undefined) return undefined;
+  if (!tasks.manage || typeof tasks.manage !== "object" || Array.isArray(tasks.manage)) {
+    return "manifest.tasks.manage must be an object";
+  }
+  const manage = tasks.manage as { maxPermission?: unknown };
+  if (manage.maxPermission === undefined) return undefined;
+  if (
+    typeof manage.maxPermission !== "string" ||
+    !(PLUGIN_TASK_PERMISSION_MODES as readonly string[]).includes(manage.maxPermission)
+  ) {
+    return `manifest.tasks.manage.maxPermission must be one of ${PLUGIN_TASK_PERMISSION_MODES.join(", ")}`;
+  }
+  return undefined;
+}

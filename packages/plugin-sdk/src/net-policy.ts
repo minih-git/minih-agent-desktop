@@ -95,6 +95,66 @@ export function parseNetDomains(raw: unknown): {
   return { ok: true, domains };
 }
 
+/**
+ * One host-owned TCP endpoint (`manifest.net.tcp`). The host owns the socket;
+ * the plugin only gets a handle, exactly like `net.websocket`.
+ *
+ * Host and port are literal — no wildcard, no range and no bare `*`. A mailbox
+ * or a database is a server the author can name in advance, so a pattern here
+ * would only buy arbitrary egress with no audit trail.
+ */
+export type PluginTcpEndpoint = {
+  host: string;
+  /** Port the connection is made to; there is no fallback port. */
+  port: number;
+  /**
+   * Required. The host neither upgrades nor downgrades a connection on its
+   * own, so the author states whether the endpoint speaks TLS.
+   */
+  tls: boolean;
+};
+
+/**
+ * Validate `manifest.net.tcp`. Absent means no raw sockets at all, whatever the
+ * `net.tcp` permission says — the same fail-closed rule as `net.domains`.
+ */
+export function parseNetTcpEndpoints(raw: unknown): {
+  ok: boolean;
+  endpoints?: PluginTcpEndpoint[];
+  error?: string;
+} {
+  if (raw === undefined) return { ok: true, endpoints: [] };
+  if (!Array.isArray(raw)) return { ok: false, error: "net.tcp must be an array" };
+  const endpoints: PluginTcpEndpoint[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return { ok: false, error: "net.tcp entries must be objects" };
+    }
+    const { host, port, tls } = entry as Partial<PluginTcpEndpoint>;
+    if (typeof host !== "string" || !host.trim()) {
+      return { ok: false, error: "net.tcp entries need a host" };
+    }
+    const value = host.trim().toLowerCase();
+    if (value.includes("*")) {
+      return { ok: false, error: `net.tcp host must be literal, not ${host}` };
+    }
+    if (/[:/?#]/.test(value) || !HOSTNAME.test(value)) {
+      return { ok: false, error: `net.tcp host is not a bare hostname: ${host}` };
+    }
+    if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+      return { ok: false, error: `net.tcp ${value} needs a port from 1 to 65535` };
+    }
+    if (typeof tls !== "boolean") {
+      return { ok: false, error: `net.tcp ${value}:${port} needs tls: true or false` };
+    }
+    if (endpoints.some((endpoint) => endpoint.host === value && endpoint.port === port)) {
+      return { ok: false, error: `net.tcp lists ${value}:${port} twice` };
+    }
+    endpoints.push({ host: value, port, tls });
+  }
+  return { ok: true, endpoints };
+}
+
 /** Match a hostname against one parsed allowlist entry. */
 function matchesDomain(host: string, pattern: string): boolean {
   if (pattern.startsWith("*.")) {

@@ -17,7 +17,23 @@ import {
   type PluginFsPolicy,
 } from "./fs-policy.js";
 import { validateMcpServer } from "./mcp-config.js";
-import { parseNetDomains, type PluginNetDomain } from "./net-policy.js";
+import { localizedStringError } from "./localized-label.js";
+import {
+  validateCredentialContributions,
+  validateScheduleContributions,
+  validateTasksContribution,
+  validateWebhookContributions,
+  type PluginCredentialContrib,
+  type PluginScheduleContrib,
+  type PluginTasksContrib,
+  type PluginWebhookContrib,
+} from "./host-capabilities.js";
+import {
+  parseNetDomains,
+  parseNetTcpEndpoints,
+  type PluginNetDomain,
+  type PluginTcpEndpoint,
+} from "./net-policy.js";
 import {
   isThemeAssetPath,
   normalizeThemeAssetPath,
@@ -196,6 +212,23 @@ export type PluginManifest = {
     globalShortcuts?: PluginGlobalShortcutContrib[];
     /** User-invoked text actions beside the Composer controls. */
     composerTransforms?: PluginComposerTransformContrib[];
+    /**
+     * Credential slots the user fills in Settings (`credentials.use`). The
+     * host stores each value and injects it into the egress path the plugin
+     * names by `credentialRef`; there is no API that returns the secret.
+     */
+    credentials?: PluginCredentialContrib[];
+    /**
+     * Inbound webhook receivers (`inbound.webhook`). The host owns the
+     * listener, the path and the per-webhook token; the plugin only receives
+     * the events the host already accepted.
+     */
+    webhooks?: PluginWebhookContrib[];
+    /**
+     * Plugin-owned timers (`scheduler`). The host wakes the plugin's handler;
+     * no model turn is involved.
+     */
+    schedules?: PluginScheduleContrib[];
   };
   permissions?: string[];
   /**
@@ -210,7 +243,22 @@ export type PluginManifest = {
    * `pi.net.fetch`, remote MCP endpoints — is confined to these hostnames.
    * Omitted or empty means no egress, whatever `net.fetch` says.
    */
-  net?: { domains?: PluginNetDomain[] };
+  net?: {
+    domains?: PluginNetDomain[];
+    /**
+     * Literal TCP endpoints the host may connect to on the plugin's behalf.
+     * At most four connections may be open simultaneously. The plugin gets a
+     * handle, never the socket. Absent means no raw connections.
+     */
+    tcp?: PluginTcpEndpoint[];
+  };
+  /**
+   * Task surface (`tasks.read` / `tasks.manage`). A plugin-created task runs
+   * with `min(maxPermission, the employee's own mode)`, so a declaration can
+   * only narrow what the employee was already allowed to do; `auto` is never
+   * implied and has to be written down here.
+   */
+  tasks?: PluginTasksContrib;
   /**
    * Host engine semver range. `piDesktop` is the upstream PI-Desktop field;
    * `minihAgent` is the fork's alias. Both are accepted so upstream-native
@@ -1733,9 +1781,132 @@ export const PLUGIN_PERMISSIONS = [
   "speech.adapter.register",
   "keyboard.globalShortcut",
   "net.websocket",
+  // Host capabilities (design: 插件宿主能力六项, phase 2B). Each name is a
+  // switch; the matching manifest field says how far, and the host owns the
+  // secret, the socket, the port and the timer rather than the plugin.
+  //
+  // Credential slots the host fills in on the plugin's behalf; the secret
+  // never reaches the plugin process.
+  "credentials.use",
+  // Host-owned raw TCP to the literal endpoints in `manifest.net.tcp`.
+  "net.tcp",
+  // A host-owned webhook receiver. The host owns the listener and the token.
+  "inbound.webhook",
+  // Writing a mail draft into the host's draft list. Sending is not offered.
+  "mail.draft",
+  // Entries in the notification center, apart from the toast/native `notify`.
+  "notify.center",
+  // Plugin-owned timers (`contributes.schedules`), independent of scheduled
+  // tasks: this calls a plugin function and spends no model tokens.
+  "scheduler",
+  // Read-only task roster and ledger facts.
+  "tasks.read",
+  // Creating and driving the plugin's own tasks, bounded by
+  // `manifest.tasks.manage.maxPermission`.
+  "tasks.manage",
 ] as const;
 
 export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number];
+
+/**
+ * How much a grant hands over. Used to order and label the permission list the
+ * user answers at install time.
+ */
+export type PluginPermissionRisk = "low" | "medium" | "high";
+
+/**
+ * The risk tier of every permission, mirroring the risk column of
+ * `docs/spec/07-plugins/13-plugin-permissions-matrix.md`.
+ *
+ * The `satisfies` clause is the point: a permission added to
+ * `PLUGIN_PERMISSIONS` without a tier is a compile error, so a new capability
+ * cannot reach the install sheet unlabelled and default to looking harmless.
+ */
+export const PLUGIN_PERMISSION_RISK = {
+  // High — reads the user's own content, spends their quota, runs code outside
+  // the plugin's own box, or holds even more authority than the tier above.
+  "agent.tool.register": "high",
+  "agent.prompt.inject": "high",
+  "agent.complete": "high",
+  "agent.extension": "high",
+  // Its code runs in the app's own document, so the grant is the boundary.
+  "renderer.extension": "high",
+  "provider.register": "high",
+  // The isolated plugin callback can reach its own encrypted credential.
+  "provider.oauth": "high",
+  "desktop.control": "high",
+  "project.create": "high",
+  "session.read": "high",
+  "session.import": "high",
+  "session.delete.own": "high",
+  "session.autoTitle": "high",
+  // Paid, host-sent, and invisible in the conversation.
+  "session.keepWarm": "high",
+  "memory.read": "high",
+  "conversation.read": "high",
+  "embeddings.run": "high",
+  // Writing and deleting are dangerous on their own, without the read tier's
+  // excuse that a read only leaks where egress allows.
+  "fs.write": "high",
+  "fs.delete": "high",
+  "net.fetch": "high",
+  "net.anyHost": "high",
+  "net.websocket": "high",
+  "mcp.server.local": "high",
+  "mcp.server.remote": "high",
+  "browser.cdp": "high",
+  "audio.capture.background": "high",
+  "speech.adapter.register": "high",
+  // Host capabilities: the host holds the secret, the socket, the public path
+  // and the task on the plugin's behalf, so the grant is the whole boundary.
+  "credentials.use": "high",
+  "net.tcp": "high",
+  "inbound.webhook": "high",
+  "tasks.manage": "high",
+
+  // Medium — reads or writes something the user owns, but inside a bound the
+  // host enforces, with no path to arbitrary code or arbitrary egress.
+  // Reading is a tier below writing because what makes a read dangerous is
+  // where the data can go, and outbound requests are declared separately.
+  "fs.read": "medium",
+  "models.list": "medium",
+  "clipboard.read": "medium",
+  "clipboard.write": "medium",
+  "shell.openExternal": "medium",
+  "background.service": "medium",
+  "session.read.own": "medium",
+  "session.update.own": "medium",
+  "composer.transform": "medium",
+  "usage.read": "medium",
+  "audio.playback.background": "medium",
+  "keyboard.globalShortcut": "medium",
+  "bus.publish": "medium",
+  "bus.subscribe": "medium",
+  "ui.microphone": "medium",
+  // Drafting never sends anything, and the notification center and the timers
+  // are host-owned queues the user can see and stop.
+  "mail.draft": "medium",
+  "notify.center": "medium",
+  "scheduler": "medium",
+  "tasks.read": "medium",
+
+  // Low — display surfaces the host renders and can withdraw.
+  "ui.panel": "low",
+  "ui.view": "low",
+  "ui.theme": "low",
+  "ui.settings": "low",
+  "ui.window.appearance": "low",
+  "notify": "low",
+} satisfies Record<PluginPermission, PluginPermissionRisk>;
+
+/**
+ * An unrecognised permission counts as high risk: a capability the host does
+ * not classify must never read as safer than one it does.
+ */
+export function pluginPermissionRisk(permission: string): PluginPermissionRisk {
+  if (!Object.hasOwn(PLUGIN_PERMISSION_RISK, permission)) return "high";
+  return (PLUGIN_PERMISSION_RISK as Record<string, PluginPermissionRisk>)[permission];
+}
 
 export function validateManifest(raw: unknown): {
   ok: boolean;
@@ -1863,10 +2034,40 @@ export function validateManifest(raw: unknown): {
       error: "contributes.composerTransforms requires the composer.transform permission",
     };
   }
+  if (
+    !contributesError &&
+    (m.contributes?.credentials?.length ?? 0) > 0 &&
+    !(m.permissions ?? []).includes("credentials.use")
+  ) {
+    return {
+      ok: false,
+      error: "contributes.credentials requires the credentials.use permission",
+    };
+  }
+  if (
+    !contributesError &&
+    (m.contributes?.webhooks?.length ?? 0) > 0 &&
+    !(m.permissions ?? []).includes("inbound.webhook")
+  ) {
+    return {
+      ok: false,
+      error: "contributes.webhooks requires the inbound.webhook permission",
+    };
+  }
+  if (
+    !contributesError &&
+    (m.contributes?.schedules?.length ?? 0) > 0 &&
+    !(m.permissions ?? []).includes("scheduler")
+  ) {
+    return {
+      ok: false,
+      error: "contributes.schedules requires the scheduler permission",
+    };
+  }
   if (contributesError) {
     return { ok: false, error: contributesError };
   }
-  const net = m.net as { domains?: unknown } | null | undefined;
+  const net = m.net as { domains?: unknown; tcp?: unknown } | null | undefined;
   if (net !== undefined) {
     if (!net || typeof net !== "object" || Array.isArray(net)) {
       return { ok: false, error: "manifest.net must be an object" };
@@ -1875,6 +2076,29 @@ export function validateManifest(raw: unknown): {
     if (!domains.ok) {
       return { ok: false, error: `manifest.${domains.error}` };
     }
+    // The permission is the switch; the endpoint list is the range, exactly
+    // like `net.domains`. A list nobody may use fails rather than being
+    // silently ignored.
+    const tcp = parseNetTcpEndpoints(net.tcp);
+    if (!tcp.ok) {
+      return { ok: false, error: `manifest.${tcp.error}` };
+    }
+    if ((tcp.endpoints?.length ?? 0) > 0 && !(m.permissions ?? []).includes("net.tcp")) {
+      return { ok: false, error: "manifest.net.tcp requires the net.tcp permission" };
+    }
+  }
+  const tasksError = validateTasksContribution((m as { tasks?: unknown }).tasks);
+  if (tasksError) {
+    return { ok: false, error: tasksError };
+  }
+  if (
+    (m as { tasks?: PluginTasksContrib }).tasks?.manage?.maxPermission !== undefined &&
+    !(m.permissions ?? []).includes("tasks.manage")
+  ) {
+    return {
+      ok: false,
+      error: "manifest.tasks.manage requires the tasks.manage permission",
+    };
   }
   const fs = parseFsPolicy((m as { fs?: unknown }).fs);
   if (!fs.ok) {
@@ -2478,6 +2702,14 @@ export function validateContributions(
     }
   }
 
+  // Host capabilities (design: 插件宿主能力六项, phase 2B). Shapes only; the
+  // permission each block depends on is checked by `validateManifest`.
+  const capabilityError =
+    validateCredentialContributions(contributes.credentials) ??
+    validateWebhookContributions(contributes.webhooks) ??
+    validateScheduleContributions(contributes.schedules);
+  if (capabilityError) return capabilityError;
+
   return undefined;
 }
 
@@ -2491,26 +2723,6 @@ function isValidShortcutShape(value: unknown): boolean {
     return false;
   }
   return parts.slice(0, -1).every((part) => ["Mod", "Ctrl", "Alt", "Shift"].includes(part));
-}
-
-/**
- * Shape check for a label that may be plain or localized. A localized label
- * must carry both shipped locales: a half-translated title would silently fall
- * back at runtime and read as a plugin bug rather than a manifest one.
- */
-function localizedStringError(value: unknown, field: string): string | undefined {
-  if (value === undefined || typeof value === "string") return undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return `${field} must be a string or { en, "zh-CN" }`;
-  }
-  const localized = value as Record<string, unknown>;
-  for (const locale of ["en", "zh-CN"] as const) {
-    const entry = localized[locale];
-    if (typeof entry !== "string" || !entry.trim()) {
-      return `${field}.${locale} is required for localized titles`;
-    }
-  }
-  return undefined;
 }
 
 function manifestAuthorError(value: unknown): string | undefined {
@@ -2697,9 +2909,32 @@ export {
   isNetUrlAllowed,
   isNetUrlAllowedWithGrant,
   parseNetDomains,
+  parseNetTcpEndpoints,
   type PluginNetDomain,
   type PluginNetEgressGrant,
+  type PluginTcpEndpoint,
 } from "./net-policy.js";
+export {
+  MAX_WEBHOOK_BODY_BYTES,
+  MAX_WEBHOOK_RATE_PER_MINUTE,
+  MIN_SCHEDULE_INTERVAL_MINUTES,
+  DEFAULT_PLUGIN_TASK_PERMISSION_MODE,
+  PLUGIN_CREDENTIAL_KINDS,
+  PLUGIN_SCHEDULE_RUN_WHEN,
+  PLUGIN_TASK_PERMISSION_MODES,
+  validateCredentialContributions,
+  validateScheduleContributions,
+  validateTasksContribution,
+  validateWebhookContributions,
+  type PluginCredentialContrib,
+  type PluginCredentialFieldContrib,
+  type PluginCredentialKind,
+  type PluginScheduleContrib,
+  type PluginScheduleRunWhen,
+  type PluginTaskPermissionMode,
+  type PluginTasksContrib,
+  type PluginWebhookContrib,
+} from "./host-capabilities.js";
 export {
   fsGlobIgnoresCase,
   isDeniedFsPath,
