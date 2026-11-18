@@ -2761,3 +2761,402 @@ fn inspecting_a_broken_or_unsafe_package_is_refused_like_an_install() {
         }
     });
 }
+
+/// A credential slot the Settings sheet can render and the host can inject.
+fn credential_slot(overrides: Value) -> Value {
+    let mut slot = json!({
+        "id": "mailbox",
+        "title": { "en": "Mailbox", "zh-CN": "邮箱" },
+        "kind": "basic",
+        "fields": [{ "key": "username", "label": { "en": "User", "zh-CN": "用户" } }],
+    });
+    for (key, value) in overrides.as_object().unwrap().clone() {
+        slot[key] = value;
+    }
+    slot
+}
+
+/// Write a manifest and return the reason it was refused.
+fn refuse(root: &Path, manifest: Value) -> String {
+    write_plugin(root, manifest, &[]);
+    read_manifest_err(root)
+}
+
+#[test]
+fn host_capability_blocks_require_their_permission() {
+    let dir = tempdir().unwrap();
+    let credentials = json!({ "credentials": [credential_slot(json!({}))] });
+    let webhooks = json!({ "webhooks": [{ "id": "gitea", "title": "Gitea" }] });
+    let schedules = json!({ "schedules": [{ "id": "poll", "title": "Poll", "every": "5m" }] });
+
+    for (name, contributes, permission, expected) in [
+        (
+            "credentials",
+            credentials.clone(),
+            "credentials.use",
+            "credential slots require the credentials.use permission",
+        ),
+        (
+            "webhooks",
+            webhooks.clone(),
+            "inbound.webhook",
+            "webhook receivers require the inbound.webhook permission",
+        ),
+        (
+            "schedules",
+            schedules.clone(),
+            "scheduler",
+            "plugin schedules require the scheduler permission",
+        ),
+    ] {
+        let without = dir.path().join(format!("{name}-without"));
+        assert!(refuse(
+            &without,
+            capability_manifest(contributes.clone(), json!([]))
+        )
+        .contains(expected));
+
+        let with = dir.path().join(format!("{name}-with"));
+        write_plugin(
+            &with,
+            capability_manifest(contributes, json!([permission])),
+            &[],
+        );
+        PluginManager::read_manifest(&with)
+            .unwrap_or_else(|error| panic!("{name} should load with {permission}: {error}"));
+    }
+}
+
+#[test]
+fn credential_slots_must_render_and_inject_somewhere() {
+    let dir = tempdir().unwrap();
+    let grant = json!(["credentials.use"]);
+
+    let unsupported_kind = dir.path().join("unsupported-kind");
+    assert!(refuse(
+        &unsupported_kind,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({ "kind": "cookie" }))] }),
+            grant.clone(),
+        ),
+    )
+    .contains("unsupported kind cookie"));
+
+    let duplicate = dir.path().join("duplicate");
+    assert!(refuse(
+        &duplicate,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({})), credential_slot(json!({}))] }),
+            grant.clone(),
+        ),
+    )
+    .contains("duplicate credential id mailbox"));
+
+    let no_fields = dir.path().join("no-fields");
+    assert!(refuse(
+        &no_fields,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({ "fields": [] }))] }),
+            grant.clone(),
+        ),
+    )
+    .contains("requires fields"));
+
+    let duplicate_field = dir.path().join("duplicate-field");
+    assert!(refuse(
+        &duplicate_field,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({
+                "fields": [
+                    { "key": "username", "label": "User" },
+                    { "key": "username", "label": "User again" }
+                ]
+            }))] }),
+            grant.clone(),
+        ),
+    )
+    .contains("declares field username twice"));
+
+    let bad_secret = dir.path().join("bad-secret");
+    assert!(refuse(
+        &bad_secret,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({
+                "fields": [{ "key": "token", "label": "Token", "secret": "yes" }]
+            }))] }),
+            grant.clone(),
+        ),
+    )
+    .contains("secret must be a boolean"));
+
+    let half_translated = dir.path().join("half-translated");
+    assert!(refuse(
+        &half_translated,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({ "title": { "en": "Mailbox" } }))] }),
+            grant.clone(),
+        ),
+    )
+    .contains("requires a title"));
+
+    let wildcard_scope = dir.path().join("wildcard-scope");
+    assert!(refuse(
+        &wildcard_scope,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({ "scope": { "domains": ["*"] } }))] }),
+            grant.clone(),
+        ),
+    )
+    .contains("must not contain"));
+
+    let empty_scope = dir.path().join("empty-scope");
+    assert!(refuse(
+        &empty_scope,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({ "scope": { "domains": [] } }))] }),
+            grant.clone(),
+        ),
+    )
+    .contains("scope needs at least one domain"));
+
+    let scoped = dir.path().join("scoped");
+    write_plugin(
+        &scoped,
+        capability_manifest(
+            json!({ "credentials": [credential_slot(json!({
+                "scope": { "domains": ["imap.example.com", "*.example.org"] }
+            }))] }),
+            grant,
+        ),
+        &[],
+    );
+    PluginManager::read_manifest(&scoped).unwrap();
+}
+
+#[test]
+fn webhook_receivers_stay_inside_their_bounds() {
+    let dir = tempdir().unwrap();
+    let grant = json!(["inbound.webhook"]);
+
+    for (name, overrides, expected) in [
+        (
+            "body-above-ceiling",
+            json!({ "maxBodyBytes": 262_145 }),
+            "maxBodyBytes must be an integer from 1 to 262144",
+        ),
+        (
+            "rate-above-ceiling",
+            json!({ "ratePerMinute": 121 }),
+            "ratePerMinute must be an integer from 1 to 120",
+        ),
+        (
+            "body-of-zero",
+            json!({ "maxBodyBytes": 0 }),
+            "maxBodyBytes must be an integer",
+        ),
+        (
+            "rate-not-an-integer",
+            json!({ "ratePerMinute": 1.5 }),
+            "ratePerMinute must be an integer",
+        ),
+    ] {
+        let mut webhook = json!({ "id": "gitea", "title": "Gitea" });
+        for (key, value) in overrides.as_object().unwrap().clone() {
+            webhook[key] = value;
+        }
+        let root = dir.path().join(name);
+        assert!(
+            refuse(
+                &root,
+                capability_manifest(json!({ "webhooks": [webhook] }), grant.clone())
+            )
+            .contains(expected),
+            "{name} should be refused with {expected}"
+        );
+    }
+
+    let at_ceiling = dir.path().join("at-ceiling");
+    write_plugin(
+        &at_ceiling,
+        capability_manifest(
+            json!({ "webhooks": [{
+                "id": "gitea",
+                "title": "Gitea",
+                "maxBodyBytes": 262_144,
+                "ratePerMinute": 120
+            }] }),
+            grant,
+        ),
+        &[],
+    );
+    PluginManager::read_manifest(&at_ceiling).unwrap();
+}
+
+#[test]
+fn schedules_declare_exactly_one_tick_expression() {
+    let dir = tempdir().unwrap();
+    let grant = json!(["scheduler"]);
+
+    for (name, overrides, expected) in [
+        (
+            "both",
+            json!({ "every": "5m", "cron": "0 9 * * *" }),
+            "needs exactly one of every or cron",
+        ),
+        ("neither", json!({}), "needs exactly one of every or cron"),
+        (
+            "faster-than-a-minute",
+            json!({ "every": "30s" }),
+            "must be an interval of at least one minute",
+        ),
+        (
+            "malformed-interval",
+            json!({ "every": "5 minutes" }),
+            "must be an interval of at least one minute",
+        ),
+        (
+            "four-field-cron",
+            json!({ "cron": "0 9 *" }),
+            "cron must be a five-field expression",
+        ),
+        (
+            "unknown-run-when",
+            json!({ "every": "5m", "runWhen": "busy" }),
+            "runWhen must be \"always\" or \"idle\"",
+        ),
+    ] {
+        let mut schedule = json!({ "id": "poll", "title": "Poll" });
+        for (key, value) in overrides.as_object().unwrap().clone() {
+            schedule[key] = value;
+        }
+        let root = dir.path().join(name);
+        assert!(
+            refuse(
+                &root,
+                capability_manifest(json!({ "schedules": [schedule] }), grant.clone())
+            )
+            .contains(expected),
+            "{name} should be refused with {expected}"
+        );
+    }
+
+    let interval = dir.path().join("interval");
+    write_plugin(
+        &interval,
+        capability_manifest(
+            json!({ "schedules": [{ "id": "poll", "title": "Poll", "every": "1m" }] }),
+            grant.clone(),
+        ),
+        &[],
+    );
+    PluginManager::read_manifest(&interval).unwrap();
+
+    let cron = dir.path().join("cron");
+    write_plugin(
+        &cron,
+        capability_manifest(
+            json!({ "schedules": [{
+                "id": "poll",
+                "title": "Poll",
+                "cron": "0 9 * * 1-5",
+                "runWhen": "idle"
+            }] }),
+            grant,
+        ),
+        &[],
+    );
+    PluginManager::read_manifest(&cron).unwrap();
+}
+
+#[test]
+fn raw_tcp_endpoints_are_literal_and_need_the_permission() {
+    let dir = tempdir().unwrap();
+
+    let without_permission = dir.path().join("tcp-without-permission");
+    let mut manifest = capability_manifest(json!({}), json!([]));
+    manifest["net"] = json!({ "tcp": [{ "host": "imap.example.com", "port": 993, "tls": true }] });
+    assert!(refuse(&without_permission, manifest)
+        .contains("raw tcp endpoints require the net.tcp permission"));
+
+    for (name, endpoint, expected) in [
+        (
+            "wildcard",
+            json!({ "host": "*.example.com", "port": 993, "tls": true }),
+            "host must be literal",
+        ),
+        (
+            "with-a-port-in-the-host",
+            json!({ "host": "imap.example.com:993", "port": 993, "tls": true }),
+            "is not a bare hostname",
+        ),
+        (
+            "missing-tls",
+            json!({ "host": "imap.example.com", "port": 993 }),
+            "needs tls: true or false",
+        ),
+        (
+            "port-zero",
+            json!({ "host": "imap.example.com", "port": 0, "tls": true }),
+            "needs a port from 1 to 65535",
+        ),
+        (
+            "port-above-the-range",
+            json!({ "host": "imap.example.com", "port": 65536, "tls": true }),
+            "needs a port from 1 to 65535",
+        ),
+    ] {
+        let root = dir.path().join(name);
+        let mut manifest = capability_manifest(json!({}), json!(["net.tcp"]));
+        manifest["net"] = json!({ "tcp": [endpoint] });
+        assert!(
+            refuse(&root, manifest).contains(expected),
+            "{name} should be refused with {expected}"
+        );
+    }
+
+    let duplicate = dir.path().join("tcp-duplicate");
+    let mut manifest = capability_manifest(json!({}), json!(["net.tcp"]));
+    manifest["net"] = json!({ "tcp": [
+        { "host": "imap.example.com", "port": 993, "tls": true },
+        { "host": "IMAP.example.com", "port": 993, "tls": true }
+    ] });
+    assert!(refuse(&duplicate, manifest).contains("lists imap.example.com:993 twice"));
+
+    // Four is the ceiling on open connections, not on declared endpoints, so a
+    // fifth endpoint is still a valid manifest.
+    let many = dir.path().join("tcp-many");
+    let mut manifest = capability_manifest(json!({}), json!(["net.tcp"]));
+    manifest["net"] = json!({ "tcp": (0..5)
+        .map(|index| json!({ "host": format!("host{index}.example.com"), "port": 993, "tls": true }))
+        .collect::<Vec<_>>() });
+    write_plugin(&many, manifest, &[]);
+    PluginManager::read_manifest(&many).unwrap();
+}
+
+#[test]
+fn task_permission_ceiling_is_known_and_granted() {
+    let dir = tempdir().unwrap();
+
+    let without_permission = dir.path().join("tasks-without-permission");
+    let mut manifest = capability_manifest(json!({}), json!([]));
+    manifest["tasks"] = json!({ "manage": { "maxPermission": "auto" } });
+    assert!(refuse(&without_permission, manifest)
+        .contains("task permission ceilings require the tasks.manage permission"));
+
+    let unknown_mode = dir.path().join("tasks-unknown-mode");
+    let mut manifest = capability_manifest(json!({}), json!(["tasks.manage"]));
+    manifest["tasks"] = json!({ "manage": { "maxPermission": "yolo" } });
+    assert!(refuse(&unknown_mode, manifest)
+        .contains("maxPermission must be one of ask, accept-edits, auto"));
+
+    let not_an_object = dir.path().join("tasks-not-an-object");
+    let mut manifest = capability_manifest(json!({}), json!(["tasks.manage"]));
+    manifest["tasks"] = json!("auto");
+    assert!(refuse(&not_an_object, manifest).contains("manifest.tasks must be an object"));
+
+    let granted = dir.path().join("tasks-granted");
+    let mut manifest = capability_manifest(json!({}), json!(["tasks.manage"]));
+    manifest["tasks"] = json!({ "manage": { "maxPermission": "accept-edits" } });
+    write_plugin(&granted, manifest, &[]);
+    PluginManager::read_manifest(&granted).unwrap();
+}

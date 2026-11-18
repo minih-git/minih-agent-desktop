@@ -54,6 +54,12 @@ impl PluginManager {
             .with_context(|| format!("read manifest {}", manifest_path.display()))?;
         let manifest: PluginManifest =
             serde_json::from_str(&raw).map_err(|e| anyhow!("PLUGIN_INVALID: {e}"))?;
+        // The top-level host capability blocks (`net.tcp`, `tasks`) are judged
+        // from the raw document: `PluginManifest` keeps only what the host
+        // consumes today, and a declaration the host cannot honour still has to
+        // fail the install rather than be silently dropped.
+        let raw_value: Value =
+            serde_json::from_str(&raw).map_err(|e| anyhow!("PLUGIN_INVALID: {e}"))?;
         if manifest.id.trim().is_empty() || manifest.main.trim().is_empty() {
             bail!("PLUGIN_INVALID: id/main required");
         }
@@ -73,6 +79,7 @@ impl PluginManager {
             }
         }
         validate_contributions(path, &manifest)?;
+        validate_manifest_capabilities(&raw_value, &manifest)?;
         validate_renderer(path, &manifest)?;
         Ok(manifest)
     }

@@ -72,7 +72,10 @@ pub(crate) use providers::{
     set_plugin_providers_enabled, sync_plugin_providers, MAX_PLUGIN_PROVIDER_MODELS,
 };
 pub(crate) use renderer::validate_renderer;
-pub(crate) use validation::{is_local_package_url, package_host_allowed, validate_contributions};
+pub(crate) use validation::{
+    is_local_package_url, package_host_allowed, validate_contributions,
+    validate_manifest_capabilities,
+};
 
 #[cfg(test)]
 mod tests;

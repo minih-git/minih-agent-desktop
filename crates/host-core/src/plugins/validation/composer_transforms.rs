@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use serde_json::{Map, Value};
 
-use super::{array_of, is_contrib_id, require_permission, PluginManifest};
+use super::{array_of, is_contrib_id, is_plugin_label, require_permission, PluginManifest};
 
 pub(super) fn validate(map: &Map<String, Value>, manifest: &PluginManifest) -> Result<()> {
     let Some(transforms) = map.get("composerTransforms") else {
@@ -41,19 +41,4 @@ pub(super) fn validate(map: &Map<String, Value>, manifest: &PluginManifest) -> R
         }
     }
     Ok(())
-}
-
-/// Composer labels accept either a plain string or both contract locales.
-fn is_plugin_label(value: &Value) -> bool {
-    if value.as_str().is_some_and(|label| !label.trim().is_empty()) {
-        return true;
-    }
-    value.as_object().is_some_and(|localized| {
-        ["en", "zh-CN"].iter().all(|locale| {
-            localized
-                .get(*locale)
-                .and_then(Value::as_str)
-                .is_some_and(|label| !label.trim().is_empty())
-        })
-    })
 }

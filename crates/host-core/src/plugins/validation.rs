@@ -1,6 +1,7 @@
 use super::*;
 mod composer_transforms;
 mod contribution_ids;
+mod host_capabilities;
 mod provider_catalog;
 mod views;
 
@@ -610,8 +611,12 @@ pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> 
         }
     }
 
+    host_capabilities::validate_contributes(map, manifest)?;
+
     Ok(())
 }
+
+pub(crate) use host_capabilities::validate_manifest_capabilities;
 
 fn is_setting_key(value: &str) -> bool {
     !value.is_empty()
@@ -624,6 +629,24 @@ fn is_setting_key(value: &str) -> bool {
         && value
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+}
+
+/// A block label is a plain string or both contract locales, mirroring
+/// `localizedStringError` in the plugin SDK: a half-translated title would
+/// silently fall back at runtime and read as a plugin bug rather than a
+/// manifest one.
+pub(super) fn is_plugin_label(value: &Value) -> bool {
+    if value.as_str().is_some_and(|label| !label.trim().is_empty()) {
+        return true;
+    }
+    value.as_object().is_some_and(|localized| {
+        ["en", "zh-CN"].iter().all(|locale| {
+            localized
+                .get(*locale)
+                .and_then(Value::as_str)
+                .is_some_and(|label| !label.trim().is_empty())
+        })
+    })
 }
 
 fn is_shortcut_shape(value: &Value) -> bool {

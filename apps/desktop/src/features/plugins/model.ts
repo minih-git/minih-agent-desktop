@@ -91,6 +91,12 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "net.websocket": "high",
   "audio.capture.background": "high",
   "speech.adapter.register": "high",
+  // Host capabilities: the host holds the secret, the socket, the public path
+  // and the task on the plugin's behalf, so the grant is the whole boundary.
+  "credentials.use": "high",
+  "net.tcp": "high",
+  "inbound.webhook": "high",
+  "tasks.manage": "high",
   "audio.playback.background": "medium",
   "keyboard.globalShortcut": "medium",
   "bus.publish": "medium",
@@ -102,6 +108,12 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "ui.window.appearance": "low",
   "ui.microphone": "medium",
   "notify": "low",
+  // Drafting never sends anything, and the notification center and the timers
+  // are host-owned queues the user can see and stop.
+  "mail.draft": "medium",
+  "notify.center": "medium",
+  "scheduler": "medium",
+  "tasks.read": "medium",
 };
 
 /** Display order for capability badges: what it adds before what it runs. */
