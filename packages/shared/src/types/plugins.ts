@@ -390,6 +390,14 @@ export type PluginSummary = {
    */
   yanked?: PluginYankNotice;
   ui?: PluginUiMeta;
+  /**
+   * The plugin's own icon (`manifest.icon`) as a host-scheme URL, present only
+   * while the plugin is loaded. Never a file path: main resolves and confines
+   * the package member, so the renderer only references it. Absent means the
+   * plugin declares no icon (or it failed confinement), and host chrome draws
+   * its fallback instead.
+   */
+  iconUrl?: string;
   /** Declared file scope, so the page can show it next to the permissions. */
   fs?: PluginFsPolicy;
   settings?: PluginSettingDefinition[];

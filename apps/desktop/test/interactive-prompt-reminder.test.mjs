@@ -16,7 +16,7 @@ const eventsSource = await readStoreModule("slices/events-slice.ts");
 const catalogSource = await readStoreModule("slices/catalog-slice.ts");
 const interactionSource = await readStoreModule("slices/interaction-slice.ts");
 const centerSource = await readFile(
-  new URL("../src/components/NotificationCenter.tsx", import.meta.url),
+  new URL("../src/components/NotificationRow.tsx", import.meta.url),
   "utf8",
 );
 const ipcSource = await readFile(

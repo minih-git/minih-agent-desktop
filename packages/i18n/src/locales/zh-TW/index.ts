@@ -3598,6 +3598,9 @@ sklm: {
     planApprovalTitle: "{{sessionTitle}} 計畫待審批",
     planApprovalBody: "已生成執行方案，等待您的確認。",
     actionFailed: "無法更新通知。",
+    pluginCollapsed: "另有 {{count}} 則通知已摺疊",
+    pluginViewNeedsSession: "無法開啟外掛檢視：請先選擇本機工作階段。",
+    pluginTargetUnavailable: "無法開啟通知：外掛目標無法使用。",
     justNow: "剛剛",
   },
   liveVoice: {

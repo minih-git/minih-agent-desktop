@@ -678,11 +678,18 @@ off | minimal | low | medium | high | xhigh | max
 ```ts
 type AppNotification = {
   id: string;
-  kind: "task.completed" | "task.failed";
-  sessionId: string;
-  sessionTitle: string;
-  turnId: string;
+  kind: "task.completed" | "task.failed" | "prompt.ask" | "prompt.permission" | "prompt.plan" | "plugin.alert" | "plugin.digest";
+  sessionId: string | null;
+  sessionTitle: string | null;
+  turnId?: string;
+  requestId?: string;
+  toolName?: string;
   errorCode?: string;
+  pluginId?: string;
+  title?: string;
+  body?: string;
+  linkJson?: string;
+  dedupeKey?: string;
   createdAt: string; // ISO-8601 UTC
   readAt?: string | null;
 };
@@ -711,14 +718,13 @@ type NotificationListResult = {
 };
 ```
 
-- `notification.markRead({ id }) -> { ok }` 是幂等的。 `ok=false` 意味着
-  该id不存在；已读取的行仍然成功。
-- `notification.markAllRead({}) -> { ok: true }` 更新中的每个未读行
-  一笔交易。
+- `notification.markRead({ id, expectedCreatedAt? }) -> { ok }` 幂等；提供时间时
+  仅匹配当前版本，`ok=false` 也表示已有更新版本；省略时保留原有行为。
+- `notification.markAllRead({ pluginRows? }) -> { ok: true }` 在同一事务标记会话行
+  以及与 `{ id, createdAt }` 快照匹配的插件行。省略快照时仍标记全部，快照最多 200 项。
 - `notification.clear({}) -> { ok: true }` 仅删除收件箱行。
-- `id` 是 Renderer 和本机投递的稳定一次性键。客户端必须丢弃已经确认/清除
-  的 id 的重复或延迟记录；清空收件箱不会让旧终端回合再次具备插入资格。
-  后续真正的终端回合会获得新的 id。
+- 任务和提问通知的 id 仍按原规则拒绝重放；插件可用同一 id 更新，客户端仅接受
+  `createdAt` 严格更新的版本，拒绝较旧或相同版本的重放。
 - 不发出 `notification.created` JSON-RPC 服务器通知。 Electron
   直接从 `session.endTurn` 接收插入的记录，避免了
   终端转持久化和UI刷新之间的第二个点餐通道。
@@ -726,9 +732,8 @@ type NotificationListResult = {
   仍然在同一事务中达到其请求的最终状态。失踪
   或非布尔值默认为 true，因此 unknown/stale UI 状态不会丢失
   通知。
-- `sessionTitle` 是与行一起存储的稳定会话名称快照。
-本地化事件 title/body 散文是由 Electron/renderer 衍生而来，从未
-  跨越主机 RPC。
+- `sessionTitle` 是会话通知的稳定名称快照，本地化文案由 Electron/renderer 派生；
+  插件通知的会话字段为 null，插件提供的标题、正文和链接数据经宿主 RPC 传递。
 
 ## 5. 工具执行合约
 

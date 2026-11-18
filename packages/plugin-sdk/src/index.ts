@@ -1383,6 +1383,16 @@ export type PluginHostApi = {
     registerAdapter: (adapter: PluginSpeechAdapter) => Promise<void>;
     unregisterAdapter: (protocol: string) => Promise<void>;
   };
+  /** Write a durable notification owned by this plugin (`notify.center`). */
+  notify: {
+    center: (input: {
+      kind?: "alert" | "digest";
+      title: string;
+      body?: string;
+      link?: { view: string; command?: never } | { command: string; view?: never };
+      dedupeKey?: string;
+    }) => Promise<{ id: string }>;
+  };
   ui: {
     openPanel: (opts?: { title?: string }) => Promise<void>;
     closePanel: () => Promise<void>;

@@ -335,19 +335,83 @@ pub fn list(db: &Database, unread_only: bool, limit: i64) -> Result<(Vec<Notific
     Ok((notifications, unread_count))
 }
 
-pub fn mark_read(db: &Database, id: &str) -> Result<bool> {
-    let updated = db
-        .conn()
-        .prepare_cached("UPDATE notifications SET read_at = COALESCE(read_at, ?1) WHERE id = ?2")?
-        .execute(params![now_ms(), id])?;
+/// Mark one row read, optionally only while it is still the version the user
+/// actually clicked.
+///
+/// A plugin row keeps its id across a dedupe re-delivery, so the unversioned
+/// update an in-flight click would otherwise run can read a newer copy the user
+/// has never seen. `expected_created_at` is that copy's `created_at` in epoch
+/// ms: the row is marked only while it still matches. Callers written before
+/// the plugin family pass `None` and keep the behavior they always had.
+pub fn mark_read_versioned(
+    db: &Database,
+    id: &str,
+    expected_created_at: Option<i64>,
+) -> Result<bool> {
+    let updated = match expected_created_at {
+        Some(expected) => db
+            .conn()
+            .prepare_cached(
+                "UPDATE notifications SET read_at = COALESCE(read_at, ?1)
+                  WHERE id = ?2 AND created_at = ?3",
+            )?
+            .execute(params![now_ms(), id, expected])?,
+        None => db
+            .conn()
+            .prepare_cached(
+                "UPDATE notifications SET read_at = COALESCE(read_at, ?1) WHERE id = ?2",
+            )?
+            .execute(params![now_ms(), id])?,
+    };
     Ok(updated > 0)
 }
 
-pub fn mark_all_read(db: &Database) -> Result<()> {
-    db.conn()
-        .prepare_cached("UPDATE notifications SET read_at = ?1 WHERE read_at IS NULL")?
-        .execute(params![now_ms()])?;
+#[cfg(test)]
+pub fn mark_read(db: &Database, id: &str) -> Result<bool> {
+    mark_read_versioned(db, id, None)
+}
+
+/// Mark every unread row read, unless the caller pinned the plugin rows it
+/// actually saw.
+///
+/// `plugin_versions` carries `(id, created_at ms)` for the plugin rows the user
+/// acknowledged. A plugin row re-delivered between that click and this write is
+/// a newer version the user has not read, so it must stay unread; task and
+/// prompt rows keep the old rule, because a click covered every one of them.
+/// `None` is the pre-plugin behavior: every unread row.
+pub fn mark_all_read_versioned(
+    db: &Database,
+    plugin_versions: Option<&[(String, i64)]>,
+) -> Result<()> {
+    let now = now_ms();
+    let Some(versions) = plugin_versions else {
+        db.conn()
+            .prepare_cached("UPDATE notifications SET read_at = ?1 WHERE read_at IS NULL")?
+            .execute(params![now])?;
+        return Ok(());
+    };
+    let tx = db.conn().unchecked_transaction()?;
+    tx.prepare_cached(
+        "UPDATE notifications SET read_at = ?1 WHERE read_at IS NULL AND plugin_id IS NULL",
+    )?
+    .execute(params![now])?;
+    {
+        let mut mark_version = tx.prepare_cached(
+            "UPDATE notifications SET read_at = ?1
+              WHERE id = ?2 AND plugin_id IS NOT NULL AND read_at IS NULL
+                AND created_at = ?3",
+        )?;
+        for (id, created_at) in versions {
+            mark_version.execute(params![now, id, created_at])?;
+        }
+    }
+    tx.commit()?;
     Ok(())
+}
+
+#[cfg(test)]
+pub fn mark_all_read(db: &Database) -> Result<()> {
+    mark_all_read_versioned(db, None)
 }
 
 pub fn clear(db: &Database) -> Result<()> {
@@ -581,7 +645,16 @@ mod tests {
                 "INSERT INTO notifications
                     (id, kind, plugin_id, title, body, link_json, dedupe_key, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![id, kind, plugin_id, title, body, link_json, dedupe_key, now_ms()],
+                params![
+                    id,
+                    kind,
+                    plugin_id,
+                    title,
+                    body,
+                    link_json,
+                    dedupe_key,
+                    now_ms()
+                ],
             )
             .expect("plugin row inserted");
         id
@@ -635,10 +708,7 @@ mod tests {
         assert_eq!(alert_row.plugin_id.as_deref(), Some("acme.ci"));
         assert_eq!(alert_row.title.as_deref(), Some("Build failed"));
         assert_eq!(alert_row.body.as_deref(), Some("2 jobs failed"));
-        assert_eq!(
-            alert_row.link_json.as_deref(),
-            Some(r#"{"view":"inbox"}"#)
-        );
+        assert_eq!(alert_row.link_json.as_deref(), Some(r#"{"view":"inbox"}"#));
         assert_eq!(alert_row.dedupe_key.as_deref(), Some("event-1"));
         assert!(alert_row.read_at.is_none());
 
@@ -663,10 +733,7 @@ mod tests {
         assert!(completed_row.plugin_id.is_none());
         assert!(completed_row.title.is_none());
         let prompt_row = all.iter().find(|row| row.id == prompt.id).unwrap();
-        assert_eq!(
-            prompt_row.session_id.as_deref(),
-            Some(session.id.as_str())
-        );
+        assert_eq!(prompt_row.session_id.as_deref(), Some(session.id.as_str()));
         assert_eq!(prompt_row.session_title.as_deref(), Some("Mixed inbox"));
         assert_eq!(prompt_row.request_id.as_deref(), Some("req-mixed"));
         assert!(prompt_row.plugin_id.is_none());

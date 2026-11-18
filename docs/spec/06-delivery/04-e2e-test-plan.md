@@ -1,5 +1,21 @@
 # 04. E2E Test Plan
 
+## E2E-PLUGIN-notification-inbox
+
+- **Preconditions:** Isolated profile, synthetic plugins with `notify.center`,
+  a declared view and command, and an existing task notification.
+- **Steps:** Post alerts and digests, re-post a dedupe key after reading,
+  exercise foreign targets and oversized input, exceed 60 new rows per hour,
+  activate view and command links, then clear and uninstall the plugin.
+- **Expected:** Mixed inbox and badge remain correct; links reach only the
+  owner's declared targets; duplicates update and become unread; excess
+  deliveries collapse into one localized digest. Clear, restart, and uninstall
+  preserve their respective quota and cleanup guarantees.
+- **Automation:** `node scripts/e2e-plugin-notification-center.mjs` exercises
+  the plugin process, inbox, view and command in the isolated Electron shell and
+  captures the four layouts. Rust RPC and desktop tests cover deduplication,
+  safety, rate limiting, lifecycle and acknowledgement races separately.
+
 ## E2E-SESSION-create-thinking-setting
 
 - **Preconditions:** Request worktree, reused dependencies, isolated Electron

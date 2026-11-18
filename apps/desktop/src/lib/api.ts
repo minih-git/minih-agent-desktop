@@ -726,10 +726,24 @@ export const api = {
   openFeedback: () => invoke(IPC.invoke.appOpenFeedback),
   listNotifications: (input?: { unreadOnly?: boolean; limit?: number }) =>
     invoke<NotificationListResult>(IPC.invoke.notificationList, input ?? {}),
-  markNotificationRead: (id: string) =>
-    invoke<{ ok: boolean }>(IPC.invoke.notificationMarkRead, { id }),
-  markAllNotificationsRead: () =>
-    invoke<{ ok: boolean }>(IPC.invoke.notificationMarkAllRead),
+  /**
+   * `expectedCreatedAt` pins the row version the user clicked. A plugin row
+   * keeps its id across a dedupe re-delivery, so without the pin an in-flight
+   * click could read a newer copy; omitting it keeps the old call shape.
+   */
+  markNotificationRead: (id: string, expectedCreatedAt?: string) =>
+    invoke<{ ok: boolean }>(
+      IPC.invoke.notificationMarkRead,
+      expectedCreatedAt ? { id, expectedCreatedAt } : { id },
+    ),
+  /**
+   * `pluginRows` pins the plugin row versions the click covered. Omitted, the
+   * host marks every unread row, exactly as before the plugin family existed.
+   */
+  markAllNotificationsRead: (input?: {
+    pluginRows?: Array<{ id: string; createdAt: string }>;
+  }) =>
+    invoke<{ ok: boolean }>(IPC.invoke.notificationMarkAllRead, input ?? {}),
   clearNotifications: () =>
     invoke<{ ok: boolean }>(IPC.invoke.notificationClear),
   showNativeNotification: (input: {
@@ -1867,6 +1881,8 @@ export const api = {
     ),
   executeCommand: (commandId: string) =>
     invoke(IPC.invoke.commandPaletteExecute, commandId),
+  executePluginNotificationCommand: (pluginId: string, commandId: string) =>
+    invoke(IPC.invoke.commandPaletteExecute, { pluginId, commandId }),
   openLogs: () => invoke(IPC.invoke.logOpenFolder),
   /**
    * Quit the application. Used by the surfaces that own the window before the

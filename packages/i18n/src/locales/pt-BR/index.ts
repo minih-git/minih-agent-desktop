@@ -3580,6 +3580,9 @@ export const ptBR = {
     planApprovalTitle: "Plano de {{sessionTitle}} aguardando aprovação",
     planApprovalBody: "Um plano proposto está pronto para sua revisão.",
     actionFailed: "Não foi possível atualizar as notificações.",
+    pluginCollapsed: "Mais {{count}} notificações foram agrupadas",
+    pluginViewNeedsSession: "Não foi possível abrir a visualização do plugin: selecione primeiro uma sessão local.",
+    pluginTargetUnavailable: "Não foi possível abrir a notificação: o destino do plugin está indisponível.",
     justNow: "Agora mesmo",
   },
   liveVoice: {

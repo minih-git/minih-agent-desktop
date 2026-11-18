@@ -3604,6 +3604,9 @@ sklm: {
     "planApprovalTitle": "{{sessionTitle}} plan pendiente de aprobación",
     "planApprovalBody": "El plan propuesto está listo para su revisión.",
     "actionFailed": "No se pudieron actualizar las notificaciones.",
+    "pluginCollapsed": "Se agruparon otras {{count}} notificaciones",
+    "pluginViewNeedsSession": "No se pudo abrir la vista del complemento: primero selecciona una sesión local.",
+    "pluginTargetUnavailable": "No se pudo abrir la notificación: el destino del complemento no está disponible.",
     "justNow": "Justo ahora"
   },
   liveVoice: {

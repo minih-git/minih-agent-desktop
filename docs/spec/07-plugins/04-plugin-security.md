@@ -113,6 +113,11 @@ before it is ever sent to the UI:
   the registration is revoked when the plugin unloads. `pi.themes.upsert` may
   register the same kind of path at runtime. An unregistered reference is refused,
   and the raw path never reaches the renderer
+- A loaded plugin's `manifest.icon` may also be displayed through this scheme.
+  The icon-specific path accepts only package-contained PNG, JPEG, WebP or
+  AVIF files up to 256 KiB, with a raster signature check; invalid or unloaded
+  icons fall back to a host icon. If the same path is already a registered
+  theme asset, the existing theme-asset rules continue to apply.
 - `contributes.windowAppearance` (`#rrggbb` / `#rrggbbaa` background and an
   integer `cornerRadius` of 0..24 DIP) requires
   `ui.window.appearance` and applies only while one of that plugin's themes is
@@ -584,6 +589,11 @@ for a rolled-up batch) that the user can read, clear, and delete with the
 plugin. The inbox keeps its 200-row cap, so a plugin cannot use it as unbounded
 storage, and a plugin uninstall removes its rows. Both calls are rate-braked
 like every other host queue.
+For `notify.center`, each plugin may create at most 60 ordinary rows in a
+rolling hour; updates of an existing dedupe key do not consume this budget.
+Further new events are counted in one `plugin.digest` row using the reserved
+key `__minih_notify_overflow__`. The host records creation timestamps in its
+audit log so clearing the inbox or restarting cannot reset the budget.
 
 **`tasks.read` and `tasks.manage` — a narrower employee.** `tasks.read` is a
 read-only roster projection. `tasks.manage` creates and drives only tasks this
@@ -685,16 +695,11 @@ authorized call is refused with a coded `UNSUPPORTED` refusal that is audited,
 because this host has no device backend yet, so nothing reaches a device.
 `net.websocket` is implemented: connections are host-owned, allowlist-checked,
 bounded, and released with the plugin (§8.1).
-The six capability permissions of §8.3 are **registered and not implemented**.
-`credentials.use`, `net.tcp`, `inbound.webhook`, `mail.draft`,
-`notify.center`, `scheduler`, `tasks.read` and `tasks.manage` are accepted names
-with a risk tier, and the manifest fields behind them are validated at install
-(ADR plugin-host-capabilities §5). No `pi.*` method exists for any of them yet:
-nothing stores or injects a credential, nothing listens on a port, nothing arms
-a timer, nothing opens a socket, and nothing creates a task, a draft, or an
-inbox row. A manifest that declares one of these permissions installs and
-reviews exactly like any other; a plugin that calls an unimplemented method gets
-the same "method not present" answer as any other SDK version gap.
+`notify.center` is implemented with its own permission gate and durable inbox.
+The remaining §8.3 capabilities (`credentials.use`, `net.tcp`,
+`inbound.webhook`, `mail.draft`, `scheduler`, `tasks.read` and `tasks.manage`)
+are registered but not implemented. Their manifest fields are validated at
+install; their methods and resources are not yet available.
 
 
 Not enforced yet:

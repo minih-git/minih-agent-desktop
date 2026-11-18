@@ -148,11 +148,16 @@ export function registerMarketIpc({
     };
   });
 
-  handle(IPC.invoke.commandPaletteExecute, async (commandId: string) => {
-    if (commandId.startsWith("builtin.")) {
+  handle(IPC.invoke.commandPaletteExecute, async (input: string | { commandId: string; pluginId: string }) => {
+    const commandId = typeof input === "string" ? input : input?.commandId;
+    const expectedPluginId = typeof input === "string" ? undefined : input?.pluginId;
+    if (typeof commandId !== "string" || (typeof input !== "string" && (typeof expectedPluginId !== "string" || !expectedPluginId))) {
+      throw Object.assign(new Error("invalid command target"), { errorCode: ErrorCodes.INVALID_ARGUMENT });
+    }
+    if (!expectedPluginId && commandId.startsWith("builtin.")) {
       return { ok: true, commandId };
     }
-    if (trustedExtensionCommandName(commandId) !== undefined) {
+    if (!expectedPluginId && trustedExtensionCommandName(commandId) !== undefined) {
       // Extension commands need a session; the renderer routes them through
       // `extensions/commands/run` with the active session id.
       throw Object.assign(new Error("extension commands run inside a session"), {
@@ -160,7 +165,7 @@ export function registerMarketIpc({
       });
     }
     const cmd = plugins.getCommands().find((c) => c.id === commandId);
-    if (!cmd) throw new Error("command not found");
+    if (!cmd || (expectedPluginId && cmd.pluginId !== expectedPluginId)) throw new Error("command not found for plugin");
     // A command can be typed into the composer by name, so the scope has to be
     // re-checked here and not only where the lists are built.
     if (!pluginActiveInProject(cmd.pluginId, await optionalWorkspaceRoot())) {

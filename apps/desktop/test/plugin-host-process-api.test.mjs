@@ -27,7 +27,7 @@ const { PERMISSION_API_HINTS } = await import(
 
 const hostEntry = fileURLToPath(new URL("../electron/main/plugin-host-process.mjs", import.meta.url));
 
-function writePlugin(root, { main, permissions }) {
+function writePlugin(root, { main, permissions, contributes }) {
   const dir = join(root, "probe-plugin");
   mkdirSync(dir, { recursive: true });
   const manifest = {
@@ -38,6 +38,7 @@ function writePlugin(root, { main, permissions }) {
     main,
     permissions,
     engines: { minihAgent: ">=1.0.0" },
+    ...(contributes ? { contributes } : {}),
   };
   writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
   return dir;
@@ -49,10 +50,14 @@ function writePlugin(root, { main, permissions }) {
  * `services` are the broker stub: they record what the child asked for, which is
  * how a call that exists on paper is proven to reach the host with its payload.
  */
-async function loadProbe(t, { source, main = "main.mjs", permissions }) {
+async function loadProbe(t, { source, main = "main.mjs", permissions, contributes }) {
   const root = mkdtempSync(join(tmpdir(), "pi-host-api-"));
   const received = [];
   const services = {
+    notifyCenter: async (pluginId, input) => {
+      received.push({ api: "notify.center", pluginId, input });
+      return { id: "notice-1" };
+    },
     // The archive switch is on: this suite is about the wire, not the switch.
     readSettings: async () => ({ learnedMemory: { archive: true } }),
     listModels: async (input) => {
@@ -103,7 +108,7 @@ async function loadProbe(t, { source, main = "main.mjs", permissions }) {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const dir = writePlugin(root, { main, permissions });
+  const dir = writePlugin(root, { main, permissions, contributes });
   writeFileSync(join(dir, main), source, "utf8");
   await runtime.loadFromPath(dir, permissions);
   return { runtime, received, dir };
@@ -156,7 +161,7 @@ export async function onLoad() {
   await globalThis.pi.conversations.changes({ limit: 2 });
 }
 `;
-  const { runtime, received } = await loadProbe(t, {
+  const { received } = await loadProbe(t, {
     source: probe,
     permissions: ["models.list", "embeddings.run", "conversation.read"],
   });
@@ -201,4 +206,34 @@ export async function onPanelInvoke(channel, payload) {
     [{ kind: "embedding" }],
     "the panel route passes the caller's selector through",
   );
+});
+
+test("plugin process writes a validated notification through the broker", async (t) => {
+  const { received } = await loadProbe(t, {
+    source: `export async function onLoad() {
+      const result = await globalThis.pi.notify.center({ title: "Build complete", body: "Ready", dedupeKey: "build" });
+      if (result.id !== "notice-1") throw new Error("unexpected notification result");
+    }`,
+    permissions: ["notify.center"],
+  });
+  assert.deepEqual(received.find((entry) => entry.api === "notify.center"), {
+    api: "notify.center", pluginId: "probe.api-surface",
+    input: { kind: "alert", title: "Build complete", body: "Ready", dedupeKey: "build" },
+  });
+});
+
+test("plugin process cannot write without permission or target another plugin", async (t) => {
+  const source = `export async function onPanelInvoke(_channel, payload) {
+    return globalThis.pi.notify.center(payload);
+  }`;
+  const denied = await loadProbe(t, { source, permissions: [] });
+  await assert.rejects(denied.runtime.invokePanelBridge("probe.api-surface", "call", { title: "No permission" }), { code: "PERMISSION_DENIED" });
+  assert.equal(denied.received.some((entry) => entry.api === "notify.center"), false);
+  const allowed = await loadProbe(t, {
+    source,
+    permissions: ["notify.center"],
+    contributes: { commands: [{ id: "own", title: "Own" }] },
+  });
+  await assert.rejects(allowed.runtime.invokePanelBridge("probe.api-surface", "call", { title: "No", link: { command: "other/command" } }), { code: "INVALID_ARGUMENT" });
+  assert.equal(allowed.received.some((entry) => entry.api === "notify.center"), false);
 });

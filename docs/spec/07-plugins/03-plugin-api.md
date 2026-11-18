@@ -1336,12 +1336,11 @@ credential, a socket, a listening path, a clock, a draft or inbox entry, a task
 section is the API contract and [04-plugin-security.md](04-plugin-security.md)
 §8.3 is the enforcement.
 
-**Registration only.** Every name here validates in a manifest today. No method
-below is implemented: `pi.net.tcp`, `pi.inbound`, `pi.mail`, `pi.tasks`, and the
-`schedule:fire` event do not exist in the plugin host process yet, and
-`pi.net.fetch` ignores `credentialRef`. A plugin that depends on one of them
-must check for the method before calling it, exactly as for any other
-capability-added API (§8).
+**Implementation status.** `pi.notify.center` is implemented. The remaining
+methods and events below are registration only: `pi.net.tcp`, `pi.inbound`,
+`pi.mail`, `pi.tasks`, and `schedule:fire` do not exist in the plugin host yet,
+and `pi.net.fetch` ignores `credentialRef`. Plugins must check for unavailable
+methods before calling them (§8).
 
 ```ts
 // credentials.use — no call of its own. The user fills the slot in Settings;
@@ -1375,8 +1374,7 @@ pi.mail.draft.create(input: {
 pi.notify.center(input: {
   kind?: "alert" | "digest"   // plugin.alert (default) or plugin.digest
   title: string; body?: string
-  level?: "info" | "warning" | "error"
-  link?: { view?: string; command?: string }   // host-checked activation target
+  link?: { view: string } | { command: string } // plugin-local declared target
   dedupeKey?: string          // re-posting the same key updates the row
 }): Promise<{ id: string }>
 
@@ -1451,6 +1449,16 @@ Semantics:
   plugin view or one of the plugin's commands), never an arbitrary URL. The
   inbox's 200-row cap, the mark-read and clear actions and the uninstall cleanup
   all apply unchanged; `notify` stays the transient banner with no storage.
+  The title must be non-empty and at most 200 Unicode code points; body is at
+  most 2,000. A supplied dedupe key must be non-empty, at most 256 Unicode
+  code points and not the reserved overflow key; encoded links are at most
+  4,096 UTF-8 bytes. Invalid input and undeclared or foreign targets are
+  `INVALID_ARGUMENT`. A repeat updates the row and marks it unread again.
+  A panel-placed view needs an active local session; when none is available,
+  activation reports the reason instead of silently claiming it opened.
+  `level` is not supported: schema v43 has no level column, and this API was
+  not released with that field. The host rate limit is specified in §8.3 of
+  [04-plugin-security.md](04-plugin-security.md).
 - **Tasks are scoped twice.** `tasks.list` and `tasks.get` are read-only over
   the roster of the current user, and `tasks.manage` covers only the tasks this
   plugin created (`pluginId` matches the caller); another plugin's or a

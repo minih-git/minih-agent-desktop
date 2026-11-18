@@ -3609,6 +3609,9 @@ sklm: {
     planApprovalTitle: "{{sessionTitle}} 计划待审批",
     planApprovalBody: "已生成执行方案，等待您的确认。",
     actionFailed: "无法更新通知。",
+    pluginCollapsed: "另有 {{count}} 条通知被折叠",
+    pluginViewNeedsSession: "无法打开插件视图：请先选择本地会话。",
+    pluginTargetUnavailable: "无法打开通知：插件目标不可用。",
     justNow: "刚刚",
   },
   liveVoice: {

@@ -9,77 +9,86 @@ import {
 } from "react";
 import { portalToBody } from "../lib/portal-visibility";
 import {
-  mergeNotificationsBySession,
+  bellNotifications,
+  isSessionNotification,
+  pluginNotificationTarget,
+  unreadNotificationCount,
   unreadSessionIds,
   type AppNotification,
 } from "@minih-agent/shared";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../stores/app-store";
-import {
-  IconBell,
-  IconCheckCheck,
-  IconCircleAlert,
-  IconCircleCheck,
-  IconInfo,
-  IconTrash,
-} from "./icons";
+import { IconBell, IconCheckCheck, IconTrash } from "./icons";
+import { NotificationRow, type NotificationRowPlugin } from "./NotificationRow";
 import { TooltipButton } from "./ui";
 
 type NotificationFilter = "all" | "unread";
-
-function formatRelativeTime(value: string, locale: string, justNow: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return justNow;
-
-  const delta = timestamp - Date.now();
-  const absoluteDelta = Math.abs(delta);
-  if (absoluteDelta < 45_000) return justNow;
-
-  try {
-    const formatter = new Intl.RelativeTimeFormat(locale || undefined, {
-      numeric: "auto",
-    });
-    if (absoluteDelta < 60 * 60_000) {
-      return formatter.format(Math.round(delta / 60_000), "minute");
-    }
-    if (absoluteDelta < 24 * 60 * 60_000) {
-      return formatter.format(Math.round(delta / (60 * 60_000)), "hour");
-    }
-    if (absoluteDelta < 7 * 24 * 60 * 60_000) {
-      return formatter.format(Math.round(delta / (24 * 60 * 60_000)), "day");
-    }
-    return new Intl.DateTimeFormat(locale || undefined, {
-      month: "short",
-      day: "numeric",
-      year:
-        new Date(timestamp).getFullYear() === new Date().getFullYear()
-          ? undefined
-          : "numeric",
-    }).format(timestamp);
-  } catch {
-    return justNow;
-  }
-}
 
 export function NotificationCenter({
   onBeforeOpen,
 }: {
   onBeforeOpen?: () => void;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const storedNotifications = useAppStore((state) => state.notifications);
+  const pluginViews = useAppStore((state) => state.pluginViews);
+  const plugins = useAppStore((state) => state.plugins);
   // The bell is a per-conversation surface (D664, amending D295): every
   // retained conversation gets one row — its newest notification — and a
-  // conversation counts as unread while any of its rows is unread.
+  // conversation counts as unread while any of its rows is unread. Plugin rows
+  // (schema v43) belong to no conversation, so each one keeps a row of its own.
   const notifications = useMemo(
-    () => mergeNotificationsBySession(storedNotifications),
+    () => bellNotifications(storedNotifications),
     [storedNotifications],
   );
   const unreadSessions = useMemo(
     () => unreadSessionIds(storedNotifications),
     [storedNotifications],
   );
-  const unreadCount = unreadSessions.size;
+  // The badge counts the same destinations the list shows: unread
+  // conversations plus the unread plugin rows. The shell badge uses this same
+  // projection, so the bell and the OS badge cannot disagree.
+  const unreadCount = useMemo(
+    () => unreadNotificationCount(storedNotifications),
+    [storedNotifications],
+  );
+  const rows = useMemo(
+    () =>
+      notifications.map((notification) => {
+        if (isSessionNotification(notification)) {
+          return {
+            notification,
+            unread: unreadSessions.has(notification.sessionId),
+            plugin: undefined,
+          };
+        }
+        // A plugin row shows the plugin's own name and, when the plugin is
+        // loaded, the icon it declares for itself. A view's token icon is only
+        // the fallback, so one plugin never borrows another plugin's mark.
+        const target = pluginNotificationTarget(notification, pluginViews);
+        const installed = plugins.find(
+          (item) => item.id === notification.pluginId,
+        );
+        const name =
+          installed?.name ??
+          pluginViews.find((view) => view.pluginId === notification.pluginId)
+            ?.pluginName ??
+          notification.pluginId;
+        const plugin: NotificationRowPlugin = {
+          name: name ?? "",
+          ...(installed?.iconUrl ? { iconUrl: installed.iconUrl } : {}),
+          ...(target?.kind === "view" && target.icon
+            ? { icon: target.icon }
+            : {}),
+        };
+        return {
+          notification,
+          unread: !notification.readAt,
+          plugin,
+        };
+      }),
+    [notifications, pluginViews, plugins, unreadSessions],
+  );
   // Row-level unread still decides whether Mark all read has work to do.
   const allUnreadCount = useAppStore((state) => state.unreadNotificationCount);
   const refreshNotifications = useAppStore((state) => state.refreshNotifications);
@@ -100,12 +109,8 @@ export function NotificationCenter({
 
   const visibleNotifications = useMemo(
     () =>
-      filter === "unread"
-        ? notifications.filter((notification) =>
-            unreadSessions.has(notification.sessionId),
-          )
-        : notifications,
-    [filter, notifications, unreadSessions],
+      filter === "unread" ? rows.filter((row) => row.unread) : rows,
+    [filter, rows],
   );
 
   const closePopover = useCallback((restoreFocus = true) => {
@@ -219,8 +224,14 @@ export function NotificationCenter({
     closePopover();
     try {
       await openNotification(notification.id);
-    } catch {
-      showToast(t("notifications.actionFailed"), { variant: "error" });
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      const message = code === "PLUGIN_NOTIFICATION_VIEW_REQUIRES_SESSION"
+        ? "notifications.pluginViewNeedsSession"
+        : code === "PLUGIN_NOTIFICATION_TARGET_UNAVAILABLE"
+          ? "notifications.pluginTargetUnavailable"
+          : "notifications.actionFailed";
+      showToast(t(message), { variant: "error" });
     }
   };
 
@@ -317,88 +328,16 @@ export function NotificationCenter({
 
           {visibleNotifications.length > 0 ? (
             <ul className="notification-list">
-              {visibleNotifications.map((notification) => {
-                const failed = notification.kind === "task.failed";
-                // A prompt row means the runtime is still blocked on the user:
-                // it reads as a call to action, not as an outcome.
-                const prompt = notification.kind.startsWith("prompt.")
-                  ? notification.kind
-                  : null;
-                const sessionTitle = notification.sessionTitle || t("chat.untitledTask");
-                let title = "";
-                let body = "";
-                if (prompt === "prompt.permission") {
-                  title = t("notifications.permissionTitle", { sessionTitle });
-                  body = t("notifications.permissionBody", {
-                    toolName: notification.toolName || "tool",
-                  });
-                } else if (prompt === "prompt.plan") {
-                  title = t("notifications.planApprovalTitle", { sessionTitle });
-                  body = t("notifications.planApprovalBody");
-                } else if (prompt === "prompt.ask") {
-                  title = t("notifications.promptAskTitle", { sessionTitle });
-                  body = t("notifications.promptAskBody");
-                } else {
-                  title = t(
-                    failed
-                      ? "notifications.failedTitle"
-                      : "notifications.completedTitle",
-                    { sessionTitle },
-                  );
-                  body = failed
-                    ? notification.errorCode
-                      ? t("notifications.failedBodyWithCode", {
-                          code: notification.errorCode,
-                        })
-                      : t("notifications.failedBody")
-                    : t("notifications.completedBody");
-                }
-                return (
-                  <li key={notification.id}>
-                    <button
-                      type="button"
-                      className={`notification-item ${
-                        unreadSessions.has(notification.sessionId) ? "unread" : ""
-                      }`}
-                      data-notification-id={notification.id}
-                      disabled={busy}
-                      onClick={() => void activateNotification(notification)}
-                    >
-                      <span
-                        className={`notification-kind-icon ${failed ? "failed" : ""}${
-                          prompt ? " prompt" : ""
-                        }`}
-                        aria-hidden
-                      >
-                        {failed ? (
-                          <IconCircleAlert size={17} />
-                        ) : prompt ? (
-                          <IconInfo size={17} />
-                        ) : (
-                          <IconCircleCheck size={17} />
-                        )}
-                      </span>
-                      <span className="notification-copy">
-                        <span className="notification-item-title">{title}</span>
-                        <span className="notification-item-body">{body}</span>
-                      </span>
-                      <time
-                        className="notification-time"
-                        dateTime={notification.createdAt}
-                      >
-                        {formatRelativeTime(
-                          notification.createdAt,
-                          i18n.resolvedLanguage || i18n.language,
-                          t("notifications.justNow"),
-                        )}
-                      </time>
-                      {unreadSessions.has(notification.sessionId) ? (
-                        <span className="notification-unread-dot" aria-hidden />
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
+              {visibleNotifications.map((row) => (
+                <NotificationRow
+                  key={row.notification.id}
+                  notification={row.notification}
+                  unread={row.unread}
+                  disabled={busy}
+                  plugin={row.plugin}
+                  onActivate={(notification) => void activateNotification(notification)}
+                />
+              ))}
             </ul>
           ) : (
             <div className="notification-empty" role="status">

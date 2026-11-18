@@ -4,6 +4,8 @@ mod config_sync_rpc;
 mod easytier_rpc;
 mod memory_rpc;
 mod memory_tools;
+mod notification_ack_rpc;
+mod plugin_notification_rpc;
 mod plugin_settings_rpc;
 mod remote_tools;
 mod scheduled_rpc;
@@ -1955,6 +1957,13 @@ async fn handle_request(
     if method == "plugins.settings.update" {
         return plugin_settings_rpc::update(state, params).await;
     }
+
+    // A plugin cannot choose this surface by itself: Electron main owns the
+    // manifest check and the plugin id, and only the host row is durable. The
+    // handler re-checks everything the row will contain.
+    if method == "pluginNotification.create" {
+        return plugin_notification_rpc::create(state, params).await;
+    }
     if method.starts_with("easytier.") {
         return easytier_rpc::handle(state, method, params).await;
     }
@@ -3856,23 +3865,8 @@ async fn handle_request(
                 "unreadCount": unread_count
             }))
         }
-        "notification.markRead" => {
-            let id = params
-                .get("id")
-                .and_then(|value| value.as_str())
-                .filter(|id| !id.trim().is_empty())
-                .ok_or_else(|| rpc_err(1002, "id required", "INVALID_PARAMS"))?;
-            let st = state.lock().await;
-            let ok = notifications::mark_read(&st.db, id)
-                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
-            Ok(json!({ "ok": ok }))
-        }
-        "notification.markAllRead" => {
-            let st = state.lock().await;
-            notifications::mark_all_read(&st.db)
-                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
-            Ok(json!({ "ok": true }))
-        }
+        "notification.markRead" => notification_ack_rpc::mark_read(state, params).await,
+        "notification.markAllRead" => notification_ack_rpc::mark_all_read(state, params).await,
 
         // A prompt row is written by the desktop when the runtime asks for the
         // user, so the reminder survives a missed toast, a hidden window, and a
@@ -5518,6 +5512,7 @@ async fn handle_request(
                     tracing::warn!(plugin = id, %error, "plugin install intent cleanup failed");
                 }
             }
+            plugin_notification_rpc::delete_for_plugin(&st.db, id)?;
             Ok(json!({ "ok": ok }))
         }
         "plugins.getPermissions" => {

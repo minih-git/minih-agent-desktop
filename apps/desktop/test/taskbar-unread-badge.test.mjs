@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { unreadNotificationCount } from "../../../packages/shared/dist/index.js";
 
 const IPC = {
   invoke: {
@@ -11,6 +12,7 @@ const IPC = {
   },
   event: {
     notificationChanged: "minih-agent-desktop/notification/event/changed",
+    pluginChanged: "minih-agent-desktop/plugin/event/changed",
     hostStatus: "minih-agent-desktop/app/event/hostStatus",
   },
 };
@@ -91,12 +93,7 @@ function loadBadgeModule({ renderPng } = {}) {
       if (id === "@minih-agent/shared") {
         return {
           IPC,
-          unreadSessionCount: (notifications) =>
-            new Set(
-              notifications
-                .filter((notification) => !notification.readAt)
-                .map((notification) => notification.sessionId),
-            ).size,
+          unreadNotificationCount,
         };
       }
       if (id === "./taskbar-unread-overlay") return overlay;
@@ -258,6 +255,20 @@ test("observeEvent(notificationChanged) refreshes from host unreadCount", async 
     await waitFor(() => h.listCalls.length >= 1);
     await waitFor(() => h.badgeCounts.includes(5));
     assert.equal(h.badgeCounts.at(-1), 5);
+  } finally {
+    h.dispose();
+  }
+});
+
+test("uninstall refreshes the shell badge after plugin rows are removed", async () => {
+  const h = harness({ platform: "linux", unreadCount: 1 });
+  try {
+    await h.badge.refresh();
+    assert.equal(h.badgeCounts.at(-1), 1);
+    h.setUnreadCount(0);
+    h.badge.observeEvent(IPC.event.pluginChanged, { reason: "uninstall", pluginId: "acme" });
+    await waitFor(() => h.badgeCounts.at(-1) === 0);
+    assert.equal(h.listCalls.length, 2);
   } finally {
     h.dispose();
   }
@@ -444,7 +455,7 @@ test("D664: the bell and the shell badge read the same unread rows", () => {
       readAt: null,
     },
   ];
-  // The bell lists these rows and its badge counts the same unread rows, so
-  // the host unreadCount (3 here) is what both surfaces show.
-  assert.equal(rows.filter((row) => row.readAt == null).length, 3);
+  assert.equal(unreadNotificationCount(rows), 1, "one unread destination per session");
+  rows.push({ id: "p1", kind: "plugin.alert", pluginId: "acme", sessionId: null, sessionTitle: null, createdAt: "2026-09-24T00:00:03.000Z", readAt: null });
+  assert.equal(unreadNotificationCount(rows), 2, "an unread plugin notification adds one destination");
 });

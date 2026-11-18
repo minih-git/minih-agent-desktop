@@ -1391,9 +1391,8 @@ CREATE UNIQUE INDEX idx_notifications_plugin_dedupe
   `tool_name` 与 `error_code` 一律为 NULL。约束写成
   `(kind LIKE 'plugin.%') = (plugin_id IS NOT NULL)` 而不是枚举清单，于是它跟着
   kind 家族走，而不必把每个成员再写两遍。
-- 两个 kind，一个家族：**`plugin.alert`** 是用户当下就该看到的一件事，
-  **`plugin.digest`** 是插件汇总后代表一整批的一行。宿主只把 kind 当数据存储与
-  渲染；什么时候提示、什么时候汇总，是插件自己的策略。
+- 两个 kind：**`plugin.alert`** 是单个事件，**`plugin.digest`** 是一批事件。
+  插件可选择任一 kind；超出每插件限速的新事件也由宿主折叠为 digest。
 - `title` / `body` 是插件自己的文本，按插件给出的样子存储与渲染。
   与 session 行不同，这里没有本地化派生：宿主没有可翻译的东西，也不会改写它。
   `link_json` 记录点击这一行会打开什么，它是宿主校验过的目标，而不是插件用来
@@ -1420,9 +1419,8 @@ CREATE UNIQUE INDEX idx_notifications_plugin_dedupe
 - `session_title` 是通知创建时的稳定会话名称快照，
   不是本地化通知 title/body。空标题仍然有效，并且
   仅在演示时接收本地化的“无标题任务”回退。
-- 不存储 title/body 散文，提问行也从不存储问题或工具参数。预定提醒、
-  插件通知和中止的回合不是通知源；权限、询问与计划请求是通知源，且仅以
-  `prompt.*` 行的形式出现。
+- 任务与提问行不存储 title/body 文本，提问行也从不存储问题或工具参数。
+  插件通知存储插件提供的文本；预定提醒和中止的回合不是通知源。
 - 插入后，同一事务将除最新的 200 行之外的所有行删减
   `(created_at DESC, id DESC)`。这是全局上限；会话删除也级联其行。
 - 标记读取更新是幂等的（`read_at` 仅从 null 更改），标记所有

@@ -99,25 +99,47 @@ export function registerNotificationIpc({
     },
   );
 
-  handle(IPC.invoke.notificationMarkRead, async (input: { id?: string } = {}) => {
-    const host = getHost();
-    if (!host) throw new Error("host unavailable");
-    const id = typeof input.id === "string" ? input.id.trim() : "";
-    const result = await host.call<{ ok?: boolean }>("notification.markRead", input);
-    if (id && result?.ok !== false) dismissTaskNativeNotification(id);
-    return result;
-  });
+  handle(
+    IPC.invoke.notificationMarkRead,
+    async (input: { id?: string; expectedCreatedAt?: unknown } = {}) => {
+      const host = getHost();
+      if (!host) throw new Error("host unavailable");
+      const id = typeof input.id === "string" ? input.id.trim() : "";
+      // A plugin row can be re-delivered under the same id, so the renderer
+      // names the version the user clicked. The host marks that version only,
+      // which is what keeps an in-flight click from reading a newer copy; a
+      // caller that omits the field keeps the pre-plugin behavior.
+      const result = await host.call<{ ok?: boolean }>(
+        "notification.markRead",
+        input.expectedCreatedAt === undefined
+          ? { id: input.id }
+          : { id: input.id, expectedCreatedAt: input.expectedCreatedAt },
+      );
+      if (id && result?.ok !== false) dismissTaskNativeNotification(id);
+      return result;
+    },
+  );
 
-  handle(IPC.invoke.notificationMarkAllRead, async () => {
-    const host = getHost();
-    if (!host) throw new Error("host unavailable");
-    const requestedAt = Date.now();
-    const result = await host.call<{ ok?: boolean }>("notification.markAllRead");
-    if (result?.ok === false) return result;
-    dismissedBefore = Math.max(dismissedBefore, requestedAt);
-    dismissAllTaskNativeNotifications();
-    return result;
-  });
+  handle(
+    IPC.invoke.notificationMarkAllRead,
+    async (input: { pluginRows?: unknown } = {}) => {
+      const host = getHost();
+      if (!host) throw new Error("host unavailable");
+      const requestedAt = Date.now();
+      // Plugin rows are acknowledged by their exact version, so one delivered
+      // while this click is in flight stays unread. Sending no snapshot keeps
+      // the old "mark everything" behavior other callers rely on; an empty
+      // snapshot means the user saw no plugin row at all.
+      const result = await host.call<{ ok?: boolean }>(
+        "notification.markAllRead",
+        input?.pluginRows === undefined ? {} : { pluginRows: input.pluginRows },
+      );
+      if (result?.ok === false) return result;
+      dismissedBefore = Math.max(dismissedBefore, requestedAt);
+      dismissAllTaskNativeNotifications();
+      return result;
+    },
+  );
 
   handle(IPC.invoke.notificationClear, async () => {
     const host = getHost();

@@ -126,7 +126,7 @@ test("task and interactive native notifications keep separate visibility rules",
   assert.match(appSource, /openNotification\(id\)/);
   assert.match(
     storeSource,
-    /await get\(\)\.selectSession\(notification\.sessionId,\s*\{\s*navigationIntent: intent/,
+    /await get\(\)\.selectSession\(sessionId,\s*\{\s*navigationIntent: intent/,
   );
 });
 
@@ -172,12 +172,8 @@ test("task native notifications are idempotent by durable notification id", () =
 });
 
 test("read and clear notification actions dismiss outstanding task banners", () => {
-  const readStart = notificationIpcSource.indexOf(
-    "handle(IPC.invoke.notificationMarkRead",
-  );
-  const allReadStart = notificationIpcSource.indexOf(
-    "handle(IPC.invoke.notificationMarkAllRead",
-  );
+  const readStart = notificationIpcSource.indexOf("IPC.invoke.notificationMarkRead");
+  const allReadStart = notificationIpcSource.indexOf("IPC.invoke.notificationMarkAllRead");
   const clearStart = notificationIpcSource.indexOf(
     "handle(IPC.invoke.notificationClear",
   );

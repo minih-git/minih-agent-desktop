@@ -3605,6 +3605,9 @@ sklm: {
     "planApprovalTitle": "{{sessionTitle}} Plan wartet auf Genehmigung",
     "planApprovalBody": "Ein vorgeschlagener Plan ist zur Überprüfung bereit.",
     "actionFailed": "Benachrichtigungen konnten nicht aktualisiert werden.",
+    "pluginCollapsed": "{{count}} weitere Benachrichtigungen wurden zusammengefasst",
+    "pluginViewNeedsSession": "Plugin-Ansicht konnte nicht geöffnet werden: Wählen Sie zuerst eine lokale Sitzung.",
+    "pluginTargetUnavailable": "Benachrichtigung konnte nicht geöffnet werden: Das Plugin-Ziel ist nicht verfügbar.",
     "justNow": "Gerade eben"
   },
   liveVoice: {

@@ -1,7 +1,7 @@
 import { app, nativeImage, type BrowserWindow } from "electron";
 import {
   IPC,
-  unreadSessionCount,
+  unreadNotificationCount,
   type NotificationListResult,
 } from "@minih-agent/shared";
 import type { HostProcess } from "./host-process";
@@ -171,7 +171,9 @@ export function createTaskbarUnreadBadge({
             continue;
           }
           if (observed !== revision) continue;
-          await apply(unreadSessionCount(inbox.notifications ?? []));
+          // Conversations plus the unread plugin rows: the bell counts plugin
+          // rows too, and the overlay must not disagree with it (D664).
+          await apply(unreadNotificationCount(inbox.notifications ?? []));
         } catch (error) {
           if (host !== getHost()) {
             revision += 1;
@@ -201,11 +203,12 @@ export function createTaskbarUnreadBadge({
   return {
     refresh,
     replay,
-    observeEvent(channel: string, _payload?: unknown) {
+    observeEvent(channel: string, payload?: unknown) {
       if (isQuitting()) return;
       if (
         channel === IPC.event.notificationChanged ||
-        channel === IPC.event.hostStatus
+        channel === IPC.event.hostStatus ||
+        (channel === IPC.event.pluginChanged && payload !== null && typeof payload === "object" && "reason" in payload && payload.reason === "uninstall")
       ) {
         void refresh();
       }

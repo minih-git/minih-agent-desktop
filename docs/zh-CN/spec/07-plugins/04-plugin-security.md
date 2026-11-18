@@ -66,6 +66,9 @@
   只按已加载插件自己登记的清单解析，只读、带 `nosniff`，并在插件卸载时一并撤销。
   `pi.themes.upsert` 也可在运行时登记同类路径。未登记的引用仍会被拒绝，
   原始路径不会到达渲染器
+- 已加载插件的 `manifest.icon` 也可通过该通道显示。仅图标路径限制为包内 PNG、
+  JPEG、WebP 或 AVIF，最多 256 KiB 并检查图片签名；无效或未加载时回退到宿主图标。
+  如果同一路径已登记为主题资源，则继续适用既有主题资源规则。
 - `contributes.windowAppearance`（`#rrggbb` / `#rrggbbaa`）需要
   `ui.window.appearance`，且只在该插件的某个主题被选中时生效；离开该主题即恢复
   宿主背景，因为颜色由实时主题目录推导而非记忆。macOS 保持 `vibrancy`，
@@ -406,6 +409,9 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 记录（`plugin.alert` 表示一件事，`plugin.digest` 表示汇总的一批），用户可读、
 可清空，卸载插件时随之删除。通知中心保留 200 条上限，插件不能把它当无限存储；
 两次调用都和其它宿主队列一样有速率刹车。
+`notify.center` 每个插件在滚动一小时内最多新增 60 条普通记录，更新已有去重键
+不消耗额度；超出部分汇总为保留键 `__minih_notify_overflow__` 的一条
+`plugin.digest`。宿主在审计日志记录新增时间，清空通知中心或重启不会重置额度。
 
 **`tasks.read` 与 `tasks.manage` —— 更窄的员工。** `tasks.read` 只返回只读的
 任务清单投影。`tasks.manage` 只能创建并推进本插件自己创建的任务，任务的权限
@@ -490,13 +496,10 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 插件 API 中：这些方法由这两个权限把关，获得授权的调用会以带错误码的
 `UNSUPPORTED` 拒绝并记入审计，因为当前宿主还没有设备后端，所以没有任何东西
 能到达设备。
-§8.3 的六项能力权限**只完成注册，尚未实现**：`credentials.use`、`net.tcp`、
-`inbound.webhook`、`mail.draft`、`notify.center`、`scheduler`、`tasks.read` 与
-`tasks.manage` 是被接受、带风险等级的权限名，其背后的 manifest 字段在安装时
-校验（ADR plugin-host-capabilities §5）。其中任何一项都还没有对应的 `pi.*`
-方法：没有东西保存或注入凭据，没有东西监听端口，没有东西上定时器，没有东西
-打开套接字，也没有东西创建任务、草稿或通知中心记录。声明这些权限的 manifest
-照常安装与审查；调用未实现方法的插件得到的回答，与其它 SDK 版本差集完全一样。
+`notify.center` 已实现，由独立权限把关并写入持久通知中心。§8.3 其余能力
+`credentials.use`、`net.tcp`、`inbound.webhook`、`mail.draft`、`scheduler`、
+`tasks.read` 与 `tasks.manage` 仍只完成注册，相关 manifest 字段在安装时校验，
+对应方法及资源尚不可用。
 `net.websocket` 已实现：连接由宿主持有、经过白名单检查、有界，并随插件一起
 释放（§8.1）。
 

@@ -3644,6 +3644,9 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     planApprovalTitle: "{{sessionTitle}} plan onay bekliyor",
     planApprovalBody: "Önerilen plan incelemeniz için hazır.",
     actionFailed: "Bildirimler güncellenemedi.",
+    pluginCollapsed: "{{count}} bildirim daha gruplandı",
+    pluginViewNeedsSession: "Eklenti görünümü açılamadı: önce yerel bir oturum seçin.",
+    pluginTargetUnavailable: "Bildirim açılamadı: eklenti hedefi kullanılamıyor.",
     justNow: "Az önce",
   },
   liveVoice: {

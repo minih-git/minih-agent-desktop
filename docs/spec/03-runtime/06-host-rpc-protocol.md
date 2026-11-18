@@ -1318,13 +1318,20 @@ type AppNotification = {
     | "task.failed"
     | "prompt.ask"
     | "prompt.permission"
-    | "prompt.plan";
-  sessionId: string;
-  sessionTitle: string;
+    | "prompt.plan"
+    | "plugin.alert"
+    | "plugin.digest";
+  sessionId: string | null;
+  sessionTitle: string | null;
   turnId?: string;     // settled-turn rows
   requestId?: string;  // prompt rows; the runtime's id for the pending request
   toolName?: string;   // prompt rows that ask about one tool
   errorCode?: string;
+  pluginId?: string;
+  title?: string;
+  body?: string;
+  linkJson?: string;
+  dedupeKey?: string;
   createdAt: string; // ISO-8601 UTC
   readAt?: string | null;
 };
@@ -1365,10 +1372,13 @@ type NotificationListResult = {
 };
 ```
 
-- `notification.markRead({ id }) -> { ok }` is idempotent. `ok=false` means
-  the id does not exist; an already-read row remains successful.
-- `notification.markAllRead({}) -> { ok: true }` updates every unread row in
-  one transaction.
+- `notification.markRead({ id, expectedCreatedAt? }) -> { ok }` is idempotent.
+  If supplied, the timestamp must match the current row version; `ok=false`
+  also covers a newer version. Without it, existing behavior is unchanged.
+- `notification.markAllRead({ pluginRows? }) -> { ok: true }` marks session
+  rows and matching plugin `{ id, createdAt }` snapshots in one transaction.
+  Omitting `pluginRows` preserves the original all-row behavior; the snapshot
+  is bounded to 200 entries.
 - `notification.clear({}) -> { ok: true }` deletes inbox rows only.
 - `notification.recordPrompt({ sessionId, requestId, kind, toolName?, turnId? })
   -> { notification }` records one interactive request as an unread
@@ -1378,10 +1388,9 @@ type NotificationListResult = {
   name only — never the question or argument text. Unknown kinds, blank request
   ids, and unknown sessions are rejected rather than stored. Prompt rows share
   the 200-row retention budget and never produce a session outcome badge.
-- `id` is the stable exactly-once key for renderer and native delivery. A
-  client must discard duplicate or delayed records for an id it has already
-  acknowledged/cleared; clearing the inbox never makes an old terminal turn
-  eligible for insertion again. A later terminal turn receives a new id.
+- Task and prompt ids retain their exactly-once replay semantics. A plugin may
+  update the same id with a strictly newer `createdAt`; clients accept that
+  new version while rejecting older or equal replays.
 - No `notification.created` JSON-RPC server notification is emitted. Electron
   receives the inserted record directly from `session.endTurn`, avoiding a
   second ordering channel between terminal turn persistence and UI refresh.
@@ -1389,9 +1398,9 @@ type NotificationListResult = {
   still reaches its requested terminal state in the same transaction. Missing
   or non-boolean values default to true so unknown/stale UI state cannot lose a
   notification.
-- `sessionTitle` is the stable session-name snapshot stored with the row.
-  Localized event title/body prose is derived by Electron/renderer and never
-  crosses host RPC.
+- `sessionTitle` is the stable session-name snapshot for session rows. Their
+  localized prose is derived by Electron/renderer. Plugin rows have null session
+  fields and carry the plugin's own title, body and link data across host RPC.
 
 ## 5. Tool execute contract
 

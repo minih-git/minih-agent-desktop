@@ -3669,6 +3669,11 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     planApprovalTitle: "{{sessionTitle}} plan awaiting approval",
     planApprovalBody: "A proposed plan is ready for your review.",
     actionFailed: "Couldn't update notifications.",
+    // A plugin row (schema v43) is written by its plugin: the host localizes
+    // only how many folded digests that row stands for.
+    pluginCollapsed: "{{count}} more notifications were collapsed",
+    pluginViewNeedsSession: "Couldn't open the plugin view: select a local session first.",
+    pluginTargetUnavailable: "Couldn't open the notification: the plugin target is unavailable.",
     justNow: "Just now",
   },
   liveVoice: {

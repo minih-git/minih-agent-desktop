@@ -216,3 +216,11 @@ test("a failed host acknowledgement does not dismiss a task banner prematurely",
   await assert.rejects(h.markRead(input.id), /host unavailable/);
   assert.equal(FakeNotification.instances[0].closed, false);
 });
+
+test("versioned acknowledgements forward malformed input instead of silently marking everything", async () => {
+  const h = harness({ hostCall: async () => { throw new Error("invalid snapshot"); } });
+  await assert.rejects(h.handlers.get(IPC.invoke.notificationMarkAllRead)({ pluginRows: "invalid" }), /invalid snapshot/);
+  assert.deepEqual(h.calls.at(-1).input, { pluginRows: "invalid" });
+  await assert.rejects(h.handlers.get(IPC.invoke.notificationMarkRead)({ id: "p", expectedCreatedAt: 123 }), /invalid snapshot/);
+  assert.deepEqual(h.calls.at(-1).input, { id: "p", expectedCreatedAt: 123 });
+});

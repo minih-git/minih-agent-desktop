@@ -13,6 +13,7 @@ import { open as openFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { normalizePluginNotification, type PluginNotificationInput } from "./plugin-notification-center";
 import {
   conversationResultCount,
   normalizePluginConversationInput,
@@ -119,6 +120,11 @@ import {
   resolvePackageThemeAssetPath,
   themeAssetGroupWithinBudget,
 } from "./plugin-theme-assets.js";
+import {
+  pluginIconUrl,
+  readPluginIconBytes,
+  resolvePluginIcon,
+} from "./plugin-icon-asset.js";
 import { desktopDataDir } from "./data-paths";
 import { McpServerClient, type McpServerClientOptions } from "./plugin-mcp";
 import { PluginToolInvocations, type PluginToolInvocation } from "./plugin-tool-invocations";
@@ -367,6 +373,7 @@ export type PluginHostServices = {
   onPluginThemesChanged?: (pluginId: string) => void;
   showToast: (message: string, level?: "info" | "warn" | "error") => void;
   notify: (input: { title: string; body?: string }) => void;
+  notifyCenter?: (pluginId: string, input: PluginNotificationInput) => Promise<{ id: string }>;
   getNotificationPermission: () => PluginNotificationPermission | Promise<PluginNotificationPermission>;
   requestNotificationPermission: () => Promise<PluginNotificationPermission>;
   showNativeNotification: (
@@ -593,6 +600,7 @@ const HOST_API_ALLOWLIST = new Set([
   "ui.closePanel",
   "ui.showToast",
   "ui.notify",
+  "notify.center",
   "ui.getNotificationPermission",
   "ui.requestNotificationPermission",
   "ui.showNativeNotification",
@@ -1635,7 +1643,9 @@ export class PluginRuntime {
     const normalized = normalizeThemeAssetPath(assetPath);
     if (!normalized) return null;
     const registered = this.themeAssets.get(pluginId)?.get(normalized);
-    if (!registered) return null;
+    // Theme declarations retain their existing behavior when an icon and a
+    // theme intentionally share a path; otherwise resolve the declared icon.
+    if (!registered) return this.resolvePluginIconAsset(pluginId, normalized);
     const loaded = this.loaded.get(pluginId);
     if (!loaded) return null;
     const current = isExternalThemeAssetPath(normalized)
@@ -1646,6 +1656,29 @@ export class PluginRuntime {
     const owners = groups ? [...groups.values()].filter((group) => group.has(normalized)) : [];
     if (owners.some((group) => !themeAssetGroupWithinBudget(loaded.path, group))) return null;
     return readThemeAssetBytes(registered);
+  }
+
+  /**
+   * Host-scheme URL of the icon the loaded plugin declares for itself.
+   *
+   * There is no icon registry to leak: the answer is derived from the live load
+   * on every call, so disabling, unloading, or crashing withdraws the URL in the
+   * same step as every other host asset, and the renderer only ever holds a URL.
+   */
+  getPluginIconUrl(pluginId: string): string | null {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded) return null;
+    const icon = resolvePluginIcon(loaded.path, loaded.manifest.icon);
+    return icon ? pluginIconUrl(pluginId, icon.assetPath) : null;
+  }
+
+  /** Serve only the icon path this plugin's own manifest declares. */
+  private resolvePluginIconAsset(pluginId: string, assetPath: string): Uint8Array | null {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded) return null;
+    const icon = resolvePluginIcon(loaded.path, loaded.manifest.icon);
+    if (!icon || icon.assetPath !== assetPath) return null;
+    return readPluginIconBytes(icon.absolute);
   }
 
   /** Supervision state of every resident service, ordered for a stable list. */
@@ -3356,6 +3389,12 @@ export class PluginRuntime {
           throw apiError("UNSUPPORTED", "host api not available: memory.list");
         }
         return this.services.memory.list(loaded.manifest.id, input);
+      }
+      case "notify.center": {
+        this.assertPermission(loaded, "notify.center");
+        const input = normalizePluginNotification(args[0], loaded.manifest);
+        if (!this.services.notifyCenter) throw apiError("UNSUPPORTED", "host api not available: notify.center");
+        return this.services.notifyCenter(pluginId, input);
       }
       case "agent.complete": {
         return this.runAgentComplete(loaded, (args[0] ?? {}) as PluginCompleteInput);

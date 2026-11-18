@@ -1882,10 +1882,9 @@ CREATE UNIQUE INDEX idx_notifications_plugin_dedupe
   one. The check is written as `(kind LIKE 'plugin.%') = (plugin_id IS NOT
   NULL)` rather than an enumeration, so the constraint follows the kind family
   instead of listing every member twice.
-- Two kinds, one family: **`plugin.alert`** is one event the user should see
-  now, and **`plugin.digest`** is one row standing for a batch the plugin rolled
-  up. The host stores the kind as data and renders it; deciding when to alert
-  and when to roll up is the plugin's policy.
+- Two kinds, one family: **`plugin.alert`** is one event and **`plugin.digest`**
+  represents a batch. The plugin may choose either kind; the host also creates
+  a digest for new events beyond its per-plugin rate limit.
 - `title` / `body` are the plugin's own text, stored as data and
   rendered as the plugin supplied it. Unlike a session row there is no localized
   derivation: the host has nothing to translate and does not rewrite it.
@@ -1917,10 +1916,9 @@ CREATE UNIQUE INDEX idx_notifications_plugin_dedupe
 - `session_title` is the stable session-name snapshot at notification creation,
   not a localized notification title/body. An empty title remains valid and
   receives a localized “Untitled task” fallback only at presentation time.
-- No title/body prose is stored, and a prompt row never stores the question or
-  tool arguments. Scheduled reminders, plugin notices, and aborted turns are
-  not notification sources; permission, ask, and plan requests are, as
-  `prompt.*` rows only.
+- Task and prompt rows store no title/body prose, and prompt rows never store
+  the question or tool arguments. Plugin notices store their supplied text;
+  scheduled reminders and aborted turns are not notification sources.
 - After an insert, the same transaction prunes all but the newest 200 rows by
   `(created_at DESC, id DESC)`. This is a global cap; session deletion also
   cascades its rows.

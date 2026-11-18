@@ -6,6 +6,7 @@ import {
   ErrorCodes,
   type ActivationScope,
   type AppSettings,
+  type AppNotification,
   type BrowserState,
   type McpServerStatus,
   type ModelBinding,
@@ -268,6 +269,13 @@ export function createPluginServices({
       sendToRenderer(IPC.event.toast, {
         message: `${input.title}${input.body ? `: ${input.body}` : ""}`,
       }),
+    notifyCenter: async (pluginId, input) => {
+      const host = getHost();
+      if (!host) throw new Error("notify.center: host unavailable");
+      const result = await host.call<{ id: string; notification: AppNotification }>("pluginNotification.create", { pluginId, ...input });
+      sendToRenderer(IPC.event.notificationChanged, { notification: result.notification });
+      return { id: result.id };
+    },
     getNotificationPermission: getPluginNotificationPermission,
     requestNotificationPermission: async () => {
       const permission = await requestPluginNotificationPermission();
@@ -563,7 +571,7 @@ export function createPluginServices({
           body: request.body,
           signal: controller.signal,
         });
-      } catch (error) {
+      } catch {
         if (controller.signal.aborted) {
           throw embeddingsError("TIMEOUT", "the embeddings request timed out");
         }

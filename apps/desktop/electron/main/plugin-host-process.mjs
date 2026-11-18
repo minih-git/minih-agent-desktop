@@ -240,6 +240,9 @@ function buildApi() {
         await call("speech.unregisterAdapter", [protocol]);
       },
     },
+    notify: {
+      center: (input) => call("notify.center", [input]),
+    },
     ui: {
       openPanel: (options) => call("ui.openPanel", [options]),
       closePanel: () => call("ui.closePanel"),

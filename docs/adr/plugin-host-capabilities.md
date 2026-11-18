@@ -1,8 +1,8 @@
 # ADR plugin-host-capabilities: Six host capabilities, one permission each
 
-- **Status**: Accepted for implementation (2026-11-17). Slice B-0 —
-  registration only — is the part described as implemented; nothing below
-  performs work yet.
+- **Status**: Accepted for implementation (2026-11-17). B-0 registered the
+  permissions; B4 implements `notify.center`. Other capability groups remain
+  at their separately documented implementation status.
 - **Date**: 2026-11-17
 - **Related**: ADR 0005 (user-installable plugins) · ADR 0008 D009 (the plugin
   process is not OS-sandboxed) · ADR 0074 (native notification permission) ·
@@ -152,8 +152,8 @@ each is stated in the install review.
 - `notify.center` writes one row into the durable notification inbox, naming the
   plugin. The family has two kinds: **`plugin.alert`** for one event the user
   should see now, and **`plugin.digest`** for one row standing for a batch the
-  plugin rolled up — when to alert and when to aggregate is the plugin's
-  policy; the host only stores and renders the kind. It is separate from
+  plugin rolled up; the host also folds events exceeding the hourly budget.
+  It is separate from
   `notify`, which raises a toast or a native banner and persists nothing; it is
   also not a `prompt.*` row, since nothing is waiting on an answer.
 - Both are bounded like every other host queue: the inbox keeps its 200-row cap
@@ -217,11 +217,8 @@ B-0 is registration, and only registration:
   bounds, and the rule that each field requires its permission;
 - `packages/plugin-sdk` types and validators for the shapes above.
 
-B-0 executes **none** of it. No secret is stored or injected, no port is
-opened, no timer is armed, no socket is connected, no task is created, and no
-draft or inbox row is written. `manifest.tasks` and `manifest.net.tcp` are a
-declared surface, not working API, and no `pi.*` method for any of the six
-exists yet.
+B-0 itself executed none of these capabilities. B4 subsequently implements
+`pi.notify.center`; the remaining methods retain their documented status.
 
 ## Consequences
 
@@ -240,10 +237,8 @@ exists yet.
 - The inbox gains a second owner (a plugin) next to the session. Every consumer
   of `notifications` — renderer list, unread count, mark-read, clear, prune —
   must handle a row with no session and no turn.
-- Before B4 writes plugin notifications, `Notification.session_id` and
-  `session_title` in `crates/host-core/src/notifications.rs` must become
-  `Option<String>`, and the reader must load `title`, `body`, and `link_json`.
-  Otherwise a plugin row with null session fields fails the entire list read.
+- B4 made `Notification.session_id` and `session_title` optional and loads
+  plugin fields, so a row without a session does not fail the entire list.
 - `idx_notifications_plugin_dedupe` enforces per-plugin deduplication when a
   dedupe key is supplied.
 

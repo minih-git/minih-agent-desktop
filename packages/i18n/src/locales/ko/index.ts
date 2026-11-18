@@ -3641,6 +3641,9 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     planApprovalTitle: "{{sessionTitle}} 계획 승인 대기 중",
     planApprovalBody: "검토할 계획이 준비되었습니다.",
     actionFailed: "알림을 업데이트할 수 없습니다.",
+    pluginCollapsed: "알림 {{count}}개가 더 접혔습니다",
+    pluginViewNeedsSession: "플러그인 보기를 열 수 없습니다. 먼저 로컬 세션을 선택하세요.",
+    pluginTargetUnavailable: "알림을 열 수 없습니다. 플러그인 대상을 사용할 수 없습니다.",
     justNow: "방금",
   },
   liveVoice: {

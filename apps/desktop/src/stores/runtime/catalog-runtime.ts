@@ -4,9 +4,14 @@ export type CatalogRuntime = {
   /** Generation for notification list requests; newer mutations invalidate old reads. */
   notificationGeneration: () => number;
   invalidateNotificationRefresh: () => number;
-  /** Notification ids acknowledged individually; bounded to avoid unbounded renderer state. */
+  /**
+   * Notification ids acknowledged individually; bounded to avoid unbounded
+   * renderer state. A row re-delivered by its plugin's dedupe key reopens that
+   * id as unread, so the guard has to be forgettable (`forgetNotificationRead`).
+   */
   notificationReadIds: Set<string>;
   rememberNotificationRead: (id: string) => void;
+  forgetNotificationRead: (id: string) => void;
   notificationReadBefore: () => number | null;
   setNotificationReadBefore: (timestamp: number) => void;
   notificationClearedAt: () => number | null;
@@ -42,6 +47,10 @@ export function createCatalogRuntime(): CatalogRuntime {
     }
   };
 
+  const forgetNotificationRead = (id: string): void => {
+    notificationReadIds.delete(id.trim());
+  };
+
   return {
     beginProviderRefresh: () => {
       providerModelsGeneration += 1;
@@ -56,6 +65,7 @@ export function createCatalogRuntime(): CatalogRuntime {
     },
     notificationReadIds,
     rememberNotificationRead,
+    forgetNotificationRead,
     notificationReadBefore: () => notificationsReadBefore,
     setNotificationReadBefore: (timestamp) => {
       if (!Number.isFinite(timestamp)) return;

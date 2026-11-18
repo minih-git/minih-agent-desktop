@@ -76,6 +76,7 @@ export const PERMISSION_API_HINTS: Record<string, string[]> = {
     "ui.requestNotificationPermission",
     "ui.showNativeNotification",
   ],
+  "notify.center": ["notify.center"],
   "clipboard.read": ["clipboard.readText", "clipboard.getHistory"],
   "clipboard.write": ["clipboard.writeText"],
   "fs.read": [

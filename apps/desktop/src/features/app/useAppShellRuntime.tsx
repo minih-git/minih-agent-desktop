@@ -515,8 +515,15 @@ export function useAppShellRuntime() {
   useEffect(() => {
     if (!ready) return;
     void useAppStore.getState().refreshPlugins();
-    return api.onPluginChanged(() => void useAppStore.getState().refreshPlugins());
-  }, [ready]);
+    return api.onPluginChanged((event) => {
+      void useAppStore.getState().refreshPlugins();
+      if (event.reason === "uninstall") {
+        void useAppStore.getState().refreshNotifications().catch(() =>
+          useAppStore.getState().showToast(t("notifications.actionFailed"), { variant: "error" }),
+        );
+      }
+    });
+  }, [ready, t]);
 
   // Work panel views are filtered by activation scope, so opening a different
   // project changes the list as much as installing a plugin does.
@@ -715,8 +722,9 @@ export function useAppShellRuntime() {
       // "task finished" banner for work that is still waiting.
       // A task row always names its conversation; a plugin row never does, and
       // this banner is addressed to a session window.
+      if (!notification.kind.startsWith("task.")) return;
       const sessionId = notification.sessionId;
-      if (!notification.kind.startsWith("task.") || !sessionId) return;
+      if (!sessionId) return;
       playNotificationChime();
       const failed = notification.kind === "task.failed";
       const title = t(

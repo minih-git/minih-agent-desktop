@@ -7,6 +7,10 @@ const componentSource = await readFile(
   new URL("../src/components/NotificationCenter.tsx", import.meta.url),
   "utf8",
 );
+const rowSource = await readFile(
+  new URL("../src/components/NotificationRow.tsx", import.meta.url),
+  "utf8",
+);
 const globalStyles = await loadStyles();
 const englishCatalog = await readFile(
   new URL("../../../packages/i18n/src/locales/en/index.ts", import.meta.url),
@@ -36,8 +40,8 @@ test("notification center supports filtering, bulk actions, and session navigati
   assert.match(componentSource, /markAllNotificationsRead/);
   assert.match(componentSource, /clearNotifications/);
   assert.match(componentSource, /openNotification\(notification\.id\)/);
-  assert.match(componentSource, /notification\.kind === "task\.failed"/);
-  assert.match(componentSource, /notification\.errorCode/);
+  assert.match(rowSource, /notification\.kind === "task\.failed"/);
+  assert.match(rowSource, /notification\.errorCode/);
 });
 
 test("notification popover preserves keyboard and focus behavior", () => {
@@ -57,12 +61,18 @@ test("notification popover preserves keyboard and focus behavior", () => {
 });
 
 test("notification content is localized and timestamps are relative", () => {
-  assert.match(componentSource, /Intl\.RelativeTimeFormat/);
-  assert.match(componentSource, /Intl\.DateTimeFormat/);
+  assert.match(rowSource, /Intl\.RelativeTimeFormat/);
+  assert.match(rowSource, /Intl\.DateTimeFormat/);
   assert.match(englishCatalog, /notifications:\s*\{/);
   assert.match(englishCatalog, /failedBodyWithCode:/);
   assert.match(chineseCatalog, /notifications:\s*\{/);
   assert.match(chineseCatalog, /failedBodyWithCode:/);
+  for (const catalog of [englishCatalog, chineseCatalog]) {
+    assert.match(catalog, /pluginViewNeedsSession:/);
+    assert.match(catalog, /pluginTargetUnavailable:/);
+  }
+  assert.match(componentSource, /PLUGIN_NOTIFICATION_VIEW_REQUIRES_SESSION/);
+  assert.match(componentSource, /PLUGIN_NOTIFICATION_TARGET_UNAVAILABLE/);
 });
 
 test("notification popover has bounded desktop and mobile layouts", () => {
@@ -82,4 +92,18 @@ test("notification popover has bounded desktop and mobile layouts", () => {
   assert.match(globalStyles, /\.notification-badge\s*\{[^}]*var\(--ds-bg-sidebar\)/s);
   assert.match(globalStyles, /\.notification-list\s*\{[^}]*overflow-y:\s*auto;/s);
   assert.match(globalStyles, /\.notification-item\.unread\s*\{/);
+});
+
+test("plugin rows share the bell with their own words and the local count", () => {
+  assert.match(componentSource, /bellNotifications\(storedNotifications\)/);
+  assert.match(componentSource, /unreadNotificationCount\(storedNotifications\)/);
+  assert.match(componentSource, /pluginNotificationTarget\(notification, pluginViews\)/);
+  assert.match(rowSource, /isPluginNotification\(notification\)/);
+  assert.match(rowSource, /className="notification-plugin-name"/);
+  assert.match(rowSource, /collapsedNotificationCount\(notification\)/);
+  assert.match(rowSource, /"notifications\.pluginCollapsed"/);
+  assert.match(globalStyles, /\.notification-plugin-name\s*\{/);
+  assert.match(globalStyles, /\.notification-kind-icon\.plugin\s*\{/);
+  assert.match(englishCatalog, /pluginCollapsed:/);
+  assert.match(chineseCatalog, /pluginCollapsed: "另有 \{\{count\}\} 条通知被折叠"/);
 });

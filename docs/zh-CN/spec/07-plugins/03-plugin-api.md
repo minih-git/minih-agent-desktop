@@ -1060,11 +1060,9 @@ type PluginGlobalShortcut = {
 API 契约，强制方式见
 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
 
-**仅注册。** 下面每个名字今天都能在 manifest 里通过校验，但没有任何一个方法
-落地：`pi.net.tcp`、`pi.inbound`、`pi.mail`、`pi.tasks` 和 `schedule:fire`
-事件在插件宿主进程里还不存在，`pi.net.fetch` 也不会读 `credentialRef`。
-依赖其中任何一个的插件必须先检查方法是否存在再调用，与其它靠版本差集新增的
-API 完全一致（§8）。
+**实现状态。** `pi.notify.center` 已实现；其余以下方法和事件仍仅注册：
+`pi.net.tcp`、`pi.inbound`、`pi.mail`、`pi.tasks` 和 `schedule:fire` 尚不存在，
+`pi.net.fetch` 也不会读 `credentialRef`。使用尚未实现的方法前应检查其是否存在（§8）。
 
 ```ts
 // credentials.use —— 自身没有调用。槽位由用户在设置里填写；
@@ -1098,8 +1096,7 @@ pi.mail.draft.create(input: {
 pi.notify.center(input: {
   kind?: "alert" | "digest"   // plugin.alert（默认）或 plugin.digest
   title: string; body?: string
-  level?: "info" | "warning" | "error"
-  link?: { view?: string; command?: string }   // 宿主校验过的点击目标
+  link?: { view: string } | { command: string } // 本插件声明的目标
   dedupeKey?: string          // 同一个 key 再次提交会更新原记录
 }): Promise<{ id: string }>
 
@@ -1159,6 +1156,11 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   而不是新增一条。`link` 是宿主校验过的点击目标（插件视图或该插件自己的命令），
   绝不是任意 URL。通知中心 200 条上限、标记已读、清空操作与卸载清理都照旧生效；
   `notify` 仍然是不落库的一次性横幅
+  标题非空且最多 200 个 Unicode 码点，正文最多 2,000 个；提供的去重键须非空、
+  不超过 256 个码点且不能使用宿主保留键，编码后的链接最多 4,096 UTF-8 字节。
+  参数无效或目标未由本插件声明时返回 `INVALID_ARGUMENT`；重复提交会更新同一记录
+  并重新置为未读。工作面板视图需要活动的本地会话；没有时点击会提示原因。
+  不支持 `level`：v43 没有对应列，且该字段尚未随此 API 发布。限速规则见安全规范 §8.3。
 - **任务被两层限定。** `tasks.list` 与 `tasks.get` 只读当前用户的任务清单，
   `tasks.manage` 只覆盖本插件自己创建的任务（`pluginId` 与调用方一致）；别的
   插件或人建的任务返回 `NOT_FOUND` 而不是 `PERMISSION_DENIED`，所以这个调用

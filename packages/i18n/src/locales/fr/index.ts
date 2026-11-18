@@ -3605,6 +3605,9 @@ sklm: {
     "planApprovalTitle": "{{sessionTitle}} plan en attente d'approbation",
     "planApprovalBody": "Le plan proposé est prêt pour examen.",
     "actionFailed": "Impossible de mettre à jour les notifications.",
+    "pluginCollapsed": "{{count}} autres notifications ont été regroupées",
+    "pluginViewNeedsSession": "Impossible d'ouvrir la vue du plugin : sélectionnez d'abord une session locale.",
+    "pluginTargetUnavailable": "Impossible d'ouvrir la notification : la cible du plugin est indisponible.",
     "justNow": "À l'instant"
   },
   liveVoice: {

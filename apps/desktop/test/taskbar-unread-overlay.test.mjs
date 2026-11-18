@@ -344,6 +344,6 @@ test("documents the D664 bell vs shell-badge agreement", () => {
     join(root, "src/components/NotificationCenter.tsx"),
     "utf8",
   );
-  assert.match(centerSource, /mergeNotificationsBySession\(storedNotifications\)/);
-  assert.match(centerSource, /unreadSessionIds\(storedNotifications\)/);
+  assert.match(centerSource, /bellNotifications\(storedNotifications\)/);
+  assert.match(centerSource, /unreadNotificationCount\(storedNotifications\)/);
 });

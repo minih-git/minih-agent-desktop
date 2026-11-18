@@ -164,9 +164,13 @@ export function registerPluginIpc({
         // row: a plugin that is not running has nothing to load.
         const renderer = plugin?.id ? plugins.rendererDescriptor(plugin.id) : undefined;
         const withRenderer = renderer ? { ...withExtension, renderer } : withExtension;
+        // A host-scheme URL, never a path: main confines `manifest.icon` to the
+        // plugin package and the URL disappears with the plugin's load.
+        const iconUrl = plugin?.id ? plugins.getPluginIconUrl(plugin.id) : null;
+        const withIcon = iconUrl ? { ...withRenderer, iconUrl } : withRenderer;
         const withComposerTransforms = plugin?.id
-          ? { ...withRenderer, composerTransforms: plugins.getComposerTransforms(plugin.id) }
-          : withRenderer;
+          ? { ...withIcon, composerTransforms: plugins.getComposerTransforms(plugin.id) }
+          : withIcon;
         if (!plugin?.settings?.length || !plugins.getLoaded(plugin.id)) return withComposerTransforms;
         try {
           const settings = await plugins.getPluginSettings(plugin.id);
