@@ -4,20 +4,25 @@ import type { ProjectMemory } from "./filesystem.js";
 /**
  * Durable inbox families. `task.*` names a settled turn; `prompt.*` names an
  * interactive request the runtime is blocked on, so a reminder survives a
- * missed toast, a hidden window, or a restart.
+ * missed toast, a hidden window, or a restart. `plugin.*` is a row a plugin
+ * delivered (schema v43): it belongs to a plugin, not to a conversation.
  */
 export type AppNotificationKind =
   | "task.completed"
   | "task.failed"
   | "prompt.ask"
   | "prompt.permission"
-  | "prompt.plan";
+  | "prompt.plan"
+  | "plugin.alert"
+  | "plugin.digest";
 
 export type AppNotification = {
   id: string;
   kind: AppNotificationKind;
-  sessionId: string;
-  sessionTitle: string;
+  /** The conversation this row points at; null for a plugin row. */
+  sessionId: string | null;
+  /** The conversation's title at delivery time; null for a plugin row. */
+  sessionTitle: string | null;
   /** Present for settled-turn rows only. */
   turnId?: string;
   /** Present for prompt rows; the runtime's id for the pending request. */
@@ -25,6 +30,15 @@ export type AppNotification = {
   /** Present for prompt rows that ask about one tool. */
   toolName?: string;
   errorCode?: string;
+  /** Present for plugin rows only: which plugin delivered this row. */
+  pluginId?: string;
+  /** A plugin row's own headline and text. */
+  title?: string;
+  body?: string;
+  /** What activating a plugin row opens, as the plugin's JSON payload. */
+  linkJson?: string;
+  /** The plugin's own id for the event, so a retry lands on this row. */
+  dedupeKey?: string;
   createdAt: string;
   readAt?: string | null;
 };

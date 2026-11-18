@@ -16,10 +16,13 @@ export function latestSessionOutcomes(
   // (the inbox bell, the sticky toast, the taskbar unread count).
   for (const notification of notifications) {
     if (!notification.kind.startsWith("task.")) continue;
-    if (seen.has(notification.sessionId)) continue;
-    seen.add(notification.sessionId);
+    // A plugin row names no conversation, so it can never own a badge.
+    const sessionId = notification.sessionId;
+    if (!sessionId) continue;
+    if (seen.has(sessionId)) continue;
+    seen.add(sessionId);
     if (notification.readAt) continue;
-    outcomes[notification.sessionId] =
+    outcomes[sessionId] =
       notification.kind === "task.failed" ? "failed" : "completed";
   }
 

@@ -199,8 +199,11 @@ export function createCatalogSlice({
       const clearedAt = catalogRuntime.notificationClearedAt();
       const readBefore = catalogRuntime.notificationReadBefore();
       const readIds = catalogRuntime.notificationReadIds;
+      // A plugin row names no conversation, so it touches no session outcome.
       const touchedSessionIds = new Set(
-        result.notifications.map((notification) => notification.sessionId),
+        result.notifications
+          .map((notification) => notification.sessionId)
+          .filter((sessionId): sessionId is string => sessionId !== null),
       );
       const notifications = result.notifications
         .filter((notification) => {
@@ -283,15 +286,16 @@ export function createCatalogSlice({
         // replace the session's outcome badge with "completed". Recompute that
         // session from the shared rule so both entry points agree.
         const sessionOutcomes = { ...state.sessionOutcomes };
-        delete sessionOutcomes[notification.sessionId];
-        Object.assign(
-          sessionOutcomes,
-          latestSessionOutcomes(
-            notifications.filter(
-              (item) => item.sessionId === notification.sessionId,
+        const sessionId = notification.sessionId;
+        if (sessionId) {
+          delete sessionOutcomes[sessionId];
+          Object.assign(
+            sessionOutcomes,
+            latestSessionOutcomes(
+              notifications.filter((item) => item.sessionId === sessionId),
             ),
-          ),
-        );
+          );
+        }
         return {
           notifications,
           sessionOutcomes,
@@ -375,10 +379,12 @@ export function createCatalogSlice({
             ? notification
             : { ...notification, readAt },
         );
+        // A plugin row has no conversation, so it clears no session outcome.
         const acknowledgedSessionIds = new Set(
           state.notifications
             .filter((notification) => acknowledgedIds.has(notification.id))
-            .map((notification) => notification.sessionId),
+            .map((notification) => notification.sessionId)
+            .filter((sessionId): sessionId is string => sessionId !== null),
         );
         const sessionOutcomes = { ...state.sessionOutcomes };
         for (const sessionId of acknowledgedSessionIds) {
@@ -387,8 +393,10 @@ export function createCatalogSlice({
         Object.assign(
           sessionOutcomes,
           latestSessionOutcomes(
-            notifications.filter((notification) =>
-              acknowledgedSessionIds.has(notification.sessionId),
+            notifications.filter(
+              (notification) =>
+                notification.sessionId !== null &&
+                acknowledgedSessionIds.has(notification.sessionId),
             ),
           ),
         );
@@ -429,16 +437,21 @@ export function createCatalogSlice({
       const intent = sessionRuntime.beginNavigationIntent();
       const notification = get().notifications.find((item) => item.id === id);
       if (!notification) return;
+      const sessionId = notification.sessionId;
       // One bell row stands for the whole conversation (D664), so opening it
       // settles every unread row of that conversation, not just the newest.
-      const unread = get().notifications.filter(
-        (item) => item.sessionId === notification.sessionId && !item.readAt,
-      );
+      // A plugin row has no conversation to settle and nowhere to navigate yet.
+      const unread = sessionId
+        ? get().notifications.filter(
+            (item) => item.sessionId === sessionId && !item.readAt,
+          )
+        : [];
       for (const item of unread) {
         await get().markNotificationRead(item.id);
       }
+      if (!sessionId) return;
       if (!sessionRuntime.navigationIntentIsCurrent(intent)) return;
-      await get().selectSession(notification.sessionId, {
+      await get().selectSession(sessionId, {
         navigationIntent: intent,
       });
     },

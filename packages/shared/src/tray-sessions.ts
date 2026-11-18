@@ -147,7 +147,10 @@ export function buildTraySessionGroups(
   const unreadOrder = new Map<string, number>();
   notifications.forEach((notification, index) => {
     if (!notification.kind.startsWith("task.")) return;
-    if (!unreadOrder.has(notification.sessionId)) unreadOrder.set(notification.sessionId, index);
+    // A plugin row belongs to no session, so it cannot order this group.
+    const sessionId = notification.sessionId;
+    if (!sessionId) return;
+    if (!unreadOrder.has(sessionId)) unreadOrder.set(sessionId, index);
   });
   const groups: Record<TraySessionGroupKind, SessionSummary[]> = {
     running: [], unread: [], pinned: [],

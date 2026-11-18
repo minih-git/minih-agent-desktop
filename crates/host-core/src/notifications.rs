@@ -6,20 +6,27 @@ use uuid::Uuid;
 use crate::db::{ms_to_ts, now_ms, Database, NOTIFICATION_KEEP};
 
 /// One durable inbox row. `kind` names the family: a settled turn
-/// (`task.completed` / `task.failed`) or an interactive request the user still
-/// has to answer (`prompt.ask` / `prompt.permission` / `prompt.plan`).
+/// (`task.completed` / `task.failed`), an interactive request the user still
+/// has to answer (`prompt.ask` / `prompt.permission` / `prompt.plan`), or one
+/// row a plugin delivered (`plugin.alert` / `plugin.digest`).
 ///
 /// Task rows are deduplicated by `turn_id`; prompt rows have no settled turn to
 /// key on, so they carry the runtime `request_id` instead. Prompt rows store the
 /// tool name only — never the question or argument text — because that content
 /// already lives in the transcript and the inbox is a pointer to it.
+///
+/// A plugin row (schema v43) belongs to no conversation: `session_id` and
+/// `session_title` are NULL, and the plugin's own `plugin_id`, `title`, `body`,
+/// `link_json` and `dedupe_key` say what the row is about. The session columns
+/// stay `Option` for that reason alone; the task and prompt families always
+/// fill them.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
     pub id: String,
     pub kind: String,
-    pub session_id: String,
-    pub session_title: String,
+    pub session_id: Option<String>,
+    pub session_title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -28,6 +35,16 @@ pub struct Notification {
     pub tool_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dedupe_key: Option<String>,
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_at: Option<String>,
@@ -45,12 +62,18 @@ fn notification_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Notificati
         error_code: row.get(7)?,
         created_at: ms_to_ts(row.get(8)?),
         read_at: row.get::<_, Option<i64>>(9)?.map(ms_to_ts),
+        plugin_id: row.get(10)?,
+        title: row.get(11)?,
+        body: row.get(12)?,
+        link_json: row.get(13)?,
+        dedupe_key: row.get(14)?,
     })
 }
 
 const NOTIFICATION_SELECT: &str =
     "SELECT n.id, n.kind, n.session_id, n.session_title, n.turn_id, n.request_id,
-            n.tool_name, n.error_code, n.created_at, n.read_at
+            n.tool_name, n.error_code, n.created_at, n.read_at,
+            n.plugin_id, n.title, n.body, n.link_json, n.dedupe_key
      FROM notifications n";
 
 /// Insert the durable fact for a newly terminal turn. The caller owns the
@@ -105,12 +128,17 @@ pub fn insert_for_terminal_turn(
     Ok(Some(Notification {
         id,
         kind: kind.to_string(),
-        session_id,
-        session_title,
+        session_id: Some(session_id),
+        session_title: Some(session_title),
         turn_id: Some(turn_id.to_string()),
         request_id: None,
         tool_name: None,
         error_code: error_code.map(str::to_string),
+        plugin_id: None,
+        title: None,
+        body: None,
+        link_json: None,
+        dedupe_key: None,
         created_at: ms_to_ts(created_at),
         read_at: None,
     }))
@@ -178,12 +206,17 @@ pub fn insert_for_prompt(
     Ok(Some(Notification {
         id,
         kind: kind.to_string(),
-        session_id: session_id.to_string(),
-        session_title,
+        session_id: Some(session_id.to_string()),
+        session_title: Some(session_title),
         turn_id: turn_id.map(str::to_string),
         request_id: Some(request_id.to_string()),
         tool_name: tool_name.map(str::to_string),
         error_code: None,
+        plugin_id: None,
+        title: None,
+        body: None,
+        link_json: None,
+        dedupe_key: None,
         created_at: ms_to_ts(created_at),
         read_at: None,
     }))
@@ -245,12 +278,17 @@ pub fn insert_for_task_alert(
     Ok(Some(Notification {
         id,
         kind: "task.failed".to_string(),
-        session_id: session_id.to_string(),
-        session_title,
+        session_id: Some(session_id.to_string()),
+        session_title: Some(session_title),
         turn_id: None,
         request_id: Some(event_key.to_string()),
         tool_name: None,
         error_code: Some(error_code.to_string()),
+        plugin_id: None,
+        title: None,
+        body: None,
+        link_json: None,
+        dedupe_key: None,
         created_at: ms_to_ts(created_at),
         read_at: None,
     }))
@@ -345,7 +383,7 @@ mod tests {
             .unwrap()
             .expect("prompt row inserted");
         assert_eq!(ask.kind, "prompt.ask");
-        assert_eq!(ask.session_title, "Investigate build");
+        assert_eq!(ask.session_title.as_deref(), Some("Investigate build"));
         assert_eq!(ask.request_id.as_deref(), Some("req-ask-1"));
         assert!(ask.turn_id.is_none());
         assert!(ask.tool_name.is_none());
@@ -475,7 +513,10 @@ mod tests {
             .iter()
             .find(|notification| notification.kind == "task.failed")
             .unwrap();
-        assert_eq!(failed_notification.session_title, "Build release");
+        assert_eq!(
+            failed_notification.session_title.as_deref(),
+            Some("Build release")
+        );
         assert_eq!(
             failed_notification.error_code.as_deref(),
             Some("MODEL_ERROR")
@@ -522,5 +563,144 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM notifications", [], |row| row.get(0))
             .unwrap();
         assert_eq!(stored_after_restart, NOTIFICATION_KEEP);
+    }
+
+    /// One plugin row in its v43 shape: it names a plugin and no conversation.
+    fn insert_plugin_row(
+        db: &Database,
+        kind: &str,
+        plugin_id: &str,
+        dedupe_key: &str,
+        title: &str,
+        body: &str,
+        link_json: &str,
+    ) -> String {
+        let id = Uuid::new_v4().to_string();
+        db.conn()
+            .execute(
+                "INSERT INTO notifications
+                    (id, kind, plugin_id, title, body, link_json, dedupe_key, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![id, kind, plugin_id, title, body, link_json, dedupe_key, now_ms()],
+            )
+            .expect("plugin row inserted");
+        id
+    }
+
+    /// v43 made the inbox one table for two families. A plugin row has no
+    /// session, so it must survive every read and action the task and prompt
+    /// rows already had: listing, the unread count, mark read, mark all, clear.
+    #[test]
+    fn plugin_rows_share_the_inbox_with_session_rows() {
+        let db = test_db();
+        let session =
+            sessions::create_session(&db, Some("Mixed inbox".into()), None, None, None, None)
+                .unwrap();
+        let turn = sessions::begin_turn(&db, &session.id, None, None).unwrap();
+        let completed = sessions::end_turn(&db, &turn, "completed", None, None, true)
+            .unwrap()
+            .notification
+            .expect("terminal row inserted");
+        let prompt = insert_for_prompt(&db, "prompt.ask", &session.id, "req-mixed", None, None)
+            .unwrap()
+            .expect("prompt row inserted");
+        let alert = insert_plugin_row(
+            &db,
+            "plugin.alert",
+            "acme.ci",
+            "event-1",
+            "Build failed",
+            "2 jobs failed",
+            r#"{"view":"inbox"}"#,
+        );
+        let digest = insert_plugin_row(
+            &db,
+            "plugin.digest",
+            "acme.ci",
+            "event-2",
+            "3 new issues",
+            "Weekly digest",
+            r#"{"view":"inbox-digest"}"#,
+        );
+
+        let (all, unread_count) = list(&db, false, 50).unwrap();
+        assert_eq!(all.len(), 4);
+        assert_eq!(unread_count, 4);
+
+        let alert_row = all.iter().find(|row| row.id == alert).expect("alert row");
+        assert_eq!(alert_row.kind, "plugin.alert");
+        assert!(alert_row.session_id.is_none());
+        assert!(alert_row.session_title.is_none());
+        assert!(alert_row.turn_id.is_none());
+        assert_eq!(alert_row.plugin_id.as_deref(), Some("acme.ci"));
+        assert_eq!(alert_row.title.as_deref(), Some("Build failed"));
+        assert_eq!(alert_row.body.as_deref(), Some("2 jobs failed"));
+        assert_eq!(
+            alert_row.link_json.as_deref(),
+            Some(r#"{"view":"inbox"}"#)
+        );
+        assert_eq!(alert_row.dedupe_key.as_deref(), Some("event-1"));
+        assert!(alert_row.read_at.is_none());
+
+        let digest_row = all.iter().find(|row| row.id == digest).expect("digest row");
+        assert_eq!(digest_row.kind, "plugin.digest");
+        assert!(digest_row.session_id.is_none());
+        assert!(digest_row.session_title.is_none());
+        assert_eq!(
+            digest_row.link_json.as_deref(),
+            Some(r#"{"view":"inbox-digest"}"#)
+        );
+        assert_eq!(digest_row.dedupe_key.as_deref(), Some("event-2"));
+
+        // The older families keep the session and title they always had, and
+        // the plugin columns stay absent for them.
+        let completed_row = all.iter().find(|row| row.id == completed.id).unwrap();
+        assert_eq!(
+            completed_row.session_id.as_deref(),
+            Some(session.id.as_str())
+        );
+        assert_eq!(completed_row.session_title.as_deref(), Some("Mixed inbox"));
+        assert!(completed_row.plugin_id.is_none());
+        assert!(completed_row.title.is_none());
+        let prompt_row = all.iter().find(|row| row.id == prompt.id).unwrap();
+        assert_eq!(
+            prompt_row.session_id.as_deref(),
+            Some(session.id.as_str())
+        );
+        assert_eq!(prompt_row.session_title.as_deref(), Some("Mixed inbox"));
+        assert_eq!(prompt_row.request_id.as_deref(), Some("req-mixed"));
+        assert!(prompt_row.plugin_id.is_none());
+
+        // The wire shape the renderer reads: a plugin row reports null for the
+        // conversation it does not have, and its own camelCase fields.
+        let wire_alert = serde_json::to_value(alert_row).unwrap();
+        assert!(wire_alert["sessionId"].is_null());
+        assert!(wire_alert["sessionTitle"].is_null());
+        assert_eq!(wire_alert["pluginId"], "acme.ci");
+        assert_eq!(wire_alert["title"], "Build failed");
+        assert_eq!(wire_alert["linkJson"], r#"{"view":"inbox"}"#);
+        assert_eq!(wire_alert["dedupeKey"], "event-1");
+        let wire_completed = serde_json::to_value(completed_row).unwrap();
+        assert_eq!(wire_completed["sessionId"], session.id.as_str());
+        assert_eq!(wire_completed["sessionTitle"], "Mixed inbox");
+        assert!(wire_completed.get("pluginId").is_none());
+
+        // Unread listing, single mark, mark all and clear treat both families
+        // the same: nothing that belongs to a plugin is silently dropped.
+        assert_eq!(list(&db, true, 50).unwrap().0.len(), 4);
+        assert!(mark_read(&db, &alert).unwrap());
+        assert!(!mark_read(&db, "missing").unwrap());
+        let (unread_items, unread_count) = list(&db, true, 50).unwrap();
+        assert_eq!(unread_items.len(), 3);
+        assert_eq!(unread_count, 3);
+        assert!(unread_items.iter().all(|row| row.id != alert));
+
+        mark_all_read(&db).unwrap();
+        assert_eq!(list(&db, true, 50).unwrap().1, 0);
+        assert_eq!(list(&db, false, 50).unwrap().0.len(), 4);
+
+        clear(&db).unwrap();
+        assert!(list(&db, false, 50).unwrap().0.is_empty());
+        assert_eq!(list(&db, true, 50).unwrap().1, 0);
     }
 }

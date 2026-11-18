@@ -70,3 +70,23 @@ describe("latestSessionOutcomes", () => {
     ).toEqual({ "session-1": "failed" });
   });
 });
+
+describe("latestSessionOutcomes and plugin rows", () => {
+  it("never badges a plugin row", () => {
+    // A plugin row names no conversation, so there is nothing to badge; the
+    // session rows beside it keep their own outcome.
+    expect(
+      latestSessionOutcomes([
+        notification({
+          id: "plugin-1",
+          kind: "plugin.alert",
+          sessionId: null,
+          sessionTitle: null,
+          turnId: undefined,
+          pluginId: "acme.ci",
+        }),
+        notification({ id: "done-1", sessionId: "session-1" }),
+      ]),
+    ).toEqual({ "session-1": "completed" });
+  });
+});

@@ -50,4 +50,25 @@ describe("mergeNotificationsBySession", () => {
     expect([...unreadSessionIds(rows)]).toEqual(["a"]);
     expect(mergeNotificationsBySession(rows).map((row) => row.id)).toEqual(["p1"]);
   });
+  it("leaves a plugin row out of the per-conversation projection", () => {
+    const rows: AppNotification[] = [
+      notification({
+        id: "plugin-1",
+        kind: "plugin.alert",
+        sessionId: null,
+        sessionTitle: null,
+        turnId: undefined,
+        pluginId: "acme.ci",
+        title: "Build failed",
+        dedupeKey: "event-1",
+      }),
+      notification({ id: "a1", sessionId: "a" }),
+    ];
+    // The plugin row is retained by the store, but it names no conversation:
+    // it neither adds a bell row nor makes a session look unread.
+    expect(mergeNotificationsBySession(rows).map((row) => row.id)).toEqual(["a1"]);
+    expect([...unreadSessionIds(rows)]).toEqual(["a"]);
+    expect(unreadSessionCount(rows)).toBe(1);
+    expect(unreadSessionCount([rows[0]])).toBe(0);
+  });
 });
