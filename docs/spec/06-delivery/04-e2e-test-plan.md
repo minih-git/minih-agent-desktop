@@ -20491,6 +20491,22 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **Expected:** The user-configured row and context inspector show 500K; a catalog-owned row follows the published limit; a configured model without discovery retains its saved context label. Model selection remains unchanged.
 - **Status:** Automated unit regression in `apps/desktop/test/composer-models.test.mjs` covers user overrides, catalog inheritance, and missing discovery; the full save → picker → message → context-inspector path remains a manual validation scenario.
 
+### E2E-PLUGIN-host-owned-tcp
+
+- **Preconditions:** An isolated plugin host with a granted literal TCP endpoint
+  and local TCP and TLS fixtures; no user profile or external service.
+- **Steps:** Connect, send binary bytes, receive data and close. Repeat with a
+  denied endpoint, an untrusted certificate, four simultaneous sockets, another
+  plugin's handle, and plugin unload or crash. Inspect today's and seven-day
+  endpoint totals and uninstall the plugin.
+- **Expected:** Only the owning plugin receives events; denied endpoints and
+  invalid TLS never open a usable connection. Socket limits and lifecycle cleanup
+  hold; traffic is batched and the plugin's rows are removed on uninstall.
+- **Status:** Node plugin-process and TCP/TLS regressions cover transport and
+  lifecycle; Rust RPC tests cover batching and purge. An isolated full-shell
+  fixture covers the usage and empty views in both themes at 1024 and 1440 px.
+  The complete install-to-uninstall desktop journey remains to be verified.
+
 ### E2E-PLUGIN-automatic-jsx-activation
 
 - Preconditions: a granted renderer plugin whose compiled entry imports

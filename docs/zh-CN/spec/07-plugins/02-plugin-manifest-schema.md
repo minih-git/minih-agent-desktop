@@ -357,8 +357,8 @@ type PluginPermission =
  | "speech.adapter.register"
  | "keyboard.globalShortcut"
  | "net.websocket"
- // 宿主能力（phase 2B）；inbound.webhook 已实现，其余能力的实施状态
- // 见 03-plugin-api.md。
+ // 宿主能力（phase 2B）：TCP、inbound.webhook 与 notify.center 已实现；
+ // 其余实施状态见 03-plugin-api.md。
  | "credentials.use"
  | "net.tcp"
  | "inbound.webhook"

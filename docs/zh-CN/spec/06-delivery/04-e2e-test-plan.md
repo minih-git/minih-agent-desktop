@@ -10280,6 +10280,18 @@ No provider credentials or paid model calls are required. The fixture ends at
 work-panel file-request routing; artifact bytes are verified from the real
 host-created files. The full app's file-preview viewer is covered separately.
 
+#### E2E-PLUGIN-host-owned-tcp
+
+- **前提：** 隔离的插件宿主、已授权的字面 TCP 端点，以及本机 TCP/TLS 测试服务；
+  不使用真实用户资料或外部服务。
+- **步骤：** 连接、发送二进制、接收数据并关闭；再覆盖未授权端点、不受信证书、
+  四条并发连接、跨插件句柄和卸载或崩溃。检查今天及近七天的端点流量并卸载插件。
+- **预期：** 事件只投递给所属插件；未授权端点和无效 TLS 不会建立可用连接。
+  连接数量和生命周期清理受限；流量批量写入且卸载后删除该插件的统计。
+- **状态：** Node 插件子进程及 TCP/TLS 回归覆盖传输和生命周期；Rust RPC 测试
+  覆盖批量写入与删除。隔离的完整产品外壳覆盖有数据与空状态的深浅色和
+  1024、1440 宽度截图；安装至卸载的完整桌面流程仍待验证。
+
 #### E2E-PLUGIN-fetch-redirect-policy
 
 - **Preconditions**: Current-main task candidate, built workspace packages,

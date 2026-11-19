@@ -369,6 +369,8 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
   端点与结果，绝不记录载荷内容。
 - 原始套接字不经过用户设置的出网代理。安装审查会明确说明这一点，否则期望
   代理生效的作者会产生相反的假设。
+- 卸载时删除该插件的 TCP 用量行；启动期孤儿对账和留存裁剪留待后续。空或
+  不可读的插件注册表不能作为删除已存计数的依据。
 
 **`inbound.webhook` —— 宿主持有的监听。**
 
@@ -498,10 +500,11 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 插件 API 中：这些方法由这两个权限把关，获得授权的调用会以带错误码的
 `UNSUPPORTED` 拒绝并记入审计，因为当前宿主还没有设备后端，所以没有任何东西
 能到达设备。
-`notify.center` 已实现，由独立权限把关并写入持久通知中心。§8.3 其余能力
-`credentials.use`、`net.tcp`、`inbound.webhook`、`mail.draft`、`scheduler`、
-`tasks.read` 与 `tasks.manage` 仍只完成注册，相关 manifest 字段在安装时校验，
-对应方法及资源尚不可用。
+`notify.center` 与 `inbound.webhook` 已实现，由独立权限把关并由宿主持有资源。
+`net.tcp` 已实现，宿主按字面端点匹配、限制并发、校验 TLS 并按生命周期清理
+（§8.3）。TCP 凭据代用尚未实现，传入时返回 `INVALID_ARGUMENT`。
+`credentials.use`、`mail.draft`、`scheduler`、`tasks.read` 与 `tasks.manage`
+仍仅注册，其 manifest 字段在安装时校验。
 `net.websocket` 已实现：连接由宿主持有、经过白名单检查、有界，并随插件一起
 释放（§8.1）。
 

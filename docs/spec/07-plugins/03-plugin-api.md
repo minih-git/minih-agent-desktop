@@ -1336,17 +1336,15 @@ credential, a socket, a listening path, a clock, a draft or inbox entry, a task
 section is the API contract and [04-plugin-security.md](04-plugin-security.md)
 §8.3 is the enforcement.
 
-**Implementation status.** `pi.notify.center`, `pi.inbound.getReceivers`, and
-`inbound:webhook` are implemented. Other entries below remain registration only:
-`pi.net.tcp`, `pi.mail`, `pi.tasks`, and `schedule:fire` are not implemented,
-and `pi.net.fetch` ignores `credentialRef`. Plugins must check for unavailable
-methods before calling them (§8).
+**Implementation status.** `pi.net.tcp`, `pi.notify.center`,
+`pi.inbound.getReceivers` and `inbound:webhook` are implemented. `pi.mail`,
+`pi.tasks` and `schedule:fire` remain registration only; `pi.net.fetch` ignores
+`credentialRef`. Plugins must check for unavailable methods before calling (§8).
 
 ```ts
 // credentials.use — no call of its own. The user fills the slot in Settings;
 // the host injects the value into an egress call that names the slot.
 pi.net.fetch(input: { …; credentialRef?: string })
-pi.net.tcp.connect(input: { …; credentialRef?: string })
 
 // net.tcp (requires `net.tcp`, and the endpoint must be in manifest.net.tcp)
 pi.net.tcp.connect(input: {
@@ -1410,15 +1408,24 @@ Semantics:
 - **`net.tcp` endpoints are literal.** The `endpoint` must appear in
   `manifest.net.tcp` (host and port are compared after the manifest's own
   normalization), or the call fails `PERMISSION_DENIED`. `tls` comes from the
-  manifest entry, never from the call. At most **four connections** may be open
-  at once per plugin: the fifth `connect` is refused with `LIMIT_EXCEEDED`.
-  `send` on an unknown or closed `connectionId` is `NOT_FOUND`. Frames are
-  addressed to the owning plugin only, every connection closes on unload,
-  disable, or crash, and `connect` / `close` are audited. `credentialRef` may
-  inject a `basic` slot during a TLS handshake setup (the host performs the
-  exchange), which is the one way to authenticate a raw socket without the
-  plugin seeing the password. Traffic is accounted as byte totals per endpoint
-  per day (`plugin_tcp_usage`), never as a per-connection log.
+  manifest entry, never from the call. TLS always verifies the certificate and
+  uses the endpoint host for SNI. At most **four connections** per plugin may
+  exist at once, including connecting and closing sockets; the fifth `connect`
+  is refused with `LIMIT_EXCEEDED`. `send` and `close` on an unknown or closed
+  `connectionId` return `NOT_FOUND`. The connection deadline defaults to 15 s
+  and is capped at 60 s; established connections have no idle timeout. The
+  write buffer is capped at 1 MiB. TCP bypasses the user's HTTP proxy.
+  The `open`, `data`, `close`, and `error` events go only to the owner; data
+  carries `{ type: "data", connectionId, data: Uint8Array }`. Binary data uses
+  the same structured-clone IPC encoding as WebSocket; strings sent by the
+  plugin are encoded as UTF-8. TCP is a byte stream, not a framed protocol.
+  Connections close on unload, disable, crash, reinstall, and app exit;
+  `connect` / `close` are audited. Passing `credentialRef` is currently
+  `INVALID_ARGUMENT`: TCP credential substitution is not available yet.
+  Traffic is accumulated by endpoint and local calendar day, flushed on close
+  and every 60 seconds, and removed on plugin uninstall. During quit the final
+  flush has a three-second budget; a failed or timed-out flush is audited and
+  unpersisted counters can be lost when the process exits.
 - **Inbound webhooks deliver, they do not answer.** The host listens on port
   37124, or a persisted fallback port if occupied, only while an enabled and
   granted receiver exists. LAN and local-only bindings and source filtering are

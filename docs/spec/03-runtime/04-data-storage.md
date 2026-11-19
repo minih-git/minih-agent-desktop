@@ -1431,17 +1431,18 @@ CREATE TABLE plugin_tcp_usage (
   uninstalled timer cannot fire.
 - `plugin_tcp_usage` is a **daily counter, not an event log**: one row per
   `(plugin_id, host, port, day)`, with `bytes_in` / `bytes_out` accumulated by an
-  upsert on that primary key. It records what a capability with no other visible
-  surface cost, and nothing else — no per-connection row, no payload, no
-  refusal reason. `day` is the local calendar day (`YYYY-MM-DD`), which is what
-  a usage view groups by; retention prunes it with the other usage families
-  (§8).
+  upsert on that primary key. It records byte totals and nothing else — no
+  per-connection row, no payload, and no refusal reason. `day` is the local
+  calendar day (`YYYY-MM-DD`) used by the
+  usage view. TCP retention pruning is not yet implemented; it is a follow-up
+  alongside the other usage families (§8).
 - None of the three references `sessions` or `tasks`: a webhook delivery, a
   timer, and a dialed connection belong to a plugin, and a plugin is not a row in
   this database (it is a directory under the plugin root). `plugin_id` is a label
-  with the same lifecycle as `providers.owner_plugin_id` (§4.3): rows for a
-  plugin that is no longer installed are deleted on uninstall and reconciled at
-  boot.
+  with the same lifecycle as `providers.owner_plugin_id` (§4.3). TCP usage rows
+  are deleted on uninstall. Boot-time orphan reconciliation for TCP is deferred
+  until the plugin registry reports a trustworthy successful load; an empty or
+  unreadable registry must never be treated as proof that plugins were removed.
 
 ### 4.7 messages — transcript index
 

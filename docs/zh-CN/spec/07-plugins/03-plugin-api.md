@@ -1060,16 +1060,15 @@ type PluginGlobalShortcut = {
 API 契约，强制方式见
 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
 
-**实现状态。** `pi.notify.center`、`pi.inbound.getReceivers` 和
-`inbound:webhook` 已实现。以下其他能力仍仅注册：`pi.net.tcp`、`pi.mail`、
-`pi.tasks` 和 `schedule:fire` 尚未实现，`pi.net.fetch` 也不会读 `credentialRef`。
-使用尚未实现的方法前应检查其是否存在（§8）。
+**实现状态。** `pi.net.tcp`、`pi.notify.center`、`pi.inbound.getReceivers`
+和 `inbound:webhook` 已实现。`pi.mail`、`pi.tasks` 和 `schedule:fire` 仍仅
+注册；`pi.net.fetch` 不读取 `credentialRef`。使用尚未实现的方法前应检查其是否
+存在（§8）。
 
 ```ts
 // credentials.use —— 自身没有调用。槽位由用户在设置里填写；
 // 宿主在点名该槽位的出网调用里注入值。
 pi.net.fetch(input: { …; credentialRef?: string })
-pi.net.tcp.connect(input: { …; credentialRef?: string })
 
 // net.tcp（需要 `net.tcp`，且端点必须在 manifest.net.tcp 内）
 pi.net.tcp.connect(input: {
@@ -1130,12 +1129,19 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   指向未声明的槽位是 `INVALID_ARGUMENT`。没有调用会返回值，错误信息也不会带上它
 - **`net.tcp` 端点是字面的。** `endpoint` 必须出现在 `manifest.net.tcp` 内
   （按清单自身的规范化结果比较主机与端口），否则 `PERMISSION_DENIED`。`tls`
-  来自清单条目，绝不来自调用。每个插件**同时最多四条连接**，第五条 `connect`
-  以 `LIMIT_EXCEEDED` 被拒。对未知或已关闭的 `connectionId` 调用 `send` 是
-  `NOT_FOUND`。帧只投递给持有它的插件，卸载、禁用、崩溃都会关闭全部连接，
-  `connect` / `close` 记入审计。`credentialRef` 允许在 TLS 握手阶段注入一个
-  `basic` 槽位（握手由宿主完成），这是让原始套接字完成认证又不让插件看到密码
-  的唯一方式
+  来自清单条目，绝不来自调用；TLS 始终校验证书，并以端点主机作为 SNI。每个
+  插件最多四条连接，包含连接中和关闭中的连接；第五条以 `LIMIT_EXCEEDED`
+  被拒。对未知或已关闭的句柄调用 `send` / `close` 返回 `NOT_FOUND`。连接默认
+  超时 15 秒，最长 60 秒；建立后没有空闲超时，待写缓冲上限为 1 MiB。TCP
+  不使用用户 HTTP 代理。
+  `open`、`data`、`close`、`error` 事件只投递给所属插件；数据事件携带
+  `{ type: "data", connectionId, data: Uint8Array }`，二进制 IPC 编码沿用
+  WebSocket 的结构化克隆，发送的字符串按 UTF-8 编码。TCP 是字节流而非帧协议。
+  卸载、禁用、崩溃、覆盖安装和应用退出时关闭连接；`connect` / `close` 记入审计。
+  当前传入 `credentialRef` 返回 `INVALID_ARGUMENT`：TCP 凭据代用尚未提供。
+  流量按端点和本地日历日累计，关闭连接时及每 60 秒刷写，卸载插件时删除。
+  退出时最后一次刷写最多等待三秒；刷写失败或超时会记入审计，未持久化的计数
+  可能随进程退出而丢失。
 - **入站 webhook 只投递，不回答。** 存在启用且获授权的接收器时，宿主监听 37124；
   端口占用时使用持久化的回退端口。绑定和来源过滤见
   [ADR plugin-webhook-listener-boundary](/zh-CN/adr/plugin-webhook-listener-boundary)。

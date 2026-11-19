@@ -437,8 +437,8 @@ type PluginPermission =
  | "speech.adapter.register"
  | "keyboard.globalShortcut"
  | "net.websocket"
- // Host capabilities (phase 2B); inbound.webhook is implemented, and the
- // implementation status of the others is in 03-plugin-api.md.
+ // Host capabilities (phase 2B): TCP, inbound.webhook and notify.center
+ // are implemented; see 03-plugin-api.md for the remaining status.
  | "credentials.use"
  | "net.tcp"
  | "inbound.webhook"

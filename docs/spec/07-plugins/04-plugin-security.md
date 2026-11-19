@@ -535,6 +535,9 @@ author whether a connection is encrypted.
 - The user's outbound HTTP proxy is not consulted for raw sockets. The install
   review says so, because an author expecting proxy enforcement would otherwise
   assume it.
+- Uninstall removes that plugin's TCP usage rows. Boot-time orphan
+  reconciliation and retention pruning are follow-ups; an empty or unreadable
+  plugin registry must not authorize deleting stored counters.
 
 **`inbound.webhook` — a host-owned listener.**
 
@@ -697,11 +700,12 @@ authorized call is refused with a coded `UNSUPPORTED` refusal that is audited,
 because this host has no device backend yet, so nothing reaches a device.
 `net.websocket` is implemented: connections are host-owned, allowlist-checked,
 bounded, and released with the plugin (§8.1).
-`notify.center` is implemented with its own permission gate and durable inbox.
-The remaining §8.3 capabilities (`credentials.use`, `net.tcp`,
-`inbound.webhook`, `mail.draft`, `scheduler`, `tasks.read` and `tasks.manage`)
-are registered but not implemented. Their manifest fields are validated at
-install; their methods and resources are not yet available.
+`notify.center` and `inbound.webhook` are implemented with their own permission
+gates and host-owned resources. `net.tcp` is implemented with literal endpoint
+matching, bounded concurrency, verified TLS and lifecycle cleanup (§8.3). TCP
+credential substitution is not yet implemented and returns `INVALID_ARGUMENT`.
+`credentials.use`, `mail.draft`, `scheduler`, `tasks.read` and `tasks.manage`
+remain registered only; their manifest fields are validated at installation.
 
 
 Not enforced yet:
