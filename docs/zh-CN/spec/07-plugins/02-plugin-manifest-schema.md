@@ -357,8 +357,8 @@ type PluginPermission =
  | "speech.adapter.register"
  | "keyboard.globalShortcut"
  | "net.websocket"
- // 宿主能力（phase 2B）：TCP、inbound.webhook 与 notify.center 已实现；
- // 其余实施状态见 03-plugin-api.md。
+ // 宿主能力（phase 2B）：net.tcp、inbound.webhook、notify.center 与
+ // scheduler 已实现；其余实施状态见 03-plugin-api.md。
  | "credentials.use"
  | "net.tcp"
  | "inbound.webhook"
@@ -520,7 +520,8 @@ OAuth 登录使用宿主自有的账号界面和加密凭据存储。宿主通�
 四个字段描述宿主代插件持有的资源。四者都在安装时校验、缺失时 fail closed，
 并且各自需要对应的权限
 （[ADR plugin-host-capabilities](/zh-CN/adr/plugin-host-capabilities)）。
-`contributes.webhooks` 已有宿主行为；其他声明的实施状态见
+`contributes.webhooks` 已有宿主行为，`contributes.schedules` 驱动宿主持有的定时器；
+其他声明的实施状态见
 [03-plugin-api.md](/zh-CN/spec/07-plugins/03-plugin-api)。
 
 ```ts

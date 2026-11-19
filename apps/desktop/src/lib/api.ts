@@ -1,3 +1,4 @@
+import type { PluginScheduleView } from "../../electron/shared/plugin-schedule";
 import { projectPlanHistory } from "./plan-history";
 import { isTranscriptDensity } from "./transcript-density";
 import { guardRemoteInvocation } from "./remote-ipc-safety";
@@ -1379,6 +1380,11 @@ export const api = {
     invoke<void>(IPC.invoke.pluginWebhookSetLoopback, loopbackOnly),
   openWebhookTokenDialog: (pluginId: string, webhookId: string) =>
     invoke<void>(IPC.invoke.pluginWebhookTokenDialog, pluginId, webhookId),
+  listPluginSchedules: () => invoke<PluginScheduleView[]>(IPC.invoke.pluginSchedulesList),
+  pausePluginSchedule: (pluginId: string, scheduleId: string, paused: boolean) =>
+    invoke<void>(IPC.invoke.pluginSchedulesPause, { pluginId, scheduleId, paused }),
+  runPluginSchedule: (pluginId: string, scheduleId: string) =>
+    invoke<void>(IPC.invoke.pluginSchedulesRun, { pluginId, scheduleId }),
   /** One renderer slot component asking its own plugin for one JSON answer. */
   pluginRendererCall: (pluginId: string, method: string, args?: unknown) =>
     invoke(IPC.invoke.pluginRendererCall, pluginId, method, args),

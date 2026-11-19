@@ -586,6 +586,13 @@ one fire instead of a catch-up storm, and consecutive failures pause the timer
 after a bounded number of attempts (`plugin_schedules.paused`) instead of
 retrying forever; the pause and its state survive a restart and surface on the
 Plugins page. A tick runs plugin code with no model turn and no quota spend.
+An idle timer waits for 60 seconds of system idle time. The handler deadline is
+five minutes; an exception or timeout counts as one failure and a late answer is
+ignored. Five consecutive failures pause the timer; the user may resume it or
+reload the plugin, clearing the failure count. Restarting the app alone does not
+clear a pause. The first `every` attempt is immediately due; the first cron
+attempt waits for its next local-time match. `last_run_at` is written at the
+start of an actual attempt, not at registration.
 
 **`mail.draft` and `notify.center` — writing into a host-owned list.** Neither
 sends anything: `mail.draft` has no send path, and `notify.center` writes one
@@ -700,12 +707,12 @@ authorized call is refused with a coded `UNSUPPORTED` refusal that is audited,
 because this host has no device backend yet, so nothing reaches a device.
 `net.websocket` is implemented: connections are host-owned, allowlist-checked,
 bounded, and released with the plugin (§8.1).
-`notify.center` and `inbound.webhook` are implemented with their own permission
-gates and host-owned resources. `net.tcp` is implemented with literal endpoint
-matching, bounded concurrency, verified TLS and lifecycle cleanup (§8.3). TCP
-credential substitution is not yet implemented and returns `INVALID_ARGUMENT`.
-`credentials.use`, `mail.draft`, `scheduler`, `tasks.read` and `tasks.manage`
-remain registered only; their manifest fields are validated at installation.
+`notify.center`, `inbound.webhook` and `scheduler` are implemented with their
+own permission gates and host-owned resources. `net.tcp` is implemented with
+literal endpoint matching, bounded concurrency, verified TLS and lifecycle
+cleanup (§8.3). TCP credential substitution is not yet implemented and returns
+`INVALID_ARGUMENT`. `credentials.use`, `mail.draft`, `tasks.read` and
+`tasks.manage` remain registered only; manifest fields are validated at install.
 
 
 Not enforced yet:

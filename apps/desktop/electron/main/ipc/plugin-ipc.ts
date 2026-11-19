@@ -14,6 +14,8 @@ import {
 } from "../plugin-runtime";
 import { PluginViewHost } from "../plugin-view-host";
 import { rendererCallError } from "../plugin-renderer-extension";
+import { pluginSchedulerFor } from "../plugin-scheduler-service";
+import { registerPluginSchedulerIpc } from "./plugin-scheduler-ipc";
 import type { IpcRegistrar } from "./types";
 import type { PluginWebhookManager } from "../plugin-webhook-manager";
 
@@ -55,6 +57,7 @@ export function registerPluginIpc({
   getUpdaterLocale,
   confirmInterruption,
 }: PluginIpcDependencies): void {
+  registerPluginSchedulerIpc({ registrar, plugins, getHost, locale: getUpdaterLocale });
   let host: HostProcess | null = null;
   const handle = (channel: string, fn: (...args: any[]) => Promise<any>) => {
     registrar.handle(channel, async (...args) => {
@@ -484,11 +487,14 @@ export function registerPluginIpc({
     await plugins.flushTcpUsage();
     logger.app("plugin", "info", "plugin uninstalled", { pluginId: id });
     const res = await host.call<{ ok: boolean }>("plugins.uninstall", { id });
-    if (res.ok && webhooks) {
-      try {
-        await webhooks.uninstall(id, webhookIds);
-      } catch {
-        throw new Error("Plugin was uninstalled, but webhook data cleanup failed");
+    if (res.ok) {
+      const [scheduleCleanup, webhookCleanup] = await Promise.allSettled([
+        pluginSchedulerFor(plugins).removePlugin(id),
+        webhooks ? webhooks.uninstall(id, webhookIds) : Promise.resolve(),
+      ]);
+      if (scheduleCleanup.status === "rejected" || webhookCleanup.status === "rejected") {
+        const failed = [scheduleCleanup.status === "rejected" ? "schedule" : null, webhookCleanup.status === "rejected" ? "webhook" : null].filter(Boolean).join(" and ");
+        throw new Error(`Plugin was uninstalled, but ${failed} data cleanup failed`);
       }
     }
     sendToRenderer(IPC.event.pluginChanged,{ reason: "uninstall", pluginId: id });

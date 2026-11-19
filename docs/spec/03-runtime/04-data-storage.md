@@ -1429,6 +1429,10 @@ CREATE TABLE plugin_tcp_usage (
   state survives a restart and the Plugins page can offer to resume it. A row
   whose schedule is no longer declared is deleted when the plugin loads, so an
   uninstalled timer cannot fire.
+  `last_run_at` is the start of an actual attempt; `last_ok` is null before
+  its result is recorded, including after an interrupted attempt. Disabling a
+  plugin keeps its rows; uninstall removes them, and boot reconciles orphans
+  against the installed registry under the host lock.
 - `plugin_tcp_usage` is a **daily counter, not an event log**: one row per
   `(plugin_id, host, port, day)`, with `bytes_in` / `bytes_out` accumulated by an
   upsert on that primary key. It records byte totals and nothing else — no

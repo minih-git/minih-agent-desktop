@@ -473,6 +473,8 @@ export type PluginHostServices = {
     /** Hex form for Windows hard-fault codes, when applicable. */
     exitCodeHex?: string;
   }) => void;
+  /** Fired once the plugin has completed loading. */
+  onPluginLoaded?: (pluginId: string) => void;
   /** Fired when a resident service changes supervision state. */
   onServiceChange?: (status: PluginServiceStatus) => void;
   /** Fired after a development plugin was reloaded from disk, or failed to. */
@@ -521,7 +523,6 @@ export type PluginHostServices = {
     cdp: (method: string, params?: unknown, sessionId?: string, tabId?: string) => Promise<unknown>;
   };
   onPluginUnload?: (pluginId: string) => void;
-  onPluginLoaded?: (pluginId: string) => void;
   onPluginRuntimeDispose?: () => Promise<void>;
   listModels?: (input?: PluginModelsListInput) => Promise<PluginModelInfo[]>;
   /**
@@ -2086,6 +2087,16 @@ export class PluginRuntime {
     return [...this.loaded.values()];
   }
 
+  async fireSchedule(pluginId: string, payload: { scheduleId: string; firedAt: number; missed: number }, signal?: AbortSignal): Promise<void> {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded?.child || loaded.disposing) throw apiError("NOT_FOUND", `plugin not loaded: ${pluginId}`);
+    if (!loaded.permissions.has("scheduler")) throw apiError("PERMISSION_DENIED", "scheduler permission not granted");
+    if (!loaded.manifest.contributes?.schedules?.some((item) => item.id === payload.scheduleId)) {
+      throw apiError("NOT_FOUND", `schedule not declared: ${payload.scheduleId}`);
+    }
+    await this.sendToChild(loaded, { t: "call", method: "schedule.fire", payload }, 5 * 60_000, signal);
+  }
+
   drainToasts(): string[] {
     const t = this.toasts.map((x) => x.message);
     this.toasts = [];
@@ -2812,6 +2823,7 @@ export class PluginRuntime {
         loaded.pending.get(id)?.reject(error);
         cancelChild(error);
       }, timeoutMs);
+      if (message.method === "schedule.fire") timer.unref();
       loaded.pending.set(id, {
         resolve: (value) => { cleanup(); resolvePromise(value); },
         reject: (error) => { cleanup(); rejectPromise(error); },

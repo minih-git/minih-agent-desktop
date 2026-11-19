@@ -6,6 +6,7 @@ mod memory_rpc;
 mod memory_tools;
 mod notification_ack_rpc;
 mod plugin_notification_rpc;
+mod plugin_schedules_rpc;
 mod plugin_settings_rpc;
 mod plugin_tcp_usage_rpc;
 mod plugin_webhook_rpc;
@@ -1959,12 +1960,16 @@ async fn handle_request(
     if method == "plugins.settings.update" {
         return plugin_settings_rpc::update(state, params).await;
     }
-    // The host owns plugin notification persistence and TCP byte totals.
+    // Host-owned plugin notifications, TCP accounting and timer bookkeeping.
     if method == "pluginNotification.create" {
         return plugin_notification_rpc::create(state, params).await;
     }
     if method.starts_with("plugin.tcpUsage.") {
         return plugin_tcp_usage_rpc::handle(state, method, params).await;
+    }
+    if method.starts_with("plugins.schedules.") {
+        let st = state.lock().await;
+        return plugin_schedules_rpc::handle(&st, method, params);
     }
     if method.starts_with("easytier.") {
         return easytier_rpc::handle(state, method, params).await;
@@ -5521,6 +5526,7 @@ async fn handle_request(
                 if let Err(error) = crate::config_sync::forget_plugin_intent(&st, id) {
                     tracing::warn!(plugin = id, %error, "plugin install intent cleanup failed");
                 }
+                plugin_schedules_rpc::clear_for_plugin(&st, id)?;
             }
             plugin_notification_rpc::delete_for_plugin(&st.db, id)?;
             plugin_tcp_usage_rpc::purge_after_uninstall(&st.db, id)?;

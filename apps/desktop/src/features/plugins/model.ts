@@ -4,7 +4,7 @@ import type {
   PluginSummary,
 } from "@minih-agent/shared";
 
-export type TabId = "installed" | "market";
+export type TabId = "installed" | "market" | "schedules";
 
 /**
  * Always-visible sections of the installed index. Broken plugins come first and
