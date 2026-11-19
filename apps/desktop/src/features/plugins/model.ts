@@ -164,6 +164,7 @@ export function permissionRisk(key: string): RiskTier {
 }
 
 export function permissionLabel(key: string, t: (k: string, o?: any) => string): string {
+  if (key === "inbound.webhook") return t("plugins.webhook.permissionLabel");
   return t(`plugins.permissions.${key}`, { defaultValue: key });
 }
 

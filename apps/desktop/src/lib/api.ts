@@ -1373,6 +1373,12 @@ export const api = {
     invoke<PlanResolutionResult>(IPC.invoke.plansResolve, resolution),
   listPlugins: () =>
     invoke<{ plugins: PluginSummary[] }>(IPC.invoke.pluginList),
+  listPluginWebhooks: (pluginId: string) =>
+    invoke<{ loopbackOnly: boolean; receivers: Array<{ id: string; url: string; enabled: boolean }> }>(IPC.invoke.pluginWebhookList, pluginId),
+  setWebhookLoopbackOnly: (loopbackOnly: boolean) =>
+    invoke<void>(IPC.invoke.pluginWebhookSetLoopback, loopbackOnly),
+  openWebhookTokenDialog: (pluginId: string, webhookId: string) =>
+    invoke<void>(IPC.invoke.pluginWebhookTokenDialog, pluginId, webhookId),
   /** One renderer slot component asking its own plugin for one JSON answer. */
   pluginRendererCall: (pluginId: string, method: string, args?: unknown) =>
     invoke(IPC.invoke.pluginRendererCall, pluginId, method, args),

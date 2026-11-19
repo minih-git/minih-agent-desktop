@@ -1,8 +1,8 @@
 # ADR plugin-host-capabilities: Six host capabilities, one permission each
 
 - **Status**: Accepted for implementation (2026-11-17). B-0 registered the
-  permissions; B4 implements `notify.center`. Other capability groups remain
-  at their separately documented implementation status.
+  permissions; B2 implements inbound webhooks and B4 implements `notify.center`.
+  Other capability groups retain their separately documented implementation status.
 - **Date**: 2026-11-17
 - **Related**: ADR 0005 (user-installable plugins) · ADR 0008 D009 (the plugin
   process is not OS-sandboxed) · ADR 0074 (native notification permission) ·
@@ -120,8 +120,10 @@ each is stated in the install review.
 - The host owns the listener, the path and the token. A webhook without a token
   is not registered at all; the token is a host-generated secret, compared in
   constant time, and rotating it is a Settings action.
-- The receiver binds loopback and the local network interface only. It is not
-  reachable from the internet by default, and there is no hosted relay.
+- The listener boundary is amended by
+  [ADR plugin-webhook-listener-boundary](plugin-webhook-listener-boundary.md):
+  LAN mode binds all interfaces and applies a bounded source-address filter.
+  It does not guarantee that every public-network source is excluded.
 - Transport is plain HTTP. That is disclosed at install and in Settings with
   the same wording as a non-loopback HTTP MCP endpoint (ADR 0142): anything on
   the path can read it, so the token is a filter, not confidentiality.

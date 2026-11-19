@@ -2992,6 +2992,7 @@ sklm: {
     "archived": "Archiviert"
   },
   "plugins": {
+    webhook: en.plugins.webhook,
     interruptionTitle: "Plugin-Arbeit wird beendet",
     interruptionBody: "Diese Plugins führen noch Arbeit aus. Fortfahren beendet sie:",
     interruptionContinue: "Beenden und fortfahren",

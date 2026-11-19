@@ -17,6 +17,8 @@ import { searchMcpMarket } from "../mcp-registry-catalog";
 import { registerNotificationIpc } from "./notification-ipc";
 import { confirmPluginInterruption } from "../plugin-active-work";
 import { registerPluginIpc } from "./plugin-ipc";
+import { registerDesktopWebhookIpc } from "./plugin-webhook-desktop-ipc";
+import type { PluginWebhookManager } from "../plugin-webhook-manager";
 import { registerPluginUiIpc } from "./plugin-ui-ipc";
 import type { SessionCollaborationService } from "../services/session-collaboration";
 import { registerJevIpc } from "./jev-ipc";
@@ -122,6 +124,7 @@ export type RegisterIpcDependencies = {
    * announced by the same object that announces a created task.
    */
   taskChanges: TaskChangeAnnouncer;
+  webhooks: PluginWebhookManager;
   [name: string]: any;
 };
 
@@ -164,6 +167,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     persistenceOutbox,
     logger,
     plugins,
+    webhooks,
     speech,
     sessionCapabilityContext,
     enrichSession,
@@ -533,6 +537,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     registrar,
     getHost,
     plugins,
+    webhooks,
     agentExtensions,
     browserHost,
     pluginViews,
@@ -542,6 +547,11 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     logger,
     getUpdaterLocale,
     confirmInterruption,
+  });
+  registerDesktopWebhookIpc({
+    registrar, webhooks, getMainWindow, getLocale: getUpdaterLocale,
+    onError: (operation) => logger.app("plugin", "error", operation),
+    onModeChanged: () => sendToRenderer(IPC.event.pluginChanged, { reason: "webhook" }),
   });
 
 

@@ -1336,9 +1336,9 @@ credential, a socket, a listening path, a clock, a draft or inbox entry, a task
 section is the API contract and [04-plugin-security.md](04-plugin-security.md)
 §8.3 is the enforcement.
 
-**Implementation status.** `pi.notify.center` is implemented. The remaining
-methods and events below are registration only: `pi.net.tcp`, `pi.inbound`,
-`pi.mail`, `pi.tasks`, and `schedule:fire` do not exist in the plugin host yet,
+**Implementation status.** `pi.notify.center`, `pi.inbound.getReceivers`, and
+`inbound:webhook` are implemented. Other entries below remain registration only:
+`pi.net.tcp`, `pi.mail`, `pi.tasks`, and `schedule:fire` are not implemented,
 and `pi.net.fetch` ignores `credentialRef`. Plugins must check for unavailable
 methods before calling them (§8).
 
@@ -1360,7 +1360,7 @@ pi.net.tcp.close(input: { connectionId: string }): Promise<void>
 
 // inbound.webhook — no method opens the port; the host owns it.
 pi.inbound.getReceivers(): Promise<Array<{ id: string; url: string; enabled: boolean }>>
-// event: inbound:webhook { webhookId, method, headers, bodyText, receivedAt }
+// event: inbound:webhook { webhookId, method, headers, bodyText, sourceIp, receivedAt }
 
 // scheduler — no method arms the timer; the host owns the clock.
 // event: schedule:fire { scheduleId, firedAt, missed: number }
@@ -1419,16 +1419,20 @@ Semantics:
   exchange), which is the one way to authenticate a raw socket without the
   plugin seeing the password. Traffic is accounted as byte totals per endpoint
   per day (`plugin_tcp_usage`), never as a per-connection log.
-- **Inbound webhooks deliver, they do not answer.** A request the host accepted
-  (token verified, under both ceilings) is queued as one `inbound:webhook`
-  event; the host answers `202` immediately. `bodyText` is the UTF-8 body
-  (at most 256 KiB), `headers` are lowercased names with one string each, and
-  `sourceIp` is the peer address. The accepted body is kept as a file the host
-  names (`body_ref` in `plugin_webhook_events`), never as a database row, so a
-  delivery still owed after a restart is replayed from that copy. The plugin
-  cannot set the status code, headers, or body of the response. `getReceivers`
-  is what a settings sheet shows the user — the URL to paste into the other
-  service — and it never includes the token.
+- **Inbound webhooks deliver, they do not answer.** The host listens on port
+  37124, or a persisted fallback port if occupied, only while an enabled and
+  granted receiver exists. LAN and local-only bindings and source filtering are
+  defined by [ADR plugin-webhook-listener-boundary](../../adr/plugin-webhook-listener-boundary.md).
+  It returns `403` for a disallowed source, `404` for an unknown path, `405`
+  for a non-POST method, `401` for a missing or wrong token, `413` for an
+  oversized body and `429` for an exceeded rate. An accepted request is stored
+  before `202`; the plugin cannot control the response. The host removes the
+  token header, lowercases names, retains at most 64 headers and truncates each
+  value to 4096 characters. The host-owned `body_ref` file contains method,
+  headers and UTF-8 body, not the token. After all plugin listeners complete,
+  the host marks the row delivered. An unconfirmed delivery is replayed on
+  restart or reload, so delivery is at least once; data is retained seven days.
+  `getReceivers` returns only receiver IDs, URLs and enabled flags, never tokens.
 - **Timers spend no quota.** `schedule:fire` fires for a declared
   `contributes.schedules[].id` with no model turn involved. `missed` reports
   how many ticks were skipped since the last fire; the host collapses a backlog

@@ -32,6 +32,7 @@ export type RuntimeLifecycleDependencies = {
   drainApprovedPlanExecutions: () => Promise<void>;
   applyNetworkProxyFromAppSettings: (settings: unknown) => Promise<unknown>;
   plugins: PluginRuntime;
+  initializeWebhooks?: () => Promise<void>;
   setCurrentWorkspacePath: (path: string | null) => void;
   rememberPluginScopes: (
     list: Array<{ id?: string; scope?: ActivationScope }>,
@@ -56,6 +57,7 @@ export function createRuntimeLifecycle({
   drainApprovedPlanExecutions,
   applyNetworkProxyFromAppSettings,
   plugins,
+  initializeWebhooks,
   setCurrentWorkspacePath,
   rememberPluginScopes,
   refreshUserMcp,
@@ -262,6 +264,12 @@ export function createRuntimeLifecycle({
       setCurrentWorkspacePath(workspace.workspace?.path ?? null);
     } catch {
       setCurrentWorkspacePath(null);
+    }
+
+    try {
+      await initializeWebhooks?.();
+    } catch {
+      logger.app("plugin", "error", "webhook initialization failed");
     }
 
     // Restore enabled plugins.

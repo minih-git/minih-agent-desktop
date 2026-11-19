@@ -114,6 +114,7 @@ export const PERMISSION_API_HINTS: Record<string, string[]> = {
     "keyboard.listGlobalShortcuts",
   ],
   "net.websocket": ["net.websocket.connect", "net.websocket.send", "net.websocket.close"],
+  "inbound.webhook": ["inbound.getReceivers"],
   "shell.openExternal": ["shell.openExternal"],
   "browser.cdp": [
     "browser.navigate",

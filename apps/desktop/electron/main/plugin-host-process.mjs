@@ -441,6 +441,9 @@ function buildApi() {
         close: (input) => call("net.websocket.close", [input ?? {}]),
       },
     },
+    inbound: {
+      getReceivers: () => call("inbound.getReceivers"),
+    },
     /**
      * Background audio (`audio.capture.background`, `audio.playback.background`).
      * The host has no device backend yet, so the async calls travel to the
@@ -548,6 +551,22 @@ async function handleInit(message) {
 
 async function handleParentCall(method, payload, invocationId, callId) {
   switch (method) {
+    case "webhook.deliver": {
+      const listeners = [...(eventListeners.get("inbound:webhook") ?? [])];
+      if (listeners.length === 0) {
+        const error = new Error("plugin has no webhook event handler");
+        error.code = "NOT_FOUND";
+        throw error;
+      }
+      try {
+        await Promise.all(listeners.map((listener) => listener(payload)));
+      } catch {
+        const error = new Error("plugin webhook handler failed");
+        error.code = "PLUGIN_CALL_FAILED";
+        throw error;
+      }
+      return { ok: true };
+    }
     case "panel.invoke": {
       const invoke = pluginModule?.onPanelInvoke;
       if (typeof invoke !== "function") {

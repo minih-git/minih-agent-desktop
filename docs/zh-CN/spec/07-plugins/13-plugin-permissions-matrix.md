@@ -64,7 +64,7 @@
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
 | `credentials.use` | 高 | `contributes.credentials` 声明的凭据槽位，由用户在设置里填写；宿主把已保存的密钥注入插件用 `credentialRef` 指定的出网路径 | 安装时确认 | 没有读取 API：任何调用都不返回值。只有目标既在槽位 `scope` 内、又在 `manifest.net.domains` 内才注入，所以没有 `scope` 的槽位无处注入。密钥值存在密钥库，不进 SQLite |
 | `net.tcp` | 高 | `pi.net.tcp.connect` / `send` / `close`（宿主持有的套接字，目标是 `manifest.net.tcp` 里的字面端点） | 默认拒绝 | `host`、`port`、`tls` 都是字面值；不接受通配符，也不接受端口区间。同时最多四条连接——这是并发上限，不是白名单条数上限。插件拿到的是句柄而不是套接字，卸载、禁用、崩溃都会关闭全部连接 |
-| `inbound.webhook` | 高 | `contributes.webhooks`；宿主持有监听、路径与令牌，把已接受的请求以 `inbound:webhook` 事件投递 | 安装时确认 | 只绑定回环与局域网，明文 HTTP 并明确提示。没有令牌的 webhook 不会注册。请求体超过 256 KiB 返回 `413`，每分钟超过 120 次有效请求返回 `429`；manifest 只能调低这两个上限 |
+| `inbound.webhook` | 高 | `contributes.webhooks`；宿主持有监听、令牌并投递 `inbound:webhook` 事件 | 安装时确认 | 局域网模式绑定所有接口并按 [ADR plugin-webhook-listener-boundary](/zh-CN/adr/plugin-webhook-listener-boundary) 过滤来源；明文 HTTP，直连公网子网也可能被允许。令牌不返回给插件。正文超过 256 KiB 返回 `413`，每分钟超过 120 次有效请求返回 `429`；manifest 只能调低上限 |
 | `mail.draft` | 中 | `pi.mail.draft.create` | 安装时确认 | 只把草稿写入宿主的草稿列表，没有发送路径，也不存在由另一个权限打开的发送路径 |
 | `notify.center` | 中 | `pi.notify.center` | 安装时确认 | 在通知中心写入一条持久记录，kind 为 `plugin.alert`（一件事）或 `plugin.digest`（汇总的一批），并标明插件；共享 200 条上限、未读计数与清空操作，卸载时一并删除。与只显示一次、不落库的 `notify` 区分 |
 | `scheduler` | 中 | `contributes.schedules`；宿主按声明触发 `schedule:fire` | 安装时确认 | 最小间隔一分钟，`every` 与 `cron` 只能二选一，`runWhen: "idle"` 让宿主等用户空闲。触发只调用插件函数，不消耗模型额度；错过的时间点合并为一次触发，连续失败后定时器被暂停（跨重启保留）而不是永远重试 |

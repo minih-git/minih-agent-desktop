@@ -1360,11 +1360,9 @@ CREATE INDEX idx_tasks_plugin
 
 ### 4.19e plugin_webhook_events + plugin_schedules + plugin_tcp_usage (schema v43)
 
-Three tables hold the durable side of the host capabilities that need state to
-survive a restart. All three are created empty on every existing file and by the
-fresh schema from the same DDL, and **nothing writes them yet**: B-0 registers
-the manifest contract, and the receivers, timers, and dialer land with the
-capability slice that owns them.
+Three tables hold durable host capability state and are created by the same DDL
+on fresh and upgraded files. B2 writes webhook events; other capabilities own
+their corresponding writers.
 
 ```sql
 -- One accepted inbound webhook request (`inbound.webhook`). The host owns the
@@ -1413,14 +1411,16 @@ CREATE TABLE plugin_tcp_usage (
 );
 ```
 
-- `plugin_webhook_events` is one row per accepted request, and it **never stores
-  the body**: `body_ref` names where the accepted copy lives (the plugin's own
-  data directory), so the inbox table stays small and a large post does not
-  become a database row. `source_ip` is the peer address, kept for diagnosis;
-  the token is in the secret store (§4.12) and appears in no column. The one
-  index is `(plugin_id, webhook_id, delivered_at)`, which answers both "what is
-  still owed to this receiver" (`delivered_at IS NULL`) and "what it already
-  took" in one range scan.
+- `plugin_webhook_events` stores one metadata row per accepted request, never
+  the body or token. `body_ref` is the filename of a private JSON sidecar under
+  `<dataDir>/plugin-webhooks/<pluginId>/`; it contains the method, sanitized
+  headers and UTF-8 body. Directories are mode 0700 and files mode 0600 where
+  supported. The host marks `delivered_at` only after the plugin finishes.
+  Cleanup removes files before rows; startup removes unreferenced generated
+  sidecars. `source_ip` stores the peer address. The token is in the secret
+  store (§4.12); the delivery index is `(plugin_id, webhook_id, delivered_at)`.
+  A non-secret `receivers.json` records previously declared receiver IDs so
+  uninstall and interrupted-uninstall recovery can remove their stored tokens.
 - `plugin_schedules` keeps attempt state, not the declaration: `every` / `cron` /
   `runWhen` stay in the manifest, the source of truth, and three facts live here
   — `last_run_at`, `last_ok` (the last attempt succeeded), and `attempts` (the

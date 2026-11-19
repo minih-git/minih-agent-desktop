@@ -1417,6 +1417,10 @@ export type PluginHostApi = {
   workspace: {
     get: () => Promise<{ path: string; name: string } | null>;
   };
+  /** Host-owned webhook receivers; the authentication token is never returned. */
+  inbound: {
+    getReceivers: () => Promise<Array<{ id: string; url: string; enabled: boolean }>>;
+  };
   /** Reviewed host operations shared with the local MCP control plane. */
   desktop: {
     listOperations: () => Promise<PluginDesktopOperation[]>;

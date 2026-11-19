@@ -955,9 +955,8 @@ CREATE INDEX idx_tasks_plugin
 
 ### 4.19e plugin_webhook_events + plugin_schedules + plugin_tcp_usage（架构 v43）
 
-三张表保存需要跨重启存活的宿主能力状态。三者在每个既有文件上都以空表创建，
-与全新架构共用同一份 DDL，而且**目前没有任何东西写入它们**：B-0 只注册 manifest
-契约，接收器、定时器与拨号器随各自的能力切片一起落地。
+三张表保存需要跨重启存活的宿主能力状态，全新和升级数据库共用同一份 DDL。
+B2 写入 webhook 事件，其余能力由各自切片负责写入。
 
 ```sql
 -- 一条已接受的入站 webhook 请求（`inbound.webhook`）。监听套接字、路径与
@@ -1002,12 +1001,14 @@ CREATE TABLE plugin_tcp_usage (
 );
 ```
 
-- `plugin_webhook_events` 每条已接受请求一行，**正文从不入表**：`body_ref` 指出
-  接受副本所在（插件自己的数据目录），于是收件表保持很小，一个大请求也不会变成
-  数据库里的一行。`source_ip` 是对端地址，仅用于诊断；令牌存在密钥库（§4.12），
-  不出现在任何列里。唯一的索引是 `(plugin_id, webhook_id, delivered_at)`，
-  一次范围扫描同时回答「这个接收器还欠着什么」（`delivered_at IS NULL`）与
-  「它已经取走了什么」。
+- `plugin_webhook_events` 每条已接受请求一行元数据，正文和令牌不入表。
+  `body_ref` 指向 `<dataDir>/plugin-webhooks/<pluginId>/` 下的私有 JSON 文件，
+  保存方法、脱敏头部与 UTF-8 正文；支持的平台上目录权限为 0700、文件为 0600。
+  插件完成处理后才写入 `delivered_at`。清理时先删文件再删行；启动时删除无引用
+  的宿主生成 sidecar。`source_ip` 保存对端地址，令牌存在密钥库（§4.12）；
+  投递索引为 `(plugin_id, webhook_id, delivered_at)`。
+  非密钥文件 `receivers.json` 记录曾声明的接收器 ID，供卸载或卸载中断恢复时
+  删除对应的已存令牌。
 - `plugin_schedules` 保存尝试状态，而不是声明：`every` / `cron` / `runWhen` 留在
   manifest 这个唯一事实来源里，这张表只放三件事 —— `last_run_at`（上次触发）、
   `last_ok`（上次尝试是否成功）、`attempts`（当前连续失败次数）。`paused`

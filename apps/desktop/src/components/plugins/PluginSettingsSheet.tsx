@@ -28,6 +28,7 @@ import {
 } from "../ui";
 import { IconKeyboard, IconSettings, IconX } from "../icons";
 import { SettingsMenuSelect } from "../settings/SettingsMenuSelect";
+import { PluginWebhookSettings } from "./PluginWebhookSettings";
 
 type Props = {
   plugin: PluginSummary;
@@ -187,6 +188,7 @@ export function PluginSettingsSheet({ plugin, platform, onClose, onSaved }: Prop
         </header>
 
         <div className="plugins-settings-body">
+          {plugin.permissions.includes("inbound.webhook") ? <PluginWebhookSettings pluginId={plugin.id} /> : null}
           {settings.map((setting) => {
             const value = draft[setting.key];
             const isShortcut = setting.type === "shortcut";

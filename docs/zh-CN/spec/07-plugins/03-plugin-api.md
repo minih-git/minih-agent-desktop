@@ -1060,9 +1060,10 @@ type PluginGlobalShortcut = {
 API 契约，强制方式见
 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
 
-**实现状态。** `pi.notify.center` 已实现；其余以下方法和事件仍仅注册：
-`pi.net.tcp`、`pi.inbound`、`pi.mail`、`pi.tasks` 和 `schedule:fire` 尚不存在，
-`pi.net.fetch` 也不会读 `credentialRef`。使用尚未实现的方法前应检查其是否存在（§8）。
+**实现状态。** `pi.notify.center`、`pi.inbound.getReceivers` 和
+`inbound:webhook` 已实现。以下其他能力仍仅注册：`pi.net.tcp`、`pi.mail`、
+`pi.tasks` 和 `schedule:fire` 尚未实现，`pi.net.fetch` 也不会读 `credentialRef`。
+使用尚未实现的方法前应检查其是否存在（§8）。
 
 ```ts
 // credentials.use —— 自身没有调用。槽位由用户在设置里填写；
@@ -1082,7 +1083,7 @@ pi.net.tcp.close(input: { connectionId: string }): Promise<void>
 
 // inbound.webhook —— 没有开放端口的方法；端口归宿主。
 pi.inbound.getReceivers(): Promise<Array<{ id: string; url: string; enabled: boolean }>>
-// 事件：inbound:webhook { webhookId, method, headers, bodyText, receivedAt }
+// 事件：inbound:webhook { webhookId, method, headers, bodyText, sourceIp, receivedAt }
 
 // scheduler —— 没有上定时器的方法；时钟归宿主。
 // 事件：schedule:fire { scheduleId, firedAt, missed: number }
@@ -1135,13 +1136,15 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   `connect` / `close` 记入审计。`credentialRef` 允许在 TLS 握手阶段注入一个
   `basic` 槽位（握手由宿主完成），这是让原始套接字完成认证又不让插件看到密码
   的唯一方式
-- **入站 webhook 只投递，不回答。** 宿主接受（校验令牌、未超过两个上限）之后把
-  请求排成一条 `inbound:webhook` 事件，并立刻回 `202`。`bodyText` 是 UTF-8 正文
-  （最多 256 KiB），`headers` 是小写名字、每个只带一个字符串，`sourceIp` 是对端
-  地址。已接受的正文保存成宿主命名的文件（`plugin_webhook_events.body_ref`），
-  从不作为数据库行保存，所以重启后仍欠着的投递能从那份副本补投。插件不能设置响应
-  状态码、响应头或响应体。`getReceivers` 是设置面板展示给用户的东西——要粘到
-  另一个服务里的 URL——它永远不含令牌
+- **入站 webhook 只投递，不回答。** 存在启用且获授权的接收器时，宿主监听 37124；
+  端口占用时使用持久化的回退端口。绑定和来源过滤见
+  [ADR plugin-webhook-listener-boundary](/zh-CN/adr/plugin-webhook-listener-boundary)。
+  不允许的来源返回 `403`，未知路径 `404`，非 POST `405`，令牌缺失或错误 `401`，
+  请求体超限 `413`，速率超限 `429`。持久化后才返回 `202`，插件不能控制响应。
+  令牌头被移除，头名转小写，最多保留 64 个头且每个值截断至 4096 字符。宿主的
+  `body_ref` 文件保存方法、头部及 UTF-8 正文，不含令牌。所有插件处理器完成后才
+  标记已投递；未确认事件在重启或重载后补投，保证至少一次，保留七天。
+  `getReceivers` 只返回接收器 ID、URL 和启用状态，绝不返回令牌。
 - **定时器不花额度。** `schedule:fire` 针对已声明的
   `contributes.schedules[].id` 触发，不涉及模型回合。`missed` 表示上次触发以来
   跳过了多少个时间点；宿主把积压合并成一次事件，而不是重放。插件被禁用或卸载时

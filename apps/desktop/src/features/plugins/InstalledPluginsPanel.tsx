@@ -17,6 +17,7 @@ import { GROUP_LABEL_KEYS, TEMPLATE_IDS } from "./model";
 import { PluginRowDetails } from "./presentation";
 import type { PluginsPageModel } from "./usePluginsPage";
 import { api } from "../../lib/api";
+import { WebhookLanWarning } from "./WebhookLanWarning";
 
 export function InstalledPluginsPanel({
   t,
@@ -46,6 +47,7 @@ export function InstalledPluginsPanel({
             aria-labelledby="plugins-tab-installed"
             className="plugins-panel"
           >
+            <WebhookLanWarning plugins={plugins} />
             {plugins.length === 0 ? (
               <div className="plugins-empty">
                 <span className="plugins-empty-icon" aria-hidden>
@@ -193,7 +195,7 @@ export function InstalledPluginsPanel({
                                   <IconPanel size={15} />
                                 </TooltipButton>
                               ) : null}
-                              {plugin.enabled && plugin.settings?.length ? (
+                              {plugin.enabled && (plugin.settings?.length || plugin.permissions.includes("inbound.webhook")) ? (
                                 <TooltipButton
                                   type="button"
                                   className="plugins-icon-btn"

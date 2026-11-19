@@ -2964,6 +2964,7 @@ export const ptBR = {
     archived: "Arquivado"
   },
   plugins: {
+    webhook: en.plugins.webhook,
     interruptionTitle: "O trabalho do plugin será encerrado",
     interruptionBody: "Estes plugins ainda estão executando trabalho. Continuar irá encerrá-lo:",
     interruptionContinue: "Encerrar e continuar",

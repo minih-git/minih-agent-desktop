@@ -15,11 +15,13 @@ import {
 import { PluginViewHost } from "../plugin-view-host";
 import { rendererCallError } from "../plugin-renderer-extension";
 import type { IpcRegistrar } from "./types";
+import type { PluginWebhookManager } from "../plugin-webhook-manager";
 
 export type PluginIpcDependencies = {
   registrar: IpcRegistrar;
   getHost: () => HostProcess | null;
   plugins: PluginRuntime;
+  webhooks?: Pick<PluginWebhookManager, "uninstall">;
   agentExtensions: AgentExtensionBridge;
   browserHost: BrowserHost;
   pluginViews: PluginViewHost;
@@ -42,6 +44,7 @@ export function registerPluginIpc({
   registrar,
   getHost,
   plugins,
+  webhooks,
   agentExtensions,
   browserHost,
   pluginViews,
@@ -466,10 +469,22 @@ export function registerPluginIpc({
   handle(IPC.invoke.pluginUninstall, async (id: string) => {
     if (!host) throw new Error("host unavailable");
     if (!(await confirmInterruption([id]))) return { canceled: true };
+    let webhookIds: string[] = [];
+    if (webhooks) {
+      const loaded = plugins.listLoaded().find((entry) => entry.manifest.id === id);
+      webhookIds = loaded?.manifest.contributes?.webhooks?.map((entry) => entry.id) ?? [];
+    }
     pluginViews.closePlugin(id);
     await plugins.unload(id);
     logger.app("plugin", "info", "plugin uninstalled", { pluginId: id });
-    const res = await host.call("plugins.uninstall", { id });
+    const res = await host.call<{ ok: boolean }>("plugins.uninstall", { id });
+    if (res.ok && webhooks) {
+      try {
+        await webhooks.uninstall(id, webhookIds);
+      } catch {
+        throw new Error("Plugin was uninstalled, but webhook data cleanup failed");
+      }
+    }
     sendToRenderer(IPC.event.pluginChanged,{ reason: "uninstall", pluginId: id });
     return res;
   });

@@ -155,9 +155,9 @@ fn validate_scope_domains(raw: Option<&Value>, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// `contributes.webhooks`: the receiver is host-owned and 127.0.0.1 by default,
-/// so the bounds are what keep an unauthenticated caller from spending the
-/// plugin's memory — a body ceiling and a rate ceiling per webhook.
+/// `contributes.webhooks`: the receiver is host-owned. The body and rate
+/// ceilings bound the resources a request can spend; source and token checks
+/// are enforced by the listener.
 fn validate_webhooks(map: &Map<String, Value>, manifest: &PluginManifest) -> Result<()> {
     let Some(webhooks) = map.get("webhooks") else {
         return Ok(());

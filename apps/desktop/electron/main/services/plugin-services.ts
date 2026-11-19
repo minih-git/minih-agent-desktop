@@ -49,6 +49,7 @@ import {
 import { createSpeechService } from "./speech-service";
 import { PluginShortcutRegistry } from "../plugin-shortcut-registry";
 import { PluginWebSocketRegistry } from "../plugin-websocket";
+import { PluginWebhookManager } from "../plugin-webhook-manager";
 import { hostGlobalShortcutBindings } from "../bootstrap/launcher";
 import { UserMcpRuntime } from "../user-mcp";
 import {
@@ -236,9 +237,15 @@ export function createPluginServices({
   const pluginSockets = new PluginWebSocketRegistry({
     onEvent: (pluginId, event) => plugins.deliverSocketEvent(pluginId, event),
   });
+  let webhooks: PluginWebhookManager;
   const plugins: PluginRuntime = new PluginRuntime({
     pluginShortcuts,
     pluginSockets,
+    getWebhookReceivers: async (pluginId) => (await webhooks.list(pluginId)).receivers,
+    onPluginLoaded: (pluginId) => {
+      void webhooks.pluginLoaded(pluginId).catch(() => logger.app("plugin", "error", "webhook replay failed", { pluginId }));
+    },
+    onPluginRuntimeDispose: () => webhooks.dispose(),
     updatePluginSettings: async (pluginId, patch) => {
       const host = getHost();
       if (!host) throw new Error("host unavailable");
@@ -606,6 +613,7 @@ export function createPluginServices({
       // the tab is still active and the plugin came back.
       pluginViews.closePlugin(pluginId);
       if (pluginId === BROWSER_PLUGIN_ID) browserHost.disposeGuest();
+      void webhooks.reconcile().catch(() => logger.app("plugin", "error", "webhook listener update failed", { pluginId }));
       sendToRenderer(IPC.event.pluginChanged,{ reason: "crash", pluginId });
     },
     // Supervision state is UI-only: the runtime owns restarts, the renderer just
@@ -877,7 +885,15 @@ export function createPluginServices({
     },
     onPluginUnload: (pluginId) => {
       if (pluginId === BROWSER_PLUGIN_ID) browserHost.disposeGuest();
+      void webhooks.reconcile().catch(() => logger.app("plugin", "error", "webhook listener update failed", { pluginId }));
     },
+  });
+  webhooks = new PluginWebhookManager({
+    dataDir,
+    getHost,
+    plugins: () => plugins.listLoaded(),
+    deliver: (pluginId, event) => plugins.deliverWebhook(pluginId, event),
+    onError: (operation) => logger.app("plugin", "error", operation),
   });
   const speech = createSpeechService({
     dataDir,
@@ -887,6 +903,7 @@ export function createPluginServices({
   });
   return {
     plugins,
+    webhooks,
     userMcp,
     mcpOAuth,
     pluginScopes,

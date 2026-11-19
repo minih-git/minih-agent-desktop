@@ -4097,6 +4097,16 @@ identify the platform validation still needed.
 
 ### Plugin Load / Command / Disable
 
+#### E2E-PLUGIN-inbound-webhook
+
+- **Preconditions**: Isolated app profile; enabled plugin declaring one granted webhook.
+- **Steps**: Open its settings, inspect the LAN warning and native token dialog, post an authenticated event, reload before acknowledging another event, switch to local-only, then uninstall.
+- **Expected**: The plugin receives sanitized content without the token; pending events replay, acknowledged events do not, forbidden and oversized requests are refused, the local-only setting changes the bind, and uninstall removes event rows and files.
+- **Specs linked**: `07-plugins/03-plugin-api.md`, `07-plugins/04-plugin-security.md`, ADR `plugin-webhook-listener-boundary`.
+- **Acceptance**: G (plugin host services), D (security boundary).
+- **Milestone**: Post-MVP.
+- **Status**: HTTP, plugin-process and isolated settings interaction tests cover parts; full product-shell scenario remains to be run.
+
 #### E2E-022: Load local plugin
 
 - **Preconditions**: App running; sample plugin available at local path.

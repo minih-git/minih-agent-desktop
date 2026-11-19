@@ -1,4 +1,8 @@
 # Unreleased changes
+- Granted plugins can receive authenticated webhooks over the local network.
+  The host persists and retries events, exposes a local-only switch, and keeps
+  tokens out of the main renderer by using a native system dialog.
+
 - Session creation settings now include a reasoning-effort selector. Agent-created
   sessions use the configured level (including off and omit), while inheritance
   remains the default for existing settings. Available choices follow the target

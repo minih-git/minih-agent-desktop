@@ -267,9 +267,7 @@ export function PluginDetailSheet({
                               <span className="plugins-perm-copy">
                                 <strong>{permissionLabel(permission, t)}</strong>
                                 <span>
-                                  {t(`plugins.permissionHelp.${permission}`, {
-                                    defaultValue: permission,
-                                  })}
+                                  {permission === "inbound.webhook" ? t("plugins.webhook.permissionWarning") : t(`plugins.permissionHelp.${permission}`, { defaultValue: permission })}
                                 </span>
                               </span>
                             </li>

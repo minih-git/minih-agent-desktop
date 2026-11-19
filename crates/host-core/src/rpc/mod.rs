@@ -7,6 +7,7 @@ mod memory_tools;
 mod notification_ack_rpc;
 mod plugin_notification_rpc;
 mod plugin_settings_rpc;
+mod plugin_webhook_rpc;
 mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
@@ -1975,6 +1976,14 @@ async fn handle_request(
     if method.starts_with("session.sideNotes.") {
         let st = state.lock().await;
         return side_notes_rpc::handle(&st, method, params);
+    }
+
+    // Accepted inbound webhook requests (`inbound.webhook`): Electron main owns
+    // the socket, the path, and the per-webhook token, so the delivery record is
+    // the only part the host keeps. No method here takes a body or a token.
+    if method.starts_with("plugin.webhook.") {
+        let st = state.lock().await;
+        return plugin_webhook_rpc::handle(&st.db, method, params);
     }
 
     match method {

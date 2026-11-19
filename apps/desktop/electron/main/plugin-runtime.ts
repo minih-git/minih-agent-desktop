@@ -347,6 +347,7 @@ export type PluginHostServices = {
   getAppVersion?: () => string;
   /** Host serializes settings writes with cloud-sync imports. */
   updatePluginSettings: (pluginId: string, patch: Record<string, unknown>) => Promise<void>;
+  getWebhookReceivers?: (pluginId: string) => Promise<Array<{ id: string; url: string; enabled: boolean }>>;
   /** Legacy host-owned prompt enhancement settings, used only for one-time migration. */
   getLegacyPromptEnhancementSettings?: () =>
     | LegacyPromptEnhancementSettings
@@ -517,6 +518,8 @@ export type PluginHostServices = {
     cdp: (method: string, params?: unknown, sessionId?: string, tabId?: string) => Promise<unknown>;
   };
   onPluginUnload?: (pluginId: string) => void;
+  onPluginLoaded?: (pluginId: string) => void;
+  onPluginRuntimeDispose?: () => Promise<void>;
   listModels?: (input?: PluginModelsListInput) => Promise<PluginModelInfo[]>;
   /**
    * Resolve one ready model for an embeddings call. Returns `undefined` when no
@@ -624,6 +627,7 @@ const HOST_API_ALLOWLIST = new Set([
   "shell.openExternal",
   "net.fetch",
   "net.getCapabilities",
+  "inbound.getReceivers",
   "bus.publish",
   "bus.subscribe",
   "bus.unsubscribe",
@@ -2106,6 +2110,26 @@ export class PluginRuntime {
     }
   }
 
+  /** Resolve only after the owning plugin's webhook listeners have completed. */
+  async deliverWebhook(pluginId: string, event: {
+    webhookId: string;
+    method: "POST";
+    headers: Record<string, string>;
+    bodyText: string;
+    sourceIp: string;
+    receivedAt: number;
+  }): Promise<void> {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded?.child || loaded.disposing) throw apiError("PLUGIN_UNLOADED", "Plugin is not available");
+    if (!loaded.permissions.has("inbound.webhook") || !loaded.manifest.contributes?.webhooks?.some((entry) => entry.id === event.webhookId)) {
+      throw apiError("PERMISSION_DENIED", "Webhook receiver is not enabled");
+    }
+    await this.sendToChild(loaded, { t: "call", method: "webhook.deliver", payload: event }, PLUGIN_HOOK_TIMEOUT_MS);
+    if (loaded.disposing || this.loaded.get(pluginId) !== loaded) {
+      throw apiError("PLUGIN_UNLOADED", "Plugin was unloaded during webhook delivery");
+    }
+  }
+
   /**
    * Validate the manifest, start a dedicated host process and run `onLoad`
    * inside it. Contribution points arrive over RPC while `onLoad` runs; a
@@ -2263,6 +2287,7 @@ export class PluginRuntime {
       ok: true,
       ts: Date.now(),
     });
+    this.services.onPluginLoaded?.(manifest.id);
     return manifest;
   }
 
@@ -2401,8 +2426,11 @@ export class PluginRuntime {
       this.cancelRestarts(loaded.manifest.id);
     }
     this.disposeWatchers();
+    const resourceShutdown = Promise.resolve().then(() => this.services.onPluginRuntimeDispose?.()).catch(() => {
+      this.services.audit?.({ api: "plugin.runtime.dispose", ok: false, errorCode: "RESOURCE_CLEANUP_FAILED", ts: Date.now() });
+    });
     await Promise.race([
-      Promise.allSettled(loadedPlugins.map((loaded) => this.disposePlugin(loaded))),
+      Promise.allSettled([...loadedPlugins.map((loaded) => this.disposePlugin(loaded)), resourceShutdown]),
       new Promise((resolve) => setTimeout(resolve, PLUGIN_DISPOSE_ALL_TIMEOUT_MS).unref?.()),
     ]);
     // Whatever survived the budget is killed outright; the app is going away.
@@ -2826,6 +2854,19 @@ export class PluginRuntime {
   ): Promise<unknown> {
     const pluginId = loaded.manifest.id;
     switch (api) {
+      case "inbound.getReceivers": {
+        this.assertPermission(loaded, "inbound.webhook");
+        if (!this.services.getWebhookReceivers) {
+          throw apiError("UNSUPPORTED", "Webhook receivers are unavailable");
+        }
+        try {
+          const receivers = await this.services.getWebhookReceivers(pluginId);
+          return receivers.map(({ id, url, enabled }) => ({ id, url, enabled }));
+        } catch {
+          this.services.audit?.({ pluginId, api, ok: false, errorCode: "WEBHOOK_RECEIVERS_FAILED", ts: Date.now() });
+          throw apiError("INTERNAL", "Unable to list webhook receivers");
+        }
+      }
       case "commands.register": {
         const descriptor = (args[0] ?? {}) as {
           id?: string;

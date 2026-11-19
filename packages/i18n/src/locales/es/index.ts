@@ -2991,6 +2991,7 @@ sklm: {
     "archived": "Archivado"
   },
   "plugins": {
+    webhook: en.plugins.webhook,
     interruptionTitle: "El trabajo del complemento finalizará",
     interruptionBody: "Estos complementos siguen ejecutando trabajo. Continuar lo finalizará:",
     interruptionContinue: "Finalizar y continuar",

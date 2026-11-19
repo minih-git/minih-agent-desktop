@@ -398,6 +398,7 @@ const pluginServices = createPluginServices({
 });
 const {
   plugins,
+  webhooks,
   userMcp,
   mcpOAuth,
   pluginScopes,
@@ -1067,6 +1068,7 @@ runtimeLifecycle = createRuntimeLifecycle({
   drainApprovedPlanExecutions,
   applyNetworkProxyFromAppSettings,
   plugins,
+  initializeWebhooks: () => webhooks.reconcile(),
   setCurrentWorkspacePath,
   rememberPluginScopes,
   refreshUserMcp,
@@ -1170,6 +1172,7 @@ function registerIpc() {
     persistenceOutbox,
     logger,
     plugins,
+    webhooks,
     speech,
     sessionCapabilityContext,
     enrichSession,

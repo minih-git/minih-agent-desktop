@@ -538,28 +538,30 @@ author whether a connection is encrypted.
 
 **`inbound.webhook` — a host-owned listener.**
 
-- A webhook receiver is registered only when its token exists. The token is a
-  host-generated secret stored in the secret store (spec `03-runtime/04` §10),
-  compared in constant time, and never returned by any API — not even to the
-  plugin that asked for the receiver. Rotating it is a Settings action, and
-  rotation invalidates the old token immediately.
-- The listener binds loopback and the local network interface only. There is no
-  public bind, no port-forward helper, and no hosted relay, so enabling a plugin
-  cannot expose the machine to the internet.
-- Transport is plain HTTP, disclosed at install and in Settings with the same
-  wording as a non-loopback HTTP MCP endpoint (§8.1, ADR 0142): an eavesdropper
-  on the path reads the body. The token is a filter against drive-by posts, not
-  confidentiality.
-- Bodies above 256 KiB are refused with `413` and never buffered; the request
-  past 120 accepted per minute is answered `429`. The manifest may lower either
-  ceiling and cannot raise it.
-- The plugin receives only requests the host already accepted, as one-way
-  events; the host answers `202` and the plugin cannot set the status, the
-  headers, or the body, so a receiver is not a request-forwarding proxy.
-  Header names come from a bounded set, values are truncated, and the body is
-  handed over as text — the host never interprets it. The accepted body is kept
-  as a host-named file (`plugin_webhook_events.body_ref`), never as a database
-  row, and the peer address (`source_ip`) is recorded for diagnosis only.
+- A receiver is registered only when its host-generated token exists. It is
+  stored in the secret store, compared in constant time, and never returned by
+  plugin APIs or events. Main-window IPC opens a native system dialog and
+  returns no token; only an explicit action inside that dialog reveals, copies
+  or rotates it. Rotation invalidates the old token immediately. Native plugin
+  entry code is not an OS sandbox (ADR 0008 D009).
+- LAN mode binds `0.0.0.0` and, when available, `::`; local-only mode binds
+  `127.0.0.1`. Before reading the body, the host admits loopback, RFC1918,
+  CGNAT, link-local, ULA, and direct interface subnets no broader than IPv4
+  /16 or IPv6 /48. Others receive `403`. This is not a guarantee against
+  internet exposure: a directly connected public subnet can match. See
+  [ADR plugin-webhook-listener-boundary](../../adr/plugin-webhook-listener-boundary.md).
+- Transport is plain HTTP; install and Settings warn that tokens and request
+  contents can be intercepted, consistent with ADR 0142. A token is a filter,
+  not confidentiality.
+- Bodies over 256 KiB are refused while streaming with `413`; requests past
+  120 accepted per minute receive `429`. The manifest may lower either limit.
+- Accepted requests become one-way plugin events after durable storage. The
+  host returns `202`; the plugin cannot control the response. At most 64
+  lowercased headers are retained, each truncated to 4096 characters, and the
+  authentication header is removed before storage. The host-named sidecar in
+  `plugin_webhook_events.body_ref` contains method, headers and UTF-8 body;
+  `source_ip` remains metadata. Unconfirmed events replay at least once, and
+  rows and files are removed after seven days or on uninstall.
 
 **`credentials.use` — the secret never crosses.**
 
