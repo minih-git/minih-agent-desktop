@@ -7,6 +7,7 @@ mod memory_tools;
 mod notification_ack_rpc;
 mod plugin_notification_rpc;
 mod plugin_settings_rpc;
+mod plugin_tcp_usage_rpc;
 mod plugin_webhook_rpc;
 mod remote_tools;
 mod scheduled_rpc;
@@ -1958,12 +1959,12 @@ async fn handle_request(
     if method == "plugins.settings.update" {
         return plugin_settings_rpc::update(state, params).await;
     }
-
-    // A plugin cannot choose this surface by itself: Electron main owns the
-    // manifest check and the plugin id, and only the host row is durable. The
-    // handler re-checks everything the row will contain.
+    // The host owns plugin notification persistence and TCP byte totals.
     if method == "pluginNotification.create" {
         return plugin_notification_rpc::create(state, params).await;
+    }
+    if method.starts_with("plugin.tcpUsage.") {
+        return plugin_tcp_usage_rpc::handle(state, method, params).await;
     }
     if method.starts_with("easytier.") {
         return easytier_rpc::handle(state, method, params).await;
@@ -5522,6 +5523,7 @@ async fn handle_request(
                 }
             }
             plugin_notification_rpc::delete_for_plugin(&st.db, id)?;
+            plugin_tcp_usage_rpc::purge_after_uninstall(&st.db, id)?;
             Ok(json!({ "ok": ok }))
         }
         "plugins.getPermissions" => {
