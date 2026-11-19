@@ -1428,6 +1428,11 @@ export const api = {
     invoke(IPC.invoke.pluginSetAutoUpdate, { id, enabled }),
   getPluginSettings: (id: string) =>
     invoke<{ settings: PluginSettingDefinition[] }>(IPC.invoke.pluginSettingsGet, id),
+  getPluginTcpUsage: (id: string) =>
+    invoke<{
+      today: { endpoints: Array<{ host: string; port: number; bytesIn: number; bytesOut: number }> };
+      last7Days: { endpoints: Array<{ host: string; port: number; bytesIn: number; bytesOut: number }> };
+    }>(IPC.invoke.pluginTcpUsage, id),
   runPluginComposerTransform: (input: {
     pluginId: string;
     id: string;

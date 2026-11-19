@@ -3009,6 +3009,7 @@ sklm: {
     archived: "Arşivlenen",
   },
   plugins: {
+    ...en.plugins,
     webhook: en.plugins.webhook,
     interruptionTitle: "Eklenti çalışması sona erecek",
     interruptionBody: "Bu eklentiler hâlâ çalışıyor. Devam etmek onları sonlandırır:",

@@ -2992,6 +2992,7 @@ sklm: {
     "archived": "Archivé"
   },
   "plugins": {
+    ...en.plugins,
     webhook: en.plugins.webhook,
     interruptionTitle: "Le travail du greffon va s'arrêter",
     interruptionBody: "Ces greffons exécutent encore du travail. Continuer l'arrêtera :",

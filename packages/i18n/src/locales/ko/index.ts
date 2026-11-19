@@ -3005,6 +3005,7 @@ sklm: {
     archived: "보관됨",
   },
   plugins: {
+    ...en.plugins,
     webhook: en.plugins.webhook,
     interruptionTitle: "플러그인 작업이 종료됩니다",
     interruptionBody: "다음 플러그인이 아직 작업 중입니다. 계속하면 종료됩니다:",

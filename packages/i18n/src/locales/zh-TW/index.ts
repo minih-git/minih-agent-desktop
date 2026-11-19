@@ -2984,6 +2984,7 @@ sklm: {
     archived: "已歸檔",
   },
   plugins: {
+    ...en.plugins,
     webhook: en.plugins.webhook,
     interruptionTitle: "外掛仍有工作正在進行",
     interruptionBody: "以下外掛仍在執行工作，繼續將結束它們：",

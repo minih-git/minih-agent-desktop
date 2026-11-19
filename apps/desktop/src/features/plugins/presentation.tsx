@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TooltipButton, cx } from "../../components/ui";
 import { IconChevronDown, IconSearch, IconX } from "../../components/icons";
@@ -19,6 +19,7 @@ import {
   orderPermissions,
 } from "./model";
 
+import { PluginTcpUsage } from "../../components/plugins/PluginTcpUsage";
 export function PermissionChips({
   permissions,
   limit = INLINE_PERMISSION_LIMIT,
@@ -205,6 +206,7 @@ export function PluginRowDetails({
   services: readonly PluginServiceStatus[] | undefined;
 }) {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const hasCapabilities = (plugin.capabilities?.length ?? 0) > 0;
   const hasServices = (services?.length ?? 0) > 0;
   const hasPermissions = (plugin.permissions?.length ?? 0) > 0;
@@ -217,7 +219,7 @@ export function PluginRowDetails({
   if (!hasCapabilities && !hasServices && !hasPermissions && !hasAgentExtension) return null;
 
   return (
-    <details className="plugins-row-details">
+    <details className="plugins-row-details" onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary
         className="plugins-row-details-toggle"
         aria-label={t("plugins.viewDetailsOf", { name: plugin.name })}
@@ -267,6 +269,7 @@ export function PluginRowDetails({
           // Saying so is the difference between "broken" and "needs an update".
           <p className="plugins-row-detail-note">{t("plugins.legacyFsDowngraded")}</p>
         ) : null}
+        {expanded && plugin.permissions?.includes("net.tcp") ? <PluginTcpUsage pluginId={plugin.id} /> : null}
       </div>
     </details>
   );
