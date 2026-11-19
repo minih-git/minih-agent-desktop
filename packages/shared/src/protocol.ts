@@ -493,6 +493,7 @@ export const IPC = {
     pluginWebhookList: "minih-agent-desktop/plugin/webhooks/list",
     pluginWebhookSetLoopback: "minih-agent-desktop/plugin/webhooks/setLoopback",
     pluginWebhookTokenDialog: "minih-agent-desktop/plugin/webhooks/tokenDialog",
+    pluginTcpUsage: "minih-agent-desktop/plugin/tcpUsage",
     pluginOpenPanel: "minih-agent-desktop/plugin/openPanel",
     pluginLauncherToggle: "minih-agent-desktop/pluginLauncher/toggle",
     pluginLauncherDismiss: "minih-agent-desktop/pluginLauncher/dismiss",

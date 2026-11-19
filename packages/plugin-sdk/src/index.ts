@@ -1683,6 +1683,16 @@ export type PluginHostApi = {
       send: (input: { socketId: string; data: string | Uint8Array }) => Promise<void>;
       close: (input: { socketId: string; code?: number; reason?: string }) => Promise<void>;
     };
+    /** Host-owned TCP, confined to literal manifest.net.tcp endpoints. */
+    tcp: {
+      connect: (input: {
+        endpoint: { host: string; port: number };
+        timeoutMs?: number;
+        credentialRef?: string;
+      }) => Promise<{ connectionId: string }>;
+      send: (input: { connectionId: string; data: string | Uint8Array }) => Promise<void>;
+      close: (input: { connectionId: string }) => Promise<void>;
+    };
   };
   events: {
     on: (event: string, handler: (...args: unknown[]) => void) => void;
