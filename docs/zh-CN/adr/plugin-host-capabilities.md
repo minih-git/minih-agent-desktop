@@ -3,7 +3,7 @@
 > [英文源 ADR](/adr/plugin-host-capabilities) 是状态与决策内容的最终依据。
 
 - 状态：已接受实施（2026-11-17）。B-0 注册权限；B1 实现凭据，B2 实现入站
-  webhook，B4 实现 `notify.center`，其他能力组按各自文档所述的实现状态执行。
+  webhook，B4 实现 `notify.center`，B6 实现插件定时；其他能力组按各自文档执行。
 - 日期：2026-11-17
 - 相关：ADR 0005（用户可安装插件）· ADR 0008 D009（插件进程不是操作系统沙箱）·
   ADR 0074（插件原生通知权限）· ADR 0088（声明的文件范围）·
@@ -178,8 +178,8 @@ B-0 只做注册：
 - `packages/plugin-sdk` 中上述形状的类型与校验器。
 
 最初的 B-0 切片不执行这些能力。后续 B1 实现凭据存储、状态查询以及宿主持有的
-fetch 和 WebSocket 注入；B2 实现入站 webhook；B4 实现 `pi.notify.center`。
-`net.tcp`、`scheduler`、`mail.draft` 与 `tasks.*` 按各自文档所述的实现状态执行。
+fetch 和 WebSocket 注入；B2 实现入站 webhook；B4 实现 `pi.notify.center`；
+B6 实现插件定时。`net.tcp`、`mail.draft` 与 `tasks.*` 按各自文档执行。
 
 ## 后果
 

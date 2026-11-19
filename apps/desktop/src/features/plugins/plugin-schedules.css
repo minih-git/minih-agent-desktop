@@ -1,0 +1,10 @@
+.plugin-schedules { color: var(--ds-text-primary); }
+.plugin-schedules-list { display: grid; gap: 12px; }
+.plugin-schedules-item { padding: 16px; border-radius: var(--radius-lg-plus); background: var(--ds-tile); }
+.plugin-schedules-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.plugin-schedules-plugin, .plugin-schedules-facts dt { color: var(--ds-text-muted); font-size: var(--text-xs-plus); }
+.plugin-schedules-plugin { margin-top: 4px; }
+.plugin-schedules-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+.plugin-schedules-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.plugin-schedules-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.plugin-schedules-error { color: var(--ds-error); }

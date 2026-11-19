@@ -1363,6 +1363,7 @@ registerShutdownHandlers({
   logger,
   confirmQuitDialog,
   disposePowerSaveBlockers,
+  disposePluginScheduler: pluginServices.disposePluginScheduler,
   disposeTaskExperience: () => taskExperienceService.dispose(),
   disposeTaskInspection: () => taskInspectionService.dispose(),
   liveCallService,

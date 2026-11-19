@@ -48,6 +48,8 @@ function loadPluginIpc({ picked = PACKAGE_PATH } = {}) {
     "../plugin-view-host": { PluginViewHost: class {} },
     "../plugin-renderer-extension": { rendererCallError: (error) => error },
     "./plugin-credentials-ipc": { registerPluginCredentialIpc: () => {} },
+    "../plugin-scheduler-service": { pluginSchedulerFor: () => ({ removePlugin: async () => {} }) },
+    "./plugin-scheduler-ipc": { registerPluginSchedulerIpc: () => {} },
     "./types": {},
   };
   new Function("require", "exports", "module", outputText)(

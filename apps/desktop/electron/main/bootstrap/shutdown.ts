@@ -54,6 +54,8 @@ export type ShutdownDependencies = {
   logger: Pick<Logger, "app">;
   confirmQuitDialog: () => Promise<boolean>;
   disposePowerSaveBlockers: () => void;
+  /** Stops the plugin clock only after the quit confirmation succeeds. */
+  disposePluginScheduler?: () => void;
   liveCallService?: Pick<LiveCallService, "endForLifecycle">;
   disposeSystemProxyRelay?: () => Promise<void>;
   /**
@@ -107,6 +109,7 @@ export function registerShutdownHandlers({
   logger,
   confirmQuitDialog,
   disposePowerSaveBlockers,
+  disposePluginScheduler,
   liveCallService,
   disposeSystemProxyRelay,
   disposeMemoryExtraction,
@@ -163,6 +166,7 @@ export function registerShutdownHandlers({
     }
 
     state.quitting = true;
+    disposePluginScheduler?.();
     // Persist the confirmed shutdown before any awaited cleanup so a forced
     // process termination still leaves an observable lifecycle boundary.
     logger.app("lifecycle", "info", "app shutdown");

@@ -575,6 +575,16 @@ async function handleParentCall(method, payload, invocationId, callId) {
       }
       return { ok: true };
     }
+    case "schedule.fire": {
+      const listeners = [...(eventListeners.get("schedule:fire") ?? [])];
+      if (listeners.length === 0) {
+        const error = new Error("plugin has no schedule:fire handler");
+        error.code = "NOT_FOUND";
+        throw error;
+      }
+      await Promise.all(listeners.map((listener) => listener(payload)));
+      return { ok: true };
+    }
     case "panel.invoke": {
       const invoke = pluginModule?.onPanelInvoke;
       if (typeof invoke !== "function") {

@@ -2986,6 +2986,7 @@ sklm: {
   },
   plugins: {
     webhook: en.plugins.webhook,
+    schedules: en.plugins.schedules,
     interruptionTitle: "外掛仍有工作正在進行",
     interruptionBody: "以下外掛仍在執行工作，繼續將結束它們：",
     interruptionContinue: "結束並繼續",

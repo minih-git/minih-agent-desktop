@@ -39,6 +39,25 @@
   redirects, sidecar messages and error cases. Installed-release acceptance is
   separate.
 
+## E2E-PLUGIN-scheduler-delivers-without-model-turn
+
+- **Preconditions:** Isolated profile and host database; an enabled plugin with
+  `scheduler`, two declared timers and a `schedule:fire` handler.
+- **Steps:** Trigger a timer, inspect Extensions → Schedules, pause and resume
+  it, run it manually, reload and disable the plugin, then uninstall it. Exercise
+  a missed tick, idle gate, five failures and a timed-out handler with a
+  controlled clock.
+- **Expected:** A single event reaches the plugin without a model turn; the
+  latest attempt and result appear in the list. Missed ticks collapse, pause
+  and resume persist correctly, disabled plugins do not fire, and uninstall
+  removes the rows. A late handler result cannot overwrite a timeout.
+- **Automation:** `apps/desktop/test/plugin-scheduler.test.mjs`,
+  `apps/desktop/test/plugin-scheduler-lifecycle.test.mjs`, and
+  `apps/desktop/test/plugin-scheduler-user-path.test.mjs`; the latter requires
+  `MINIH_AGENT_HOST_BIN` pointing to an isolated built host-core. Lifecycle
+  coverage includes both quit events and unreferenced timer handles. Full-shell
+  visual interaction remains a separate Electron acceptance check.
+
 ## E2E-SESSION-create-thinking-setting
 
 - **Preconditions:** Request worktree, reused dependencies, isolated Electron

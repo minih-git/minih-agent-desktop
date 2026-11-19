@@ -1,9 +1,9 @@
 # ADR plugin-host-capabilities: Six host capabilities, one permission each
 
 - **Status**: Accepted for implementation (2026-11-17). B-0 registered the
-  permissions; B1 implements credentials, B2 implements inbound webhooks, and
-  B4 implements `notify.center`. Other capability groups retain their separately
-  documented implementation status.
+  permissions; B1 implements credentials, B2 implements inbound webhooks,
+  B4 implements `notify.center`, and B6 implements plugin scheduling. Other
+  capability groups retain their separately documented implementation status.
 - **Date**: 2026-11-17
 - **Related**: ADR 0005 (user-installable plugins) · ADR 0008 D009 (the plugin
   process is not OS-sandboxed) · ADR 0074 (native notification permission) ·
@@ -228,8 +228,8 @@ B-0 is registration, and only registration:
 The original B-0 slice executed none of those capabilities. B1 subsequently
 implements credential storage, status, and injection on host-owned fetch and
 WebSocket calls; B2 implements inbound webhooks; B4 implements
-`pi.notify.center`. `net.tcp`, `scheduler`, `mail.draft` and `tasks.*` retain
-their separately documented implementation status.
+`pi.notify.center`; B6 implements plugin scheduling. `net.tcp`, `mail.draft`
+and `tasks.*` retain their separately documented implementation status.
 
 ## Consequences
 

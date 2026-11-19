@@ -2993,6 +2993,7 @@ sklm: {
   },
   "plugins": {
     webhook: en.plugins.webhook,
+    schedules: en.plugins.schedules,
     interruptionTitle: "El trabajo del complemento finalizará",
     interruptionBody: "Estos complementos siguen ejecutando trabajo. Continuar lo finalizará:",
     interruptionContinue: "Finalizar y continuar",
