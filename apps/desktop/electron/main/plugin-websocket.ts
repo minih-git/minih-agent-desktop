@@ -25,6 +25,12 @@ export const MAX_FRAME_BYTES = 1024 * 1024;
 /** Unflushed bytes allowed per socket before `send` refuses. */
 export const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+/**
+ * What a credential-bearing socket reports instead of the transport's or the
+ * peer's own text. Constant on purpose: it is the only thing this boundary can
+ * vouch for.
+ */
+const REDACTED_CONNECTION_FAILURE = "the connection failed";
 
 export type PluginSocketErrorCode =
   | "INVALID_ARGUMENT"
@@ -115,6 +121,12 @@ export class PluginWebSocketRegistry {
    * Open one socket and resolve once it is usable. The hostname is assumed to
    * have passed the caller's egress check already; the shape and the bounds
    * here are this method's own.
+   *
+   * `redactDiagnostics` is set when the handshake carries a host-injected
+   * credential. The peer that received the header can echo it back in an error
+   * frame or a close reason, and the transport can quote its own request, so
+   * both are replaced with constant text on that path only. Frames are not
+   * touched: they are the plugin's own protocol.
    */
   async connect(request: {
     pluginId: string;
@@ -122,7 +134,9 @@ export class PluginWebSocketRegistry {
     headers?: Record<string, string>;
     protocols?: string[];
     timeoutMs?: number;
+    redactDiagnostics?: boolean;
   }): Promise<{ socketId: string }> {
+    const redact = request.redactDiagnostics === true;
     const { pluginId, url } = request;
     let parsed: URL;
     try {
@@ -198,17 +212,28 @@ export class PluginWebSocketRegistry {
             decide(
               new PluginSocketError(
                 "CONNECT_FAILED",
-                `socket closed before it opened (${code}: ${reason})`,
+                redact
+                  ? `socket closed before it opened (${code})`
+                  : `socket closed before it opened (${code}: ${reason})`,
               ),
             );
           }
-          this.deps.onEvent(pluginId, { type: "close", socketId, code, reason, wasClean });
+          // A credential-bearing socket reports the code, never the peer's own
+          // text: it is remote input the plugin process must not have to trust.
+          this.deps.onEvent(pluginId, {
+            type: "close",
+            socketId,
+            code,
+            reason: redact ? "" : reason,
+            wasClean,
+          });
         },
         onError: ({ code, message }) => {
+          const reported = redact ? REDACTED_CONNECTION_FAILURE : message;
           if (meta.state === "connecting") {
-            decide(new PluginSocketError("CONNECT_FAILED", message));
+            decide(new PluginSocketError("CONNECT_FAILED", reported));
           }
-          this.deps.onEvent(pluginId, { type: "error", socketId, code, message });
+          this.deps.onEvent(pluginId, { type: "error", socketId, code, message: reported });
         },
       },
     );
@@ -328,6 +353,10 @@ export class PluginWebSocketRegistry {
       headers: init.headers,
       handshakeTimeout: this.connectTimeoutMs,
       maxPayload: this.maxFrameBytes,
+      // Stated rather than inherited: a handshake that follows a redirect
+      // replays its headers to whatever host the peer names, which is exactly
+      // what the egress allowlist exists to prevent.
+      followRedirects: false,
     });
     socket.on("open", () => handlers.onOpen({ protocol: socket.protocol ?? "" }));
     socket.on("message", (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {

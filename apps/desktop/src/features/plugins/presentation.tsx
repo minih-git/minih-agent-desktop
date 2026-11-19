@@ -15,6 +15,7 @@ import {
   INLINE_PERMISSION_LIMIT,
   LEGACY_FS_PERMISSIONS,
   permissionLabel,
+  permissionHelp,
   permissionRisk,
   orderPermissions,
 } from "./model";
@@ -40,7 +41,7 @@ export function PermissionChips({
         <span
           key={permission}
           className={cx("plugins-perm-chip", `risk-${permissionRisk(permission)}`)}
-          title={t(`plugins.permissionHelp.${permission}`, { defaultValue: permission })}
+          title={permissionHelp(permission, t)}
         >
           {permissionLabel(permission, t)}
         </span>

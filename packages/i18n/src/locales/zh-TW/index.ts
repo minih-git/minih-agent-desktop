@@ -1,6 +1,7 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhTW = {
+  pluginCredentials: en.pluginCredentials,
   sidebarPluginView: {
     back: "返回對話",
   },

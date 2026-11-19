@@ -29,6 +29,7 @@ import {
 import { IconKeyboard, IconSettings, IconX } from "../icons";
 import { SettingsMenuSelect } from "../settings/SettingsMenuSelect";
 import { PluginWebhookSettings } from "./PluginWebhookSettings";
+import { PluginCredentials } from "./PluginCredentials";
 
 type Props = {
   plugin: PluginSummary;
@@ -75,7 +76,7 @@ export function PluginSettingsSheet({ plugin, platform, onClose, onSaved }: Prop
   const { t } = useTranslation();
   const appKeybindings = useAppStore((state) => state.settings?.keybindings);
   const showToast = useAppStore((state) => state.showToast);
-  const settings = plugin.settings ?? [];
+  const settings = plugin.enabled ? plugin.settings ?? [] : [];
   const [draft, setDraft] = useState<Record<string, unknown>>(() =>
     Object.fromEntries(settings.map((setting) => [setting.key, initialValue(setting)])),
   );
@@ -87,7 +88,7 @@ export function PluginSettingsSheet({ plugin, platform, onClose, onSaved }: Prop
     setDraft(Object.fromEntries(settings.map((setting) => [setting.key, initialValue(setting)])));
     setRecordingKey(null);
     setError(null);
-  }, [plugin.id, plugin.settings]);
+  }, [plugin.id, plugin.settings, plugin.enabled]);
 
   const shortcutConflict = useMemo(() => {
     const shortcuts = settings.filter((setting) => setting.type === "shortcut");
@@ -188,7 +189,8 @@ export function PluginSettingsSheet({ plugin, platform, onClose, onSaved }: Prop
         </header>
 
         <div className="plugins-settings-body">
-          {plugin.permissions.includes("inbound.webhook") ? <PluginWebhookSettings pluginId={plugin.id} /> : null}
+          {plugin.enabled && plugin.permissions.includes("inbound.webhook") ? <PluginWebhookSettings pluginId={plugin.id} /> : null}
+          {plugin.permissions.includes("credentials.use") ? <PluginCredentials pluginId={plugin.id} /> : null}
           {settings.map((setting) => {
             const value = draft[setting.key];
             const isShortcut = setting.type === "shortcut";
@@ -284,9 +286,9 @@ export function PluginSettingsSheet({ plugin, platform, onClose, onSaved }: Prop
         {error ? <p className="plugins-settings-error" role="alert">{error}</p> : null}
         <div className="plugins-modal-actions">
           <Button variant="secondary" onClick={onClose}>{t("plugins.cancel")}</Button>
-          <Button variant="primary" disabled={saving} onClick={() => void save()}>
+          {settings.length ? <Button variant="primary" disabled={saving} onClick={() => void save()}>
             {saving ? t("settings.saving") : t("plugins.settingsSave")}
-          </Button>
+          </Button> : null}
         </div>
       </div>
     </div>,

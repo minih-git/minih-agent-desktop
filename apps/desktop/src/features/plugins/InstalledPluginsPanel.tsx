@@ -195,7 +195,7 @@ export function InstalledPluginsPanel({
                                   <IconPanel size={15} />
                                 </TooltipButton>
                               ) : null}
-                              {plugin.enabled && (plugin.settings?.length || plugin.permissions.includes("inbound.webhook")) ? (
+                              {(plugin.enabled && (plugin.settings?.length || plugin.permissions.includes("inbound.webhook"))) || plugin.permissions.includes("credentials.use") ? (
                                 <TooltipButton
                                   type="button"
                                   className="plugins-icon-btn"

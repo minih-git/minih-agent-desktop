@@ -17,6 +17,7 @@ function registerFunction(scheduleCleanup) {
     "../plugin-runtime": { readDevPluginDeclaration: () => ({ manifest: { contributes: { webhooks: [{ id: "hook" }] } } }), widenedFsScope: () => [] },
     "../plugin-view-host": { PluginViewHost: class {} },
     "../plugin-renderer-extension": { rendererCallError: (error) => error },
+    "./plugin-credentials-ipc": { registerPluginCredentialIpc: () => {} },
     "../plugin-scheduler-service": { pluginSchedulerFor: () => ({ removePlugin: scheduleCleanup }) },
     "./plugin-scheduler-ipc": { registerPluginSchedulerIpc: () => {} },
   };

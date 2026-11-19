@@ -371,7 +371,6 @@ impl PluginManager {
     }
 
     pub fn uninstall(&mut self, id: &str) -> Result<bool> {
-        let existing = self.get(id);
         // A bundled plugin is part of the application, so there is nothing to
         // remove and its files are not ours to delete. Disabling is the
         // supported way to turn one off (ADR 0104).
@@ -382,6 +381,19 @@ impl PluginManager {
         if self.bundled_ids.contains(id) {
             bail!("PLUGIN_INVALID: a bundled plugin cannot be uninstalled; disable it instead");
         }
+        // Credential slots are the user's secret material, and an uninstall must
+        // not leave any behind: a later install of the same id would inherit
+        // them. They therefore go first, and a purge that fails refuses the
+        // whole uninstall while the plugin is still registered and intact —
+        // removing the row first would strand encrypted values with nothing left
+        // pointing at them. The failure is returned, never swallowed, and its
+        // message names the slot refs and the cause only, never a field value.
+        super::credentials::purge_plugin(&self.data_dir, id).map_err(|error| {
+            anyhow!(
+                "PLUGIN_CREDENTIAL_PURGE_FAILED: plugin {id} credentials could not be removed: {error}"
+            )
+        })?;
+        let existing = self.get(id);
         let before = self.runtime.len();
         self.runtime.retain(|p| p.id != id);
         self.save()?;

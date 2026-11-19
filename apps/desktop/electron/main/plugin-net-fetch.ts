@@ -12,12 +12,24 @@ export function parseFetchRedirect(value: unknown): "follow" | "error" | "manual
 function failure(code: string, message: string): Error & { code: string } {
   return Object.assign(new Error(message), { code });
 }
+/**
+ * What a credential-bearing request needs from the exchange owner.
+ *
+ * A host-injected credential makes two things true at once: the header must not
+ * travel to a third host behind a redirect, and the answer must not echo it
+ * back. Everything else about the request is unchanged.
+ */
+export type PluginFetchCredentialOptions = {
+  /** Response header names (case-insensitive) dropped from the answer. */
+  stripResponseHeaders: readonly string[];
+};
 
 /** One deadline and one policy owner for every transport and redirect hop. */
 export async function pluginNetFetch(
   input: PluginNetFetchInput,
   assertEgress: (url: string) => void,
   transport: PluginFetchTransport = fetch,
+  credential?: PluginFetchCredentialOptions,
 ): Promise<{ url: string; result: PluginNetFetchResult }> {
   const redirect = parseFetchRedirect(input.redirect);
   if (!/^https?:\/\//i.test(input.url)) {
@@ -45,12 +57,28 @@ export async function pluginNetFetch(
       if (isRedirect && redirect === "follow" && location) {
         await res.body?.cancel();
         if (hop >= 5) throw failure("UNAVAILABLE", "too many redirects");
-        url = new URL(location, url).toString();
+        const next = new URL(location, url);
+        if (credential && next.origin !== new URL(url).origin) {
+          // The credential is already on the wire for this origin. Following
+          // the hop would hand it to another host, so the request stops here
+          // and the second origin is never contacted at all.
+          throw failure(
+            "REDIRECT_DISALLOWED",
+            "a credential request is not redirected to another origin",
+          );
+        }
+        url = next.toString();
         assertEgress(url);
         continue;
       }
       const headers: Record<string, string> = {};
-      res.headers.forEach((value, key) => { headers[key] = value; });
+      const strip = credential
+        ? new Set(credential.stripResponseHeaders.map((name) => name.toLowerCase()))
+        : null;
+      res.headers.forEach((value, key) => {
+        if (strip?.has(key.toLowerCase())) return;
+        headers[key] = value;
+      });
       const bodyText = await res.text();
       return { url, result: { status: res.status, headers, bodyText } };
     }

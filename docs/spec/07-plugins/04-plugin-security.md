@@ -566,18 +566,23 @@ author whether a connection is encrypted.
   `source_ip` remains metadata. Unconfirmed events replay at least once, and
   rows and files are removed after seven days or on uninstall.
 
-**`credentials.use` — the secret never crosses.**
+**`credentials.use` — host-mediated use, not a sandbox.**
 
-- The user fills the slot in Settings; the plugin cannot write it, cannot read
-  it, and receives no error text containing it. There is no read API at all.
-- An injection happens only on a host-owned egress call that names the slot by
+- The user fills the slot in Settings. The host has no plugin credential read
+  API and does not deliberately return stored values in host-generated messages,
+  errors or audit records. Values stay in the existing encrypted secret store,
+  never in SQLite; its at-rest design is unchanged.
+- Injection happens only on a host-owned egress call naming the slot by
   `credentialRef`, and only when the target is inside both the slot's `scope`
-  and `manifest.net.domains`. A request outside that intersection is refused
-  rather than sent unauthenticated, so a slot cannot become an authenticated
-  beacon to an undeclared host.
-- Values live in the encrypted secret store, never in SQLite (spec
-  `03-runtime/04` §10); the database records only that a slot exists. An
-  injection is audited with the slot id and the destination, never the value.
+  and `manifest.net.domains`. Calls outside that intersection are refused rather
+  than sent unauthenticated.
+- Credentials injected into `http://` or `ws://` destinations travel unencrypted
+  along the network path; the audit records the destination scheme without the
+  credential. Users should prefer HTTPS or WSS where available.
+- This is a reviewable, revocable API boundary, not a defence against malicious
+  plugins. Plugin entry code has native Node access and is not an OS sandbox;
+  install only trusted plugins. A remote service can echo a credential in an
+  HTTP response body or WebSocket frame, which the host does not filter.
 
 **`scheduler` — the host owns the clock.** A declared timer is either an
 interval of at least one minute or a five-field cron expression, never both. It
@@ -708,11 +713,13 @@ because this host has no device backend yet, so nothing reaches a device.
 `net.websocket` is implemented: connections are host-owned, allowlist-checked,
 bounded, and released with the plugin (§8.1).
 `notify.center`, `inbound.webhook` and `scheduler` are implemented with their
-own permission gates and host-owned resources. `net.tcp` is implemented with
-literal endpoint matching, bounded concurrency, verified TLS and lifecycle
-cleanup (§8.3). TCP credential substitution is not yet implemented and returns
-`INVALID_ARGUMENT`. `credentials.use`, `mail.draft`, `tasks.read` and
-`tasks.manage` remain registered only; manifest fields are validated at install.
+own permission gates and host-owned resources. `credentials.use` supports
+host-mediated fetch and WebSocket calls; `pi.credentials.list` exposes only
+configuration state (§8.3). `net.tcp` implements literal endpoint matching,
+bounded concurrency, verified TLS and lifecycle cleanup; TCP credential
+substitution is not yet implemented and returns `INVALID_ARGUMENT`.
+`mail.draft`, `tasks.read` and `tasks.manage` remain registered only; their
+manifest fields are validated at installation.
 
 
 Not enforced yet:

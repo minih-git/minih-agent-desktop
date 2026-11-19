@@ -41,6 +41,10 @@ import { createPluginSchedulerService } from "../plugin-scheduler-service";
 import { confirmPluginInterruption } from "../plugin-active-work";
 import { listPluginMemoryWhenEnabled } from "../plugin-memory-read";
 import {
+  listPluginCredentialSlots,
+  resolvePluginCredential,
+} from "../plugin-credential-slots";
+import {
   EMBEDDINGS_TIMEOUT_MS,
   buildEmbeddingsRequest,
   embeddingsError,
@@ -202,6 +206,21 @@ export function createPluginServices({
     return { projectId: project.id, path: project.path, name: project.name };
   };
   /**
+   * The host is the only reader of a stored secret. Both `credentialRef` paths
+   * reach it through these two calls, and neither answer is ever forwarded to
+   * the renderer or written to a log.
+   */
+  const callPluginCredentialHost = async (
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> => {
+    const host = getHost();
+    if (!host) {
+      throw Object.assign(new Error("host unavailable"), { code: "UNAVAILABLE" });
+    }
+    return host.call(method, params);
+  };
+  /**
    * System-wide accelerators for plugins. Electron's `globalShortcut` is the
    * same registration API the app's own shortcuts use, so a plugin binding
    * conflicts with the host instead of fighting it, and the registry owns
@@ -262,6 +281,10 @@ export function createPluginServices({
     pluginTcp,
     getWebhookReceivers: async (pluginId) => (await webhooks.list(pluginId)).receivers,
     onPluginRuntimeDispose: () => webhooks.dispose(),
+    resolvePluginCredential: (pluginId, slotId) =>
+      resolvePluginCredential(callPluginCredentialHost, pluginId, slotId),
+    listPluginCredentialSlots: (pluginId) =>
+      listPluginCredentialSlots(callPluginCredentialHost, pluginId),
     updatePluginSettings: async (pluginId, patch) => {
       const host = getHost();
       if (!host) throw new Error("host unavailable");

@@ -146,6 +146,12 @@ import {
 } from "./plugin-websocket";
 import type { PluginTcpEvent, PluginTcpRegistry } from "./plugin-tcp";
 import {
+  PluginCredentialBroker,
+  type PluginCredentialCallContext,
+  type PluginCredentialFields,
+  type PluginCredentialSlotState,
+} from "./plugin-credentials";
+import {
   PluginShortcutError,
   type PluginShortcutEntry,
   type PluginShortcutRegistry,
@@ -569,6 +575,10 @@ export type PluginHostServices = {
    * way to talk to the host: a plugin cannot see the settings record itself.
    */
   readSettings?: () => Promise<unknown>;
+  /** `plugins.credentials.resolve`: the host is the only reader of the value. */
+  resolvePluginCredential?: (pluginId: string, slotId: string) => Promise<PluginCredentialFields>;
+  /** `plugins.credentials.status`: configured state only, never a value. */
+  listPluginCredentialSlots?: (pluginId: string) => Promise<PluginCredentialSlotState[]>;
   /**
    * Read-only conversation archive (ADR conversation-archive). The host side is
    * `plugin.conversations.*`; each method receives the calling plugin's id.
@@ -631,6 +641,7 @@ const HOST_API_ALLOWLIST = new Set([
   "shell.openExternal",
   "net.fetch",
   "net.getCapabilities",
+  "credentials.list",
   "inbound.getReceivers",
   "bus.publish",
   "bus.subscribe",
@@ -1482,6 +1493,8 @@ export class PluginRuntime {
   private loaded = new Map<string, LoadedPlugin>();
   private toasts: Array<{ message: string; level?: string }> = [];
   private services: PluginHostServices;
+  /** Lazily built: the broker reads the host transport per call. */
+  private credentialBrokerRef?: PluginCredentialBroker;
   /**
    * Development plugins under watch, with the permission ceiling the user
    * approved when they picked the folder. Survives a failed reload so the fix
@@ -2698,6 +2711,9 @@ export class PluginRuntime {
           body: payload?.body ? String(payload.body) : undefined,
           timeoutMs: typeof payload?.timeoutMs === "number" ? payload.timeoutMs : undefined,
           redirect: payload?.redirect,
+          // A panel page reaches the same broker the plugin process does, so a
+          // slot it names is computed there; the panel never sees the value.
+          credentialRef: payload?.credentialRef,
         });
       case "plugin.getSettings":
         return api.plugin.getSettings();
@@ -2980,6 +2996,10 @@ export class PluginRuntime {
           registered: true,
         }));
       }
+      case "credentials.list": {
+        this.assertPermission(loaded, "credentials.use");
+        return this.credentialBroker().list(this.credentialContext(loaded));
+      }
       case "net.websocket.connect": {
         this.assertPermission(loaded, "net.websocket");
         const descriptor = (args[0] ?? {}) as {
@@ -2987,6 +3007,7 @@ export class PluginRuntime {
           headers?: Record<string, string>;
           protocols?: string[];
           timeoutMs?: number;
+          credentialRef?: unknown;
         };
         const url = String(descriptor.url ?? "");
         const registry = this.services.pluginSockets;
@@ -2996,6 +3017,13 @@ export class PluginRuntime {
         // Same allowlist, same chokepoint: a socket to an undeclared host is
         // refused before the transport is asked to open anything.
         this.assertSocketEgress(loaded, url);
+        if (descriptor.credentialRef !== undefined) {
+          return this.credentialBroker().socketConnect(
+            this.credentialContext(loaded),
+            descriptor,
+            registry,
+          );
+        }
         try {
           const result = await registry.connect({
             pluginId,
@@ -4740,6 +4768,40 @@ export class PluginRuntime {
       ...(errorCode ? { errorCode } : {}),
       ts: Date.now(),
     });
+  }
+
+  /**
+   * The one credential broker for this host. It owns the slot, scope, field,
+   * audit and refusal rules; the runtime supplies the declarations, the gates
+   * and the transport, so this file keeps the wiring and none of the policy.
+   *
+   * The port is read per call, not captured: `setServices` rebinds the host
+   * transport after construction, and an unwired port is a refusal, not a crash.
+   */
+  private credentialBroker(): PluginCredentialBroker {
+    this.credentialBrokerRef ??= new PluginCredentialBroker({
+      resolve: (pluginId, slotId) =>
+        this.services.resolvePluginCredential?.(pluginId, slotId),
+      status: (pluginId) => this.services.listPluginCredentialSlots?.(pluginId),
+    });
+    return this.credentialBrokerRef;
+  }
+
+  /** Everything one credential decision needs from this load. */
+  private credentialContext(
+    loaded: LoadedPlugin,
+    assertEgress?: (url: string) => void,
+  ): PluginCredentialCallContext {
+    return {
+      pluginId: loaded.manifest.id,
+      slots: loaded.manifest.contributes?.credentials,
+      manifestDomains: this.netDomains(loaded),
+      // Explicit rather than implied by `net.fetch`: injecting a stored secret
+      // is the permission, and the refusal is audited like every other one.
+      assertPermission: () => this.assertPermission(loaded, "credentials.use"),
+      ...(assertEgress ? { assertEgress } : {}),
+      ...(this.services.audit ? { audit: this.services.audit } : {}),
+    };
   }
 
   /**
@@ -6496,13 +6558,38 @@ export class PluginRuntime {
           body?: string;
           timeoutMs?: number;
           redirect?: unknown;
+          credentialRef?: unknown;
         }) => {
           this.assertPermission(loaded, "net.fetch");
           const redirect = parseFetchRedirect(input.redirect);
+          if (input.credentialRef !== undefined) {
+            // The slot, the domains, the header, the redirect rule and the audit
+            // entry all live in `plugin-credentials.ts`; this is the wiring.
+            return this.credentialBroker().fetch(
+              this.credentialContext(loaded, (next) => this.assertEgress(loaded, next, "net.fetch")),
+              {
+                url: String(input.url ?? ""),
+                method: input.method,
+                headers: input.headers,
+                body: input.body,
+                timeoutMs: input.timeoutMs,
+                credentialRef: input.credentialRef,
+              },
+              redirect,
+              this.services.fetch,
+            );
+          }
           try {
             const { url, result } = await pluginNetFetch(
-              { ...input, redirect },
-              (url) => this.assertEgress(loaded, url, "net.fetch"),
+              {
+                url: String(input.url ?? ""),
+                method: input.method,
+                headers: input.headers,
+                body: input.body,
+                timeoutMs: input.timeoutMs,
+                redirect,
+              },
+              (next) => this.assertEgress(loaded, next, "net.fetch"),
               this.services.fetch,
             );
             this.services.audit?.(netFetchAuditEntry(pluginId, url, result.status, result.headers));

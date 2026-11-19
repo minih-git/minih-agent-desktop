@@ -392,15 +392,19 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
   `plugin_webhook_events.body_ref` 文件保存方法、头部与 UTF-8 正文，`source_ip`
   仍是元数据。未确认事件至少补投一次，行与文件在七天后或卸载时清理。
 
-**`credentials.use` —— 密钥不越界。**
+**`credentials.use` —— 宿主代用，不是沙箱。**
 
-- 槽位由用户在设置里填写；插件既不能写，也不能读，收到的错误信息里也不会带
-  上它。根本不存在读取 API。
-- 只有在宿主持有的出网调用用 `credentialRef` 点名该槽位、并且目标同时落在
-  槽位 `scope` 与 `manifest.net.domains` 之内时才注入。交集之外一律拒绝，
-  而不是当作未认证请求发出去，所以槽位不会变成指向未声明主机的认证信标。
-- 值存放在加密密钥库，不进 SQLite（03-runtime/04 §10）；数据库只记录槽位
-  存在。注入的审计记录槽位 id 与目标，绝不记录值。
+- 用户在设置里填写槽位。宿主没有插件凭据读取 API，也不会在宿主生成的消息、
+  错误或审计记录中主动返回保存的值。值仍存加密密钥库，不进 SQLite，静态存储
+  方式不变。
+- 只有宿主持有的出网调用用 `credentialRef` 点名该槽位、且目标同时落在槽位
+  `scope` 与 `manifest.net.domains` 内时才注入；交集之外拒绝，而不是发送未认证
+  请求。
+- 向 `http://` 或 `ws://` 目标注入的凭据在网络路径上以明文传输；审计记录目标
+  的 scheme，但不记录凭据。可用时应优先使用 HTTPS 或 WSS。
+- 这是可审查、可撤销的 API 边界，不防恶意插件。插件入口可使用原生 Node，并非
+  操作系统沙箱；请只安装信任的插件。远端服务可能在 HTTP 响应体或 WebSocket 帧
+  中回显凭据，宿主不过滤这些应用数据。
 
 **`scheduler` —— 时钟归宿主。** 声明的定时器要么是至少一分钟的间隔，要么是
 五段 cron 表达式，二者不能同时存在。插件被禁用或卸载时不会触发；积压的触发
@@ -505,10 +509,11 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 `UNSUPPORTED` 拒绝并记入审计，因为当前宿主还没有设备后端，所以没有任何东西
 能到达设备。
 `notify.center`、`inbound.webhook` 与 `scheduler` 已实现，由独立权限把关并由
-宿主持有资源。`net.tcp` 已实现，宿主按字面端点匹配、限制并发、校验 TLS 并按
-生命周期清理（§8.3）。TCP 凭据代用尚未实现，传入时返回 `INVALID_ARGUMENT`。
-`credentials.use`、`mail.draft`、`tasks.read` 与 `tasks.manage` 仍仅注册，其
-manifest 字段在安装时校验。
+宿主持有资源。`credentials.use` 已支持宿主代理的 fetch 和 WebSocket，
+`pi.credentials.list` 仅返回配置状态（§8.3）。`net.tcp` 已实现字面端点匹配、
+并发限制、TLS 校验和生命周期清理；TCP 凭据代用尚未实现，传入时返回
+`INVALID_ARGUMENT`。`mail.draft`、`tasks.read` 与 `tasks.manage` 仍仅注册，
+其 manifest 字段在安装时校验。
 `net.websocket` 已实现：连接由宿主持有、经过白名单检查、有界，并随插件一起
 释放（§8.1）。
 

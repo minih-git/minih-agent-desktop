@@ -1,6 +1,22 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhCN = {
+  pluginCredentials: {
+    title: "凭据",
+    hint: "保存会整体替换凭据。修改时请重新填写全部字段；已保存的值不会显示。",
+    configured: "已配置",
+    notConfigured: "未配置",
+    lastUsed: "最近使用：{{time}}",
+    save: "保存凭据",
+    clear: "清除凭据",
+    show: "显示密码",
+    hide: "隐藏密码",
+    loadFailed: "无法读取凭据状态，请稍后重试。",
+    saveFailed: "无法保存凭据，请检查全部字段后重试。",
+    clearFailed: "无法清除凭据，请稍后重试。",
+    permissionLabel: "通过应用使用凭据",
+    permissionHelp: "插件可以让应用代为使用你填写的凭据访问其声明的服务；应用不会直接把凭据交给插件。向 http:// 或 ws:// 目标注入的凭据在网络路径上以明文传输。请只安装你信任的插件。",
+  },
   sidebarPluginView: {
     back: "返回会话",
   },

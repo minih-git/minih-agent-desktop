@@ -349,6 +349,19 @@ export type PluginServiceStatus = {
   message?: string;
   updatedAt: number;
 };
+/** Public credential-slot metadata and configuration state; never a value. */
+export type PluginCredentialStatus = {
+  id: string;
+  title: string | { en: string; "zh-CN": string };
+  kind: "basic" | "bearer" | "header" | "oauth2" | "imap";
+  fields: Array<{
+    key: string;
+    label: string | { en: string; "zh-CN": string };
+    secret?: boolean;
+  }>;
+  configured: boolean;
+  lastUsedAt: number | null;
+};
 
 export type PluginSummary = {
   id: string;

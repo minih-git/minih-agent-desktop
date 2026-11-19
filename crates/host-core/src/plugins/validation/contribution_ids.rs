@@ -1,5 +1,5 @@
 /// Validate the shared grammar for manifest contribution identifiers.
-pub(super) fn is_contrib_id(value: &str) -> bool {
+pub(crate) fn is_contrib_id(value: &str) -> bool {
     if value.is_empty() || value.len() > 64 {
         return false;
     }

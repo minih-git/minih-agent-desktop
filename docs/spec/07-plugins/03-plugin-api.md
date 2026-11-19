@@ -1329,22 +1329,23 @@ unload, and crash, and register / unregister are audited.
 
 ### Host capabilities (phase 2B)
 
-Six capability groups let the host hold a resource on the plugin's behalf — a
-credential, a socket, a listening path, a clock, a draft or inbox entry, a task
-— so the plugin never holds the secret, the socket, or the clock. The decision is
-[ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md); this
-section is the API contract and [04-plugin-security.md](04-plugin-security.md)
-§8.3 is the enforcement.
+Six capability groups let the host hold resources on a plugin's behalf. The
+credential API mediates use without directly returning stored values to plugin
+code; this is not an OS sandbox. See
+[ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md) and
+[04-plugin-security.md](04-plugin-security.md) §8.3.
 
-**Implementation status.** `pi.net.tcp`, `pi.notify.center`,
+**Implementation status.** `pi.net.tcp`, `pi.credentials.list`, `pi.notify.center`,
 `pi.inbound.getReceivers`, `inbound:webhook` and `schedule:fire` are implemented.
-`pi.mail` and `pi.tasks` remain registration only; `pi.net.fetch` ignores
-`credentialRef`. Plugins must check for unavailable methods before calling (§8).
+`pi.net.fetch` and `pi.net.websocket.connect` inject `credentialRef`; TCP does
+not yet support credential substitution. `pi.mail` and `pi.tasks` remain
+registration only; plugins must check for unavailable methods before calling (§8).
 
 ```ts
-// credentials.use — no call of its own. The user fills the slot in Settings;
-// the host injects the value into an egress call that names the slot.
+// credentials.use: the host injects a user-filled slot; only status is readable.
+pi.credentials.list(): Promise<Array<{ id: string; configured: boolean }>>
 pi.net.fetch(input: { …; credentialRef?: string })
+pi.net.websocket.connect(input: { …; credentialRef?: string })
 
 // net.tcp (requires `net.tcp`, and the endpoint must be in manifest.net.tcp)
 pi.net.tcp.connect(input: {
@@ -1398,13 +1399,22 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
 
 Semantics:
 
-- **Credentials are write-only from the plugin's side.** `credentialRef` names a
-  `contributes.credentials[].id`. The host adds the header, token or login only
-  when the request target is inside both the slot's `scope` and
-  `manifest.net.domains`; otherwise the call is refused
-  (`PERMISSION_DENIED`) rather than sent unauthenticated. A `credentialRef`
-  that names no declared slot is `INVALID_ARGUMENT`. No call returns a value,
-  and no error message carries one.
+- **Host-mediated credentials.** `credentialRef` names a declared slot. The
+  request needs `credentials.use` and the relevant network permission; its
+  target must be in both the slot's `scope.domains` and `manifest.net.domains`
+  even with `net.anyHost`, or the host refuses it (`PERMISSION_DENIED`) before
+  transport. Invalid or undeclared references return `INVALID_ARGUMENT`; an
+  unconfigured slot returns `CREDENTIAL_NOT_CONFIGURED`.
+- Field keys are `username` / `password` for `basic`, `token` for `bearer`,
+  `name` / `value` for `header`, and `accessToken` for `oauth2`. OAuth refresh
+  is not implemented. `imap` is refused for HTTP and WebSocket. Users replace a
+  whole slot in Settings; values are never redisplayed. `credentials.list`
+  returns only ids and configured booleans.
+- A credential-bearing fetch refuses a cross-origin redirect and does not send
+  a second request. HTTP responses exclude `Authorization`, `Proxy-Authorization`
+  and the injected header name. The host does not filter response bodies or
+  WebSocket frames; a remote service may echo credentials there. Plugin entry
+  code is not sandboxed; install only trusted plugins.
 - **`net.tcp` endpoints are literal.** The `endpoint` must appear in
   `manifest.net.tcp` (host and port are compared after the manifest's own
   normalization), or the call fails `PERMISSION_DENIED`. `tls` comes from the

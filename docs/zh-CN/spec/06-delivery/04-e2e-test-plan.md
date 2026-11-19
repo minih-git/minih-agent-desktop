@@ -14,6 +14,21 @@
   外壳中测试插件进程、通知中心、视图与命令并截取四种布局；Rust RPC 和桌面测试
   分别覆盖去重、安全、限速、生命周期与已读竞态。
 
+## E2E-PLUGIN-credential-mediated-egress
+
+- **前提：** 隔离 profile、合成插件和本地 HTTP/WebSocket 服务；不使用真实账户或凭据。
+- **步骤：** 在插件设置填写并保存所有字段，通过 `credentialRef` 发起 fetch 和
+  WebSocket；尝试未声明及越域目标，然后停用并卸载插件。
+- **预期：** 宿主仅向允许的目标发送正确认证头，不在宿主生成的消息或错误中返回
+  已存值，也不跟随带凭据的跨源重定向。设置不回显保存值，未配置时清除按钮禁用。
+  安装审查提示 HTTP/WS 凭据明文传输，凭据审计记录 scheme 而不记录值。停用保留，
+  卸载清除或明确报错。远端响应体及 WebSocket 帧不过滤，插件入口不是操作系统沙箱。
+- **覆盖：** `scripts/e2e-plugin-credentials-ui.mjs` 驱动隔离完整产品壳，从
+  设置经真实插件命令访问本地 HTTP 服务，捕获两种状态、深浅主题和 1440/1024
+  宽度截图。`scripts/e2e-plugin-credentials.mjs` 覆盖真实宿主、插件进程、
+  停用与卸载；桌面凭据测试覆盖 WebSocket、范围、重定向、sidecar 消息与错误。
+  已安装发布版验收另行执行。
+
 ## E2E-PLUGIN-scheduler-delivers-without-model-turn
 
 - **前提：** 隔离 profile 和 Host 数据库；启用的插件持有 `scheduler`，声明两个

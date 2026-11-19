@@ -5,7 +5,7 @@ mod host_capabilities;
 mod provider_catalog;
 mod views;
 
-use contribution_ids::is_contrib_id;
+pub(crate) use contribution_ids::is_contrib_id;
 use views::validate_views;
 
 pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> Result<()> {

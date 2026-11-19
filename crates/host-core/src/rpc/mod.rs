@@ -5,6 +5,7 @@ mod easytier_rpc;
 mod memory_rpc;
 mod memory_tools;
 mod notification_ack_rpc;
+mod plugin_credentials_rpc;
 mod plugin_notification_rpc;
 mod plugin_schedules_rpc;
 mod plugin_settings_rpc;
@@ -1956,6 +1957,12 @@ async fn handle_request(
         return config_sync_rpc::handle(state, method, params, tx)
             .await
             .map_err(config_sync_rpc_err);
+    }
+    // Plugin credential slots: Electron Main's storage surface for
+    // `contributes.credentials`. `resolve` is the only method that returns a
+    // value, and the renderer has no IPC channel to any of them.
+    if method.starts_with("plugins.credentials.") {
+        return plugin_credentials_rpc::handle(state, method, params).await;
     }
     if method == "plugins.settings.update" {
         return plugin_settings_rpc::update(state, params).await;

@@ -59,7 +59,7 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `embeddings.run` | high | `pi.embeddings.embed` | Confirm at install | Turns text into vectors with one of the user's own embedding models. The text leaves the machine and spends that provider's quota; the plugin never sees the credential. OpenAI-compatible endpoints only; 1..=64 texts, 8 KiB each, 256 KiB a call, 120 calls a minute |
 | `agent.complete` | high | `pi.agent.complete` | Confirm at install | Host-owned one-shot; spends user quota; `includeSessionContext` also needs `session.read` |
 | `speech.adapter.register` | high | `pi.speech.registerAdapter` / `unregisterAdapter` | Confirm at install | Registers a speech protocol. Handles stay in the guest; HTTP plans are executed by the host with the bound provider key and must stay on that origin. Built-in protocol ids are reserved |
-| `credentials.use` | high | `contributes.credentials` slots the user fills in Settings; the host injects the stored secret into an egress path the plugin names by `credentialRef` | Confirm at install | No read API: nothing returns the value. Injection happens only inside both the slot's `scope` and `manifest.net.domains`, so a slot without `scope` is injected nowhere. Values live in the secret store, never in SQLite |
+| `credentials.use` | high | `contributes.credentials` slots filled in Settings and used by host egress via `credentialRef` | Confirm at install | No plugin-facing host API returns a saved value; injection requires both the slot scope and `manifest.net.domains`. Values stay in the encrypted secret store, not SQLite. This is not an OS sandbox: install trusted plugins only, and remote responses may echo credentials |
 | `net.tcp` | high | `pi.net.tcp.connect` / `send` / `close` (host-owned sockets to the literal endpoints in `manifest.net.tcp`) | Deny by default | Literal `host`, `port` and `tls`; no wildcard, no port range. At most four connections open at once — a concurrency ceiling, not a cap on the allowlist. The plugin gets a handle, never a socket, and every connection closes on unload, disable, and crash |
 | `inbound.webhook` | high | `contributes.webhooks`; host-owned listener, token and `inbound:webhook` events | Confirm at install | LAN mode binds all interfaces with the source filter in [ADR plugin-webhook-listener-boundary](../../adr/plugin-webhook-listener-boundary.md); it is plain HTTP and may admit directly connected public subnets. The token is never returned to plugins. Bodies above 256 KiB get `413`; over 120 accepted per minute get `429`; the manifest may lower either ceiling |
 | `mail.draft` | medium | `pi.mail.draft.create` | Confirm at install | Writes a draft into the host's draft list. There is no send path, in this grant or behind another |
@@ -172,7 +172,7 @@ so "Modify the files it lists" is followed by the list.
 | `agent.prompt.inject` | Adjust agent instructions | 调整智能体指令 |
 | `agent.extension` | Run code inside the agent | 在 agent 内运行代码 |
 | `renderer.extension` | Draw UI in chat slots | 在聊天插槽绘制界面 |
-| `credentials.use` | Use the credentials you enter in Settings, without seeing them | 使用你在设置中填写的凭据（插件看不到明文） |
+| `credentials.use` | Use credentials through the app | 通过应用使用凭据 |
 | `net.tcp` | Connect directly to the servers it lists | 直接连接它列出的服务器 |
 | `inbound.webhook` | Receive requests on a local address | 在本地地址接收外部请求 |
 | `notify.center` | Add entries to your notification center | 向通知中心添加条目 |

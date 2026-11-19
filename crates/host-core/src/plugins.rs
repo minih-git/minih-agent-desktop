@@ -17,6 +17,7 @@ pub(crate) use crate::activation::ActivationScope;
 pub(crate) const MAX_PACKAGE_BYTES: u64 = 50 * 1024 * 1024;
 pub(crate) const MAX_PACKAGE_FILES: usize = 2000;
 
+pub(crate) mod credentials;
 mod install;
 mod manifest;
 pub mod marketplace;
@@ -46,7 +47,7 @@ pub(crate) use progress::{
 
 /// Locale resolution for plugin/catalog display strings, shared by the
 /// registry and the marketplace readers.
-pub(crate) use model::localized_field;
+pub(crate) use model::{localized_field, plugin_display_locale};
 pub use registry::PluginManager;
 
 // Domain modules share a small set of crate-private helpers. Re-exporting them
@@ -73,7 +74,7 @@ pub(crate) use providers::{
 };
 pub(crate) use renderer::validate_renderer;
 pub(crate) use validation::{
-    is_local_package_url, package_host_allowed, validate_contributions,
+    is_contrib_id, is_local_package_url, package_host_allowed, validate_contributions,
     validate_manifest_capabilities,
 };
 

@@ -16,6 +16,29 @@
   captures the four layouts. Rust RPC and desktop tests cover deduplication,
   safety, rate limiting, lifecycle and acknowledgement races separately.
 
+## E2E-PLUGIN-credential-mediated-egress
+
+- **Preconditions:** Isolated profile, synthetic plugin and local HTTP/WebSocket
+  servers; no real accounts or credentials.
+- **Steps:** Enter and save every slot field in plugin settings, invoke a plugin
+  fetch and WebSocket connection using `credentialRef`, try undeclared and
+  out-of-scope targets, then disable and uninstall the plugin.
+- **Expected:** The host sends the correct authentication header only to an
+  allowed target, never returns stored values in host-generated messages or
+  errors, and does not follow a credential-bearing cross-origin redirect.
+  Settings do not redisplay saved values; clear is disabled when unconfigured.
+  Install review warns that HTTP/WS credentials travel in cleartext, and the
+  credential audit records the scheme but not the value. Disable retains the
+  slot; uninstall clears it or reports failure. Remote response bodies and
+  WebSocket frames are not filtered and plugin entry code is not an OS sandbox.
+- **Coverage:** `scripts/e2e-plugin-credentials-ui.mjs` drives the complete
+  isolated Desktop shell from settings through a real plugin command and local
+  HTTP server, capturing both states in light/dark at 1440 and 1024 pixels.
+  `scripts/e2e-plugin-credentials.mjs` covers the real host, plugin sidecar,
+  disable and uninstall; the desktop credential tests cover WebSocket, scope,
+  redirects, sidecar messages and error cases. Installed-release acceptance is
+  separate.
+
 ## E2E-PLUGIN-scheduler-delivers-without-model-turn
 
 - **Preconditions:** Isolated profile and host database; an enabled plugin with

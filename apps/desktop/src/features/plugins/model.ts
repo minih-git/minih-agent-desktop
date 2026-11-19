@@ -165,7 +165,14 @@ export function permissionRisk(key: string): RiskTier {
 
 export function permissionLabel(key: string, t: (k: string, o?: any) => string): string {
   if (key === "inbound.webhook") return t("plugins.webhook.permissionLabel");
+  if (key === "credentials.use") return t("pluginCredentials.permissionLabel");
   return t(`plugins.permissions.${key}`, { defaultValue: key });
+}
+
+export function permissionHelp(key: string, t: (k: string, o?: any) => string): string {
+  if (key === "inbound.webhook") return t("plugins.webhook.permissionWarning");
+  if (key === "credentials.use") return t("pluginCredentials.permissionHelp");
+  return t(`plugins.permissionHelp.${key}`, { defaultValue: key });
 }
 
 /** Deduplicates permissions and orders them by descending risk, then by label. */

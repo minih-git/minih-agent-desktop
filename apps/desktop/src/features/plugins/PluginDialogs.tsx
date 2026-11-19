@@ -10,6 +10,7 @@ import {
   RISK_TIERS,
   TEMPLATE_IDS,
   permissionLabel,
+  permissionHelp,
   permissionRisk,
 } from "./model";
 import type { PluginsPageModel } from "./usePluginsPage";
@@ -317,7 +318,7 @@ function PermissionGroups({
                       ) : null}
                     </strong>
                     <span>
-                      {permission === "inbound.webhook" ? t("plugins.webhook.permissionWarning") : t(`plugins.permissionHelp.${permission}`, { defaultValue: permission })}
+                      {permissionHelp(permission, t)}
                     </span>
                   </span>
                 </li>

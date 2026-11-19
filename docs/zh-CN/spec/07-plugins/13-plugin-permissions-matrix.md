@@ -62,7 +62,7 @@
 | `embeddings.run` | high | `pi.embeddings.embed` | 安装时确认 | 用用户自己的向量模型把文本变成向量。文本会离开本机并消耗该服务额度；插件永远看不到凭据。仅 OpenAI 兼容接口；每次 1..=64 条、单条 8 KiB、总量 256 KiB，每分钟 120 次 |
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
-| `credentials.use` | 高 | `contributes.credentials` 声明的凭据槽位，由用户在设置里填写；宿主把已保存的密钥注入插件用 `credentialRef` 指定的出网路径 | 安装时确认 | 没有读取 API：任何调用都不返回值。只有目标既在槽位 `scope` 内、又在 `manifest.net.domains` 内才注入，所以没有 `scope` 的槽位无处注入。密钥值存在密钥库，不进 SQLite |
+| `credentials.use` | 高 | 用户在设置里填写 `contributes.credentials` 槽位，宿主按 `credentialRef` 代为注入 | 安装时确认 | 宿主不提供插件可调用的凭据读取 API；只有目标同时位于槽位范围和 `manifest.net.domains` 内才注入。值存加密密钥库，不进 SQLite。插件不是操作系统沙箱，只应安装可信插件；远端响应可能回显凭据 |
 | `net.tcp` | 高 | `pi.net.tcp.connect` / `send` / `close`（宿主持有的套接字，目标是 `manifest.net.tcp` 里的字面端点） | 默认拒绝 | `host`、`port`、`tls` 都是字面值；不接受通配符，也不接受端口区间。同时最多四条连接——这是并发上限，不是白名单条数上限。插件拿到的是句柄而不是套接字，卸载、禁用、崩溃都会关闭全部连接 |
 | `inbound.webhook` | 高 | `contributes.webhooks`；宿主持有监听、令牌并投递 `inbound:webhook` 事件 | 安装时确认 | 局域网模式绑定所有接口并按 [ADR plugin-webhook-listener-boundary](/zh-CN/adr/plugin-webhook-listener-boundary) 过滤来源；明文 HTTP，直连公网子网也可能被允许。令牌不返回给插件。正文超过 256 KiB 返回 `413`，每分钟超过 120 次有效请求返回 `429`；manifest 只能调低上限 |
 | `mail.draft` | 中 | `pi.mail.draft.create` | 安装时确认 | 只把草稿写入宿主的草稿列表，没有发送路径，也不存在由另一个权限打开的发送路径 |
@@ -195,7 +195,7 @@ Agent，在 Plan 中不可见。主机返回 `PLUGIN_DISABLED_IN_PLAN`
 | `audio.playback.background` | Play audio in the background | 后台播放声音 |
 | `keyboard.globalShortcut` | Register system-wide shortcuts | 注册系统级快捷键 |
 | `net.websocket` | Open real-time connections | 建立实时双向连接 |
-| `credentials.use` | 使用你在设置里填写的凭据，但看不到明文 | 使用你在设置中填写的凭据（插件看不到明文） |
+| `credentials.use` | Use credentials through the app | 通过应用使用凭据 |
 | `net.tcp` | 直接连接它列出的服务器 | 直接连接它列出的服务器 |
 | `inbound.webhook` | 在本地地址接收外部请求 | 在本地地址接收外部请求 |
 | `notify.center` | 向你的通知中心添加条目 | 向通知中心添加条目 |
