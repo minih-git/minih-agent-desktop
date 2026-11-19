@@ -17,6 +17,7 @@ function registerFunction() {
     "../plugin-runtime": { readDevPluginDeclaration: () => ({ manifest: { contributes: { webhooks: [{ id: "hook" }] } } }), widenedFsScope: () => [] },
     "../plugin-view-host": { PluginViewHost: class {} },
     "../plugin-renderer-extension": { rendererCallError: (error) => error },
+    "./plugin-credentials-ipc": { registerPluginCredentialIpc: () => {} },
   };
   new Function("require", "exports", "module", outputText)((id) => {
     assert.ok(Object.hasOwn(dependencies, id), `Unexpected import: ${id}`);
