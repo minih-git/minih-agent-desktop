@@ -228,6 +228,11 @@ export function registerPluginIpc({
     const settings = await plugins.getPluginSettings(String(id ?? ""));
     return { settings };
   });
+  handle(IPC.invoke.pluginTcpUsage, async (id: string) => {
+    if (!host) throw new Error("host unavailable");
+    await plugins.flushTcpUsage();
+    return host.call("plugin.tcpUsage.summary", { pluginId: id });
+  });
 
   handle(
     IPC.invoke.pluginSettingsSet,
@@ -476,6 +481,7 @@ export function registerPluginIpc({
     }
     pluginViews.closePlugin(id);
     await plugins.unload(id);
+    await plugins.flushTcpUsage();
     logger.app("plugin", "info", "plugin uninstalled", { pluginId: id });
     const res = await host.call<{ ok: boolean }>("plugins.uninstall", { id });
     if (res.ok && webhooks) {

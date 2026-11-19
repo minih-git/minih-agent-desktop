@@ -147,3 +147,40 @@ test(`quit settles a regenerated branch when the host is ${outcome}`, async (t) 
   assert.equal(hostDisposed, true);
 });
 }
+
+test("quit keeps the host alive until plugin TCP usage is flushed", async (t) => {
+  const pluginStarted = Promise.withResolvers();
+  const releasePlugin = Promise.withResolvers();
+  const events = [];
+  const state = {
+    shutdownComplete: false, shutdownPromise: null, quitting: false,
+    quitConfirmed: true, closeBehavior: "quit", tray: null,
+    pluginLauncherAccelerator: null, toggleWindowAccelerator: null,
+  };
+  const noop = () => {};
+  registerShutdownHandlers({
+    hasSingleInstanceLock: true, state,
+    getHost: () => ({ dispose: async () => { events.push("host-disposed"); } }),
+    getSidecar: () => null, getMcpControl: () => null,
+    finishTurn: async () => {}, lockAbortReason: noop, getAgentHostBridge: () => null,
+    activeTurns: new Map(), persistenceOutbox: { flush: async () => {} },
+    inflightCheckpointer: { flushAll: async () => {}, dispose: noop },
+    flushEventPersistence: async () => {}, pluginPanels: { closeAll: async () => {} },
+    plugins: { disposeAll: async () => {
+      events.push("plugin-flush-started");
+      pluginStarted.resolve();
+      await releasePlugin.promise;
+      events.push("plugin-flush-finished");
+    } },
+    userMcp: { disposeAll: noop }, browserHost: { dispose: noop },
+    pluginViews: { dispose: async () => {} }, updater: { dispose: noop, isInstallingUpdate: () => false },
+    logger: { app: noop }, confirmQuitDialog: async () => true, disposePowerSaveBlockers: noop,
+  });
+  t.after(async () => { releasePlugin.resolve(); await state.shutdownPromise; app.removeAllListeners(); });
+  app.emit("before-quit", { preventDefault() {} });
+  await pluginStarted.promise;
+  assert.deepEqual(events, ["plugin-flush-started"]);
+  releasePlugin.resolve();
+  await state.shutdownPromise;
+  assert.deepEqual(events, ["plugin-flush-started", "plugin-flush-finished", "host-disposed"]);
+});

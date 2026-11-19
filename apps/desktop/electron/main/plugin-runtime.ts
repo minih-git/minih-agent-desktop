@@ -47,6 +47,7 @@ import {
   matchFsGlob,
   normalizeFsPath,
   parseNetDomains,
+  parseNetTcpEndpoints,
   parseSkillFrontmatter,
   pluginMcpToolKey,
   pluginSkillId,
@@ -143,6 +144,7 @@ import {
   type PluginSocketEvent,
   type PluginWebSocketRegistry,
 } from "./plugin-websocket";
+import type { PluginTcpEvent, PluginTcpRegistry } from "./plugin-tcp";
 import {
   PluginShortcutError,
   type PluginShortcutEntry,
@@ -450,6 +452,7 @@ export type PluginHostServices = {
    * runtime rather than by plugin code.
    */
   pluginSockets?: PluginWebSocketRegistry;
+  pluginTcp?: PluginTcpRegistry;
   /** Transport overrides for plugin-declared MCP servers; tests inject stubs. */
   mcp?: Pick<
     McpServerClientOptions,
@@ -648,6 +651,9 @@ const HOST_API_ALLOWLIST = new Set([
   "net.websocket.connect",
   "net.websocket.send",
   "net.websocket.close",
+  "net.tcp.connect",
+  "net.tcp.send",
+  "net.tcp.close",
   "audio.getInputDevices",
   "audio.openInput",
   "audio.closeInput",
@@ -2362,6 +2368,11 @@ export class PluginRuntime {
       this.services.audit?.({ pluginId, api: "plugin.unload", ok: true, ts: Date.now() });
     }
   }
+  /** Persist accumulated TCP counters before a usage read or uninstall. */
+  async flushTcpUsage(): Promise<void> {
+    await this.services.pluginTcp?.flush();
+  }
+
 
   /**
    * Watch a loaded development plugin so source edits reload it in place.
@@ -2440,6 +2451,23 @@ export class PluginRuntime {
       } catch {
         // Already gone.
       }
+    }
+    let tcpTimer: NodeJS.Timeout | undefined;
+    try {
+      const disposal = this.services.pluginTcp?.dispose();
+      if (disposal) {
+        await Promise.race([
+          disposal,
+          new Promise<never>((_resolve, reject) => {
+            tcpTimer = setTimeout(() => reject(new Error("TCP traffic flush timed out during shutdown")), PLUGIN_DISPOSE_ALL_TIMEOUT_MS);
+            tcpTimer.unref?.();
+          }),
+        ]);
+      }
+    } catch (error) {
+      this.services.audit?.({ api: "net.tcp.flush", ok: false, errorCode: "USAGE_WRITE_FAILED", message: (error as Error).message, ts: Date.now() });
+    } finally {
+      if (tcpTimer) clearTimeout(tcpTimer);
     }
     this.loaded.clear();
     this.serviceStates.clear();
@@ -3056,6 +3084,74 @@ export class PluginRuntime {
             errorCode: code,
             ts: Date.now(),
           });
+          throw apiError(code, (error as Error).message);
+        }
+      }
+      case "net.tcp.connect": {
+        const descriptor = (args[0] ?? {}) as {
+          endpoint?: { host?: unknown; port?: unknown };
+          timeoutMs?: number;
+          credentialRef?: unknown;
+        };
+        const requested = parseNetTcpEndpoints([{ host: descriptor.endpoint?.host, port: descriptor.endpoint?.port, tls: false }]);
+        const auditPeer = requested.ok ? requested.endpoints?.[0] : undefined;
+        try {
+          this.assertPermission(loaded, "net.tcp");
+          const registry = this.services.pluginTcp;
+          if (!registry) throw apiError("UNSUPPORTED", "TCP connections are unavailable in this host");
+          if (Object.hasOwn(descriptor, "credentialRef")) {
+            throw apiError("INVALID_ARGUMENT", "TCP credential substitution is not yet available");
+          }
+          const host = descriptor.endpoint?.host;
+          const port = descriptor.endpoint?.port;
+          if (typeof host !== "string" || !Number.isInteger(port)) {
+            throw apiError("INVALID_ARGUMENT", "TCP endpoint requires a host and integer port");
+          }
+          const parsed = parseNetTcpEndpoints(loaded.manifest.net?.tcp);
+          const endpoint = parsed.ok
+            ? parsed.endpoints?.find((item) => item.host === host.trim().toLowerCase() && item.port === port)
+            : undefined;
+          if (!endpoint) throw apiError("PERMISSION_DENIED", "TCP endpoint is not declared in manifest.net.tcp");
+          const result = await registry.connect({ pluginId, endpoint, timeoutMs: descriptor.timeoutMs });
+          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: true, ts: Date.now(), host: endpoint.host, port: endpoint.port, connectionId: result.connectionId });
+          return result;
+        } catch (error) {
+          const code = (error as { code?: string }).code ?? "CONNECT_FAILED";
+          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: false, errorCode: code, ...(auditPeer ? { host: auditPeer.host, port: auditPeer.port } : {}), ts: Date.now() });
+          throw apiError(code, (error as Error).message);
+        }
+      }
+      case "net.tcp.send": {
+        this.assertPermission(loaded, "net.tcp");
+        const registry = this.services.pluginTcp;
+        if (!registry) throw apiError("UNSUPPORTED", "TCP connections are unavailable in this host");
+        const descriptor = (args[0] ?? {}) as { connectionId?: unknown; data?: unknown };
+        if (typeof descriptor.connectionId !== "string" ||
+          !(typeof descriptor.data === "string" || descriptor.data instanceof Uint8Array)) {
+          throw apiError("INVALID_ARGUMENT", "TCP send requires a connectionId and string or binary data");
+        }
+        try {
+          registry.send({ pluginId, connectionId: descriptor.connectionId, data: descriptor.data });
+          return { ok: true };
+        } catch (error) {
+          if (error instanceof PluginSocketError) throw apiError(error.code, error.message);
+          throw error;
+        }
+      }
+      case "net.tcp.close": {
+        this.assertPermission(loaded, "net.tcp");
+        const registry = this.services.pluginTcp;
+        if (!registry) throw apiError("UNSUPPORTED", "TCP connections are unavailable in this host");
+        const descriptor = (args[0] ?? {}) as { connectionId?: unknown };
+        try {
+          if (typeof descriptor.connectionId !== "string") throw apiError("INVALID_ARGUMENT", "TCP close requires a connectionId");
+          const endpoint = registry.list(pluginId).find((entry) => entry.connectionId === descriptor.connectionId);
+          registry.close({ pluginId, connectionId: descriptor.connectionId });
+          this.services.audit?.({ pluginId, api: "net.tcp.close", ok: true, connectionId: descriptor.connectionId, host: endpoint?.host, port: endpoint?.port, ts: Date.now() });
+          return { ok: true };
+        } catch (error) {
+          const code = (error as { code?: string }).code ?? "NOT_FOUND";
+          this.services.audit?.({ pluginId, api: "net.tcp.close", ok: false, errorCode: code, ts: Date.now() });
           throw apiError(code, (error as Error).message);
         }
       }
@@ -3855,6 +3951,7 @@ export class PluginRuntime {
     // Same for a real-time connection: the host owns the socket, so a plugin
     // that is gone keeps neither the connection nor the frames still arriving.
     this.services.pluginSockets?.releasePlugin(pluginId);
+    this.services.pluginTcp?.releasePlugin(pluginId);
   }
 
   /**
@@ -4732,6 +4829,17 @@ export class PluginRuntime {
         message: (error as Error).message,
         ts: Date.now(),
       });
+    }
+  }
+
+  /** TCP events are delivered only to the process that owns the connection. */
+  deliverTcpEvent(pluginId: string, event: PluginTcpEvent): void {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded?.child) return;
+    try {
+      loaded.child.postMessage({ t: "event", event: `net:tcp:${event.type}`, args: [event] });
+    } catch (error) {
+      this.services.audit?.({ pluginId, api: "net.tcp.deliver", ok: false, errorCode: "PLUGIN_UNREACHABLE", message: (error as Error).message, ts: Date.now() });
     }
   }
 

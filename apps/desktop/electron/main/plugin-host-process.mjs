@@ -440,6 +440,11 @@ function buildApi() {
         send: (input) => call("net.websocket.send", [input ?? {}]),
         close: (input) => call("net.websocket.close", [input ?? {}]),
       },
+      tcp: {
+        connect: (input) => call("net.tcp.connect", [input ?? {}]),
+        send: (input) => call("net.tcp.send", [input ?? {}]),
+        close: (input) => call("net.tcp.close", [input ?? {}]),
+      },
     },
     inbound: {
       getReceivers: () => call("inbound.getReceivers"),

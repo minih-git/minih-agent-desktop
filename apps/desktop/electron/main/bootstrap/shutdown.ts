@@ -246,13 +246,20 @@ export function registerShutdownHandlers({
         if (persistenceTimer) clearTimeout(persistenceTimer);
       }
       await persistenceOutbox.flush(getHost);
-      const hostShutdown = getHost()?.dispose();
       const mcpShutdown = getMcpControl()?.stop();
       updater.dispose();
       // Plugin hosts are stopped as a shutdown, not left for the process teardown
       // to kill: an unannounced exit is indistinguishable from a crash, and would
       // end every quit in error logs, toasts, and restarts into a closing app.
+      // Plugin shutdown flushes host-owned resources such as TCP usage. Keep
+      // this exact host alive until those final writes have settled.
+      const quittingHost = getHost();
       const pluginShutdown = plugins.disposeAll();
+      const hostShutdown = pluginShutdown
+        .catch((error) => {
+          logger.app("lifecycle", "warn", "plugin shutdown failed", { data: String(error) });
+        })
+        .then(() => quittingHost?.dispose());
       userMcp.disposeAll();
       mcpOAuth?.disposeAll();
       browserHost.dispose();

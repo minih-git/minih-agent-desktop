@@ -50,6 +50,7 @@ import { createSpeechService } from "./speech-service";
 import { PluginShortcutRegistry } from "../plugin-shortcut-registry";
 import { PluginWebSocketRegistry } from "../plugin-websocket";
 import { PluginWebhookManager } from "../plugin-webhook-manager";
+import { PluginTcpRegistry } from "../plugin-tcp";
 import { hostGlobalShortcutBindings } from "../bootstrap/launcher";
 import { UserMcpRuntime } from "../user-mcp";
 import {
@@ -238,9 +239,26 @@ export function createPluginServices({
     onEvent: (pluginId, event) => plugins.deliverSocketEvent(pluginId, event),
   });
   let webhooks: PluginWebhookManager;
+  const pluginTcp = new PluginTcpRegistry({
+    onEvent: (pluginId, event) => plugins.deliverTcpEvent(pluginId, event),
+    onUsage: async (records) => {
+      const host = getHost();
+      if (!host) throw new Error("host unavailable while recording TCP traffic");
+      const { pluginId, day } = records[0];
+      await host.call("plugin.tcpUsage.record", {
+        pluginId,
+        day,
+        samples: records.map(({ host: peer, port, bytesIn, bytesOut }) => ({ host: peer, port, bytesIn, bytesOut })),
+      });
+    },
+    onUsageError: (error) => logger.app("plugin", "warn", "plugin TCP usage flush failed", {
+      data: { error: String(error) },
+    }),
+  });
   const plugins: PluginRuntime = new PluginRuntime({
     pluginShortcuts,
     pluginSockets,
+    pluginTcp,
     getWebhookReceivers: async (pluginId) => (await webhooks.list(pluginId)).receivers,
     onPluginLoaded: (pluginId) => {
       void webhooks.pluginLoaded(pluginId).catch(() => logger.app("plugin", "error", "webhook replay failed", { pluginId }));
