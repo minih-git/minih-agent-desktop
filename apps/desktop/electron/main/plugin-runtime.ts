@@ -520,7 +520,6 @@ export type PluginHostServices = {
     cdp: (method: string, params?: unknown, sessionId?: string, tabId?: string) => Promise<unknown>;
   };
   onPluginUnload?: (pluginId: string) => void;
-  onPluginLoaded?: (pluginId: string) => void;
   onPluginRuntimeDispose?: () => Promise<void>;
   listModels?: (input?: PluginModelsListInput) => Promise<PluginModelInfo[]>;
   /**

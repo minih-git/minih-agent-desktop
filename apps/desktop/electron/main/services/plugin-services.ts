@@ -243,9 +243,6 @@ export function createPluginServices({
     pluginShortcuts,
     pluginSockets,
     getWebhookReceivers: async (pluginId) => (await webhooks.list(pluginId)).receivers,
-    onPluginLoaded: (pluginId) => {
-      void webhooks.pluginLoaded(pluginId).catch(() => logger.app("plugin", "error", "webhook replay failed", { pluginId }));
-    },
     onPluginRuntimeDispose: () => webhooks.dispose(),
     updatePluginSettings: async (pluginId, patch) => {
       const host = getHost();
@@ -818,7 +815,10 @@ export function createPluginServices({
     onError: (error) => logger.app("plugin", "error", "plugin scheduler failed", { data: String(error) }),
   });
   plugins.setServices({
-    onPluginLoaded: (pluginId) => schedulerService.loaded(pluginId),
+    onPluginLoaded: (pluginId) => {
+      schedulerService.loaded(pluginId);
+      void webhooks.pluginLoaded(pluginId).catch(() => logger.app("plugin", "error", "webhook replay failed", { pluginId }));
+    },
     /**
      * The richer workspace payload, so `pi.workspace.get` and the
      * `workspace:changed` event both expose the open project's folder roots
