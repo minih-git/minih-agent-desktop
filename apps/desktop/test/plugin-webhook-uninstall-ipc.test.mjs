@@ -25,7 +25,7 @@ function registerFunction() {
   return module.exports.registerPluginIpc;
 }
 
-function fixture({ uninstallOk = true, failCleanup = false } = {}) {
+function fixture({ uninstallOk = true, failCleanup = false, failFlush = false } = {}) {
   const handlers = new Map();
   const calls = [];
   const pluginId = "example.plugin";
@@ -37,7 +37,7 @@ function fixture({ uninstallOk = true, failCleanup = false } = {}) {
   registerFunction()({
     registrar: { handle: (channel, fn) => handlers.set(channel, fn), handleWithEvent: (channel, fn) => handlers.set(channel, fn) },
     getHost: () => host,
-    plugins: { listLoaded: () => [{ manifest: { id: pluginId, contributes: { webhooks: [{ id: "hook" }] } } }], unload: async () => calls.push("unload") },
+    plugins: { listLoaded: () => [{ manifest: { id: pluginId, contributes: { webhooks: [{ id: "hook" }] } } }], unload: async () => calls.push("unload"), flushTcpUsage: async () => { calls.push("flushTcpUsage"); if (failFlush) throw new Error("traffic store unavailable"); } },
     webhooks: { uninstall: async (id, ids) => { calls.push(["cleanup", id, ids]); if (failCleanup) throw new Error("fixture-secret"); } },
     agentExtensions: {}, browserHost: { disposeGuest() {} }, pluginViews: { closePlugin: () => calls.push("close") },
     pluginScopes: new Map(), rememberPluginScopes() {}, sendToRenderer() {}, logger: { app() {} }, getUpdaterLocale: () => "en", confirmInterruption: async () => true,
@@ -48,7 +48,7 @@ function fixture({ uninstallOk = true, failCleanup = false } = {}) {
 test("uninstall waits for host removal before clearing webhook files and token references", async () => {
   const { uninstall, calls } = fixture();
   assert.deepEqual(await uninstall(), { ok: true });
-  assert.deepEqual(calls, ["close", "unload", "plugins.uninstall", ["cleanup", "example.plugin", ["hook"]]]);
+  assert.deepEqual(calls, ["close", "unload", "flushTcpUsage", "plugins.uninstall", ["cleanup", "example.plugin", ["hook"]]]);
 });
 
 test("failed uninstall leaves webhooks intact; cleanup failure reports partial removal without leaking details", async () => {
@@ -60,4 +60,10 @@ test("failed uninstall leaves webhooks intact; cleanup failure reports partial r
     assert.equal(error.message, "Plugin was uninstalled, but webhook data cleanup failed");
     return true;
   });
+});
+
+test("a failed TCP flush prevents uninstall and webhook removal", async () => {
+  const failed = fixture({ failFlush: true });
+  await assert.rejects(failed.uninstall(), /traffic store unavailable/);
+  assert.deepEqual(failed.calls, ["close", "unload", "flushTcpUsage"]);
 });
