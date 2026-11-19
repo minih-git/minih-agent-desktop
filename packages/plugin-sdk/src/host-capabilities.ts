@@ -6,7 +6,7 @@
  * host validates at install, and the bounds each one carries. A permission is
  * still the switch and the manifest field still carries the range; execution —
  * injecting a credential, receiving a webhook, running a schedule — lives in the
- * host and never in the plugin process. Nothing here performs work.
+ * host-mediated API. Plugin entry code itself is not an OS sandbox.
  */
 import type { PluginLocalizedString } from "./index.js";
 import { localizedStringError } from "./localized-label.js";
@@ -30,7 +30,7 @@ export type PluginCredentialFieldContrib = {
 /**
  * One credential slot (`credentials.use`). The user fills it in Settings; the
  * host stores it and injects it into the egress paths the plugin names by
- * `credentialRef`. There is no read API, so the plugin never sees the secret.
+ * `credentialRef`. The host provides no plugin-facing credential read API.
  */
 export type PluginCredentialContrib = {
   id: string;

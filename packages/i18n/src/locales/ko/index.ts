@@ -1,6 +1,7 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const ko = {
+  pluginCredentials: en.pluginCredentials,
   sidebarPluginView: {
     back: "대화로 돌아가기",
   },

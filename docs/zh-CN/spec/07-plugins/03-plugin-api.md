@@ -1054,22 +1054,22 @@ type PluginGlobalShortcut = {
 
 ### 宿主能力（phase 2B）
 
-六组能力让宿主代插件持有一类资源 —— 密钥、套接字、监听路径、时钟、宿主列表里
-的一条记录、一个任务 —— 于是插件永远不掌握密钥、套接字或时钟。决策见
-[ADR plugin-host-capabilities](/zh-CN/adr/plugin-host-capabilities)；本节是
-API 契约，强制方式见
-[04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
+六组能力让宿主代插件持有资源。凭据 API 代为使用保存的值，不主动把值交给插件；
+这不是操作系统沙箱。见 [ADR plugin-host-capabilities](/zh-CN/adr/plugin-host-capabilities)
+和 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
 
-**实现状态。** `pi.notify.center`、`pi.inbound.getReceivers` 和
-`inbound:webhook` 已实现。以下其他能力仍仅注册：`pi.net.tcp`、`pi.mail`、
-`pi.tasks` 和 `schedule:fire` 尚未实现，`pi.net.fetch` 也不会读 `credentialRef`。
-使用尚未实现的方法前应检查其是否存在（§8）。
+**实现状态。** `credentials.use` 已支持 `pi.net.fetch` 与
+`pi.net.websocket.connect` 的 `credentialRef` 注入，`pi.credentials.list` 只返回
+配置状态；`pi.notify.center`、`pi.inbound.getReceivers` 和 `inbound:webhook`
+已实现。以下其他能力仍仅注册：`pi.net.tcp`、`pi.mail`、`pi.tasks` 和
+`schedule:fire` 尚未实现。使用尚未实现的方法前应检查其是否存在（§8）。
 
 ```ts
-// credentials.use —— 自身没有调用。槽位由用户在设置里填写；
-// 宿主在点名该槽位的出网调用里注入值。
+// credentials.use：宿主注入用户填写的槽位；插件只可查询配置状态。
+pi.credentials.list(): Promise<Array<{ id: string; configured: boolean }>>
 pi.net.fetch(input: { …; credentialRef?: string })
-pi.net.tcp.connect(input: { …; credentialRef?: string })
+pi.net.websocket.connect(input: { …; credentialRef?: string })
+// 计划中：pi.net.tcp.connect(input: { …; credentialRef?: string })
 
 // net.tcp（需要 `net.tcp`，且端点必须在 manifest.net.tcp 内）
 pi.net.tcp.connect(input: {
@@ -1123,11 +1123,17 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
 
 语义：
 
-- **凭据对插件一侧是只写的。** `credentialRef` 指向
-  `contributes.credentials[].id`。只有当请求目标同时落在槽位 `scope` 与
-  `manifest.net.domains` 之内时，宿主才会加上请求头、令牌或登录信息；否则调用
-  以 `PERMISSION_DENIED` 被拒，而不会以未认证的方式发出去。`credentialRef`
-  指向未声明的槽位是 `INVALID_ARGUMENT`。没有调用会返回值，错误信息也不会带上它
+- **宿主代用凭据。** `credentialRef` 指向声明的槽位；调用需要 `credentials.use`
+  和对应网络权限。即使有 `net.anyHost`，目标也须同时位于槽位 `scope.domains` 与
+  `manifest.net.domains` 内，否则发送前以 `PERMISSION_DENIED` 拒绝。引用无效或
+  未声明返回 `INVALID_ARGUMENT`；槽位未配置返回 `CREDENTIAL_NOT_CONFIGURED`。
+- `basic` 字段为 `username` / `password`，`bearer` 为 `token`，`header` 为
+  `name` / `value`，`oauth2` 为 `accessToken`；不实现 OAuth 刷新。HTTP 和
+  WebSocket 拒绝 `imap`。设置保存时整体替换槽位，已保存值不回显。
+  `credentials.list` 只返回 id 和配置状态布尔值。
+- 带凭据的 fetch 拒绝跨源重定向，不发送第二跳。HTTP 响应会去掉 `Authorization`、
+  `Proxy-Authorization` 和注入头名。响应体及 WebSocket 帧不过滤，远端服务可能
+  回显凭据；插件入口不是沙箱，请只安装可信插件。
 - **`net.tcp` 端点是字面的。** `endpoint` 必须出现在 `manifest.net.tcp` 内
   （按清单自身的规范化结果比较主机与端口），否则 `PERMISSION_DENIED`。`tls`
   来自清单条目，绝不来自调用。每个插件**同时最多四条连接**，第五条 `connect`

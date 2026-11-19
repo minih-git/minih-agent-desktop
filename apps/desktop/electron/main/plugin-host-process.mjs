@@ -445,6 +445,14 @@ function buildApi() {
       getReceivers: () => call("inbound.getReceivers"),
     },
     /**
+     * Declared credential slots (`credentials.use`). Status only: the host
+     * injects the value into the request a `credentialRef` names, so nothing
+     * here can return a secret to this process.
+     */
+    credentials: {
+      list: () => call("credentials.list"),
+    },
+    /**
      * Background audio (`audio.capture.background`, `audio.playback.background`).
      * The host has no device backend yet, so the async calls travel to the
      * broker and come back as a coded `UNSUPPORTED` refusal — a plugin can

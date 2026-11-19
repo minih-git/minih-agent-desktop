@@ -15,6 +15,7 @@ import {
   formatDate,
   monogram,
   permissionLabel,
+  permissionHelp,
   permissionRisk,
   RISK_LABEL_KEYS,
   shortSha,
@@ -267,7 +268,7 @@ export function PluginDetailSheet({
                               <span className="plugins-perm-copy">
                                 <strong>{permissionLabel(permission, t)}</strong>
                                 <span>
-                                  {permission === "inbound.webhook" ? t("plugins.webhook.permissionWarning") : t(`plugins.permissionHelp.${permission}`, { defaultValue: permission })}
+                                  {permissionHelp(permission, t)}
                                 </span>
                               </span>
                             </li>

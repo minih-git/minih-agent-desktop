@@ -14,6 +14,7 @@ import {
 } from "../plugin-runtime";
 import { PluginViewHost } from "../plugin-view-host";
 import { rendererCallError } from "../plugin-renderer-extension";
+import { registerPluginCredentialIpc } from "./plugin-credentials-ipc";
 import type { IpcRegistrar } from "./types";
 import type { PluginWebhookManager } from "../plugin-webhook-manager";
 
@@ -55,6 +56,7 @@ export function registerPluginIpc({
   getUpdaterLocale,
   confirmInterruption,
 }: PluginIpcDependencies): void {
+  registerPluginCredentialIpc(registrar, getHost);
   let host: HostProcess | null = null;
   const handle = (channel: string, fn: (...args: any[]) => Promise<any>) => {
     registrar.handle(channel, async (...args) => {

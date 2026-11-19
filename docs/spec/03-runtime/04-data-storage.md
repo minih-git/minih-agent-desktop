@@ -2569,6 +2569,14 @@ columns for anything the host filters, joins, sums, or indexes.
 3. Secret values never in SQLite; only `secrets_meta` bookkeeping
 4. Exported sessions exclude secrets by default
 
+Plugin credential slots are stored as one encrypted JSON blob per slot under
+`plugin:<pluginId>:cred:<slotId>`. An encrypted
+`plugin:<pluginId>:cred-index` lists every written slot, including declarations
+removed in a later plugin version, so uninstall can delete every blob. The index
+is written before the blob; a purge failure aborts uninstall. Disabling keeps
+the values. The last-use timestamp is in memory only and resets at restart.
+Neither field values nor the index are stored in SQLite.
+
 ## 11. Acceptance
 
 1. Sessions and transcripts survive restart byte-identically (blocks, usage,

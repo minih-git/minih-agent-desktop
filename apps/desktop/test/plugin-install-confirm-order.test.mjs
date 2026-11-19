@@ -47,6 +47,7 @@ function loadPluginIpc({ picked = PACKAGE_PATH } = {}) {
     },
     "../plugin-view-host": { PluginViewHost: class {} },
     "../plugin-renderer-extension": { rendererCallError: (error) => error },
+    "./plugin-credentials-ipc": { registerPluginCredentialIpc: () => {} },
     "./types": {},
   };
   new Function("require", "exports", "module", outputText)(

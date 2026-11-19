@@ -1428,6 +1428,12 @@ export const api = {
     invoke(IPC.invoke.pluginSetAutoUpdate, { id, enabled }),
   getPluginSettings: (id: string) =>
     invoke<{ settings: PluginSettingDefinition[] }>(IPC.invoke.pluginSettingsGet, id),
+  getPluginCredentials: (pluginId: string) =>
+    invoke<{ slots: import("@minih-agent/shared").PluginCredentialStatus[] }>(IPC.invoke.pluginCredentialsStatus, { pluginId }),
+  setPluginCredential: (pluginId: string, slotId: string, fields: Record<string, string>) =>
+    invoke<void>(IPC.invoke.pluginCredentialsSet, { pluginId, slotId, fields }),
+  clearPluginCredential: (pluginId: string, slotId: string) =>
+    invoke<void>(IPC.invoke.pluginCredentialsClear, { pluginId, slotId }),
   runPluginComposerTransform: (input: {
     pluginId: string;
     id: string;

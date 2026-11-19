@@ -53,6 +53,21 @@ export type PluginNetFetchInput = {
   timeoutMs?: number;
   /** Defaults to follow. error refuses any 3xx; manual returns it unchanged. */
   redirect?: "follow" | "error" | "manual";
+  /**
+   * One declared credential slot (`contributes.credentials`) to inject into this
+   * request (`credentials.use`). The host resolves the value and puts it on the
+   * wire itself: the response header the credential travelled in is removed, a
+   * redirect to another origin is refused instead of followed, and the slot's
+   * own `scope.domains` plus `manifest.net.domains` both have to admit the host.
+   * A slot that is not configured fails with `CREDENTIAL_NOT_CONFIGURED`.
+   */
+  credentialRef?: string;
+};
+
+/** One declared credential slot and whether the user filled it. Never a value. */
+export type PluginCredentialSlotStatus = {
+  id: string;
+  configured: boolean;
 };
 
 export type PluginNetFetchResult = {
@@ -1279,6 +1294,13 @@ export type PluginWebSocketConnectInput = {
   headers?: Record<string, string>;
   protocols?: string[];
   timeoutMs?: number;
+  /**
+   * One declared credential slot (`contributes.credentials`) to send in the
+   * handshake (`credentials.use`). Same rules as `fetch`: the slot scope and
+   * `manifest.net.domains` both have to admit the host, and a socket that used
+   * a credential reports the close code but never the peer's own reason text.
+   */
+  credentialRef?: string;
 };
 
 export type PluginWebSocketOpenEvent = { socketId: string; protocol: string };
@@ -1683,6 +1705,15 @@ export type PluginHostApi = {
       send: (input: { socketId: string; data: string | Uint8Array }) => Promise<void>;
       close: (input: { socketId: string; code?: number; reason?: string }) => Promise<void>;
     };
+  };
+  /**
+   * Declared credential slots (`credentials.use`). Status only — whether the
+   * user filled a slot — because the host injects the value into the egress
+   * path a `credentialRef` names. There is no call that returns a secret, and
+   * the list carries declared slots only, never the host's own credentials.
+   */
+  credentials: {
+    list: () => Promise<PluginCredentialSlotStatus[]>;
   };
   events: {
     on: (event: string, handler: (...args: unknown[]) => void) => void;

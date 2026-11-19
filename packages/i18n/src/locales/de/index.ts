@@ -1,6 +1,7 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const de = {
+  pluginCredentials: en.pluginCredentials,
   sidebarPluginView: {
     back: "Zurück zum Gespräch",
   },

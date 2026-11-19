@@ -1,4 +1,20 @@
 export const en = {
+  pluginCredentials: {
+    title: "Credentials",
+    hint: "Saving replaces the entire credential. Enter every field again to change it; saved values are not shown.",
+    configured: "Configured",
+    notConfigured: "Not configured",
+    lastUsed: "Last used: {{time}}",
+    save: "Save credential",
+    clear: "Clear credential",
+    show: "Show password",
+    hide: "Hide password",
+    loadFailed: "Couldn't load credential status. Try again later.",
+    saveFailed: "Couldn't save credential. Check all fields and try again.",
+    clearFailed: "Couldn't clear credential. Try again later.",
+    permissionLabel: "Use credentials through the app",
+    permissionHelp: "The plugin can ask the app to use your credentials for its declared services. The app does not directly give the credentials to the plugin. Credentials sent to http:// or ws:// destinations travel unencrypted along the network path. Install only plugins you trust.",
+  },
   sidebarPluginView: {
     back: "Back to conversation",
   },

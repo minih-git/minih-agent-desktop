@@ -1,8 +1,9 @@
 # ADR plugin-host-capabilities: Six host capabilities, one permission each
 
 - **Status**: Accepted for implementation (2026-11-17). B-0 registered the
-  permissions; B2 implements inbound webhooks and B4 implements `notify.center`.
-  Other capability groups retain their separately documented implementation status.
+  permissions; B1 implements credentials, B2 implements inbound webhooks, and
+  B4 implements `notify.center`. Other capability groups retain their separately
+  documented implementation status.
 - **Date**: 2026-11-17
 - **Related**: ADR 0005 (user-installable plugins) · ADR 0008 D009 (the plugin
   process is not OS-sandboxed) · ADR 0074 (native notification permission) ·
@@ -38,8 +39,8 @@ The design rule that follows is the one the existing host-owned surfaces
 already use (`net.websocket`, `keyboard.globalShortcut`, the clipboard history
 of ADR 0115): **the host holds the resource, the plugin holds a permission and
 a handle.** A credential, a listening socket, a public path, a timer, a task, a
-mailbox entry — each is host state. The plugin names what it wants and receives
-events; it never holds the secret, the socket, or the clock.
+mailbox entry — each is host state. The mediated API does not hand the stored
+credential, socket, or clock to the plugin. This is not OS containment (§3).
 
 Six capability groups cover the requests collected from first-party plugin
 authors. None can be expressed by an existing permission, and two would be
@@ -91,13 +92,18 @@ each is stated in the install review.
 
 **Credentials (`credentials.use`).**
 
-- A slot is user-filled in Settings, never plugin-written. There is **no read
-  API**: no call returns the value, and no error message echoes it.
-- The value is stored in the existing secret store, never in SQLite (spec
-  `03-runtime/04` §10); the database records only which slots exist.
+- A slot is user-filled in Settings, never plugin-written through a host API.
+  There is no credential read API; host-generated responses, errors and audit
+  records do not disclose stored values.
+- The existing secret store holds the value, never SQLite (spec
+  `03-runtime/04` §10). Its at-rest design is unchanged.
 - Injection happens only on a host-owned egress path the plugin names by
   `credentialRef`, and only when the target is inside both the slot's `scope`
   and `manifest.net.domains`. A slot without `scope` is injected nowhere.
+- This is an auditable API boundary, not an OS sandbox or protection against a
+  malicious plugin running Node with the user's file permissions. Install only
+  trusted plugins. A remote service may echo the value in a response body or
+  WebSocket frame; the host does not filter those application payloads.
 - A slot the Settings sheet cannot render (no kind, no fields, duplicate field
   key) fails manifest validation: a dead permission is an authoring slip.
 
@@ -219,8 +225,11 @@ B-0 is registration, and only registration:
   bounds, and the rule that each field requires its permission;
 - `packages/plugin-sdk` types and validators for the shapes above.
 
-B-0 itself executed none of these capabilities. B4 subsequently implements
-`pi.notify.center`; the remaining methods retain their documented status.
+The original B-0 slice executed none of those capabilities. B1 subsequently
+implements credential storage, status, and injection on host-owned fetch and
+WebSocket calls; B2 implements inbound webhooks; B4 implements
+`pi.notify.center`. `net.tcp`, `scheduler`, `mail.draft` and `tasks.*` retain
+their separately documented implementation status.
 
 ## Consequences
 
@@ -249,9 +258,9 @@ B-0 itself executed none of these capabilities. B4 subsequently implements
 - **Let the plugin own its own socket, port and token.** Rejected: that is the
   status quo, and it is exactly what the user cannot review. Disabling the
   plugin would not close a port the host never knew about.
-- **A secret read API (`pi.credentials.get`).** Rejected: a value that can be
-  read can be logged, forwarded, or exfiltrated through any other grant. The
-  host injects, the plugin never holds.
+- **A secret read API (`pi.credentials.get`).** Rejected: an explicit read API
+  would make accidental logging and forwarding easy. Host-mediated injection
+  avoids returning the stored value; it does not sandbox malicious plugin code.
 - **One `net.raw` permission covering TCP, UDP and TLS.** Rejected: TCP with a
   literal endpoint is reviewable; UDP is a different failure mode (no
   connection, spoofable source) and would need its own bounds, so it is not
