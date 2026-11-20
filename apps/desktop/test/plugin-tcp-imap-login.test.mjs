@@ -515,8 +515,9 @@ test("after the login the connection carries the plugin's own commands", async (
   assert.deepEqual(registry.list(PLUGIN_ID).map((entry) => entry.state), ["open"]);
 
   registry.send({ pluginId: PLUGIN_ID, connectionId, data: 'a7 SELECT "INBOX"\r\n' });
-  await waitFor(() => delivered(events).includes("3 EXISTS"));
+  await waitFor(() => delivered(events).includes("a7 OK"));
   const seen = delivered(events);
+  assert.ok(seen.includes("3 EXISTS"), "the untagged response must also arrive");
   assert.ok(seen.includes("a7 OK"), `the plugin's tag must come back untouched: ${JSON.stringify(seen)}`);
 
   const selects = server.named("SELECT");
