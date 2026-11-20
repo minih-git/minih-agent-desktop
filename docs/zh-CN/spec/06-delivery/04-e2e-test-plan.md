@@ -10950,3 +10950,17 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **验收标准**：C — 会话与流式；品质。
 - **里程碑**：维护。
 - **状态**：已自动化（隔离的 React/Electron，夹具 IPC）；真实 UI 场景待补。
+
+#### E2E-PLUGIN-TASK-owner-approval-and-stop
+
+- **前置条件**：隔离桌面配置包含一名员工、获 `tasks.read` 与 `tasks.manage`
+  授权的插件，以及本机假模型服务。
+- **步骤**：审查声明 `auto` 上限的插件；由插件创建员工任务；查看通知与运行
+  阶段；让假模型请求 Bash；由创建插件停止任务。
+- **预期**：审查说明当前 `accept-edits` 上限；阶段事件只发给创建插件；任务和
+  通知可见。Bash 权限卡只提供逐次批准，不提供会话级批准；停止沿用正常中断
+  路径。通知可打开任务会话，不使用真实模型或用户配置。
+- **证据**：完整外壳、简体中文、深浅主题各 1440 和 1024 像素的权限审查、
+  任务通知和权限卡截图。
+- **状态**：由 `scripts/e2e-plugin-tasks.mjs` 自动化；候选版本验收仍须明确被测
+  提交和基线。

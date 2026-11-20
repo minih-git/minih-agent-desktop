@@ -68,8 +68,8 @@
 | `mail.draft` | 中 | `pi.mail.draft.create` | 安装时确认 | 只把草稿写入宿主的草稿列表，没有发送路径，也不存在由另一个权限打开的发送路径 |
 | `notify.center` | 中 | `pi.notify.center` | 安装时确认 | 在通知中心写入一条持久记录，kind 为 `plugin.alert`（一件事）或 `plugin.digest`（汇总的一批），并标明插件；共享 200 条上限、未读计数与清空操作，卸载时一并删除。与只显示一次、不落库的 `notify` 区分 |
 | `scheduler` | 中 | `contributes.schedules`；宿主按声明触发 `schedule:fire` | 安装时确认 | 最小间隔一分钟，`every` 与 `cron` 只能二选一，`runWhen: "idle"` 让宿主等用户空闲。触发只调用插件函数，不消耗模型额度；错过的时间点合并为一次触发，连续失败后定时器被暂停（跨重启保留）而不是永远重试 |
-| `tasks.read` | 中 | `pi.tasks.list` | 安装时确认 | 只读的任务清单与账本事实，不含提示词正文，没有写入路径 |
-| `tasks.manage` | 高 | `pi.tasks.create` / `get` / `send` / `stop` | 安装时确认；声明 `auto` 需单独确认 | 只能创建并推进本插件自己创建的任务，权限模式取 `min(manifest.tasks.manage.maxPermission, 该员工自己的模式)`。省略该字段等价于 `accept-edits`，`auto` 绝不隐含 |
+| `tasks.read` | 中 | `pi.tasks.roster` / `list` | 安装时确认 | 脱敏只读清单与账本，不含提示词或对话内容 |
+| `tasks.manage` | 高 | `pi.tasks.create` / `get` / `send` / `stop` | 安装时确认 | 仅管理本插件创建的任务；生效模式不超过请求值、manifest 上限、员工模式和 `accept-edits` |
 
 ## 2A. 权限是开关，manifest 承载范围
 
@@ -254,6 +254,6 @@ assertFsAccess(pluginId, mode, requestedPath, sessionId) {
     120 次有效请求返回 `429`
 12. 间隔小于一分钟、或同时声明 `every` 与 `cron` 的定时器校验失败，被禁用的
     插件的定时器不会触发
-13. `manifest.tasks.manage.maxPermission: "auto"` 会在权限列表之外单独征求确认，
-    插件创建的任务永远不会超过该员工自己的模式
+13. manifest 可声明 `auto`，安装和更新时说明当前 `accept-edits` 上限，
+    不增加单独确认框；创建任务时显式请求 `auto` 会被拒绝。
 14. 插件通知落在通知中心时没有会话，不计入 `prompt.*`，卸载插件后一并删除

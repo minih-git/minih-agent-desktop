@@ -1100,21 +1100,26 @@ pi.notify.center(input: {
 }): Promise<{ id: string }>
 
 // tasks
+pi.tasks.roster(): Promise<{ employees: Array<{
+  employeeId: string; name: string; duty?: string; projectId: number | null
+  permissionMode: "ask" | "accept-edits" | "auto"
+  busy: boolean; openTasks: number; waitingOnYou: number
+}> }>
 pi.tasks.list(input?: { limit?: number; cursor?: string }): Promise<{
   tasks: Array<{
     taskId: string; title: string; stage: string
     origin: "steward" | "direct"; pluginId: string | null
-    sessionId: string; projectId: number | null
+    sessionId: string; employeeId: string; projectId: number | null
     createdAt: number; archivedAt: number | null
   }>
   nextCursor: string | null
 }>
 pi.tasks.create(input: {
-  title: string; prompt: string
+  employeeId: string; title: string; prompt: string
   projectId?: number
   maxPermission?: "ask" | "accept-edits" | "auto"
 }): Promise<{ taskId: string; sessionId: string }>
-pi.tasks.get(input: { taskId: string }): Promise<{ … }>  // 与 list 的一行相同
+pi.tasks.get(input: { taskId: string }): Promise<{ task: … }> // 与 list 的一行相同
 pi.tasks.send(input: { taskId: string; prompt: string }): Promise<void>
 pi.tasks.stop(input: { taskId: string }): Promise<void>
 ```
@@ -1185,13 +1190,22 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   参数无效或目标未由本插件声明时返回 `INVALID_ARGUMENT`；重复提交会更新同一记录
   并重新置为未读。工作面板视图需要活动的本地会话；没有时点击会提示原因。
   不支持 `level`：v43 没有对应列，且该字段尚未随此 API 发布。限速规则见安全规范 §8.3。
-- **任务被两层限定。** `tasks.list` 与 `tasks.get` 只读当前用户的任务清单，
-  `tasks.manage` 只覆盖本插件自己创建的任务（`pluginId` 与调用方一致）；别的
-  插件或人建的任务返回 `NOT_FOUND` 而不是 `PERMISSION_DENIED`，所以这个调用
-  不能用来枚举它无权触碰的东西。`tasks.create` 让新任务的会话跑在
-  `min(maxPermission, 该员工自己的模式)`，参数省略时是 `accept-edits`；
-  只有 manifest 也声明了 `auto` 时才接受 `auto`。`tasks.stop` 与用户自己的停止
-  按钮发出的是同一种停止
+- **任务被两层限定。** `tasks.read` 的 `roster` 与 `list` 返回脱敏投影，
+  不包含提示词、对话或凭据。`get`、`create`、`send`、`stop` 需要
+  `tasks.manage`；`get`、`send`、`stop` 只能访问调用插件创建的任务，其他
+  任务返回 `NOT_FOUND`。生效模式为 `min(请求值 ?? accept-edits, manifest
+  上限 ?? accept-edits, 员工模式, accept-edits)`。显式请求 `auto` 返回
+  `PERMISSION_DENIED`；manifest 可以声明它，但安装和更新时只说明当前上限，
+  不增加单独确认框。`auto` 等按动作审批落地后再开放。宿主将任务执行策略应用于
+  任务会话及其所有后代：除内置低风险只读工具和 `accept-edits` 下工作区内的
+  Write/Edit 外，每次工具调用都需逐次批准；插件自报风险、子代理权限和持久或
+  会话授权不能放宽该规则。工作区内编辑包括覆盖和清空内容；通过命令或外部工具
+  删除以及外部操作均需逐次批准。`tasks.stop` 沿用用户停止按钮的路径。
+  每个插件最多持有十个未归档任务、每滚动一小时最多创建二十个，还受员工自身
+  数量限制。`tasks:changed` 只向创建插件发送 `{ taskId, stage }`。宿主为每个
+  任务写一条本地化通知，不消耗 `notify.center` 配额；会话目标由宿主持有并与
+  任务账本核对，普通插件通知不能提供会话链接。卸载后任务保留，但插件不再能
+  访问或接收事件。
 
 ## 3.x 声明的每个方法都必须能被插件真正调用
 

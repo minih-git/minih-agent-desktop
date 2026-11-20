@@ -21832,3 +21832,20 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 - **Status**: Covered. `task_overlap_tests.rs` computes the intersection, excludes
   a chain, and reports an unreadable project as `readable: false`;
   `bot-relay-user-path.test.mjs` renders both lines.
+
+#### E2E-PLUGIN-TASK-owner-approval-and-stop
+
+- **Preconditions**: An isolated desktop profile with an employee, a plugin
+  granted `tasks.read` and `tasks.manage`, and a local fake model provider.
+- **Steps**: Review a plugin declaring an `auto` ceiling, create a task through
+  the plugin, observe its task notification and running stage, let the fake
+  model request Bash, then stop the task through the creating plugin.
+- **Expected**: Review explains the current `accept-edits` cap; the owner alone
+  receives stage events. The task and its notification appear under the
+  employee. The Bash card offers per-call approval but no session-wide grant;
+  stopping the task uses the normal interruption path. The inbox row opens the
+  task session and no real provider or user profile is used.
+- **Evidence**: Real-shell zh-CN screenshots at 1440 and 1024 pixels in light
+  and dark themes for the review, task notification and permission card.
+- **Status**: Automated by `scripts/e2e-plugin-tasks.mjs`; candidate acceptance
+  still requires a known tested commit and base.

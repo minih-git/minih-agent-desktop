@@ -170,17 +170,20 @@ each is stated in the install review.
 
 **Tasks (`tasks.read`, `tasks.manage`).**
 
-- `tasks.read` lists the roster and the ledger facts, read-only.
-- `tasks.manage` creates and drives the plugin's own tasks. The effective
-  permission mode is `min(manifest.tasks.manage.maxPermission, the employee's
-  own mode)`, so a declaration can only narrow what the employee was already
-  allowed to do.
-- Omitting `maxPermission` means `accept-edits`. **`auto` is never implied**
-  and has to be written down; when it is, the install review asks for it
-  separately from the permission list, because it is the one declaration that
-  removes the user's own approval step from work they did not type.
-- A plugin cannot manage a task it did not create, and cannot exceed the
-  employee's mode by any argument.
+- `tasks.read` lists sanitized roster and ledger facts, without prompts,
+  conversation content or credentials. `tasks.manage` creates and drives only
+  the plugin's own tasks; foreign tasks return `NOT_FOUND`.
+- The effective mode is the minimum of the requested mode, manifest ceiling,
+  employee mode and `accept-edits`; omitted request and ceiling default to
+  `accept-edits`. Explicit `auto` requests are denied until action-based
+  approval exists. A manifest may declare `auto`; the install/update review
+  explains the current ceiling without a separate checkbox.
+- A host execution policy applies to the task session and descendants. Built-in
+  low-risk reads and, under `accept-edits`, workspace-contained Write/Edit may
+  auto-allow; all other calls require individual approval. Plugin risk claims,
+  delegated scope and session or persistent grants cannot loosen the policy.
+  Workspace edits include overwriting and clearing content; command or external
+  tool deletion and external operations require individual approval.
 
 ### 4. Storage: schema v43
 

@@ -612,15 +612,23 @@ Further new events are counted in one `plugin.digest` row using the reserved
 key `__minih_notify_overflow__`. The host records creation timestamps in its
 audit log so clearing the inbox or restarting cannot reset the budget.
 
-**`tasks.read` and `tasks.manage` — a narrower employee.** `tasks.read` is a
-read-only roster projection. `tasks.manage` creates and drives only tasks this
-plugin created, and the new task runs at
-`min(manifest.tasks.manage.maxPermission, the employee's own mode)`. `auto` is
-never implied: when a manifest declares it, the install review asks for it
-separately from the permission list, because it removes the user's own approval
-step from work they did not type. A lookup for a task the plugin does not own
-answers `NOT_FOUND`, so the API cannot be used to enumerate other employees'
-work.
+**`tasks.read` and `tasks.manage` — a narrower employee.** Read projections
+exclude prompts, conversations and credentials. Management is owner-only and
+foreign tasks return `NOT_FOUND`. The effective mode is the minimum of the
+requested mode, manifest ceiling, employee mode and `accept-edits`; omitted
+request or manifest ceiling defaults to `accept-edits`. Explicit `auto` requests
+are denied until action-based approval exists. A manifest may declare `auto`;
+install and update explain the current ceiling without a separate checkbox.
+The host applies a task-specific policy to the task and descendant sessions:
+built-in low-risk reads remain automatic, workspace-contained Write/Edit can
+auto-allow under `accept-edits`, and every other tool call requires individual
+approval. Plugin-declared risk, delegated scope and session or persistent grants
+cannot relax the policy. Workspace edits include overwriting or clearing content;
+deletion through commands or external tools and external operations require
+individual approval.
+For these prompts, the host marks the live request and pending-request snapshot
+`perCallOnly`; the desktop omits the session-wide approval action. Older
+requests without the optional field retain the ordinary approval choices.
 
 ## 9. Auditing and emergency response
 
@@ -718,8 +726,8 @@ host-mediated fetch and WebSocket calls; `pi.credentials.list` exposes only
 configuration state (§8.3). `net.tcp` implements literal endpoint matching,
 bounded concurrency, verified TLS and lifecycle cleanup; TCP credential
 substitution is not yet implemented and returns `INVALID_ARGUMENT`.
-`mail.draft`, `tasks.read` and `tasks.manage` remain registered only; their
-manifest fields are validated at installation.
+`tasks.read` and `tasks.manage` use the scoped task policy above. `mail.draft`
+remains registered only; its manifest field is validated at installation.
 
 
 Not enforced yet:

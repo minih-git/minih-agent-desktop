@@ -1378,21 +1378,26 @@ pi.notify.center(input: {
 }): Promise<{ id: string }>
 
 // tasks
+pi.tasks.roster(): Promise<{ employees: Array<{
+  employeeId: string; name: string; duty?: string; projectId: number | null
+  permissionMode: "ask" | "accept-edits" | "auto"
+  busy: boolean; openTasks: number; waitingOnYou: number
+}> }>
 pi.tasks.list(input?: { limit?: number; cursor?: string }): Promise<{
   tasks: Array<{
     taskId: string; title: string; stage: string
     origin: "steward" | "direct"; pluginId: string | null
-    sessionId: string; projectId: number | null
+    sessionId: string; employeeId: string; projectId: number | null
     createdAt: number; archivedAt: number | null
   }>
   nextCursor: string | null
 }>
 pi.tasks.create(input: {
-  title: string; prompt: string
+  employeeId: string; title: string; prompt: string
   projectId?: number
   maxPermission?: "ask" | "accept-edits" | "auto"
 }): Promise<{ taskId: string; sessionId: string }>
-pi.tasks.get(input: { taskId: string }): Promise<{ … }>  // one row of list
+pi.tasks.get(input: { taskId: string }): Promise<{ task: … }> // one row of list
 pi.tasks.send(input: { taskId: string; prompt: string }): Promise<void>
 pi.tasks.stop(input: { taskId: string }): Promise<void>
 ```
@@ -1496,15 +1501,29 @@ Semantics:
   `level` is not supported: schema v43 has no level column, and this API was
   not released with that field. The host rate limit is specified in §8.3 of
   [04-plugin-security.md](04-plugin-security.md).
-- **Tasks are scoped twice.** `tasks.list` and `tasks.get` are read-only over
-  the roster of the current user, and `tasks.manage` covers only the tasks this
-  plugin created (`pluginId` matches the caller); another plugin's or a
-  person's task is `NOT_FOUND`, not `PERMISSION_DENIED`, so the call cannot be
-  used to enumerate what it may not touch. `tasks.create` runs the new task's
-  session at `min(maxPermission, the employee's own mode)` with `accept-edits`
-  when the argument is omitted; `auto` is accepted only when the manifest also
-  declares it. `tasks.stop` is the same stop the person's own stop button
-  sends.
+- **Tasks are scoped twice.** `tasks.read` provides sanitized `roster` and
+  `list` projections without prompts, conversations or credentials. `get`,
+  `create`, `send` and `stop` require `tasks.manage`; `get`, `send` and `stop`
+  address only tasks created by the caller. Other tasks return `NOT_FOUND`.
+  The effective mode is `min(requested ?? accept-edits, manifest ceiling ??
+  accept-edits, employee mode, accept-edits)`. Explicitly requesting `auto`
+  returns `PERMISSION_DENIED`; a manifest may declare it, but installation and
+  update explain the current ceiling without a separate confirmation checkbox.
+  `auto` is deferred until action-based approval is available. The host applies
+  the task execution policy to the task session and all descendants: except for
+  built-in low-risk reads and workspace-contained Write/Edit in `accept-edits`,
+  each tool call requires individual approval. Plugin-declared risk, delegated
+  scope and persistent or session grants cannot relax this rule. Workspace edits
+  include overwriting and clearing content; deletion through commands or external
+  tools and external operations require individual approval. `tasks.stop` uses
+  the same stop path as the user's stop button.
+  Each plugin may hold ten unarchived tasks and create twenty per rolling hour,
+  in addition to the employee's limit. A `tasks:changed` event carries only
+  `{ taskId, stage }` to the creating plugin. The host writes one localized
+  inbox announcement per task without using `notify.center` quota. Its session
+  target is host-owned and checked against the task ledger; ordinary plugin
+  notifications cannot provide session links. Uninstall leaves tasks intact but
+  removes plugin access and events.
 
 ## 3.x Every declared method is reachable from the plugin process
 

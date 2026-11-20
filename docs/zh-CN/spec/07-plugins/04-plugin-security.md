@@ -425,12 +425,17 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 不消耗额度；超出部分汇总为保留键 `__minih_notify_overflow__` 的一条
 `plugin.digest`。宿主在审计日志记录新增时间，清空通知中心或重启不会重置额度。
 
-**`tasks.read` 与 `tasks.manage` —— 更窄的员工。** `tasks.read` 只返回只读的
-任务清单投影。`tasks.manage` 只能创建并推进本插件自己创建的任务，任务的权限
-模式取 `min(manifest.tasks.manage.maxPermission, 该员工自己的模式)`。`auto`
-绝不隐含：manifest 一旦声明，安装审查会在权限列表之外单独询问，因为它会把
-用户自己的批准步骤从「不是他亲手打的字」里去掉。查询不属于本插件的任务返回
-`NOT_FOUND`，所以这个 API 不能用来枚举其他员工的工作。
+**`tasks.read` 与 `tasks.manage` —— 更窄的员工。** 只读投影不含提示词、
+对话或凭据。管理操作仅限创建者，其他任务返回 `NOT_FOUND`。生效模式取请求值、
+manifest 上限、员工模式和 `accept-edits` 的最小值；省略请求值或 manifest
+上限时默认为 `accept-edits`。按动作审批落地前，显式请求 `auto` 会被拒绝；
+manifest 可声明 `auto`，安装和更新时说明当前上限，不增加单独确认框。
+宿主对任务会话及后代实施专用策略：内置低风险只读工具仍自动放行，
+`accept-edits` 下工作区内 Write/Edit 可自动放行，其余每次工具调用均需逐次
+批准。插件自报风险、子代理权限以及会话或持久授权均不能放宽该策略。工作区内
+编辑包括覆盖或清空内容；通过命令或外部工具删除以及外部操作均需逐次批准。
+此类请求在宿主实时事件和待处理快照中标记 `perCallOnly`，桌面不提供会话级
+批准选项；旧请求不带该可选字段时保留原有选项。
 
 ## 9. 审计和应急响应
 
@@ -512,8 +517,8 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 宿主持有资源。`credentials.use` 已支持宿主代理的 fetch 和 WebSocket，
 `pi.credentials.list` 仅返回配置状态（§8.3）。`net.tcp` 已实现字面端点匹配、
 并发限制、TLS 校验和生命周期清理；TCP 凭据代用尚未实现，传入时返回
-`INVALID_ARGUMENT`。`mail.draft`、`tasks.read` 与 `tasks.manage` 仍仅注册，
-其 manifest 字段在安装时校验。
+`INVALID_ARGUMENT`。`tasks.read` 与 `tasks.manage` 使用上述任务专用策略；
+`mail.draft` 仍仅注册，其 manifest 字段在安装时校验。
 `net.websocket` 已实现：连接由宿主持有、经过白名单检查、有界，并随插件一起
 释放（§8.1）。
 

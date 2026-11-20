@@ -65,8 +65,8 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `mail.draft` | medium | `pi.mail.draft.create` | Confirm at install | Writes a draft into the host's draft list. There is no send path, in this grant or behind another |
 | `notify.center` | medium | `pi.notify.center` | Confirm at install | One durable row in the notification inbox, kind `plugin.alert` (one event) or `plugin.digest` (a rolled-up batch), naming the plugin; it shares the 200-row cap, the unread count and the clear action, and an uninstall removes it. Distinct from `notify`, which persists nothing |
 | `scheduler` | medium | `contributes.schedules`; the host fires `schedule:fire` for a declared timer | Confirm at install | One-minute floor, exactly one of `every` / `cron`, and `runWhen: "idle"` lets the host wait for the user. A tick calls a plugin function and spends no model tokens; missed ticks collapse into one fire, and consecutive failures pause the timer (surviving a restart) instead of retrying forever |
-| `tasks.read` | medium | `pi.tasks.list` | Confirm at install | Read-only roster and ledger facts; no prompt text and no write path |
-| `tasks.manage` | high | `pi.tasks.create` / `get` / `send` / `stop` | Confirm at install; `auto` needs its own separate confirmation | Creates and drives only tasks this plugin created, at `min(manifest.tasks.manage.maxPermission, the employee's own mode)`. Omitting the field means `accept-edits`; `auto` is never implied |
+| `tasks.read` | medium | `pi.tasks.roster` / `list` | Confirm at install | Sanitized read-only roster and ledger facts; no prompt or conversation content |
+| `tasks.manage` | high | `pi.tasks.create` / `get` / `send` / `stop` | Confirm at install | Owner-only management; effective mode is capped by request, manifest, employee and `accept-edits` |
 
 ## 2A. A permission is the switch; the manifest carries the range
 
@@ -266,8 +266,8 @@ visible workspace for a panel call (ADR 0266).
     answered `413` and the request past 120 accepted in a minute `429`
 12. A schedule faster than one minute, or one declaring both `every` and
     `cron`, fails validation, and a disabled plugin's timer does not fire
-13. `manifest.tasks.manage.maxPermission: "auto"` is asked for separately from
-    the permission list, and no plugin-created task runs above the employee's
-    own mode
+13. A manifest may declare `auto`, but install/update explains the current
+    `accept-edits` ceiling without a separate checkbox; explicitly requesting
+    `auto` when creating a task is denied.
 14. A plugin notice lands in the inbox with no session, is not counted as a
     `prompt.*` row, and is removed when its plugin is uninstalled
