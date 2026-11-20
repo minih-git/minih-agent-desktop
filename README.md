@@ -24,7 +24,7 @@ Local-first · Model-agnostic · Plugin-powered · macOS / Windows / Linux
 <br />
 </div>
 
-> **Current release line: 1.7.x.**
+> **Current release line: 1.8.x.**
 
 ---
 
@@ -158,6 +158,19 @@ contribute:
 | **MCP Server**      | Connect local or remote MCP servers                            |
 | **Service**         | Run persistent background work                                 |
 | **Message Bus**     | Let plugins communicate with each other                        |
+
+A plugin can also ask the app to hold a resource on its behalf. Each one is a
+permission you review at install; disabling or uninstalling the plugin releases
+what the app holds for it:
+
+| Host resource | What the plugin gets |
+| --- | --- |
+| **Credential** | An account or token you enter in its settings, used by the app on its behalf and never handed over |
+| **TCP endpoint** | A connection to a declared host and port, opened and measured by the app |
+| **Webhook** | Requests the app accepts on your local network and forwards to the plugin as events |
+| **Schedule** | A timer the app keeps, with pause, resume, and run-now on the Extensions page |
+| **Notification** | Rows in the notification center that stay until you clear them |
+| **Task** | Tasks created under an employee, running at most in Accept edits mode |
 
 Plugins ship as `.piplug` packages, or can be loaded directly as development
 plugins while you build them.
