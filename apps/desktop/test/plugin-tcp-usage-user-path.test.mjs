@@ -11,7 +11,17 @@ const root = repositoryRoot();
 const desktop = join(root, "apps/desktop");
 const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
 
-test("opening plugin details fetches fresh TCP usage, reopening fetches again", async (t) => {
+// This test drives a real Electron renderer, so it needs both a display and the
+// Electron binary. CI supplies both; a lane that does not (the release verify
+// job runs `pnpm -r --if-present test` after a plain install) must skip it the
+// same way every other isolated Electron UI test does, instead of failing on a
+// binary that was never downloaded.
+test("opening plugin details fetches fresh TCP usage, reopening fetches again", {
+  skip:
+    process.platform === "linux" && !process.env.DISPLAY
+      ? "Isolated Electron UI test requires a display"
+      : false,
+}, async (t) => {
   const dir = await mkdtemp(join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "tcp-usage-ui-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const source = `
