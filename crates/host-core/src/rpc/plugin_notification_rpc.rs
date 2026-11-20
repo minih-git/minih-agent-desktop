@@ -193,8 +193,19 @@ fn bounded_link_json(raw: Option<&str>) -> Result<Option<String>, JsonRpcError> 
     }
     let parsed: Value =
         serde_json::from_str(raw).map_err(|_| boundary_err("linkJson", "must be a JSON object"))?;
-    if !parsed.is_object() {
-        return Err(boundary_err("linkJson", "must be a JSON object"));
+    let Some(object) = parsed.as_object() else {
+        return Err(boundary_err("linkJson", "must name a view or command"));
+    };
+    if object.len() != 1
+        || !object.iter().all(|(key, value)| {
+            (key == "view" || key == "command")
+                && value.as_str().is_some_and(|s| !s.trim().is_empty())
+        })
+    {
+        return Err(boundary_err(
+            "linkJson",
+            "must name exactly one view or command",
+        ));
     }
     Ok(Some(raw.to_string()))
 }
@@ -210,9 +221,10 @@ fn bounded_dedupe_key(raw: Option<&str>) -> Result<Option<String>, JsonRpcError>
     if raw.chars().count() > MAX_DEDUPE_KEY_CHARS {
         return Err(too_long("dedupeKey", "characters", MAX_DEDUPE_KEY_CHARS));
     }
-    // Exact match only: the host's folded summary is not reachable, but a key
-    // that merely looks like it is an ordinary key of the plugin's own.
-    if raw == RESERVED_DEDUPE_KEY {
+    // The task prefix is host-only; plugins cannot forge task notifications.
+    if raw == RESERVED_DEDUPE_KEY
+        || raw.starts_with(crate::plugin_tasks::NOTIFICATION_DEDUPE_PREFIX)
+    {
         return Err(boundary_err("dedupeKey", "is reserved by the host"));
     }
     Ok(Some(raw.to_string()))

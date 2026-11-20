@@ -3202,6 +3202,7 @@ export const ptBR = {
     fsAsksEachTime: "solicita sua permissão a cada vez",
     legacyFsDowngraded: "As permissões de arquivos declaradas por este plugin são anteriores à existência de escopos, por isso seu alcance foi reduzido. Atualize o plugin para restaurar o funcionamento completo.",
     permissions: {
+      ...en.plugins.permissions,
       "ui.panel": "Exibir painéis de interface",
       "ui.microphone": "Usar o microfone",
       "clipboard.read": "Ler a área de transferência e seu histórico",
@@ -3247,6 +3248,7 @@ export const ptBR = {
       "session.autoTitle": "Ler o contexto do primeiro turno e atualizar títulos automáticos"
     },
     permissionHelp: {
+      ...en.plugins.permissionHelp,
       "ui.panel": "Permite que o plugin exiba seu próprio painel no aplicativo.",
       "ui.microphone": "Permite que o painel isolado solicite áudio do microfone. Não dá acesso à câmera.",
       "clipboard.read": "Pode ler o conteúdo atual da área de transferência e o histórico retido.",
@@ -3548,6 +3550,7 @@ export const ptBR = {
     longThreadWarning: "O contexto foi compactado. Conversas longas perdem detalhes anteriores a cada compactação — inicie uma nova sessão para tarefas não relacionadas.",
   },
   notifications: {
+    ...en.notifications,
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     taskWaitingTitle: "{{employee}} · {{task}} esperando por você",
     inspectionTitle: "{{employee}} · {{task}}",

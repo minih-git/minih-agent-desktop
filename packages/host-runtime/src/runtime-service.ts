@@ -153,6 +153,7 @@ export class RuntimeService implements RuntimePort {
         argsPreview: string;
         risk: Risk;
         reason: string;
+        perCallOnly?: boolean;
       };
       // A delegate's call is already tracked by the time the host asks: the
       // sidecar forwards tool_start before it executes the tool.
@@ -180,6 +181,7 @@ export class RuntimeService implements RuntimePort {
             argsPreview: permission.argsPreview,
             risk: permission.risk,
             reason: permission.reason,
+            ...(permission.perCallOnly ? { perCallOnly: true } : {}),
             ...(asking?.agentName ? { agentName: asking.agentName } : {}),
             ...(asking?.parentToolCallId ? { parentToolCallId: asking.parentToolCallId } : {}),
             ...(asking?.nestedParentToolCallId ? { nestedParentToolCallId: asking.nestedParentToolCallId } : {}),

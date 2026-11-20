@@ -1,17 +1,17 @@
-import { Button, SettingsToggle, cx, portalOverlay } from "../../components/ui";
+import type { ReactNode } from "react";
 import { IconCheck, IconShield, IconSparkles, IconTriangleAlert } from "../../components/icons";
 import { PluginInstallDialog } from "../../components/plugins/PluginInstallDialog";
 import { PluginSettingsSheet } from "../../components/plugins/PluginSettingsSheet";
+import { Button, cx, portalOverlay, SettingsToggle } from "../../components/ui";
 import { useBlockingOverlay } from "../../lib/blocking-overlay";
-import type { ReactNode } from "react";
 import { useAppStore } from "../../stores/app-store";
 import {
+  permissionHelp,
+  permissionLabel,
+  permissionRisk,
   RISK_LABEL_KEYS,
   RISK_TIERS,
   TEMPLATE_IDS,
-  permissionLabel,
-  permissionHelp,
-  permissionRisk,
 } from "./model";
 import type { PluginsPageModel } from "./usePluginsPage";
 
@@ -327,6 +327,9 @@ function PermissionGroups({
           </div>
         );
       })}
+      {permissions.includes("tasks.manage") ? (
+        <p className="plugins-modal-lede">{t("plugins.taskPermissionCeiling")}</p>
+      ) : null}
     </>
   );
 }

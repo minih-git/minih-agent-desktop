@@ -3230,6 +3230,7 @@ sklm: {
     "fsAsksEachTime": "demande vous à chaque fois",
     "legacyFsDowngraded": "Ce plugin déclare les autorisations de fichiers antérieures à l'existence des scopes, sa portée a donc été réduite. Mettez-le à jour pour restaurer toutes les fonctions.",
     "permissions": {
+      ...en.plugins.permissions,
       "ui.panel": "Afficher un panneau de plug-in",
       "ui.microphone": "Utiliser le microphone",
       "clipboard.read": "Lire le presse-papiers et son historique",
@@ -3275,6 +3276,7 @@ sklm: {
       "session.autoTitle": "Lire le contexte du premier tour et modifier les titres automatiques"
     },
     "permissionHelp": {
+      ...en.plugins.permissionHelp,
       "ui.panel": "Permet au plugin d'afficher son propre panneau dans l'application.",
       "ui.microphone": "Permet au panneau isolé de demander l'audio du microphone, sans accès à la caméra.",
       "clipboard.read": "Peut lire tout ce qui se trouve actuellement dans votre presse-papiers et l'historique conservé du presse-papiers.",
@@ -3573,6 +3575,7 @@ sklm: {
     "longThreadWarning": "Contexte compacté. Les threads longs perdent les détails antérieurs à chaque compactage : démarrez une nouvelle session pour un travail sans rapport."
   },
   "notifications": {
+    ...en.notifications,
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     "taskWaitingTitle": "{{employee}} · {{task}} vous attend",
     "inspectionTitle": "{{employee}} · {{task}}",

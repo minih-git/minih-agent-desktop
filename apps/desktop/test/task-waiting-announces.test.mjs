@@ -190,3 +190,21 @@ test("a read-back announces a waiting-only change as waiting", async () => {
   assert.equal(list[0].reason, "stage");
   assert.equal(list[1].reason, "waiting");
 });
+
+test("plugin stage hook receives only real stage changes without waiting details", () => {
+  const changes = [];
+  const announce = taskChangesModule.createTaskChangeAnnouncer({
+    sendToRenderer: () => undefined,
+    getHost: () => null,
+    log: () => undefined,
+    onStageChanged: (task) => changes.push(task),
+  });
+  announce.announce(WORKING, "created");
+  announce.announce(WAITING, "waiting");
+  announce.announce({ ...WAITING, waiting: [] }, "waiting");
+  announce.announce({ ...WORKING, stage: "failed" }, "stage");
+  assert.deepEqual(changes, [
+    { id: "task-1", stage: "person/answer" },
+    { id: "task-1", stage: "failed" },
+  ]);
+});

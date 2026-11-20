@@ -36,6 +36,13 @@ import { normalizePluginMemoryListInput, type PluginMemoryReadHostService } from
 import type { LoadedSkillDocument } from "./skill-document";
 import { getModuleDirectory } from "./module-path";
 import {
+  createdTaskResult,
+  isPluginTaskApiMethod,
+  pluginTaskPermission,
+  preparePluginTaskCall,
+  type PluginTasksHostService,
+} from "./plugin-tasks-api";
+import {
   busTopicAllowed,
   isDeniedFsPath,
   isFsPathInScope,
@@ -93,6 +100,7 @@ import {
   type PluginComposerTransformInput,
   type PluginSkillContrib,
   type PluginThemeVariableContrib,
+  type PluginTaskChangedEvent,
 } from "@minih-agent/plugin-sdk";
 import { pluginSettingsView } from "./plugin-settings-view";
 import {
@@ -588,7 +596,8 @@ export type PluginHostServices = {
     summary: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
     transcript: (pluginId: string, input: Record<string, unknown>) => Promise<unknown>;
   };
-} & PluginMemoryReadHostService;
+} & PluginMemoryReadHostService &
+  PluginTasksHostService;
 
 export type PluginOAuthProvider = {
   pluginId: string;
@@ -700,6 +709,12 @@ const HOST_API_ALLOWLIST = new Set([
   "keyboard.registerGlobalShortcut",
   "keyboard.unregisterGlobalShortcut",
   "keyboard.listGlobalShortcuts",
+  "tasks.roster",
+  "tasks.list",
+  "tasks.create",
+  "tasks.get",
+  "tasks.send",
+  "tasks.stop",
 ]);
 
 /** Load must finish (module eval + onLoad) inside this budget. */
@@ -3589,6 +3604,14 @@ export class PluginRuntime {
         // in one flat module, so this runtime grows by these lines only.
         return this.runPluginConversationCall(loaded, api, args[0]);
       }
+      case "tasks.roster":
+      case "tasks.list":
+      case "tasks.create":
+      case "tasks.get":
+      case "tasks.send":
+      case "tasks.stop": {
+        return this.runPluginTaskCall(loaded, api, args[0]);
+      }
       default: {
         if (!HOST_API_ALLOWLIST.has(api)) {
           this.services.audit?.({
@@ -3654,6 +3677,78 @@ export class PluginRuntime {
       ts: Date.now(),
     });
     return result;
+  }
+  /**
+   * One `pi.tasks.*` call: the permission, the input bounds and the manifest
+   * ceiling live in `plugin-tasks-api.ts`, so this method only adds the caller's
+   * own id and records one audit row.
+   */
+  private async runPluginTaskCall(
+    loaded: LoadedPlugin,
+    api: string,
+    rawInput: unknown,
+  ): Promise<unknown> {
+    const method = api.slice("tasks.".length);
+    if (!isPluginTaskApiMethod(method)) {
+      throw apiError("UNSUPPORTED", `host api not available: ${api}`);
+    }
+    this.assertPermission(loaded, pluginTaskPermission(method));
+    const service = this.services.pluginTasks;
+    if (!service?.call) {
+      throw apiError("UNSUPPORTED", `host api not available: ${api}`);
+    }
+    const request = preparePluginTaskCall(method, loaded.manifest.tasks, rawInput);
+    const result = await service.call(
+      loaded.manifest.id,
+      method,
+      request.input,
+      request.maxPermission,
+    );
+    // The host answers a create with the person's whole task row; a plugin gets
+    // the two ids of the task it started and none of the fields `list` redacts.
+    const answer = method === "create" ? createdTaskResult(result) : result;
+    this.services.audit?.({
+      pluginId: loaded.manifest.id,
+      api,
+      ok: true,
+      ts: Date.now(),
+    });
+    return answer;
+  }
+
+  /**
+   * Forward one stage change to the plugin that owns the task.
+   *
+   * `pluginId` is the host's own answer: the caller resolves the owner from the
+   * task ledger (`pluginTasks.owner`) — the same row a restart still holds — and
+   * passes it here, so a task created before this process started reaches the
+   * plugin that created it. Nothing in this process remembers task ownership: a
+   * map filled by `create` would answer for the tasks this run happens to
+   * create and stay silent for every task that outlived it.
+   *
+   * An unloaded plugin has no recipient, and a frame for a process that no
+   * longer exists is dropped rather than queued.
+   */
+  deliverTaskChanged(pluginId: string, event: PluginTaskChangedEvent): void {
+    if (!pluginId) return;
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded?.child || loaded.disposing) return;
+    try {
+      loaded.child.postMessage({
+        t: "event",
+        event: "tasks:changed",
+        args: [{ taskId: event.taskId, stage: event.stage }],
+      });
+    } catch (error) {
+      this.services.audit?.({
+        pluginId,
+        api: "tasks.deliver",
+        ok: false,
+        errorCode: "PLUGIN_UNREACHABLE",
+        message: (error as Error).message,
+        ts: Date.now(),
+      });
+    }
   }
 
   private handleChildExit(loaded: LoadedPlugin, code: number): void {

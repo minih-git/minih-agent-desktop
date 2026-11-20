@@ -3246,6 +3246,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     legacyFsDowngraded:
       "Bu eklenti kapsamlar yokken tanımlanmış dosya izinleri bildiriyor, bu yüzden erişimi azaltıldı. Tam işlev için güncelleyin.",
     permissions: {
+      ...en.plugins.permissions,
       "ui.panel": "Eklenti paneli göster",
       "ui.microphone": "Mikrofonu kullan",
       "clipboard.read": "Panoyu ve geçmişini oku",
@@ -3293,6 +3294,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "session.autoTitle": "İlk tur başlık bağlamını oku ve otomatik başlıkları güncelle",
     },
     permissionHelp: {
+      ...en.plugins.permissionHelp,
       "ui.panel": "Eklentinin uygulama içinde kendi panelini göstermesini sağlar.",
       "ui.microphone": "Yalıtılmış panelin mikrofon sesi istemesine izin verir; kamera erişimi vermez.",
       "clipboard.read":
@@ -3612,6 +3614,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "Bağlam sıkıştırıldı. Uzun diziler her sıkıştırmada erken ayrıntıyı kaybeder — ilgisiz iş için yeni oturum açın.",
   },
   notifications: {
+    ...en.notifications,
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     taskWaitingTitle: "{{employee}} · {{task}} sizi bekliyor",
     inspectionTitle: "{{employee}} · {{task}}",

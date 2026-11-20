@@ -1,12 +1,11 @@
 /** Shared public types grouped by the owning application domain. */
 import type { AppError } from "../errors.js";
-import type { PlanExecution, PlanningStateEvent } from "./plans.js";
-import type { ContextCompactionFallback, ContextCompactionMark, ContextCompactionReason } from "./sessions.js";
-import type { AgentStatus } from "./sessions.js";
-import type { MessageUsage, ToolTokenUsage, UiMessage, VoiceOrigin } from "./messages.js";
-import type { PermissionDecision, Risk } from "./permissions.js";
-import type { ThinkingLevel } from "./models.js";
 import type { RacpPermissionMode } from "../racp.js";
+import type { MessageUsage, ToolTokenUsage, UiMessage, VoiceOrigin } from "./messages.js";
+import type { ThinkingLevel } from "./models.js";
+import type { PermissionDecision, Risk } from "./permissions.js";
+import type { PlanExecution, PlanningStateEvent } from "./plans.js";
+import type { AgentStatus, ContextCompactionFallback, ContextCompactionMark, ContextCompactionReason } from "./sessions.js";
 
 export type AgentPromptRequest = {
   sessionId: string;
@@ -181,6 +180,8 @@ export type ToolPermissionRequest = {
   argsPreview: unknown;
   risk: Risk;
   reason: string;
+  /** This host policy requires approval for every call, not a session grant. */
+  perCallOnly?: boolean;
   /** Subagent that asked, when the call came from a delegate (ADR 0062). */
   agentName?: string;
   /** `Task` call that spawned the asking delegate. */

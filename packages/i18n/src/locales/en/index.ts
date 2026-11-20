@@ -3264,6 +3264,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     devReviewLoading: "Loading…",
     permissionReviewTitle: "Install {{name}}?",
     permissionReviewBody: "Review what this plugin can do. Higher-risk permissions stay blocked until you accept them.",
+    taskPermissionCeiling: "Plugin-created tasks run at most at accept-edits, even if the plugin declares auto. Auto will be available only after action-based approval is supported.",
     acceptInstall: "Accept and install",
     cancel: "Cancel",
     viewDetailsOf: "View details for {{name}}",
@@ -3379,6 +3380,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "conversation.read": "Read conversation archive",
       "embeddings.run": "Create embeddings with your models",
       "session.autoTitle": "Read first-turn title context and update automatic titles",
+      "tasks.read": "Read your task list",
+      "tasks.manage": "Create and drive tasks",
     },
     permissionHelp: {
       "ui.panel": "Lets the plugin show its own panel inside the app.",
@@ -3445,6 +3448,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         "Sends text to the embedding model you configure and spends that provider's quota; the plugin never sees the API key. Only text you pass in is sent, and only vectors come back.",
       "session.autoTitle":
         "Can read only the first prompt and reply for eligible sessions, then replace an automatic title if it has not been manually changed. It cannot read the full transcript.",
+      "tasks.read": "Reads the employee roster and redacted task list, without conversation content.",
+      "tasks.manage": "Creates and drives tasks made by this plugin.",
     },
   },
   /**
@@ -3747,6 +3752,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     pluginCollapsed: "{{count}} more notifications were collapsed",
     pluginViewNeedsSession: "Couldn't open the plugin view: select a local session first.",
     pluginTargetUnavailable: "Couldn't open the notification: the plugin target is unavailable.",
+    pluginTaskCreated: "Plugin ‘{{pluginName}}’ created task ‘{{taskTitle}}’ for {{employeeName}}, running in {{permissionMode}} mode.",
+    pluginTaskCreatedNoMode: "Plugin ‘{{pluginName}}’ created task ‘{{taskTitle}}’ for {{employeeName}}.",
     justNow: "Just now",
   },
   liveVoice: {

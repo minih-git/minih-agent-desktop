@@ -681,3 +681,29 @@ test("a plugin row draws the plugin's own icon and falls back without one", asyn
   assert.doesNotMatch(withoutIcon, /notification-plugin-avatar/);
   assert.match(withoutIcon, /<svg/);
 });
+
+test("host task announcement is localized and opens its task session", async (t) => {
+  const { store, NotificationRow, catalogs, calls } = await rendererHarness(t);
+  const { createElement, I18nextProvider, i18n } = await i18nProvider();
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  await i18n.init({ lng: "zh-CN", resources: { en: { translation: catalogs.en }, "zh-CN": { translation: catalogs["zh-CN"] } } });
+  const body = { schema: "minih.hostNotification", version: 1, taskId: "task-1", sessionId: "task-session", pluginId: "acme.ci", permissionMode: "accept-edits", i18n: { key: "notifications.pluginTaskCreated", params: { taskTitle: "修复", employeeName: "工程师", pluginId: "acme.ci", permissionMode: "accept-edits" } } };
+  const notification = pluginRow({ title: "修复", dedupeKey: "__minih_plugin_task__:task-1", linkJson: JSON.stringify({ session: "task-session" }), body: JSON.stringify(body) });
+  const render = (row, plugin) => renderToStaticMarkup(createElement(I18nextProvider, { i18n }, createElement(NotificationRow, { notification: row, plugin, unread: true, disabled: false, onActivate: () => {} })));
+  const markup = render(notification, { name: "任务工作台" });
+  assert.match(markup, /插件「任务工作台」为 工程师 创建了任务「修复」，以 允许编辑 模式运行/);
+  assert.doesNotMatch(markup, /minih\.hostNotification/);
+  assert.match(render(notification), /插件「acme\.ci」为 工程师/);
+  await i18n.changeLanguage("en");
+  assert.match(render(notification, { name: "Task Workbench" }), /Task Workbench.*工程师.*Accept edits/i);
+  body.permissionMode = "ask";
+  body.i18n.params.permissionMode = "ask";
+  const ask = { ...notification, body: JSON.stringify(body) };
+  assert.match(render(ask, { name: "Task Workbench" }), /Task Workbench.*工程师.*Ask/i);
+  delete body.permissionMode;
+  delete body.i18n.params.permissionMode;
+  assert.match(render({ ...notification, body: JSON.stringify(body) }), /acme\.ci.*工程师/);
+  store.setState({ notifications: [notification], selectSession: async (id) => calls.push(["selectSession", id]) });
+  await store.getState().openNotification(notification.id);
+  assert.deepEqual(calls, [["markRead", notification.id], ["selectSession", "task-session"]]);
+});

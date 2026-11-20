@@ -29,7 +29,7 @@ export function normalizePluginNotification(input: unknown, manifest: PluginMani
   if (value.body !== undefined && (typeof value.body !== "string" || [...value.body].length > 2000)) {
     throw invalid("body must be at most 2000 characters");
   }
-  if (value.dedupeKey !== undefined && (typeof value.dedupeKey !== "string" || !value.dedupeKey.trim() || [...value.dedupeKey].length > 256 || value.dedupeKey === PLUGIN_NOTIFICATION_OVERFLOW_KEY)) {
+  if (value.dedupeKey !== undefined && (typeof value.dedupeKey !== "string" || !value.dedupeKey.trim() || [...value.dedupeKey].length > 256 || value.dedupeKey === PLUGIN_NOTIFICATION_OVERFLOW_KEY || value.dedupeKey.startsWith("__minih_plugin_task__:"))) {
     throw invalid("dedupeKey must be non-empty, non-reserved and at most 256 characters");
   }
   let linkJson: string | undefined;

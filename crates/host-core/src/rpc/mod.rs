@@ -9,6 +9,7 @@ mod plugin_credentials_rpc;
 mod plugin_notification_rpc;
 mod plugin_schedules_rpc;
 mod plugin_settings_rpc;
+mod plugin_tasks_rpc;
 mod plugin_tcp_usage_rpc;
 mod plugin_webhook_rpc;
 mod remote_tools;
@@ -39,6 +40,9 @@ use crate::background_tasks;
 use crate::db::PROJECT_MEMORY_TOO_LARGE;
 use crate::delegations;
 use crate::notifications;
+use crate::permissions::plugin_task_policy::{
+    apply as apply_plugin_task_policy, PluginTaskCall, PluginTaskPolicy,
+};
 use crate::permissions::{PermissionDecision, PermissionEvaluationParams, PermissionManager};
 use crate::plans;
 use crate::plugin_sessions;
@@ -1973,6 +1977,12 @@ async fn handle_request(
     }
     if method.starts_with("plugin.tcpUsage.") {
         return plugin_tcp_usage_rpc::handle(state, method, params).await;
+    }
+    // A plugin's own task surface (`pluginTasks.create|roster|list|get|send|stop|owner`).
+    // The trust boundary resolves the plugin against the registry and its
+    // manifest; the renderer has no IPC channel to any of them.
+    if method.starts_with("pluginTasks.") {
+        return plugin_tasks_rpc::handle(state, method, params).await;
     }
     if method.starts_with("plugins.schedules.") {
         let st = state.lock().await;
@@ -4557,6 +4567,18 @@ async fn handle_request(
                     if st.shutting_down {
                         return Err(rpc_err(1001, "host is shutting down", "HOST_SHUTTING_DOWN"));
                     }
+                    // Runtime safety policy of a task a plugin created
+                    // (`permissions::plugin_task_policy`): the task row is the
+                    // only authority, and every call below is resolved against
+                    // it instead of the plugin's own declarations.
+                    let plugin_task = PluginTaskPolicy::for_session(&st.db, &p.session_id)
+                        .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+                    let declared_risk = match plugin_task.as_ref() {
+                        Some(policy) => {
+                            policy.declared_risk(&p.tool_name, p.declared_risk.as_deref())
+                        }
+                        None => p.declared_risk.as_deref(),
+                    };
                     // Effective permission mode (D115): per-session override
                     // unless it is `inherit`, then the global settings default,
                     // then `ask`. A subagent's tool call carries its own scope
@@ -4581,13 +4603,16 @@ async fn handle_request(
                             .filter(|m| sessions::is_valid_permission_mode(m) && m != "inherit")
                             .unwrap_or_else(|| "ask".to_string()),
                     };
-                    let effective_pm = match p.permission_scope.as_deref() {
-                        Some(scope)
+                    let effective_pm = match (plugin_task.as_ref(), p.permission_scope.as_deref()) {
+                        // A subagent's own scope may narrow a plugin task's
+                        // mode, never widen it.
+                        (Some(policy), scope) => policy.resolve_mode(&effective_pm, scope),
+                        (None, Some(scope))
                             if sessions::is_valid_permission_mode(scope) && scope != "inherit" =>
                         {
                             scope.to_string()
                         }
-                        _ => effective_pm,
+                        (None, _) => effective_pm,
                     };
                     // Resolve the tool root from the persisted session instead of
                     // the mutable global workspace. This keeps background turns
@@ -4633,7 +4658,7 @@ async fn handle_request(
                     // the default medium risk so a state change still takes the
                     // normal approval path instead of the low-risk auto-allow.
                     let task_risk = background_task_tools::risk_for(&p.tool_name);
-                    let mut auto = st
+                    let auto = st
                         .permissions
                         .evaluate_auto_with_permission_mode_and_risk_and_path(
                             PermissionEvaluationParams {
@@ -4642,21 +4667,40 @@ async fn handle_request(
                                 mode: &durable_mode,
                                 permission_mode: &effective_pm,
                                 session_grants: &st.session_grants,
-                                declared_risk: p.declared_risk.as_deref(),
+                                declared_risk,
                                 effective_risk: task_risk.clone().or(recall_risk.clone()),
                                 requires_external_path_permission: external_path_permission,
                                 plan_safe_actions: p.plan_safe_actions.as_deref(),
                             },
                         );
+                    // The plugin task policy only ever removes authority: a
+                    // plugin tool, an outside path, a session grant or a file
+                    // edit outside `accept-edits` all fall back to a fresh card
+                    // instead of the automatic answer the manager produced.
+                    let mut auto = apply_plugin_task_policy(
+                        plugin_task.as_ref(),
+                        PluginTaskCall {
+                            tool_name: &p.tool_name,
+                            mode: &effective_pm,
+                            requires_external_path_permission: external_path_permission,
+                        },
+                        auto,
+                    );
                     // Write/Edit targeting the session scratch dir never touch
                     // the user's project — skip the prompt (D114). The lexical
                     // pre-check only decides prompting; execution still goes
                     // through the symlink-aware resolver, so it cannot be used
                     // to escape containment. A contract mode's hard deny is
-                    // never bypassed.
+                    // never bypassed, and a task a plugin created only edits a
+                    // file without a card in `accept-edits`: the skip is that
+                    // task's own mode decision, not a second way around it.
+                    let file_edits_are_free = plugin_task
+                        .as_ref()
+                        .is_none_or(|policy| policy.auto_allows_file_edits(&effective_pm));
                     if remote_workspace.is_none()
                         && !sessions::is_contract_mode(&durable_mode)
                         && auto.is_none()
+                        && file_edits_are_free
                         && matches!(p.tool_name.as_str(), "Write" | "Edit")
                     {
                         if let (Some(scratch_dir), Some(path)) = (
@@ -4705,9 +4749,10 @@ async fn handle_request(
                                 tool_name: &p.tool_name,
                                 args_preview: p.args.clone(),
                                 reason,
-                                declared_risk: p.declared_risk.as_deref(),
+                                declared_risk,
                                 effective_risk: recall_risk,
                                 command_shell_id: command_shell_id.as_deref(),
+                                per_call_only: plugin_task.is_some(),
                             },
                         );
                         st.register_pending_permission(
@@ -4745,6 +4790,9 @@ async fn handle_request(
                             "argsPreview": req.args_preview,
                             "reason": req.reason
                         });
+                        if req.per_call_only == Some(true) {
+                            permission_params["perCallOnly"] = json!(true);
+                        }
                         if let Some(shell_id) = req.command_shell_id.as_deref() {
                             permission_params["commandShellId"] = json!(shell_id);
                         }
@@ -5334,22 +5382,45 @@ async fn handle_request(
                         &args,
                     )
                 };
+            // The preview the renderer shows is the same gate: a task a plugin
+            // created resolves its calls under its own policy here too.
+            let plugin_task = PluginTaskPolicy::for_session(&st.db, session_id)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            let declared_risk = match plugin_task.as_ref() {
+                Some(policy) => policy.declared_risk(tool_name, declared_risk),
+                None => declared_risk,
+            };
+            // The preview resolves the mode the execute gate resolves: the
+            // task's ceiling narrows it, and nothing here can widen it back.
+            let effective_pm = match plugin_task.as_ref() {
+                Some(policy) => policy.resolve_mode(&effective_pm, None),
+                None => effective_pm,
+            };
             // The renderer's preview must agree with the execute gate: a recall
             // read of every project carries its own risk.
             let recall_risk = memory_tools::risk_for(tool_name, &args);
-            let decision = st
-                .permissions
-                .evaluate_auto_with_permission_mode_and_risk_and_path(PermissionEvaluationParams {
-                    session_id,
+            let decision = apply_plugin_task_policy(
+                plugin_task.as_ref(),
+                PluginTaskCall {
                     tool_name,
-                    mode: &mode,
-                    permission_mode: &effective_pm,
-                    session_grants: &st.session_grants,
-                    declared_risk,
-                    effective_risk: recall_risk.clone(),
+                    mode: &effective_pm,
                     requires_external_path_permission: external_path_permission,
-                    plan_safe_actions: plan_safe_actions.as_deref(),
-                });
+                },
+                st.permissions
+                    .evaluate_auto_with_permission_mode_and_risk_and_path(
+                        PermissionEvaluationParams {
+                            session_id,
+                            tool_name,
+                            mode: &mode,
+                            permission_mode: &effective_pm,
+                            session_grants: &st.session_grants,
+                            declared_risk,
+                            effective_risk: recall_risk.clone(),
+                            requires_external_path_permission: external_path_permission,
+                            plan_safe_actions: plan_safe_actions.as_deref(),
+                        },
+                    ),
+            );
             Ok(json!({
                 "decision": decision,
                 "risk": PermissionManager::call_risk(tool_name, declared_risk, recall_risk.as_ref()),
@@ -6138,6 +6209,10 @@ async fn handle_request(
 
 #[cfg(test)]
 mod bot_surface_extras;
+
+#[cfg(test)]
+#[path = "plugin_task_policy_tests.rs"]
+mod plugin_task_policy_tests;
 
 #[cfg(test)]
 mod tests {

@@ -326,7 +326,10 @@ pub fn list(db: &Database, unread_only: bool, limit: i64) -> Result<(Vec<Notific
     };
     let mut stmt = db.conn().prepare_cached(&sql)?;
     let rows = stmt.query_map(params![limit], notification_from_row)?;
-    let notifications = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut notifications = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    for notification in &mut notifications {
+        crate::plugin_task_notifications::sanitize(db, notification)?;
+    }
     let unread_count = db.conn().query_row(
         "SELECT COUNT(*) FROM notifications WHERE read_at IS NULL",
         [],

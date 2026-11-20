@@ -330,12 +330,13 @@ describe("RuntimeService prompt lifecycle", () => {
       argsPreview: "rm",
       risk: "high",
       reason: "shell",
+      perCallOnly: true,
     });
     expect(events).toHaveLength(1);
     expect(events[0]?.turnId).toBe("turn-1");
     expect(events[0]?.event).toMatchObject({
       type: "tool_permission_request",
-      request: { requestId: "req-1", agentName: "reviewer", parentToolCallId: "task-1" },
+      request: { requestId: "req-1", agentName: "reviewer", parentToolCallId: "task-1", perCallOnly: true },
     });
   });
 

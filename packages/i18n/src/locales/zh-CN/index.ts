@@ -3228,6 +3228,7 @@ sklm: {
     devReviewLoading: "加载中…",
     permissionReviewTitle: "安装 {{name}}？",
     permissionReviewBody: "请确认此插件可以执行的操作。高风险权限在你同意前会保持禁用。",
+    taskPermissionCeiling: "插件创建的任务目前最高以 accept-edits 模式运行，即使插件声明了 auto 也一样。按动作审批得到支持后才会开放 auto。",
     acceptInstall: "同意并安装",
     cancel: "取消",
     viewDetailsOf: "查看 {{name}} 的详情",
@@ -3342,6 +3343,8 @@ sklm: {
       "conversation.read": "读取会话归档",
       "embeddings.run": "使用你的模型生成向量",
       "session.autoTitle": "读取首轮标题上下文并更新自动标题",
+      "tasks.read": "读取你的任务列表",
+      "tasks.manage": "创建并推进任务",
     },
     permissionHelp: {
       "ui.panel": "允许插件在应用内显示独立面板。",
@@ -3395,6 +3398,8 @@ sklm: {
         "把你传入的文本发给你配置的向量模型，并消耗该服务的额度；插件拿不到 API 密钥。只发送你传入的文本，只收回向量。",
       "session.autoTitle":
         "只能读取符合条件会话的首条提示和首条回复，并仅在标题未被手动修改时更新；不能读取完整会话记录。",
+      "tasks.read": "读取员工清单与脱敏任务列表，不包含对话内容。",
+      "tasks.manage": "创建并推进本插件创建的任务。",
     },
   },
   extensions: {
@@ -3685,6 +3690,8 @@ sklm: {
     pluginCollapsed: "另有 {{count}} 条通知被折叠",
     pluginViewNeedsSession: "无法打开插件视图：请先选择本地会话。",
     pluginTargetUnavailable: "无法打开通知：插件目标不可用。",
+    pluginTaskCreated: "插件「{{pluginName}}」为 {{employeeName}} 创建了任务「{{taskTitle}}」，以 {{permissionMode}} 模式运行。",
+    pluginTaskCreatedNoMode: "插件「{{pluginName}}」为 {{employeeName}} 创建了任务「{{taskTitle}}」。",
     justNow: "刚刚",
   },
   liveVoice: {

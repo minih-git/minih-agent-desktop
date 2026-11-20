@@ -21,6 +21,7 @@ test("notification input rejects oversize or malformed data and reserved keys", 
   for (const input of [
     {}, { title: " " }, { title: "x".repeat(201) }, { title: "ok", body: "x".repeat(2001) },
     { title: "ok", level: "info" }, { title: "ok", dedupeKey: "__minih_notify_overflow__" },
+    { title: "ok", dedupeKey: "__minih_plugin_task__:task-1" },
     { title: "ok", dedupeKey: "x".repeat(257) }, { title: "ok", kind: null },
   ]) assert.throws(() => normalizePluginNotification(input, manifest), { code: "INVALID_ARGUMENT" });
 });

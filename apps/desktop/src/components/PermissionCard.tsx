@@ -111,13 +111,15 @@ export function PermissionCard({
         >
           {t("permission.deny")}
         </Button>
-        <Button
-          variant="secondary"
-          disabled={resolving}
-          onClick={() => void resolve("allow-session")}
-        >
-          {t("permission.allowSession")}
-        </Button>
+        {!permission.perCallOnly ? (
+          <Button
+            variant="secondary"
+            disabled={resolving}
+            onClick={() => void resolve("allow-session")}
+          >
+            {t("permission.allowSession")}
+          </Button>
+        ) : null}
         <Button
           variant="primary"
           disabled={resolving}

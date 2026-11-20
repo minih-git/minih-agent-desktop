@@ -3230,6 +3230,7 @@ sklm: {
     "fsAsksEachTime": "fragt Sie jedes Mal",
     "legacyFsDowngraded": "Dieses Plugin deklariert Dateiberechtigungen von vor der Existenz von Bereichen, daher wurde seine Reichweite reduziert. Aktualisieren Sie es, um die volle Funktion wiederherzustellen.",
     "permissions": {
+      ...en.plugins.permissions,
       "ui.panel": "Plugin-Panel anzeigen",
       "ui.microphone": "Mikrofon verwenden",
       "clipboard.read": "Zwischenablage und Verlauf lesen",
@@ -3275,6 +3276,7 @@ sklm: {
       "session.autoTitle": "Kontext des ersten Durchlaufs lesen und automatische Titel ändern"
     },
     "permissionHelp": {
+      ...en.plugins.permissionHelp,
       "ui.panel": "Lässt das Plugin sein eigenes Panel innerhalb der App anzeigen.",
       "ui.microphone": "Erlaubt dem isolierten Panel, Mikrofon-Audio anzufordern; Kamerazugriff wird nicht gewährt.",
       "clipboard.read": "Kann alles lesen, was sich derzeit in Ihrer Zwischenablage und im gespeicherten Zwischenablageverlauf befindet.",
@@ -3573,6 +3575,7 @@ sklm: {
     "longThreadWarning": "Kontext komprimiert. Lange Threads verlieren mit jeder Komprimierung frühere Details. Starten Sie eine neue Sitzung für nicht zusammenhängende Arbeiten."
   },
   "notifications": {
+    ...en.notifications,
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     "taskWaitingTitle": "{{employee}} · {{task}} wartet auf Sie",
     "inspectionTitle": "{{employee}} · {{task}}",

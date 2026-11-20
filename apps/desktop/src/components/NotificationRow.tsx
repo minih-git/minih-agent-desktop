@@ -12,6 +12,8 @@ import {
   IconPlug,
 } from "./icons";
 import { pluginViewIcon } from "../lib/plugin-view-icons";
+import { pluginTaskNotification } from "../lib/plugin-task-notification";
+import { PERMISSION_MODE_I18N_KEYS } from "../lib/permission-mode-labels";
 
 /** Host-resolved identity of the plugin that delivered a `plugin.*` row. */
 export type NotificationRowPlugin = {
@@ -96,12 +98,21 @@ export function NotificationRow({
   let title = "";
   let body = "";
   if (pluginRow) {
+    const taskNotice = pluginTaskNotification(notification);
     const collapsed = collapsedNotificationCount(notification);
-    const pluginName = plugin?.name || notification.pluginId || "";
+    const pluginName = plugin?.name?.trim() || notification.pluginId || "";
     title = collapsed === null
       ? notification.title?.trim() || pluginName
       : t("notifications.pluginCollapsed", { count: collapsed });
-    body = collapsed === null ? notification.body ?? "" : "";
+    body = taskNotice
+      ? taskNotice.permissionMode
+        ? t("notifications.pluginTaskCreated", {
+            ...taskNotice,
+            pluginName,
+            permissionMode: t(PERMISSION_MODE_I18N_KEYS[taskNotice.permissionMode]),
+          })
+        : t("notifications.pluginTaskCreatedNoMode", { ...taskNotice, pluginName })
+      : collapsed === null ? notification.body ?? "" : "";
   } else if (prompt === "prompt.permission") {
     title = t("notifications.permissionTitle", { sessionTitle });
     body = t("notifications.permissionBody", {

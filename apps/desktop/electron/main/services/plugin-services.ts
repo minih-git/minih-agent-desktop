@@ -77,12 +77,14 @@ import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import type { PluginAppearance } from "../../shared/plugin-panel-chrome";
 import type { RuntimeModelResolver } from "../runtime/model-resolution";
+import type { PluginTaskService } from "../plugin-tasks-api";
 
 export type PluginServicesDependencies = {
   dataDir: string;
   logger: Logger;
   getMainWindow: () => BrowserWindow | null;
   getHost: () => HostProcess | null;
+  pluginTasks: PluginTaskService;
   sendToRenderer: (channel: string, payload: unknown) => void;
   safeOpenExternal: (rawUrl: unknown) => Promise<void>;
   stripWinLongPrefix: (path: string) => string;
@@ -116,6 +118,7 @@ export function createPluginServices({
   logger,
   getMainWindow,
   getHost,
+  pluginTasks,
   sendToRenderer,
   safeOpenExternal,
   stripWinLongPrefix,
@@ -276,6 +279,7 @@ export function createPluginServices({
     }),
   });
   const plugins: PluginRuntime = new PluginRuntime({
+    pluginTasks,
     pluginShortcuts,
     pluginSockets,
     pluginTcp,

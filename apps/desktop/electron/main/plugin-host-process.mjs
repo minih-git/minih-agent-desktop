@@ -268,6 +268,20 @@ function buildApi() {
       listOperations: () => call("desktop.listOperations"),
       invoke: (input) => call("desktop.invoke", [input ?? {}]),
     },
+    /**
+     * Task surface (`tasks.read` / `tasks.manage`). The host owns the roster,
+     * the ledger and the stage events; this object only carries the caller's
+     * request, and the manifest ceiling a `create` runs under never crosses
+     * this boundary — the broker reads it from the loaded manifest.
+     */
+    tasks: {
+      roster: (input) => call("tasks.roster", [input ?? {}]),
+      list: (input) => call("tasks.list", [input ?? {}]),
+      create: (input) => call("tasks.create", [input ?? {}]),
+      get: (input) => call("tasks.get", [input ?? {}]),
+      send: (input) => call("tasks.send", [input ?? {}]),
+      stop: (input) => call("tasks.stop", [input ?? {}]),
+    },
     fs: {
       readText: (path) => call("fs.readText", [path]),
       stat: (path, grantId) => call("fs.stat", [path, grantId]),

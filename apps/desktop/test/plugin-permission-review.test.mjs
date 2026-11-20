@@ -219,3 +219,10 @@ test("credential install review warns in English and Chinese about plaintext tra
   assert.match(enLocaleSrc, /Credentials sent to http:\/\/ or ws:\/\/ destinations travel unencrypted/);
   assert.match(zhCNLocaleSrc, /向 http:\/\/ 或 ws:\/\/ 目标注入的凭据在网络路径上以明文传输/);
 });
+
+test("task permission reviews explain the current execution ceiling", () => {
+  assert.match(pluginDialogsSrc, /permissions\.includes\("tasks\.manage"\)/);
+  assert.match(pluginDialogsSrc, /plugins\.taskPermissionCeiling/);
+  assert.match(enLocaleSrc, /Plugin-created tasks run at most at accept-edits/);
+  assert.match(zhCNLocaleSrc, /插件创建的任务目前最高以 accept-edits 模式运行/);
+});

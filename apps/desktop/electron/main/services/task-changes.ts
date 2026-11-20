@@ -47,10 +47,12 @@ export function createTaskChangeAnnouncer({
   sendToRenderer,
   getHost,
   log,
+  onStageChanged,
 }: {
   sendToRenderer: (channel: string, payload: unknown) => void;
   getHost: () => Host | null;
   log: (message: string, data: Record<string, unknown>) => void;
+  onStageChanged?: (task: Pick<TaskView, "id" | "stage">) => void;
 }): TaskChangeAnnouncer {
   /**
    * What was last announced per task: the stage **and** the requests it waits on.
@@ -92,6 +94,9 @@ export function createTaskChangeAnnouncer({
       taskId: task.id,
       reason: reported,
     } satisfies TasksChangedEvent);
+    if (reported === "stage" && previousStage !== undefined && previousStage !== task.stage) {
+      onStageChanged?.({ id: task.id, stage: task.stage });
+    }
   }
 
   async function reconcileStages(): Promise<void> {

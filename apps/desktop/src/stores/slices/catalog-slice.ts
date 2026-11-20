@@ -9,6 +9,7 @@ import { api } from "../../lib/api";
 import { latestSessionOutcomes } from "../../lib/sidebar-session-status";
 import { pluginWorkPanelTab } from "../../lib/work-panel-tabs";
 import { isRemoteSession } from "../../lib/remote-session-safety";
+import { pluginTaskNotification } from "../../lib/plugin-task-notification";
 import type { AppState } from "../app-state";
 import type { CatalogRuntime } from "../runtime/catalog-runtime";
 import type { SessionRuntime } from "../runtime/session-runtime";
@@ -551,7 +552,8 @@ export function createCatalogSlice({
     openNotification: async (id) => {
       const notification = get().notifications.find((item) => item.id === id);
       if (!notification) return;
-      const sessionId = notification.sessionId;
+      const taskNotice = pluginTaskNotification(notification);
+      const sessionId = notification.sessionId ?? taskNotice?.sessionId;
       if (!sessionId) {
         // A plugin row leads to nothing on its own: it is read first, and then
         // only the one view or command its own plugin declared is opened. A row
@@ -615,6 +617,7 @@ export function createCatalogSlice({
         return;
       }
       const intent = sessionRuntime.beginNavigationIntent();
+      if (taskNotice && !notification.readAt) await get().markNotificationRead(notification.id);
       // One bell row stands for the whole conversation (D664), so opening it
       // settles every unread row of that conversation, not just the newest.
       const unread = get().notifications.filter(

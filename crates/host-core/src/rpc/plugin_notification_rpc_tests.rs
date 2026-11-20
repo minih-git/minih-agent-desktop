@@ -328,6 +328,9 @@ async fn the_host_rejects_what_it_cannot_store() {
         json!({
             "pluginId": "acme.ci", "kind": "alert", "title": "Key", "dedupeKey": RESERVED
         }),
+        json!({ "pluginId": "acme.ci", "kind": "alert", "title": "Forged", "dedupeKey": "__minih_plugin_task__:task-1" }),
+        json!({ "pluginId": "acme.ci", "kind": "alert", "title": "Forged", "linkJson": "{\"session\":\"other\"}" }),
+        json!({ "pluginId": "acme.ci", "kind": "alert", "title": "Forged", "linkJson": "{\"view\":\"inbox\",\"session\":\"other\"}" }),
         // The contract is exact: an unknown field is a caller bug, not noise.
         json!({
             "pluginId": "acme.ci", "kind": "alert", "title": "Extra", "channel": "push"

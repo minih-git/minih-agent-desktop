@@ -3242,6 +3242,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     legacyFsDowngraded:
       "이 플러그인은 범위 기능이 생기기 전의 파일 권한을 선언했으므로 접근 범위가 줄었습니다. 전체 기능을 복원하려면 업데이트하세요.",
     permissions: {
+      ...en.plugins.permissions,
       "ui.panel": "플러그인 패널 표시",
       "ui.microphone": "마이크 사용",
       "clipboard.read": "클립보드와 기록 읽기",
@@ -3289,6 +3290,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "session.autoTitle": "첫 턴 제목 맥락 읽기 및 자동 제목 업데이트",
     },
     permissionHelp: {
+      ...en.plugins.permissionHelp,
       "ui.panel": "플러그인이 앱 안에 자체 패널을 표시할 수 있습니다.",
       "ui.microphone": "격리된 패널이 마이크 오디오를 요청할 수 있습니다. 카메라 권한은 부여하지 않습니다.",
       "clipboard.read":
@@ -3609,6 +3611,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       "컨텍스트가 압축되었습니다. 긴 대화는 압축할 때마다 이전 세부 정보가 줄어드니 관련 없는 작업은 새 세션을 시작하세요.",
   },
   notifications: {
+    ...en.notifications,
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     taskWaitingTitle: "{{employee}} · {{task}} 확인 대기 중",
     inspectionTitle: "{{employee}} · {{task}}",

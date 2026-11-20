@@ -3229,6 +3229,7 @@ sklm: {
     "fsAsksEachTime": "pregunta usted cada vez",
     "legacyFsDowngraded": "Este complemento declara permisos de archivos anteriores a que existieran los ámbitos, por lo que su alcance se ha reducido. Actualícelo para restaurar la función completa.",
     "permissions": {
+      ...en.plugins.permissions,
       "ui.panel": "Mostrar un panel de complementos",
       "ui.microphone": "Usar el micrófono",
       "clipboard.read": "Leer el portapapeles y su historial",
@@ -3274,6 +3275,7 @@ sklm: {
       "session.autoTitle": "Leer el contexto del primer turno y actualizar títulos automáticos"
     },
     "permissionHelp": {
+      ...en.plugins.permissionHelp,
       "ui.panel": "Permite que el complemento muestre su propio panel dentro de la aplicación.",
       "ui.microphone": "Permite que el panel aislado solicite audio del micrófono; no concede acceso a la cámara.",
       "clipboard.read": "Puede leer lo que esté actualmente en su portapapeles y el historial del portapapeles retenido.",
@@ -3572,6 +3574,7 @@ sklm: {
     "longThreadWarning": "Contexto compactado. Los hilos largos pierden detalles anteriores con cada compactación: inicie una nueva sesión para trabajos no relacionados."
   },
   "notifications": {
+    ...en.notifications,
     // Waiting channel and blocked task (employee mode 0.5 slice 4a).
     "taskWaitingTitle": "{{employee}} · {{task}} te está esperando",
     "inspectionTitle": "{{employee}} · {{task}}",

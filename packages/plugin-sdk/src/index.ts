@@ -25,6 +25,7 @@ import {
   validateWebhookContributions,
   type PluginCredentialContrib,
   type PluginScheduleContrib,
+  type PluginTaskPermissionMode,
   type PluginTasksContrib,
   type PluginWebhookContrib,
 } from "./host-capabilities.js";
@@ -1371,6 +1372,123 @@ export type PluginThemeSummary = {
   base: "light" | "dark";
 };
 
+/**
+ * One redacted row of `pi.tasks.list` / `pi.tasks.get`. The host projects it
+ * from the task ledger: no prompt, no transcript, no question, no progress and
+ * no report, so a plugin can render a workbench without ever holding the
+ * conversation the task runs.
+ */
+export type PluginTaskSummary = {
+  taskId: string;
+  title: string;
+  /** Host stage vocabulary (`queued`, `working`, `person/answer`, …). */
+  stage: string;
+  origin: "steward" | "direct";
+  /** The plugin that created the task, or null for one a person started. */
+  pluginId: string | null;
+  /** The task's own conversation. */
+  sessionId: string;
+  /** The employee the task was created for. */
+  employeeId: string;
+  projectId: number | null;
+  createdAt: number;
+  archivedAt: number | null;
+};
+
+/**
+ * One employee in `pi.tasks.roster`: who the person hired and how loaded that
+ * employee is. The host projects it from the employee row, so the fields are
+ * the employee surface's own — an employee is not a task.
+ */
+export type PluginTaskEmployee = {
+  /** The id `pi.tasks.create` takes as `employeeId`. */
+  employeeId: string;
+  name: string;
+  /** What the employee was hired to do, when its profile says. */
+  duty?: string;
+  projectId: number | null;
+  /** The employee's own mode, resolved: `inherit` is already answered. */
+  permissionMode: PluginTaskPermissionMode;
+  /** A turn is running, or queued work is still in flight. */
+  busy: boolean;
+  /** Unarchived tasks this employee holds. */
+  openTasks: number;
+  /** Tasks waiting on the person (`person/answer`, `blocked`, `failed`, …). */
+  waitingOnYou: number;
+};
+
+/** `pi.tasks.roster` answer: every employee the host holds, capped host-side. */
+export type PluginTaskRoster = {
+  employees: PluginTaskEmployee[];
+};
+
+/** `pi.tasks.list` input: the redacted ledger, paged. */
+export type PluginTaskListInput = {
+  /** Rows to return; the host clamps it to 1–200. Defaults to 50. */
+  limit?: number;
+  /** `nextCursor` from a previous page, or omitted for the first one. */
+  cursor?: string;
+};
+
+export type PluginTaskListResult = {
+  tasks: PluginTaskSummary[];
+  nextCursor: string | null;
+};
+
+export type PluginTaskCreateInput = {
+  /**
+   * The employee the task is for. Required: a plugin starts work for an
+   * employee the person hired, and an id that is not one of them is
+   * `NOT_FOUND`.
+   */
+  employeeId: string;
+  title: string;
+  prompt: string;
+  projectId?: number;
+  /**
+   * Ceiling for the new task's own session. The host runs it at
+   * `min(maxPermission, manifest.tasks.manage.maxPermission, the employee's own
+   * mode)`, so this argument can only narrow what the person already allowed.
+   * Omitting it means `accept-edits`. `auto` is always refused with
+   * `PERMISSION_DENIED`: per-action approval is unavailable for plugin-created
+   * tasks, so no manifest declaration can remove the person's approval step.
+   */
+  maxPermission?: PluginTaskPermissionMode;
+};
+
+/** What a create answers: the ids of the task, and nothing of its content. */
+export type PluginTaskCreateResult = {
+  taskId: string;
+  sessionId: string;
+};
+
+/** `pi.tasks.get` and `pi.tasks.stop` name one task the caller created. */
+export type PluginTaskRef = {
+  taskId: string;
+};
+
+/** `pi.tasks.get` answer: the same redacted row `list` returns. */
+export type PluginTaskGetResult = {
+  task: PluginTaskSummary;
+};
+
+export type PluginTaskSendInput = {
+  taskId: string;
+  prompt: string;
+};
+
+/**
+ * `tasks:changed` host event: a task this plugin created moved stage.
+ *
+ * The recipient is resolved from the host's task ledger, not from what this
+ * process remembers of its own run, so a plugin keeps receiving its tasks'
+ * stage changes after the app restarts. Delivered only to the owning plugin,
+ * and only while it is loaded.
+ */
+export type PluginTaskChangedEvent = {
+  taskId: string;
+  stage: string;
+};
 export type PluginHostApi = {
   app: {
     getVersion: () => Promise<string>;
@@ -1428,6 +1546,24 @@ export type PluginHostApi = {
   };
   project: {
     create: (input: { path: string }) => Promise<PluginProjectRecord>;
+  };
+  /**
+   * The host's task surface (`tasks.read` / `tasks.manage`).
+   *
+   * `roster` and `list` are read-only over the person's own employees and
+   * tasks. `create`, `get`, `send` and `stop` cover only the tasks this plugin
+   * created: another plugin's task or a person's task is `NOT_FOUND`, not
+   * `PERMISSION_DENIED`, so no call can be used to enumerate what the caller
+   * may not touch.
+   */
+  tasks: {
+    /** Every employee the host holds; the answer is capped host-side. */
+    roster: () => Promise<PluginTaskRoster>;
+    list: (input?: PluginTaskListInput) => Promise<PluginTaskListResult>;
+    create: (input: PluginTaskCreateInput) => Promise<PluginTaskCreateResult>;
+    get: (input: PluginTaskRef) => Promise<PluginTaskGetResult>;
+    send: (input: PluginTaskSendInput) => Promise<void>;
+    stop: (input: PluginTaskRef) => Promise<void>;
   };
   /** Host-rendered interaction surface for a declared OAuth provider. */
   providers: {

@@ -20,6 +20,8 @@ mod notifications;
 mod permissions;
 mod plans;
 mod plugin_sessions;
+mod plugin_task_notifications;
+mod plugin_tasks;
 mod plugin_usage;
 mod plugins;
 mod project_archive;

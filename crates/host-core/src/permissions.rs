@@ -62,6 +62,8 @@ pub struct PermissionRequest {
     pub reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command_shell_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub per_call_only: Option<bool>,
 }
 
 pub struct PermissionRequestParams<'a> {
@@ -74,6 +76,7 @@ pub struct PermissionRequestParams<'a> {
     /// Risk this particular call carries when its arguments decide it.
     pub effective_risk: Option<Risk>,
     pub command_shell_id: Option<&'a str>,
+    pub per_call_only: bool,
 }
 
 pub struct PermissionEvaluationParams<'a> {
@@ -272,6 +275,7 @@ impl PermissionManager {
             declared_risk: None,
             effective_risk: None,
             command_shell_id: None,
+            per_call_only: false,
         })
     }
 
@@ -291,6 +295,7 @@ impl PermissionManager {
             declared_risk,
             effective_risk,
             command_shell_id,
+            per_call_only,
         } = params;
         let request_id = Uuid::new_v4().to_string();
         let request = PermissionRequest {
@@ -302,6 +307,7 @@ impl PermissionManager {
             args_preview: preview_value(&args_preview),
             reason: reason.to_string(),
             command_shell_id: command_shell_id.map(str::to_string),
+            per_call_only: per_call_only.then_some(true),
         };
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.next_sequence += 1;
@@ -942,6 +948,8 @@ mod session_messaging_tests {
         );
     }
 }
+
+pub mod plugin_task_policy;
 
 mod registry;
 

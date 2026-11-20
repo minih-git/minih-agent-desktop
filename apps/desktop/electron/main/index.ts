@@ -96,6 +96,8 @@ import { createPluginServices } from "./services/plugin-services";
 import { wirePluginThemeRuntimeServices } from "./plugin-theme-services";
 import { createSessionCollaborationService } from "./services/session-collaboration";
 import { createTaskChangeAnnouncer } from "./services/task-changes";
+import { createPluginTaskService } from "./services/plugin-tasks";
+import { DESKTOP_PRINCIPAL } from "./agent-host-bridge";
 import { registerTaskWaitingChanges } from "./runtime/task-waiting";
 import {
   createApplicationLifecycle,
@@ -367,6 +369,22 @@ const pluginServices = createPluginServices({
   logger,
   getMainWindow,
   getHost,
+  pluginTasks: createPluginTaskService({
+    getHost,
+    notify: sendToRenderer,
+    announce: (task) => taskChanges.announce(task, "created"),
+    start: async (sessionId, prompt) => {
+      const bridge = mainState.agentHostBridge;
+      if (!bridge) throw new Error("Agent runtime unavailable");
+      await bridge.queue.push({ sessionId, content: prompt });
+    },
+    stop: async (sessionId) => {
+      const bridge = mainState.agentHostBridge;
+      if (!bridge) throw new Error("Agent runtime unavailable");
+      const turnId = bridge.agentHost.observeWorkTarget(sessionId).activeTurnId;
+      if (turnId) await bridge.agentHost.interruptTurn(DESKTOP_PRINCIPAL, turnId);
+    },
+  }),
   sendToRenderer,
   safeOpenExternal,
   stripWinLongPrefix,
@@ -742,6 +760,17 @@ const taskChanges = createTaskChangeAnnouncer({
   sendToRenderer,
   getHost,
   log: (message, data) => logger.app("runtime", "warn", message, { data }),
+  onStageChanged: ({ id, stage }) => {
+    const host = getHost();
+    if (!host) return;
+    void host.call<{ pluginId: string | null }>("pluginTasks.owner", { taskId: id })
+      .then(({ pluginId }) => {
+        if (pluginId && getHost() === host) plugins.deliverTaskChanged(pluginId, { taskId: id, stage });
+      })
+      .catch((error: unknown) => logger.app("plugin", "warn", "plugin task event could not be routed", {
+        data: { taskId: id, error: String(error) },
+      }));
+  },
 });
 // The waiting channel reports through the same announcer: a question opening or
 // closing is task news even when the stage did not move (slice 4a).
@@ -1320,7 +1349,10 @@ registerApplicationStartup({
   dispatchNativeMenuAction,
   prewarmPluginLauncher,
   registerIpc,
-  bootBackends,
+  bootBackends: async () => {
+    await bootBackends();
+    await taskChanges.reconcileStages();
+  },
   planUiProbe,
   applyApplicationMenuSettings,
   applyDeveloperMode,
