@@ -39,8 +39,8 @@ export type PluginCredentialContrib = {
   fields: PluginCredentialFieldContrib[];
   /**
    * Hosts this slot may be injected into. Absent means the slot is injected
-   * nowhere: an injection also has to be inside `manifest.net.domains`, so an
-   * undeclared scope fails closed rather than opening up.
+   * nowhere. HTTP and WebSocket also require `manifest.net.domains`; IMAP over
+   * TCP requires an endpoint declared in `manifest.net.tcp`.
    */
   scope?: { domains: PluginNetDomain[] };
 };

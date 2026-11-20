@@ -365,6 +365,16 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 - 插件得到的是 `connectionId` 与事件，永远拿不到套接字、流、TLS 会话或证书
   句柄。`tls` 来自清单，握手由宿主完成，因此没有可以把连接降级或跳过校验的
   API。
+- TCP 上的 `credentialRef` 让宿主自己完成 IMAP 登录：只拨已验证的隐式 TLS
+  （`tls: false` 端点直接拒绝），读取 greeting、检查 capability，再用 PLAIN
+  （SASL-IR 或续行）或 `LOGIN` 完成认证，之后才把句柄交给插件。登录期间插件既拿
+  不到凭据也拿不到登录往返，宿主生成的事件、错误和审计两者都不带；`connect`
+  额外给出的唯一事实是 `authenticated: true`。`NO` / `BAD` / `BYE`、无法编码的
+  凭据和超时都是带固定文案的错误码拒绝，对端文本止步于宿主。
+- **登录后的字节流不过滤。** `connect` resolve 之后就是普通透明 TCP：插件的写入
+  与服务端的字节原样转发，与没有凭据的连接完全相同。邮件服务器持有它收到的账号
+  密码，因此可以在该流里回显它，宿主既不检查也不脱敏载荷。这条边界保护的是
+  「不交给插件」——值不会通过 API 回到插件——而不是对端之后的输出。
 - 卸载、禁用和崩溃都会关闭全部连接；`connect` 与 `close` 会记入审计，记录
   端点与结果，绝不记录载荷内容。
 - 原始套接字不经过用户设置的出网代理。安装审查会明确说明这一点，否则期望
@@ -398,13 +408,16 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
   错误或审计记录中主动返回保存的值。值仍存加密密钥库，不进 SQLite，静态存储
   方式不变。
 - 只有宿主持有的出网调用用 `credentialRef` 点名该槽位、且目标同时落在槽位
-  `scope` 与 `manifest.net.domains` 内时才注入；交集之外拒绝，而不是发送未认证
-  请求。
+  `scope` 与插件自己的声明内时才注入：`fetch` 与 `websocket.connect` 看
+  `manifest.net.domains`，IMAP 登录看 `manifest.net.tcp` 端点。交集之外拒绝，
+  而不是发送未认证请求。
+- `imap` 槽位只能经由 `net.tcp` 使用，另外四种类型在 TCP 上不被接受。该登录
+  走已验证证书的隐式 TLS，因此值不会被写到明文套接字上。
 - 向 `http://` 或 `ws://` 目标注入的凭据在网络路径上以明文传输；审计记录目标
   的 scheme，但不记录凭据。可用时应优先使用 HTTPS 或 WSS。
 - 这是可审查、可撤销的 API 边界，不防恶意插件。插件入口可使用原生 Node，并非
-  操作系统沙箱；请只安装信任的插件。远端服务可能在 HTTP 响应体或 WebSocket 帧
-  中回显凭据，宿主不过滤这些应用数据。
+  操作系统沙箱；请只安装信任的插件。远端服务可能在 HTTP 响应体、WebSocket 帧
+  或 IMAP 登录后的 TCP 流中回显凭据，宿主不过滤这些应用数据。
 
 **`scheduler` —— 时钟归宿主。** 声明的定时器要么是至少一分钟的间隔，要么是
 五段 cron 表达式，二者不能同时存在。插件被禁用或卸载时不会触发；积压的触发
@@ -463,11 +476,12 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
    警告时才可接受
 10. 低风险或授予的插件工具在 Plan 中仍然无法关闭
 11. `net.tcp` 端点出现通配符主机、端口区间或缺少 `tls` 都会让 manifest 校验
-    失败；第五条同时连接被拒绝，插件卸载时所有连接都会关闭
+    失败；第五条同时连接被拒绝，插件卸载时所有连接都会关闭；对 `tls: false`
+    端点传入 `credentialRef` 会在建立套接字之前被拒
 12. 没有令牌的 webhook 接收器不会被注册；请求体超过 256 KiB 返回 `413`，
     插件也无法设置响应状态码
-13. 没有任何 API 或错误信息会返回凭据值；在槽位 `scope` 或
-    `manifest.net.domains` 之外的注入一律被拒
+13. 宿主生成的响应和错误信息不返回凭据值；在槽位 `scope` 或插件已声明出网范围
+    之外的注入一律被拒；IMAP 登录不交出登录往返，但登录后的透明流可能回显凭据
 14. 插件被禁用时定时器不会触发；`tasks.manage` 创建的任务永远不会超过该员工
     自己的权限模式
 
@@ -509,11 +523,10 @@ Minih-Agent-Desktop 自己当前占用（默认是 `Alt+Space` 与 `Alt+Shift+W`
 `UNSUPPORTED` 拒绝并记入审计，因为当前宿主还没有设备后端，所以没有任何东西
 能到达设备。
 `notify.center`、`inbound.webhook` 与 `scheduler` 已实现，由独立权限把关并由
-宿主持有资源。`credentials.use` 已支持宿主代理的 fetch 和 WebSocket，
-`pi.credentials.list` 仅返回配置状态（§8.3）。`net.tcp` 已实现字面端点匹配、
-并发限制、TLS 校验和生命周期清理；TCP 凭据代用尚未实现，传入时返回
-`INVALID_ARGUMENT`。`mail.draft`、`tasks.read` 与 `tasks.manage` 仍仅注册，
-其 manifest 字段在安装时校验。
+宿主持有资源。`credentials.use` 已支持宿主代理的 fetch 和 WebSocket，以及
+`net.tcp` 连接点名 `imap` 槽位时由宿主完成的 IMAP 登录；`pi.credentials.list`
+仅返回配置状态（§8.3）。`net.tcp` 已实现字面端点匹配、并发限制、TLS 校验、
+生命周期清理，以及把登录往返和插件流量一起计入的字节计量。
 `net.websocket` 已实现：连接由宿主持有、经过白名单检查、有界，并随插件一起
 释放（§8.1）。
 

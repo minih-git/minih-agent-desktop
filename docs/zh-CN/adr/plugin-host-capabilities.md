@@ -82,10 +82,11 @@
   宿主生成的响应、错误和审计记录不披露保存的值。
 - 值存在既有的密钥库，不进 SQLite（规格 03-runtime/04 §10）；静态存储方式不变。
 - 只在插件用 `credentialRef` 点名的宿主持有出网路径上注入，且目标必须同时落在
-  槽位 `scope` 与 `manifest.net.domains` 内。没有 `scope` 的槽位无处注入。
+  槽位 `scope` 与插件自己的声明内：HTTP 与 WebSocket 看 `manifest.net.domains`，
+  IMAP 登录看 `manifest.net.tcp` 端点。没有 `scope` 的槽位无处注入。
 - 这是可审计的 API 边界，不是操作系统沙箱，不能防范具有用户文件权限和原生 Node
-  能力的恶意插件；请只安装信任的插件。远端服务可能在响应体或 WebSocket 帧中
-  回显凭据，宿主不过滤这些应用数据。
+  能力的恶意插件；请只安装信任的插件。远端服务可能在响应体、WebSocket 帧或
+  IMAP 登录后的 TCP 流中回显凭据，宿主不过滤这些应用数据。
 - 设置面板渲染不出来的槽位（没有 kind、没有字段、字段 key 重复）会让 manifest
   校验失败：无法使用的权限是作者的疏忽。
 
@@ -96,6 +97,10 @@
 - **每个插件同时最多四条连接。** 四条是并发上限，不是清单条数上限：端点白名单
   没有条数限制，有十台服务器的作者不必只挑四台。
 - 插件拿到的是连接句柄与事件，永远拿不到套接字、流，也没有读取 TLS 会话的途径。
+- TCP 连接上的 `credentialRef` 让宿主自己完成 IMAP 登录，且只走隐式 TLS：宿主
+  读取 greeting、协商 PLAIN 或 LOGIN，仅交回 `authenticated: true`。登录后的
+  字节流保持透明，服务器可能回显凭据。`tls: false` 端点被拒，也不提供
+  STARTTLS、XOAUTH2 或 SMTP 相关能力。
 - 插件卸载、被禁用或崩溃时，所有连接关闭。
 - 用户的出网 HTTP 代理不适用于这些连接，安装审查会写明。
 
@@ -178,8 +183,9 @@ B-0 只做注册：
 - `packages/plugin-sdk` 中上述形状的类型与校验器。
 
 最初的 B-0 切片不执行这些能力。后续 B1 实现凭据存储、状态查询以及宿主持有的
-fetch 和 WebSocket 注入；B2 实现入站 webhook；B4 实现 `pi.notify.center`；
-B6 实现插件定时。`net.tcp`、`mail.draft` 与 `tasks.*` 按各自文档执行。
+fetch 和 WebSocket 注入，并实现带凭据的 `net.tcp` 连接由宿主完成的 IMAP 登录；
+B2 实现入站 webhook；B4 实现 `pi.notify.center`；B6 实现插件定时。`mail.draft`
+与 `tasks.*` 按各自文档执行。
 
 ## 后果
 

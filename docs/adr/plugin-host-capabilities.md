@@ -99,11 +99,14 @@ each is stated in the install review.
   `03-runtime/04` §10). Its at-rest design is unchanged.
 - Injection happens only on a host-owned egress path the plugin names by
   `credentialRef`, and only when the target is inside both the slot's `scope`
-  and `manifest.net.domains`. A slot without `scope` is injected nowhere.
+  and the plugin's own declaration: `manifest.net.domains` for HTTP and
+  WebSocket, a `manifest.net.tcp` endpoint for the IMAP login. A slot without
+  `scope` is injected nowhere.
 - This is an auditable API boundary, not an OS sandbox or protection against a
   malicious plugin running Node with the user's file permissions. Install only
-  trusted plugins. A remote service may echo the value in a response body or
-  WebSocket frame; the host does not filter those application payloads.
+  trusted plugins. A remote service may echo the value in a response body, a
+  WebSocket frame, or the transparent TCP stream after an IMAP login; the host
+  does not filter those application payloads.
 - A slot the Settings sheet cannot render (no kind, no fields, duplicate field
   key) fails manifest validation: a dead permission is an authoring slip.
 
@@ -117,6 +120,14 @@ each is stated in the install review.
   limit, so an author with ten servers does not have to choose four.
 - The plugin receives a connection handle and events. It never receives a
   socket, a stream, or a way to read the TLS session.
+- A `credentialRef` on a TCP connect makes the host perform the IMAP login
+  itself, and only over implicit TLS: it reads the greeting, negotiates PLAIN
+  or LOGIN, and hands back `authenticated: true` alone. The login exchange stays
+  in the host — no `data` event, error text or audit field carries the value or
+  the transcript — but the connection after it is the same transparent stream
+  as any other TCP connection, so a mailbox server can echo the password back
+  and the host neither inspects nor redacts it. A `tls: false` endpoint is
+  refused, and nothing about STARTTLS, XOAUTH2 or SMTP is offered.
 - Every connection closes when the plugin unloads, is disabled, or crashes.
 - The user's outbound HTTP proxy does not apply to these connections, and the
   install review says so.
@@ -227,9 +238,10 @@ B-0 is registration, and only registration:
 
 The original B-0 slice executed none of those capabilities. B1 subsequently
 implements credential storage, status, and injection on host-owned fetch and
-WebSocket calls; B2 implements inbound webhooks; B4 implements
-`pi.notify.center`; B6 implements plugin scheduling. `net.tcp`, `mail.draft`
-and `tasks.*` retain their separately documented implementation status.
+WebSocket calls, and the host-performed IMAP login of a credential-bearing
+`net.tcp` connect; B2 implements inbound webhooks; B4 implements
+`pi.notify.center`; B6 implements plugin scheduling. `mail.draft` and
+`tasks.*` retain their separately documented implementation status.
 
 ## Consequences
 

@@ -1337,9 +1337,10 @@ code; this is not an OS sandbox. See
 
 **Implementation status.** `pi.net.tcp`, `pi.credentials.list`, `pi.notify.center`,
 `pi.inbound.getReceivers`, `inbound:webhook` and `schedule:fire` are implemented.
-`pi.net.fetch` and `pi.net.websocket.connect` inject `credentialRef`; TCP does
-not yet support credential substitution. `pi.mail` and `pi.tasks` remain
-registration only; plugins must check for unavailable methods before calling (§8).
+`pi.net.fetch`, `pi.net.websocket.connect` and `pi.net.tcp.connect` inject
+`credentialRef`, the last one only for an `imap` slot. `pi.mail` and `pi.tasks`
+remain registration only; plugins must check for unavailable methods before
+calling (§8).
 
 ```ts
 // credentials.use: the host injects a user-filled slot; only status is readable.
@@ -1350,9 +1351,9 @@ pi.net.websocket.connect(input: { …; credentialRef?: string })
 // net.tcp (requires `net.tcp`, and the endpoint must be in manifest.net.tcp)
 pi.net.tcp.connect(input: {
   endpoint: { host: string; port: number }
-  credentialRef?: string
+  credentialRef?: string   // an `imap` slot; needs `credentials.use` too
   timeoutMs?: number
-}): Promise<{ connectionId: string }>
+}): Promise<{ connectionId: string; authenticated?: true }>
 pi.net.tcp.send(input: { connectionId: string; data: string | Uint8Array }): Promise<void>
 pi.net.tcp.close(input: { connectionId: string }): Promise<void>
 // events: net:tcp:open | net:tcp:data | net:tcp:close | net:tcp:error
@@ -1412,9 +1413,10 @@ Semantics:
   returns only ids and configured booleans.
 - A credential-bearing fetch refuses a cross-origin redirect and does not send
   a second request. HTTP responses exclude `Authorization`, `Proxy-Authorization`
-  and the injected header name. The host does not filter response bodies or
-  WebSocket frames; a remote service may echo credentials there. Plugin entry
-  code is not sandboxed; install only trusted plugins.
+  and the injected header name. The host does not filter response bodies,
+  WebSocket frames or the TCP stream after an IMAP login; a remote service or
+  mailbox server may echo credentials there. Plugin entry code is not
+  sandboxed; install only trusted plugins.
 - **`net.tcp` endpoints are literal.** The `endpoint` must appear in
   `manifest.net.tcp` (host and port are compared after the manifest's own
   normalization), or the call fails `PERMISSION_DENIED`. `tls` comes from the
@@ -1430,12 +1432,55 @@ Semantics:
   the same structured-clone IPC encoding as WebSocket; strings sent by the
   plugin are encoded as UTF-8. TCP is a byte stream, not a framed protocol.
   Connections close on unload, disable, crash, reinstall, and app exit;
-  `connect` / `close` are audited. Passing `credentialRef` is currently
-  `INVALID_ARGUMENT`: TCP credential substitution is not available yet.
+  `connect` / `close` are audited.
   Traffic is accumulated by endpoint and local calendar day, flushed on close
   and every 60 seconds, and removed on plugin uninstall. During quit the final
   flush has a three-second budget; a failed or timed-out flush is audited and
   unpersisted counters can be lost when the process exits.
+- **A TCP `credentialRef` is one IMAP login the host performs.** Only an `imap`
+  slot may be named here: the four HTTP kinds are `INVALID_ARGUMENT` on TCP,
+  and `imap` stays refused by `fetch` and `websocket.connect`. The call needs
+  `credentials.use` beside `net.tcp`, and the endpoint must be a declared
+  `manifest.net.tcp` entry whose host is also inside the slot's
+  `scope.domains`; a slot with no scope authorizes nothing. Failing either is
+  `PERMISSION_DENIED` before a socket exists; an undeclared slot, or one
+  missing `username` / `password`, is `INVALID_ARGUMENT`, an unfilled slot is
+  `CREDENTIAL_NOT_CONFIGURED` as above, and a value the login cannot encode
+  (CR, LF, NUL) is `CREDENTIAL_UNSUPPORTED`.
+  The host speaks IMAP and nothing else, and only over implicit TLS: the
+  manifest entry must carry `tls: true`, the host never writes `STARTTLS` and
+  never upgrades a plain connection, so a `credentialRef` against a `tls: false`
+  endpoint is `PERMISSION_DENIED`. There is no SMTP path and no SASL mechanism
+  beyond PLAIN and the `LOGIN` command (no XOAUTH2). Once the verified socket
+  is up the host reads the greeting (`* PREAUTH` finishes the login without
+  sending anything; a greeting that is not `* OK` is refused), takes
+  `[CAPABILITY …]` from the greeting or asks with `CAPABILITY`, then sends
+  `AUTHENTICATE PLAIN` as one SASL-IR line when the server advertises
+  `AUTH=PLAIN` and `SASL-IR`, as `AUTHENTICATE PLAIN` plus a base64
+  continuation line when only `AUTH=PLAIN` is advertised, and otherwise
+  `LOGIN "user" "pass"`. A `LOGINDISABLED` server, or a username or password
+  outside ASCII when only LOGIN is available, is `CREDENTIAL_UNSUPPORTED`.
+  `connect` resolves only after the tagged `OK`, and then carries
+  `authenticated: true`. The login is host-owned: no `data` event reports the
+  greeting, the capability reply or the login exchange, and host-generated
+  events, errors and audit entries carry neither the value nor the transcript.
+  A `NO`, `BAD`, `BYE`, malformed greeting or login line above 64 KiB is
+  `CREDENTIAL_REJECTED`, and the connection is dropped instead of being handed
+  over half-open; a TLS or socket failure is `CONNECT_FAILED` with a fixed
+  message rather than the peer's text. The one `timeoutMs` deadline covers the
+  dial, the TLS handshake and the login (default 15 s, capped at 60 s), and
+  expiry is `TIMEOUT`. A connecting socket still spends one of the four
+  connections. Login bytes count into the same per-endpoint daily totals as
+  plugin traffic, and the audit entry records the endpoint, the slot id, the
+  `imaps` scheme and the outcome — never the value or the transcript.
+  Post-login TCP stays transparent: once `connect` resolves, the plugin's
+  writes and the server's bytes are passed through unchanged and unfiltered,
+  exactly like a connection without a credential. The mailbox server received
+  the account password, so it can echo that value — or anything else it holds —
+  back in the authenticated stream, and the host neither inspects nor redacts
+  it; plugin code that logs or forwards the stream can leak it too.
+  Transparency is the contract, so the protection is that the credential is
+  never handed to the plugin, not that the peer stays silent.
 - **Inbound webhooks deliver, they do not answer.** The host listens on port
   37124, or a persisted fallback port if occupied, only while an enabled and
   granted receiver exists. LAN and local-only bindings and source filtering are
@@ -1767,6 +1812,9 @@ The desktop plugin runtime now implements the MVP host API surface used by local
   (`keyboard.globalShortcut`; the host owns Electron `globalShortcut`)
 - `net.websocket.connect` / `send` / `close` (`net.websocket`; host-owned
   sockets, allowlist-confined, bounded, released with the plugin)
+- `net.tcp.connect` / `send` / `close` (`net.tcp`; host-owned sockets, literal
+  endpoint allowlist, bounded, released with the plugin), where `credentialRef`
+  makes the host perform the IMAP login for an `imap` slot
 
 `pi.audio.*` is present in the plugin host process and callable: all ten
 methods are gated by `audio.capture.background` / `audio.playback.background`,

@@ -89,7 +89,7 @@ test("plugin process connects, sends binary data, receives its own events and cl
   const refusal = audits.find((event) => event.api === "net.tcp.connect" && event.errorCode === "PERMISSION_DENIED");
   assert.equal(refusal?.host, "127.0.0.1");
   assert.equal(refusal?.port, deniedPort);
-  await assert.rejects(call(a, "connect", { endpoint: { host: "127.0.0.1", port }, credentialRef: "mail" }), { code: "INVALID_ARGUMENT" });
+  await assert.rejects(call(a, "connect", { endpoint: { host: "127.0.0.1", port }, credentialRef: "mail" }), { code: "PERMISSION_DENIED" });
   const { connectionId } = await call(a, "connect", { endpoint: { host: "127.0.0.1", port } });
   assert.equal((await call(a, "wait", { type: "open" })).connectionId, connectionId);
   await call(a, "send", { connectionId });
