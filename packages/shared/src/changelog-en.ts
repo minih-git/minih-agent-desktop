@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.8.0",
+    date: "2026-11-20",
+    highlights: [
+      "Plugins can now put reminders in the notification center, where they stay until you clear them; if a plugin sends more than an hour's allowance, the extra ones fold into a single summary row instead of a burst.",
+      "A plugin can receive webhooks over your local network. Listening on local networks is the default and can be switched to this computer only, and the access token is shown only in a system dialog.",
+      "Plugins can keep their own timers. The Schedules tab on the Extensions page lists them and lets you pause, resume, or run one now; a timer calls the plugin and spends no model tokens.",
+      "Fill in an account or token under a plugin's settings and the app uses it on the plugin's behalf — the plugin never receives the plain value. The app can also perform an IMAP mailbox login itself.",
+      "Plugin TCP connections are now held by the app, and a plugin's detail page shows how much traffic each endpoint carried.",
+      "A plugin can create a task under an employee's name. It runs at most in Accept edits mode: read-only work and edits inside the workspace proceed, and every other action asks for your approval first. Each task a plugin creates leaves a row in the notification center.",
+      "The database moves to v43: the notification center is rebuilt to hold entries that belong to a plugin rather than a conversation, and entries left by conversations you already deleted are discarded.",
+    ],
+  },
+
+  {
     version: "1.7.0",
     date: "2026-11-17",
     highlights: [
