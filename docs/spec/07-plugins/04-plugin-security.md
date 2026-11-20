@@ -530,6 +530,22 @@ author whether a connection is encrypted.
   session, or a certificate handle. `tls` comes from the manifest, and the host
   performs the handshake itself, so there is no API to downgrade a connection
   or to skip verification.
+- A `credentialRef` turns `connect` into an IMAP login the host performs: it
+  dials verified implicit TLS (a `tls: false` endpoint is refused), reads the
+  greeting, checks capabilities, and authenticates with PLAIN — SASL-IR or a
+  continuation line — or with `LOGIN` before the plugin's handle exists.
+  During that login the plugin receives neither the credential nor the
+  transcript, and the host-generated events, errors and audit entries carry
+  neither; `authenticated: true` is the only fact `connect` adds. `NO` / `BAD` /
+  `BYE`, an unencodable credential and a timeout are coded refusals with fixed
+  messages, so the peer's own text stops at the host there.
+- **The authenticated stream is not filtered.** Once `connect` resolves, the
+  connection is an ordinary transparent TCP stream: the plugin's writes and the
+  server's bytes pass through unchanged, exactly as on a connection without a
+  credential. The mailbox server holds the account password it was given, so it
+  can echo it back in that stream, and the host neither inspects nor redacts the
+  payloads. What the boundary protects is the hand-off — the plugin never
+  receives the value through an API — not the peer's later output.
 - Every connection closes on unload, disable, and crash; `connect` and `close`
   are audited with the endpoint and the outcome, never with payload bytes.
 - The user's outbound HTTP proxy is not consulted for raw sockets. The install
@@ -574,15 +590,21 @@ author whether a connection is encrypted.
   never in SQLite; its at-rest design is unchanged.
 - Injection happens only on a host-owned egress call naming the slot by
   `credentialRef`, and only when the target is inside both the slot's `scope`
-  and `manifest.net.domains`. Calls outside that intersection are refused rather
-  than sent unauthenticated.
+  and the plugin's own declaration: `manifest.net.domains` for `fetch` and
+  `websocket.connect`, a `manifest.net.tcp` endpoint for the IMAP login. Calls
+  outside that intersection are refused rather than sent unauthenticated.
+- An `imap` slot is reachable only through `net.tcp`, and the other four kinds
+  are not accepted there. That login is implicit TLS with a verified
+  certificate, so the value is never written to a plaintext socket.
 - Credentials injected into `http://` or `ws://` destinations travel unencrypted
   along the network path; the audit records the destination scheme without the
   credential. Users should prefer HTTPS or WSS where available.
 - This is a reviewable, revocable API boundary, not a defence against malicious
   plugins. Plugin entry code has native Node access and is not an OS sandbox;
   install only trusted plugins. A remote service can echo a credential in an
-  HTTP response body or WebSocket frame, which the host does not filter.
+  HTTP response body, a WebSocket frame, or the transparent stream after an
+  IMAP login — for TCP, which stays unfiltered by contract — none of which the
+  host inspects or redacts.
 
 **`scheduler` — the host owns the clock.** A declared timer is either an
 interval of at least one minute or a five-field cron expression, never both. It
@@ -662,12 +684,16 @@ The host should be able to:
 10. A low-risk or granted plugin tool still fails closed in Plan
 10. A low-risk or granted plugin tool still fails closed in Plan
 11. A `net.tcp` endpoint with a wildcard host, a port range, or no `tls` fails
-    manifest validation; the fifth simultaneous connection is refused and every
-    connection closes when the plugin unloads
+    manifest validation; the fifth simultaneous connection is refused, every
+    connection closes when the plugin unloads, and a `credentialRef` against a
+    `tls: false` endpoint is refused before a socket exists
 12. A webhook receiver without a token is not registered, a body above 256 KiB
     is answered `413`, and the plugin cannot set the response status
-13. No API and no error message returns a credential value, and an injection
-    outside the slot's `scope` or `manifest.net.domains` is refused
+13. No API and no error message returns a credential value, an injection
+    outside the slot's `scope` or the plugin's declared egress is refused, and
+    an IMAP login answers only `authenticated: true` without the transcript —
+    while the transparent stream after that login stays unfiltered, so a server
+    may echo the value there
 14. A timer does not fire while its plugin is disabled, and a `tasks.manage`
     task never runs above the employee's own permission mode
 
@@ -722,10 +748,11 @@ because this host has no device backend yet, so nothing reaches a device.
 bounded, and released with the plugin (§8.1).
 `notify.center`, `inbound.webhook` and `scheduler` are implemented with their
 own permission gates and host-owned resources. `credentials.use` supports
-host-mediated fetch and WebSocket calls; `pi.credentials.list` exposes only
-configuration state (§8.3). `net.tcp` implements literal endpoint matching,
-bounded concurrency, verified TLS and lifecycle cleanup; TCP credential
-substitution is not yet implemented and returns `INVALID_ARGUMENT`.
+host-mediated fetch and WebSocket calls, and the host-performed IMAP login of
+a `net.tcp` connect that names an `imap` slot; `pi.credentials.list` exposes
+only configuration state (§8.3). `net.tcp` implements literal endpoint
+matching, bounded concurrency, verified TLS, lifecycle cleanup and byte
+metering that counts the login exchange like any other traffic.
 `tasks.read` and `tasks.manage` use the scoped task policy above. `mail.draft`
 remains registered only; its manifest field is validated at installation.
 

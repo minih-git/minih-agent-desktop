@@ -33,6 +33,7 @@
  */
 import { connect as netConnect, type Socket } from "node:net";
 import { connect as tlsConnect } from "node:tls";
+import { PluginTcpImapLogin, type ImapCredentials } from "./plugin-tcp-imap-login";
 import { PluginSocketError } from "./plugin-websocket";
 
 /** Concurrent connections, in-flight connects included. */
@@ -122,6 +123,8 @@ type Entry = {
   finalized: boolean;
   timer: NodeJS.Timeout | null;
   graceTimer: NodeJS.Timeout | null;
+  login: PluginTcpImapLogin | null;
+  credentialBearing: boolean;
 };
 
 export class PluginTcpRegistry {
@@ -162,12 +165,16 @@ export class PluginTcpRegistry {
     pluginId: string;
     endpoint: PluginTcpEndpoint;
     timeoutMs?: number;
-  }): Promise<{ connectionId: string }> {
+    imap?: ImapCredentials;
+  }): Promise<{ connectionId: string; authenticated?: true }> {
     const { pluginId } = request;
     if (typeof pluginId !== "string" || !pluginId.trim()) {
       throw new PluginSocketError("INVALID_ARGUMENT", "pluginId is required");
     }
     const endpoint = parseEndpoint(request.endpoint);
+    if (request.imap && !endpoint.tls) {
+      throw new PluginSocketError("PERMISSION_DENIED", "IMAP authentication requires TLS");
+    }
     const timeoutMs = parseTimeout(request.timeoutMs, this.defaultTimeoutMs);
     if (this.countFor(pluginId) >= this.maxPerPlugin) {
       throw new PluginSocketError(
@@ -187,7 +194,15 @@ export class PluginTcpRegistry {
       finalized: false,
       timer: null,
       graceTimer: null,
+      login: null,
+      credentialBearing: Boolean(request.imap),
     };
+    if (request.imap) {
+      entry.login = new PluginTcpImapLogin(request.imap, (data) => {
+        entry.socket?.write(data);
+        this.count(entry, 0, data.byteLength);
+      });
+    }
     entry.opened = new Promise<void>((resolve, reject) => {
       entry.settle = (error) => (error ? reject(error) : resolve());
     });
@@ -208,7 +223,7 @@ export class PluginTcpRegistry {
     try {
       this.dial(entry);
       await entry.opened;
-      return { connectionId: entry.connectionId };
+      return { connectionId: entry.connectionId, ...(request.imap ? { authenticated: true as const } : {}) };
     } catch (error) {
       throw error instanceof PluginSocketError
         ? error
@@ -359,21 +374,40 @@ export class PluginTcpRegistry {
       // Only a connection that is still being established may open: anything
       // else has already been answered by close, release or a failure.
       if (entry.finalized || entry.state !== "connecting") return;
-      entry.state = "open";
-      this.decide(entry, null);
-      this.deps.onEvent(entry.pluginId, { type: "open", connectionId: entry.connectionId });
+      if (!entry.login) this.open(entry);
     });
     socket.on("data", (chunk: Buffer) => this.receive(entry, chunk));
     socket.on("error", (error: Error) => this.failed(entry, error));
     socket.on("close", (hadError: boolean) => this.finalize(entry, hadError));
   }
 
+  private open(entry: Entry): void {
+    if (entry.finalized || entry.state !== "connecting") return;
+    entry.login = null;
+    entry.state = "open";
+    this.decide(entry, null);
+    this.deps.onEvent(entry.pluginId, { type: "open", connectionId: entry.connectionId });
+  }
+
   private receive(entry: Entry, chunk: Buffer): void {
-    if (entry.finalized || entry.state !== "open") return;
-    // A copy: the socket's buffer belongs to Node and is reused for the next
-    // read, so the plugin must not be handed a view into it.
+    if (entry.finalized) return;
+    this.count(entry, chunk.byteLength, 0);
+    if (entry.state === "connecting" && entry.login) {
+      try {
+        const remaining = entry.login.receive(chunk);
+        if (remaining === null) return;
+        this.open(entry);
+        if (remaining.length) this.deliverData(entry, remaining);
+      } catch (error) {
+        this.abort(entry, error instanceof PluginSocketError ? error : new PluginSocketError("CONNECT_FAILED", "IMAP connection failed"));
+      }
+      return;
+    }
+    if (entry.state === "open") this.deliverData(entry, chunk);
+  }
+
+  private deliverData(entry: Entry, chunk: Buffer): void {
     const data = new Uint8Array(chunk);
-    this.count(entry, data.byteLength, 0);
     this.deps.onEvent(entry.pluginId, {
       type: "data",
       connectionId: entry.connectionId,
@@ -389,13 +423,13 @@ export class PluginTcpRegistry {
     // and stops spending the plugin's budget the moment it is answered.
     if (entry.settle) {
       this.detach(entry);
-      this.decide(entry, new PluginSocketError("CONNECT_FAILED", error.message));
+      this.decide(entry, new PluginSocketError("CONNECT_FAILED", entry.credentialBearing ? "IMAP connection failed" : error.message));
     }
     this.deps.onEvent(entry.pluginId, {
       type: "error",
       connectionId: entry.connectionId,
       code,
-      message: error.message,
+      message: entry.credentialBearing ? "IMAP connection failed" : error.message,
     });
     // A socket-level error is always fatal for this connection.
     entry.socket?.destroy();
@@ -437,6 +471,7 @@ export class PluginTcpRegistry {
     if (entry.finalized) return;
     entry.finalized = true;
     entry.state = "closed";
+    entry.login = null;
     this.detach(entry);
     this.decide(
       entry,

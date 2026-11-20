@@ -39,6 +39,21 @@
   redirects, sidecar messages and error cases. Installed-release acceptance is
   separate.
 
+## E2E-PLUGIN-imaps-host-authentication
+
+- **Preconditions:** Isolated profile, a synthetic plugin with `net.tcp` and
+  `credentials.use`, and a local TLS IMAP server with a test CA.
+- **Steps:** Save an IMAP slot in plugin settings, connect with its
+  `credentialRef`, issue `SELECT INBOX`, then disable the plugin. Exercise
+  unscoped, undeclared, non-IMAP and non-TLS requests as well as login failure.
+- **Expected:** The host authenticates before opening the connection, forwards
+  subsequent server bytes unchanged, and closes owned sockets on disable.
+  Authentication responses and host diagnostics do not expose credentials;
+  an untrusted server can still echo them in subsequent protocol data.
+- **Automation:** `scripts/e2e-plugin-imap-credentials.mjs` exercises the
+  isolated Desktop settings, real host and plugin process through `SELECT`;
+  desktop IMAP tests cover permission refusals, lifecycle and sidecar frames.
+
 ## E2E-PLUGIN-scheduler-delivers-without-model-turn
 
 - **Preconditions:** Isolated profile and host database; an enabled plugin with

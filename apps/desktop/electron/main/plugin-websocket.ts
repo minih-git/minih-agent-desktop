@@ -34,6 +34,9 @@ const REDACTED_CONNECTION_FAILURE = "the connection failed";
 
 export type PluginSocketErrorCode =
   | "INVALID_ARGUMENT"
+  | "PERMISSION_DENIED"
+  | "CREDENTIAL_REJECTED"
+  | "CREDENTIAL_UNSUPPORTED"
   | "LIMIT_EXCEEDED"
   | "NOT_FOUND"
   | "CONNECT_FAILED"

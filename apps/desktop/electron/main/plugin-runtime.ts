@@ -153,6 +153,8 @@ import {
   type PluginWebSocketRegistry,
 } from "./plugin-websocket";
 import type { PluginTcpEvent, PluginTcpRegistry } from "./plugin-tcp";
+import { resolveTcpImapCredential } from "./plugin-tcp-credentials";
+import { declaredSlots } from "./plugin-credential-slots";
 import {
   PluginCredentialBroker,
   type PluginCredentialCallContext,
@@ -3150,13 +3152,14 @@ export class PluginRuntime {
         };
         const requested = parseNetTcpEndpoints([{ host: descriptor.endpoint?.host, port: descriptor.endpoint?.port, tls: false }]);
         const auditPeer = requested.ok ? requested.endpoints?.[0] : undefined;
+        const hasCredential = Object.hasOwn(descriptor, "credentialRef");
+        const requestedSlotId = typeof descriptor.credentialRef === "string" ? descriptor.credentialRef.trim() : "";
+        const auditSlot = declaredSlots(loaded.manifest.contributes?.credentials).find((slot) => slot.id === requestedSlotId)?.id;
         try {
           this.assertPermission(loaded, "net.tcp");
           const registry = this.services.pluginTcp;
           if (!registry) throw apiError("UNSUPPORTED", "TCP connections are unavailable in this host");
-          if (Object.hasOwn(descriptor, "credentialRef")) {
-            throw apiError("INVALID_ARGUMENT", "TCP credential substitution is not yet available");
-          }
+          if (hasCredential) this.assertPermission(loaded, "credentials.use");
           const host = descriptor.endpoint?.host;
           const port = descriptor.endpoint?.port;
           if (typeof host !== "string" || !Number.isInteger(port)) {
@@ -3167,12 +3170,18 @@ export class PluginRuntime {
             ? parsed.endpoints?.find((item) => item.host === host.trim().toLowerCase() && item.port === port)
             : undefined;
           if (!endpoint) throw apiError("PERMISSION_DENIED", "TCP endpoint is not declared in manifest.net.tcp");
-          const result = await registry.connect({ pluginId, endpoint, timeoutMs: descriptor.timeoutMs });
-          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: true, ts: Date.now(), host: endpoint.host, port: endpoint.port, connectionId: result.connectionId });
+          const credential = hasCredential
+            ? await resolveTcpImapCredential(pluginId, loaded.manifest.contributes?.credentials, descriptor.credentialRef, endpoint, {
+                resolve: (id, slot) => this.services.resolvePluginCredential?.(id, slot),
+              })
+            : undefined;
+          if (this.loaded.get(pluginId) !== loaded || loaded.disposing) throw apiError("CONNECT_FAILED", "the plugin is no longer loaded");
+          const result = await registry.connect({ pluginId, endpoint, timeoutMs: descriptor.timeoutMs, ...(credential ? { imap: credential.imap } : {}) });
+          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: true, ts: Date.now(), host: endpoint.host, port: endpoint.port, connectionId: result.connectionId, ...(credential ? { credential: credential.slotId, scheme: "imaps" } : {}) });
           return result;
         } catch (error) {
           const code = (error as { code?: string }).code ?? "CONNECT_FAILED";
-          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: false, errorCode: code, ...(auditPeer ? { host: auditPeer.host, port: auditPeer.port } : {}), ts: Date.now() });
+          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: false, errorCode: code, ...(auditPeer ? { host: auditPeer.host, port: auditPeer.port } : {}), ...(hasCredential ? { scheme: "imaps", ...(auditSlot ? { credential: auditSlot } : {}) } : {}), ts: Date.now() });
           throw apiError(code, (error as Error).message);
         }
       }

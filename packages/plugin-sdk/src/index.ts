@@ -1841,13 +1841,14 @@ export type PluginHostApi = {
       send: (input: { socketId: string; data: string | Uint8Array }) => Promise<void>;
       close: (input: { socketId: string; code?: number; reason?: string }) => Promise<void>;
     };
-    /** Host-owned TCP, confined to literal manifest.net.tcp endpoints. */
+    /** Host-owned TCP, confined to literal manifest.net.tcp endpoints. An IMAP
+     * credentialRef authenticates over implicit TLS before the connection opens. */
     tcp: {
       connect: (input: {
         endpoint: { host: string; port: number };
         timeoutMs?: number;
         credentialRef?: string;
-      }) => Promise<{ connectionId: string }>;
+      }) => Promise<{ connectionId: string; authenticated?: true }>;
       send: (input: { connectionId: string; data: string | Uint8Array }) => Promise<void>;
       close: (input: { connectionId: string }) => Promise<void>;
     };

@@ -1059,9 +1059,11 @@ type PluginGlobalShortcut = {
 和 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
 
 **实现状态。** `pi.net.tcp`、`pi.credentials.list`、`pi.notify.center`、
-`pi.inbound.getReceivers`、`inbound:webhook` 和 `schedule:fire` 已实现。
-`pi.net.fetch` 与 `pi.net.websocket.connect` 支持 `credentialRef` 注入；TCP
-凭据代用尚未提供。`pi.mail` 与 `pi.tasks` 仍仅注册；调用前应检查是否存在（§8）。
+`pi.inbound.getReceivers`、`inbound:webhook`、`schedule:fire` 和 `pi.tasks.*`
+已实现。插件任务最高为 `accept-edits`；按动作审批可用前显式请求 `auto` 会被拒绝。
+`pi.net.fetch`、`pi.net.websocket.connect` 与 `pi.net.tcp.connect` 支持
+`credentialRef` 注入，最后一项仅限 `imap` 槽位。`pi.mail` 仍仅注册；调用前应
+检查是否存在（§8）。
 
 ```ts
 // credentials.use：宿主注入用户填写的槽位；插件只可查询配置状态。
@@ -1072,9 +1074,9 @@ pi.net.websocket.connect(input: { …; credentialRef?: string })
 // net.tcp（需要 `net.tcp`，且端点必须在 manifest.net.tcp 内）
 pi.net.tcp.connect(input: {
   endpoint: { host: string; port: number }
-  credentialRef?: string
+  credentialRef?: string   // 仅 `imap` 槽位；同时需要 `credentials.use`
   timeoutMs?: number
-}): Promise<{ connectionId: string }>
+}): Promise<{ connectionId: string; authenticated?: true }>
 pi.net.tcp.send(input: { connectionId: string; data: string | Uint8Array }): Promise<void>
 pi.net.tcp.close(input: { connectionId: string }): Promise<void>
 // 事件：net:tcp:open | net:tcp:data | net:tcp:close | net:tcp:error
@@ -1135,8 +1137,9 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   WebSocket 拒绝 `imap`。设置保存时整体替换槽位，已保存值不回显。
   `credentials.list` 只返回 id 和配置状态布尔值。
 - 带凭据的 fetch 拒绝跨源重定向，不发送第二跳。HTTP 响应会去掉 `Authorization`、
-  `Proxy-Authorization` 和注入头名。响应体及 WebSocket 帧不过滤，远端服务可能
-  回显凭据；插件入口不是沙箱，请只安装可信插件。
+  `Proxy-Authorization` 和注入头名。响应体、WebSocket 帧以及 IMAP 登录之后的 TCP
+  流都不过滤，远端服务或邮件服务器可能回显凭据；插件入口不是沙箱，请只安装可信
+  插件。
 - **`net.tcp` 端点是字面的。** `endpoint` 必须出现在 `manifest.net.tcp` 内
   （按清单自身的规范化结果比较主机与端口），否则 `PERMISSION_DENIED`。`tls`
   来自清单条目，绝不来自调用；TLS 始终校验证书，并以端点主机作为 SNI。每个
@@ -1148,10 +1151,42 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   `{ type: "data", connectionId, data: Uint8Array }`，二进制 IPC 编码沿用
   WebSocket 的结构化克隆，发送的字符串按 UTF-8 编码。TCP 是字节流而非帧协议。
   卸载、禁用、崩溃、覆盖安装和应用退出时关闭连接；`connect` / `close` 记入审计。
-  当前传入 `credentialRef` 返回 `INVALID_ARGUMENT`：TCP 凭据代用尚未提供。
   流量按端点和本地日历日累计，关闭连接时及每 60 秒刷写，卸载插件时删除。
   退出时最后一次刷写最多等待三秒；刷写失败或超时会记入审计，未持久化的计数
   可能随进程退出而丢失。
+- **TCP 上的 `credentialRef` 是一次由宿主完成的 IMAP 登录。** 这里只接受 `imap`
+  槽位：另外四种 HTTP 类型在 TCP 上返回 `INVALID_ARGUMENT`，而 `imap` 仍被
+  `fetch` 与 `websocket.connect` 拒绝。调用除 `net.tcp` 外还需要
+  `credentials.use`，且端点必须是 `manifest.net.tcp` 中声明的条目、其主机同时
+  落在槽位的 `scope.domains` 内；没有 `scope` 的槽位不授权任何目标。任一条件不
+  满足都在建立套接字之前返回 `PERMISSION_DENIED`；未声明的槽位，或缺少
+  `username` / `password` 的槽位返回 `INVALID_ARGUMENT`，尚未填写的槽位按上文返回
+  `CREDENTIAL_NOT_CONFIGURED`，登录无法编码的值（CR、LF、NUL）返回
+  `CREDENTIAL_UNSUPPORTED`。
+  宿主只讲 IMAP，且只走隐式 TLS：清单条目必须带 `tls: true`，宿主从不发送
+  `STARTTLS`，也从不升级明文连接，因此对 `tls: false` 端点传入 `credentialRef`
+  返回 `PERMISSION_DENIED`。这里没有 SMTP 路径，除 PLAIN 与 `LOGIN` 命令外没有
+  其他 SASL 机制（没有 XOAUTH2）。已验证的套接字建立后，宿主读取 greeting
+  （`* PREAUTH` 不发任何凭据即完成登录；不是 `* OK` 的 greeting 被拒），从 greeting
+  中取 `[CAPABILITY …]` 或改用 `CAPABILITY` 查询，然后：服务器同时声明
+  `AUTH=PLAIN` 与 `SASL-IR` 时以一行 SASL-IR 发送 `AUTHENTICATE PLAIN`；只声明
+  `AUTH=PLAIN` 时发送 `AUTHENTICATE PLAIN` 并在续行发送 base64；否则改用
+  `LOGIN "user" "pass"`。服务器声明 `LOGINDISABLED`，或只有 LOGIN 可用而用户名／
+  密码含非 ASCII 字符时返回 `CREDENTIAL_UNSUPPORTED`。
+  `connect` 只在收到带标签的 `OK` 后 resolve，此时结果带 `authenticated: true`。
+  登录由宿主独占：greeting、capability 应答和登录往返都不会作为 `data` 事件交给
+  插件，宿主生成的事件、错误和审计也不带凭据值或登录记录。任一阶段的 `NO`、
+  `BAD`、`BYE`、格式错误的 greeting，或超过 64 KiB 的登录行返回
+  `CREDENTIAL_REJECTED`，连接被丢弃而不是以半开状态交给插件；TLS 或套接字失败
+  返回固定文案的 `CONNECT_FAILED`，不带对端文本。同一个 `timeoutMs` 覆盖拨号、
+  TLS 握手和登录（默认 15 秒，最长 60 秒），超时返回 `TIMEOUT`。连接中的套接字
+  同样占用四条上限之一。登录往返的字节与插件流量一样计入按端点的每日总量，审计
+  只记端点、槽位 id、`imaps` 协议和结果，绝不记值或登录记录。
+  登录之后的 TCP 仍然是透明的：`connect` 一旦 resolve，插件的写入与服务端的字节
+  原样转发、不做过滤，与没有凭据的连接完全相同。邮件服务器拿到了账号密码，因此
+  可以在该流里回显这个值，也可以回显它持有的任何内容，宿主既不检查也不脱敏；
+  插件代码若记录或转发这段流，同样可能泄露它。透明本身就是契约，所以这里的保护
+  是凭据不交给插件，而不是对端保持沉默。
 - **入站 webhook 只投递，不回答。** 存在启用且获授权的接收器时，宿主监听 37124；
   端口占用时使用持久化的回退端口。绑定和来源过滤见
   [ADR plugin-webhook-listener-boundary](/zh-CN/adr/plugin-webhook-listener-boundary)。
@@ -1405,6 +1440,13 @@ window.pluginBridge.on(event, handler)
   （`keyboard.globalShortcut`；Electron 的 `globalShortcut` 由宿主持有）
 - `net.websocket.connect` / `send` / `close`（`net.websocket`；套接字由宿主
   持有，受白名单限制，有界，随插件一起释放）
+- `net.tcp.connect` / `send` / `close`（`net.tcp`；套接字由宿主持有，端点按字面
+  白名单限制，有界，随插件一起释放），其中 `credentialRef` 会让宿主为 `imap`
+  槽位完成一次 IMAP 登录
+- `pi.credentials.list`、`pi.notify.center`、`pi.inbound.getReceivers`、
+  `inbound:webhook`、`schedule:fire` 和 `pi.tasks.*`；插件任务最高为
+  `accept-edits`，按动作审批可用前不能请求 `auto`
+- fetch 和 WebSocket 支持 `credentialRef`，TCP 仅支持 `imap` 槽位
 
 `pi.audio.*` 已存在于插件宿主进程中并且可以调用：十个方法都由
 `audio.capture.background` / `audio.playback.background` 把关，而这条分支没有

@@ -29,6 +29,20 @@
   停用与卸载；桌面凭据测试覆盖 WebSocket、范围、重定向、sidecar 消息与错误。
   已安装发布版验收另行执行。
 
+## E2E-PLUGIN-imaps-host-authentication
+
+- **前提：** 隔离 profile、持有 `net.tcp` 和 `credentials.use` 的合成插件，
+  以及使用测试 CA 的本地 TLS IMAP 服务。
+- **步骤：** 在插件设置保存 IMAP 槽位，通过 `credentialRef` 连接，执行
+  `SELECT INBOX` 后禁用插件；同时验证未授权范围、未声明槽位、非 IMAP、
+  非 TLS 和登录失败。
+- **预期：** 宿主在连接开放前完成认证，后续服务端字节原样转发，禁用时关闭
+  所属连接。认证响应和宿主诊断不暴露凭据；不可信服务器仍可在后续协议数据中
+  回显凭据。
+- **自动化：** `scripts/e2e-plugin-imap-credentials.mjs` 覆盖隔离桌面设置、
+  真实宿主和插件进程直到 `SELECT`；桌面 IMAP 测试覆盖权限拒绝、生命周期和
+  sidecar 帧。
+
 ## E2E-PLUGIN-scheduler-delivers-without-model-turn
 
 - **前提：** 隔离 profile 和 Host 数据库；启用的插件持有 `scheduler`，声明两个
