@@ -126,6 +126,7 @@ export async function completeOneShot(
             primaryBaseUrl: model.baseUrl ?? provider.baseUrl,
             fallbackBaseUrl: provider.fallbackBaseUrl,
           },
+          provider,
         ),
       },
       {

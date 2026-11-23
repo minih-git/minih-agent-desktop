@@ -97,6 +97,7 @@ export function subagentModelBinding(opts: {
                 primaryBaseUrl: m.baseUrl ?? opts.provider.baseUrl,
                 fallbackBaseUrl: opts.provider.fallbackBaseUrl,
               },
+              opts.provider,
             ),
           },
           {
