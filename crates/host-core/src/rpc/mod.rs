@@ -2864,11 +2864,20 @@ async fn handle_request(
             if let Some(project) = isolated_project.as_deref() {
                 worktree_rpc::ensure_local_project(&st.db, project)?;
             }
-            // An inherited ceiling is the source session's own mode. A caller
-            // that also names a mode may only narrow it, never widen it: a
-            // role-carrying session (ADR session-create-model-and-role) inherits
-            // the dispatching session's ceiling *and* a delegate role's own
-            // narrower scope, and the row may be no wider than either.
+            // An inherited ceiling is the source session's own row value, kept
+            // verbatim: an `inherit` parent keeps inheriting the global default,
+            // exactly as before this step existed.
+            //
+            // A caller that also names a *concrete* mode may only narrow that
+            // ceiling, never widen it. The comparison is against the parent's
+            // **effective** mode (what `inherit` resolves to), because ranking a
+            // stored `inherit` as narrowest would read "the global default" as
+            // "the strictest": a role's `permission: ask` on an `inherit` parent
+            // would then be stored as `inherit`, and the role session would run at
+            // the global `auto` (ADR session-create-model-and-role). Naming
+            // `inherit`, or naming the mode that is already effective, is
+            // inheritance spelled out, so the row keeps its own value.
+            //
             // `permissionMode` on its own is still ignored without a parent —
             // unchanged behaviour, and the desktop's RACP create applies it in a
             // second `session.configure` call.
@@ -2891,12 +2900,23 @@ async fn handle_request(
                             })
                     })
                     .transpose()?;
-                Some(match requested {
+                let narrowed = match requested {
+                    None | Some("inherit") => None,
                     Some(requested) => {
-                        sessions::narrower_permission_mode(&ceiling, requested).to_string()
+                        let effective = crate::session_collaboration::permissions::effective_mode(
+                            &st.db, &parent_id,
+                        )
+                        .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+                        // Only a real reduction replaces the inherited row value;
+                        // a request that is wider than, or equal to, the effective
+                        // ceiling leaves the row exactly as it was.
+                        let strictest = crate::session_collaboration::permissions::narrower(
+                            &effective, requested,
+                        );
+                        (strictest == requested && requested != effective).then_some(strictest)
                     }
-                    None => ceiling,
-                })
+                };
+                Some(narrowed.unwrap_or(ceiling))
             } else {
                 None
             };
@@ -8459,6 +8479,94 @@ mod tests {
                 .unwrap_err();
             assert_eq!(refused.data.unwrap()["errorCode"], "INVALID_PARAMS");
         }
+    }
+
+    /// The created session's mode is the stricter of the inherited ceiling and a
+    /// concrete request, and the ceiling is compared *effectively*: `inherit`
+    /// means the global default, not "the strictest" (ADR
+    /// session-create-model-and-role).
+    #[tokio::test]
+    async fn session_create_narrows_against_the_effective_permission_mode() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let parent = |mode: &str| {
+            sessions::create_session_with_options(
+                &app_state.db,
+                sessions::SessionCreateOptions {
+                    title: Some("Dispatcher".into()),
+                    permission_mode: Some(mode.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .id
+        };
+        let inheriting_parent = parent("inherit");
+        let review_parent = parent("accept-edits");
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        // With the global default at `auto`, an `inherit` parent means `auto`; a
+        // role's `ask` must still reach the row, or the role session would run at
+        // the wider global mode.
+        state
+            .lock()
+            .await
+            .db
+            .set_setting("app", &json!({ "defaultPermissionMode": "auto" }))
+            .unwrap();
+        let role_narrowed = handle_request(
+            state.clone(),
+            "session.create",
+            json!({
+                "inheritPermissionFromSessionId": inheriting_parent,
+                "permissionMode": "ask",
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(role_narrowed["session"]["permissionMode"], json!("ask"));
+
+        // Naming `inherit` is inheritance spelled out: the row keeps the parent's
+        // own value, so an `accept-edits` ceiling never becomes the global default.
+        let spelled_out = handle_request(
+            state.clone(),
+            "session.create",
+            json!({
+                "inheritPermissionFromSessionId": review_parent,
+                "permissionMode": "inherit",
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            spelled_out["session"]["permissionMode"],
+            json!("accept-edits")
+        );
+
+        // A wider request never replaces the parent's row value, even when the row
+        // is `inherit` and the global default is narrower than what was asked for.
+        state
+            .lock()
+            .await
+            .db
+            .set_setting("app", &json!({ "defaultPermissionMode": "ask" }))
+            .unwrap();
+        let wider = handle_request(
+            state.clone(),
+            "session.create",
+            json!({
+                "inheritPermissionFromSessionId": inheriting_parent,
+                "permissionMode": "auto",
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(wider["session"]["permissionMode"], json!("inherit"));
     }
 
     #[tokio::test]

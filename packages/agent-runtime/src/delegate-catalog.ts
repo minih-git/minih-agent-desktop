@@ -10,27 +10,26 @@
  * will actually hand the delegate — the same reason the builtin descriptions no
  * longer repeat it by hand.
  *
- * The decision rule below the table is one string used by both descriptions, for
- * the same reason.
+ * The columns are `yes`/`no` per tool rather than a list of the tools a delegate
+ * happens to have. A list leaves the absence implicit: `code-reviewer` used to
+ * need the words "Has NO Bash" in its description because a row that merely
+ * omitted Bash could be read as an oversight rather than as a decision. A column
+ * that says `no` cannot be read that way.
  */
 import { subagentModelKey, type SubagentDefinition } from "@minih-agent/shared";
 
+/** The capability columns, in the order the catalog prints them. */
+export const DELEGATE_CAPABILITY_COLUMNS = ["Bash", "Writes files", "Browser"] as const;
+
+export type DelegateCapabilityColumn = (typeof DELEGATE_CAPABILITY_COLUMNS)[number];
+
 /**
- * Capability tokens, in the order the catalog prints them. `read-only` means the
- * delegate holds no file-writing tool: it may still run commands when `Bash` is
- * also listed.
+ * One cell: the delegate has the tool, does not, or takes whatever the parent
+ * session has because its definition asks for the parent's catalog.
  */
-export const DELEGATE_CAPABILITIES = [
-  "read-only",
-  "Bash",
-  "writes files",
-  "browser",
-  "inherits parent tools",
-] as const;
+export type DelegateCapability = "yes" | "no" | "parent";
 
-export type DelegateCapability = (typeof DELEGATE_CAPABILITIES)[number];
-
-/** Tools that change the workspace; a delegate without one is read-only. */
+/** Tools that change the workspace. */
 const WRITE_TOOLS = new Set(["Edit", "Write"]);
 
 /** Tools that run commands, outside the file-write question. */
@@ -39,24 +38,30 @@ const BASH_TOOLS = new Set(["Bash"]);
 /** Tools that drive the browser preview. */
 const BROWSER_TOOLS = new Set(["BrowserPreview"]);
 
+/** A delegate that inherits the parent's catalog has every column from it. */
+const INHERITED: Record<DelegateCapabilityColumn, DelegateCapability> = {
+  Bash: "parent",
+  "Writes files": "parent",
+  Browser: "parent",
+};
+
 /**
- * Which capabilities a definition actually has.
+ * Which capability each column reports for a definition.
  *
- * A definition that inherits the parent's catalog says exactly that: naming
- * every tool it may end up with would be a promise this table cannot keep,
- * because the parent's catalog is what it depends on.
+ * A definition that inherits the parent's catalog says exactly that in every
+ * column: naming the tools it may end up with would be a promise this table
+ * cannot keep, because the parent's catalog is what it depends on.
  */
 export function delegateCapabilities(
   definition: Pick<SubagentDefinition, "tools" | "inheritTools">,
-): DelegateCapability[] {
-  if (definition.inheritTools) return ["inherits parent tools"];
-  const tools = new Set(definition.tools);
-  const capabilities: DelegateCapability[] = [];
-  if (!definition.tools.some((tool) => WRITE_TOOLS.has(tool))) capabilities.push("read-only");
-  if ([...tools].some((tool) => BASH_TOOLS.has(tool))) capabilities.push("Bash");
-  if ([...tools].some((tool) => WRITE_TOOLS.has(tool))) capabilities.push("writes files");
-  if ([...tools].some((tool) => BROWSER_TOOLS.has(tool))) capabilities.push("browser");
-  return capabilities;
+): Record<DelegateCapabilityColumn, DelegateCapability> {
+  if (definition.inheritTools) return { ...INHERITED };
+  const has = (tools: ReadonlySet<string>) => definition.tools.some((tool) => tools.has(tool));
+  return {
+    Bash: has(BASH_TOOLS) ? "yes" : "no",
+    "Writes files": has(WRITE_TOOLS) ? "yes" : "no",
+    Browser: has(BROWSER_TOOLS) ? "yes" : "no",
+  };
 }
 
 /** The model a definition pins, or the fact that it follows the session. */
@@ -68,11 +73,12 @@ export function delegateDefaultModel(
 
 /** One table row: what the delegate is called, for, can do, and runs on. */
 export function delegateCatalogRow(definition: SubagentDefinition): string {
-  const capabilities = delegateCapabilities(definition).join(", ") || "read-only";
+  const capabilities = delegateCapabilities(definition);
+  const cells = DELEGATE_CAPABILITY_COLUMNS.map((column) => capabilities[column]);
   // A description is one line in practice, but a user document may wrap it; the
   // table has to stay a table.
   const purpose = definition.description.replace(/\s+/g, " ").replace(/\|/g, "/").trim();
-  return `| ${definition.name} | ${purpose} | ${capabilities} | ${delegateDefaultModel(definition)} |`;
+  return `| ${definition.name} | ${purpose} | ${cells.join(" | ")} | ${delegateDefaultModel(definition)} |`;
 }
 
 /**
@@ -83,14 +89,25 @@ export function delegateCatalogRow(definition: SubagentDefinition): string {
  */
 export function delegateCatalogTable(definitions: readonly SubagentDefinition[]): string {
   const header = [
-    "| Agent | Use it for | Can | Default model |",
-    "| --- | --- | --- | --- |",
+    `| Agent | Use it for | ${DELEGATE_CAPABILITY_COLUMNS.join(" | ")} | Default model |`,
+    `| --- | --- | ${DELEGATE_CAPABILITY_COLUMNS.map(() => "---").join(" | ")} | --- |`,
   ];
   if (definitions.length === 0) {
-    return [...header, "| (none) | No delegate is enabled on this machine. | — | — |"].join("\n");
+    const empty = DELEGATE_CAPABILITY_COLUMNS.map(() => "—").join(" | ");
+    return [...header, `| (none) | No delegate is enabled on this machine. | ${empty} | — |`].join("\n");
   }
   return [...header, ...definitions.map(delegateCatalogRow)].join("\n");
 }
+
+/**
+ * How to read the capability columns.
+ *
+ * Printed with the table in both descriptions, because a `no` is only useful if
+ * the reader knows it means "not in this delegate's catalog" rather than "this
+ * session may not".
+ */
+export const DELEGATE_CAPABILITIES_NOTE =
+  "`Bash`, `Writes files` and `Browser` are per delegate: `yes` means the tool is in its catalog, `no` means it is not, and `parent` means it inherits whatever the parent session has. A delegate with `Bash: no` cannot run commands — pick one that can instead of asking it to try.";
 
 /**
  * When to delegate to a subagent and when to hand the work to a session.

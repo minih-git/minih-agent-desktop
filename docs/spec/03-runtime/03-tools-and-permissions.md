@@ -907,10 +907,12 @@ the active `imageGeneration` default).
 off, or one of their own documents) whose prompt the created session carries as a
 role section on every turn; an unknown or switched-off handle fails with
 `INVALID_ARGUMENT` listing the valid ones. A role that declares its own
-`permission` narrows the inherited ceiling — the host keeps the stricter of the
-two — while its tools never restrict the session, which stays a conversation its
-person can take over. Its `thinkingLevel` outranks
-`sessionCreateModel.thinkingLevel` (including `off` and `omit`), which outranks
+`permission` narrows the inherited ceiling — the host compares it with the
+parent's *effective* mode (an `inherit` parent means the global default) and
+stores it only when strictly narrower — while its tools never restrict the
+session, which stays a conversation its person can take over. Its
+`thinkingLevel` outranks `sessionCreateModel.thinkingLevel` (including `off` and
+`omit`), which outranks
 inheritance from the caller; existing runtime capability clamping remains, and no
 tool argument can override those settings. The ledger, permission ceiling, inbox
 and hop bounds, provenance and completion callbacks are the ones in

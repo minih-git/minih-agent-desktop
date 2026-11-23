@@ -12,7 +12,7 @@ use crate::{
 pub mod bots;
 pub mod norms;
 pub(crate) mod notices;
-mod permissions;
+pub(crate) mod permissions;
 pub mod progress;
 mod projections;
 mod provenance;

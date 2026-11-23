@@ -1,7 +1,14 @@
 use crate::{db::Database, sessions};
 use anyhow::{anyhow, Result};
 
-pub(super) fn effective_mode(db: &Database, session_id: &str) -> Result<String> {
+/// The session's effective permission mode: its own concrete mode, or the global
+/// default when the row says `inherit`.
+///
+/// This is the value a comparison must use. The stored `inherit` is not a mode of
+/// its own — it names whatever `defaultPermissionMode` says today — so treating
+/// it as a rank would misread "the global default" as "the strictest"
+/// (ADR session-create-model-and-role).
+pub(crate) fn effective_mode(db: &Database, session_id: &str) -> Result<String> {
     let mode = sessions::session_permission_mode(db, session_id)?
         .ok_or_else(|| anyhow!("NOT_FOUND: session {session_id}"))?;
     if mode != "inherit" {
@@ -37,7 +44,7 @@ pub(super) fn rank(mode: &str) -> u8 {
 /// minimum of what the sender may grant and what the card asks for, so a card
 /// can only narrow. It is `min` and never "replace", which is what keeps a
 /// confirmed `ask` card from being silently widened to its sender's `auto`.
-pub(super) fn narrower(left: &str, right: &str) -> String {
+pub(crate) fn narrower(left: &str, right: &str) -> String {
     if rank(left) <= rank(right) {
         left.to_string()
     } else {

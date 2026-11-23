@@ -41,6 +41,7 @@ import {
   sessionToolDescriptions,
 } from "./session-tools.js";
 import {
+  DELEGATE_CAPABILITIES_NOTE,
   DELEGATE_DECISION_RULE,
   DELEGATE_DEFAULT_MODEL_NOTE,
   delegateCatalogTable,
@@ -5483,6 +5484,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         "To continue a previous subagent, pass its `resume` id (the `delegationId` returned by Task). Saying \"reuse\" in prose is not enough. Do not pass `model` when resuming; start a new delegation to change models.",
         DELEGATE_DECISION_RULE,
         `Available subagents:\n${catalog}`,
+        DELEGATE_CAPABILITIES_NOTE,
         DELEGATE_DEFAULT_MODEL_NOTE,
       ].join("\n\n"),
       parameters: Type.Object({
