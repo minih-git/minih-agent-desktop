@@ -6,6 +6,7 @@ import {
   parseNetTcpEndpoints,
   pluginPermissionRisk,
   validateContributions,
+  credentialFieldType,
   validateCredentialContributions,
   validateManifest,
   validateScheduleContributions,
@@ -83,6 +84,129 @@ describe("contributes.credentials", () => {
     expect(validateCredentialContributions([slot({ scope: { domains: ["*"] } })])).toMatch(
       /must not contain/,
     );
+  });
+});
+
+describe("contributes.credentials: multiple, labelField, field controls", () => {
+  const multi = (overrides: Record<string, unknown> = {}) =>
+    slot({ multiple: { max: 3 }, labelField: "username", ...overrides });
+
+  it("accepts a multi-instance slot with a labelled public field", () => {
+    expect(validateCredentialContributions([multi()])).toBe(undefined);
+  });
+
+  it("keeps a single-instance slot valid exactly as released", () => {
+    // No `multiple`, no `labelField`, no `type`, no `options`.
+    expect(validateCredentialContributions([slot()])).toBe(undefined);
+  });
+
+  it("bounds multiple.max to the host's 1..5 window", () => {
+    expect(validateCredentialContributions([slot({ multiple: { max: 1 } })])).toBe(undefined);
+    expect(validateCredentialContributions([slot({ multiple: { max: 5 } })])).toBe(undefined);
+    expect(validateCredentialContributions([slot({ multiple: { max: 0 } })])).toMatch(
+      /multiple\.max must be an integer from 1 to 5/,
+    );
+    expect(validateCredentialContributions([slot({ multiple: { max: 6 } })])).toMatch(
+      /multiple\.max must be an integer from 1 to 5/,
+    );
+    expect(validateCredentialContributions([slot({ multiple: { max: 2.5 } })])).toMatch(
+      /multiple\.max/,
+    );
+    expect(validateCredentialContributions([slot({ multiple: {} })])).toMatch(/multiple\.max/);
+    expect(validateCredentialContributions([slot({ multiple: "yes" })])).toMatch(
+      /multiple must be an object/,
+    );
+  });
+
+  it("refuses a labelField that is missing, undeclared, or secret", () => {
+    expect(validateCredentialContributions([multi({ labelField: "missing" })])).toMatch(
+      /is not a declared field/,
+    );
+    expect(
+      validateCredentialContributions([
+        multi({
+          fields: [
+            { key: "username", label: "User" },
+            { key: "password", label: "Password", secret: true },
+          ],
+          labelField: "password",
+        }),
+      ]),
+    ).toMatch(/must not be secret/);
+    expect(validateCredentialContributions([multi({ labelField: "not a key" })])).toMatch(
+      /labelField must be a field key/,
+    );
+  });
+
+  it("reads a field control from type, else from secret", () => {
+    expect(
+      credentialFieldType({ key: "a", label: "A" }),
+    ).toBe("text");
+    expect(credentialFieldType({ key: "a", label: "A", secret: true })).toBe("password");
+    expect(credentialFieldType({ key: "a", label: "A", secret: true, type: "text" })).toBe("text");
+  });
+
+  it("accepts a select field with localized option labels", () => {
+    expect(
+      validateCredentialContributions([
+        slot({
+          fields: [
+            { key: "username", label: "User" },
+            {
+              key: "security",
+              label: { en: "Security", "zh-CN": "安全" },
+              type: "select",
+              options: [
+                { value: "tls", label: { en: "TLS", "zh-CN": "TLS" } },
+                { value: "starttls", label: "STARTTLS" },
+              ],
+            },
+          ],
+        }),
+      ]),
+    ).toBe(undefined);
+  });
+
+  it("refuses the field controls the Settings sheet cannot render", () => {
+    const refuse = (field: unknown) =>
+      validateCredentialContributions([
+        slot({ fields: [{ key: "username", label: "User" }, field] }),
+      ]);
+    expect(refuse({ key: "x", label: "X", type: "switch" })).toMatch(
+      /type must be text, password, or select/,
+    );
+    expect(refuse({ key: "x", label: "X", secret: true, type: "select", options: [{ value: "a", label: "A" }] })).toMatch(
+      /cannot be secret and a select/,
+    );
+    expect(refuse({ key: "x", label: "X", options: [{ value: "a", label: "A" }] })).toMatch(
+      /declares options but is not a select/,
+    );
+    expect(refuse({ key: "x", label: "X", type: "select" })).toMatch(
+      /is a select without options/,
+    );
+    expect(refuse({ key: "x", label: "X", type: "select", options: [] })).toMatch(
+      /is a select without options/,
+    );
+    expect(refuse({ key: "x", label: "X", type: "select", options: [{ value: "", label: "A" }] })).toMatch(
+      /option without a value/,
+    );
+    expect(
+      refuse({
+        key: "x",
+        label: "X",
+        type: "select",
+        options: [
+          { value: "a", label: "A" },
+          { value: "a", label: "B" },
+        ],
+      }),
+    ).toMatch(/declares option "a" twice/);
+    expect(refuse({ key: "x", label: "X", type: "select", options: [{ value: "a", label: "" }] })).toMatch(
+      /label/,
+    );
+    expect(
+      refuse({ key: "x", label: "X", type: "select", options: [{ value: "a", label: { en: "A" } }] }),
+    ).toMatch(/zh-CN/);
   });
 });
 

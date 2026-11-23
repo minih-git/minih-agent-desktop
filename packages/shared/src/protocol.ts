@@ -497,6 +497,7 @@ export const IPC = {
     pluginCredentialsStatus: "minih-agent-desktop/plugin/credentials/status",
     pluginCredentialsSet: "minih-agent-desktop/plugin/credentials/set",
     pluginCredentialsClear: "minih-agent-desktop/plugin/credentials/clear",
+    pluginCredentialDialogAnswer: "minih-agent-desktop/plugin/credentials/dialogAnswer",
     pluginOpenPanel: "minih-agent-desktop/plugin/openPanel",
     pluginLauncherToggle: "minih-agent-desktop/pluginLauncher/toggle",
     pluginLauncherDismiss: "minih-agent-desktop/pluginLauncher/dismiss",
@@ -620,6 +621,8 @@ export const IPC = {
     /** What a running project archive export or import is doing. */
     projectArchiveProgress: "minih-agent-desktop/projectArchive/event/progress",
     extensionsUiPrompt: "minih-agent-desktop/extensions/event/uiPrompt",
+    /** A plugin asked the host to collect or drop a credential instance. */
+    pluginCredentialDialog: "minih-agent-desktop/plugin/event/credentialsDialog",
     extensionsStatus: "minih-agent-desktop/extensions/event/status",
     pluginLauncherShown: "minih-agent-desktop/pluginLauncher/event/shown",
     agentMessage: "minih-agent-desktop/agent/event/message",

@@ -1,7 +1,24 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const es = {
-  pluginCredentials: en.pluginCredentials,
+  pluginCredentials: {
+    ...en.pluginCredentials,
+    add: "Añadir",
+    cancel: "Cancelar",
+    remove: "Eliminar",
+    addFailed: "No se pudo añadir esta cuenta. Revisa todos los campos.",
+    removeFailed: "No se pudo eliminar esta cuenta. Inténtalo más tarde.",
+    limitReached: "Las {{max}} cuentas permitidas ya están configuradas.",
+    instanceCount: "{{count}} de {{max}} cuentas",
+    instanceFallback: "Cuenta {{index}}",
+    noInstances: "Todavía no hay ninguna cuenta configurada.",
+    selectPlaceholder: "Elige una opción",
+    confirmRemove: "Eliminar cuenta",
+    dialogTitleAdd: "{{plugin}} quiere añadir una cuenta",
+    dialogTitleRemove: "{{plugin}} quiere eliminar una cuenta",
+    dialogHintAdd: "Lo escribes aquí; {{plugin}} nunca ve lo que escribes.",
+    dialogHintRemove: "Eliminar «{{label}}» no se puede deshacer.",
+  },
   sidebarPluginView: {
     back: "Volver a la conversación",
   },

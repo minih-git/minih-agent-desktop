@@ -281,7 +281,12 @@ function credentialSettings(host) {
       if (!event?.main) throw new Error("unauthorized sender");
     },
   };
-  registerPluginCredentialIpc(registrar, () => host);
+  registerPluginCredentialIpc(
+    registrar,
+    () => host,
+    () => undefined,
+    () => false,
+  );
   const send = (channel, input, main = true) => {
     const handler = handlers.get(channel);
     if (!handler) throw new Error(`no handler for ${channel}`);

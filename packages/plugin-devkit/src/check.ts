@@ -116,6 +116,10 @@ export const PERMISSION_API_HINTS: Record<string, string[]> = {
   "net.websocket": ["net.websocket.connect", "net.websocket.send", "net.websocket.close"],
   "inbound.webhook": ["inbound.getReceivers"],
   "shell.openExternal": ["shell.openExternal"],
+  // Status first: a released plugin that only lists its slots stays
+  // warning-free. The two dialog calls are here so the host-process API surface
+  // test probes them the way it probes every other capability.
+  "credentials.use": ["credentials.list", "credentials.requestAdd", "credentials.requestRemove"],
   "browser.cdp": [
     "browser.navigate",
     "browser.snapshot",

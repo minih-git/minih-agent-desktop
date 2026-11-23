@@ -19,18 +19,46 @@ const CONTRIB_ID = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 export const PLUGIN_CREDENTIAL_KINDS = ["basic", "bearer", "header", "oauth2", "imap"] as const;
 export type PluginCredentialKind = (typeof PLUGIN_CREDENTIAL_KINDS)[number];
 
+/** Most instances one multi-instance credential slot may hold. */
+export const MAX_CREDENTIAL_INSTANCES = 5;
+
+/** How the Settings sheet and the host dialog render one credential field. */
+export const PLUGIN_CREDENTIAL_FIELD_TYPES = ["text", "password", "select"] as const;
+export type PluginCredentialFieldType = (typeof PLUGIN_CREDENTIAL_FIELD_TYPES)[number];
+
+/** One option of a `select` credential field. */
+export type PluginCredentialFieldOption = {
+  /** Stored verbatim as the field value. */
+  value: string;
+  label: PluginLocalizedString | string;
+};
+
 /** One field the user fills in for a credential slot. */
 export type PluginCredentialFieldContrib = {
   key: string;
   label: PluginLocalizedString | string;
   /** Rendered masked in the Settings sheet. */
   secret?: boolean;
+  /**
+   * Input control. Defaults from `secret` — `password` when it is true, `text`
+   * otherwise — so a manifest written before this field keeps rendering the
+   * same control.
+   */
+  type?: PluginCredentialFieldType;
+  /** `type: "select"` only: the accepted values. */
+  options?: PluginCredentialFieldOption[];
 };
+
+/** The control a field renders with: the explicit `type`, else `secret`. */
+export function credentialFieldType(field: PluginCredentialFieldContrib): PluginCredentialFieldType {
+  return field.type ?? (field.secret ? "password" : "text");
+}
 
 /**
  * One credential slot (`credentials.use`). The user fills it in Settings; the
  * host stores it and injects it into the egress paths the plugin names by
- * `credentialRef`. The host provides no plugin-facing credential read API.
+ * `credentialRef`. Apart from the non-secret field values a multi-instance slot
+ * publishes, the host provides no plugin-facing credential read API.
  */
 export type PluginCredentialContrib = {
   id: string;
@@ -43,6 +71,21 @@ export type PluginCredentialContrib = {
    * TCP requires an endpoint declared in `manifest.net.tcp`.
    */
   scope?: { domains: PluginNetDomain[] };
+  /**
+   * The slot holds up to `max` instances — separate mailboxes, accounts, or
+   * tenants the user adds from Settings or through
+   * `pi.credentials.requestAdd`. Absent keeps the single-instance behaviour
+   * exactly as released: same storage key, same `list` answer, same
+   * `credentialRef` spelling.
+   */
+  multiple?: { max: number };
+  /**
+   * Field whose value names an instance (an address, a login). It has to name a
+   * non-secret field of this slot. `pi.credentials.list()` reports that value,
+   * because a plugin cannot address an account it cannot identify; every secret
+   * field stays unreadable.
+   */
+  labelField?: string;
 };
 
 /** Largest request body a webhook receiver accepts (256 KiB). */
@@ -116,6 +159,52 @@ function fieldLabelError(value: unknown, field: string): string | undefined {
 }
 
 /**
+ * The declared control of one field: `type`, its `options`, and the rule that a
+ * secret field can never be a `select` — a dropdown publishes its list to the
+ * Settings sheet, and a secret is not something the user picks from a list the
+ * manifest wrote.
+ */
+function credentialFieldControlError(
+  slotId: string,
+  field: PluginCredentialFieldContrib,
+): string | undefined {
+  const at = `credential "${slotId}" field "${field.key}"`;
+  if (
+    field.type !== undefined &&
+    !(PLUGIN_CREDENTIAL_FIELD_TYPES as readonly string[]).includes(field.type)
+  ) {
+    return `${at} type must be text, password, or select`;
+  }
+  const control = credentialFieldType(field);
+  if (field.secret === true && control === "select") {
+    return `${at} cannot be secret and a select`;
+  }
+  if (field.options !== undefined && control !== "select") {
+    return `${at} declares options but is not a select`;
+  }
+  if (control !== "select") return undefined;
+  if (!Array.isArray(field.options) || field.options.length === 0) {
+    return `${at} is a select without options`;
+  }
+  const values = new Set<string>();
+  for (const option of field.options) {
+    if (!option || typeof option !== "object" || Array.isArray(option)) {
+      return `${at} has an invalid option`;
+    }
+    if (typeof option.value !== "string" || !option.value.trim()) {
+      return `${at} has an option without a value`;
+    }
+    if (values.has(option.value)) {
+      return `${at} declares option "${option.value}" twice`;
+    }
+    values.add(option.value);
+    const labelError = fieldLabelError(option.label, `${at} option "${option.value}" label`);
+    if (labelError) return labelError;
+  }
+  return undefined;
+}
+
+/**
  * `contributes.credentials`. Every slot is user-filled, so the shape is
  * validated at install: a slot the Settings sheet cannot render is a dead
  * permission, and a scope nobody can inject into is an authoring slip.
@@ -161,6 +250,36 @@ export function validateCredentialContributions(raw: unknown): string | undefine
       if (labelError) return labelError;
       if (field.secret !== undefined && typeof field.secret !== "boolean") {
         return `credential "${slot.id}" field "${field.key}" secret must be a boolean`;
+      }
+      const controlError = credentialFieldControlError(slot.id, field);
+      if (controlError) return controlError;
+    }
+    if (slot.multiple !== undefined) {
+      const multiple = slot.multiple as { max?: unknown };
+      if (!multiple || typeof multiple !== "object" || Array.isArray(multiple)) {
+        return `credential "${slot.id}" multiple must be an object`;
+      }
+      const max = multiple.max;
+      if (
+        !Number.isInteger(max) ||
+        (max as number) < 1 ||
+        (max as number) > MAX_CREDENTIAL_INSTANCES
+      ) {
+        return `credential "${slot.id}" multiple.max must be an integer from 1 to ${MAX_CREDENTIAL_INSTANCES}`;
+      }
+    }
+    if (slot.labelField !== undefined) {
+      // A label read from a secret would publish the secret, so the declared
+      // field has to exist and has to be public.
+      if (typeof slot.labelField !== "string" || !isContribId(slot.labelField)) {
+        return `credential "${slot.id}" labelField must be a field key`;
+      }
+      const labelField = slot.fields.find((field) => field.key === slot.labelField);
+      if (!labelField) {
+        return `credential "${slot.id}" labelField "${slot.labelField}" is not a declared field`;
+      }
+      if (labelField.secret === true) {
+        return `credential "${slot.id}" labelField "${slot.labelField}" must not be secret`;
       }
     }
     if (slot.scope !== undefined) {

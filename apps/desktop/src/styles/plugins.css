@@ -766,7 +766,13 @@
 .plugin-credential-heading > span { color: var(--ds-text-muted); font-size: var(--text-xs); }
 .plugin-credential-field { display: grid; gap: 5px; color: var(--ds-text-primary); font-size: var(--text-xs); }
 .plugin-credential-field .password-input, .plugin-credential-field .field-input { width: 100%; }
-.plugin-credential-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.plugin-credential-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.plugin-credential-instances { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.plugin-credential-instance { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--plugins-tile-deep); }
+.plugin-credential-instance-label { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-text-primary); font-size: var(--text-xs); }
+.plugin-credential-instance-state { color: var(--ds-text-muted); font-size: var(--text-xs); }
+.plugin-credential-add { display: grid; gap: 10px; padding: 10px; border-radius: var(--radius-sm); background: var(--plugins-tile-deep); }
+.plugin-credential-dialog .plugins-settings-body { gap: 10px; padding-top: 4px; }
 
 .plugins-setting-row {
   display: flex;

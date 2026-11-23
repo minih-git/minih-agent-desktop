@@ -470,6 +470,11 @@ function buildApi() {
      */
     credentials: {
       list: () => call("credentials.list"),
+      // The host collects the values itself: this process learns only the id of
+      // the instance the user created, never a field of it.
+      requestAdd: (slotId) => call("credentials.requestAdd", [slotId]),
+      requestRemove: (slotId, instanceId) =>
+        call("credentials.requestRemove", [slotId, instanceId]),
     },
     /**
      * Background audio (`audio.capture.background`, `audio.playback.background`).

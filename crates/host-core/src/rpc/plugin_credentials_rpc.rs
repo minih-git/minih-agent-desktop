@@ -26,17 +26,28 @@ struct PluginRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SlotRequest {
-    plugin_id: String,
-    slot_id: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SetRequest {
     plugin_id: String,
     slot_id: String,
     fields: Map<String, Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ClearRequest {
+    plugin_id: String,
+    slot_id: String,
+    /// One instance of a multi-instance slot; absent clears the whole slot.
+    #[serde(default)]
+    instance_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ResolveRequest {
+    plugin_id: String,
+    /// `<slotId>` or `<slotId>#<instanceId>`.
+    slot_id: String,
 }
 
 pub(super) async fn handle(
@@ -50,35 +61,54 @@ pub(super) async fn handle(
             let st = state.lock().await;
             let plugin = installed(&st, &input.plugin_id)?;
             let locale = st.plugins.locale().to_string();
-            credentials::status(&st.secrets, &plugin, &locale).map_err(credential_err)
+            credentials::status(&st.secrets, &plugin, &locale, Some(&st.db)).map_err(credential_err)
         }
         "plugins.credentials.list" => {
             let input: PluginRequest = parse(params, "invalid credentials list request")?;
             let st = state.lock().await;
             let plugin = installed(&st, &input.plugin_id)?;
-            credentials::list(&st.secrets, &plugin).map_err(credential_err)
+            credentials::list(&st.secrets, &plugin, Some(&st.db)).map_err(credential_err)
         }
         "plugins.credentials.set" => {
             let input: SetRequest = parse(params, "invalid credentials set request")?;
             let st = state.lock().await;
             let plugin = installed(&st, &input.plugin_id)?;
-            credentials::set(&st.secrets, &plugin, &input.slot_id, input.fields)
-                .map_err(credential_err)?;
-            Ok(serde_json::json!({ "configured": true }))
+            let instance = credentials::set(
+                &st.secrets,
+                &plugin,
+                &input.slot_id,
+                input.fields,
+                Some(&st.db),
+            )
+            .map_err(credential_err)?;
+            // `instanceId` is present only when the slot holds several values;
+            // the renderer then refreshes the list instead of the single form.
+            Ok(match instance {
+                Some(instance_id) => {
+                    serde_json::json!({ "configured": true, "instanceId": instance_id })
+                }
+                None => serde_json::json!({ "configured": true }),
+            })
         }
         "plugins.credentials.clear" => {
-            let input: SlotRequest = parse(params, "invalid credentials clear request")?;
+            let input: ClearRequest = parse(params, "invalid credentials clear request")?;
             let st = state.lock().await;
             let plugin = installed(&st, &input.plugin_id)?;
-            let cleared =
-                credentials::clear(&st.secrets, &plugin, &input.slot_id).map_err(credential_err)?;
+            let cleared = credentials::clear(
+                &st.secrets,
+                &plugin,
+                &input.slot_id,
+                input.instance_id.as_deref(),
+                Some(&st.db),
+            )
+            .map_err(credential_err)?;
             Ok(serde_json::json!({ "cleared": cleared }))
         }
         "plugins.credentials.resolve" => {
-            let input: SlotRequest = parse(params, "invalid credentials resolve request")?;
+            let input: ResolveRequest = parse(params, "invalid credentials resolve request")?;
             let st = state.lock().await;
             let plugin = installed(&st, &input.plugin_id)?;
-            let fields = credentials::resolve(&st.secrets, &plugin, &input.slot_id)
+            let fields = credentials::resolve(&st.secrets, &plugin, &input.slot_id, Some(&st.db))
                 .map_err(credential_err)?;
             Ok(serde_json::json!({ "fields": fields }))
         }
@@ -111,7 +141,6 @@ fn installed(
         )
     })
 }
-
 fn credential_err(error: CredentialError) -> JsonRpcError {
     match error {
         CredentialError::PluginInvalid(message) => rpc_err(1009, message, "PLUGIN_INVALID"),
@@ -119,6 +148,10 @@ fn credential_err(error: CredentialError) -> JsonRpcError {
             rpc_err(1002, message, "CREDENTIAL_SLOT_NOT_DECLARED")
         }
         CredentialError::Invalid(message) => rpc_err(1002, message, "CREDENTIAL_INVALID"),
+        CredentialError::InstanceRequired(message) => {
+            rpc_err(1002, message, "CREDENTIAL_INSTANCE_REQUIRED")
+        }
+        CredentialError::Limit(message) => rpc_err(1002, message, "CREDENTIAL_LIMIT"),
         CredentialError::NotConfigured(message) => {
             rpc_err(1007, message, "CREDENTIAL_NOT_CONFIGURED")
         }

@@ -124,3 +124,41 @@ test("every locale names the app-default row", () => {
     );
   }
 });
+/*
+ * `contributes.settings` labels accept a locale map (ADR 0340). The host resolves
+ * it before the sheet renders, so a zh-CN shell shows the Chinese title and a
+ * plain string keeps the author's own language.
+ */
+test("a localized setting title, description and option label follow the app language", () => {
+  const definitions = [
+    {
+      key: "provider",
+      title: { en: "Mailbox provider", "zh-CN": "邮箱服务商" },
+      description: { en: "Where mail comes from", "zh-CN": "邮件来源" },
+      type: "select",
+      enum: [
+        { value: "imap", label: { en: "IMAP", "zh-CN": "IMAP 邮箱" } },
+        { value: "pop", label: "POP3" },
+      ],
+    },
+    {
+      key: "senders",
+      title: "Important senders",
+      type: "string",
+    },
+  ];
+
+  const chinese = pluginSettingsView(definitions, {}, [], "zh-CN");
+  assert.equal(chinese[0].title, "邮箱服务商");
+  assert.equal(chinese[0].description, "邮件来源");
+  assert.deepEqual(chinese[0].enum, [
+    { value: "imap", label: "IMAP 邮箱" },
+    { value: "pop", label: "POP3" },
+  ]);
+  // A plain string is the author's language and is never translated.
+  assert.equal(chinese[1].title, "Important senders");
+
+  const english = pluginSettingsView(definitions, {}, [], "en");
+  assert.equal(english[0].title, "Mailbox provider");
+  assert.equal(english[0].enum[0].label, "IMAP");
+});

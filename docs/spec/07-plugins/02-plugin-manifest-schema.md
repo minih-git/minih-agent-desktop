@@ -136,10 +136,15 @@ Rules:
    object) fails manifest validation; unknown locales and unknown fields inside
    an entry are ignored.
 5. The block is identity only (`name`, `description`, `safetyNotes`). Plugin-owned
-   copy — panels, views, widgets, generated settings, toasts, runtime command
-   titles — is not translated here. The host publishes the active language
+   copy — panels, views, widgets, toasts, runtime command titles — is not
+   translated here. The host publishes the active language
    (`pi.app.getLocale`, `appearance:changed`); the plugin localizes itself
    (ADR 0280).
+6. The exception is a generated `contributes.settings` row: its `title`,
+   `description`, and `enum[].label` accept the same `{ en, "zh-CN" }` map, which
+   the host resolves to the app language before the sheet renders (ADR 0340). A
+   plain string is the author's own language and is shown as written, so every
+   manifest written before this rule keeps rendering identically.
 
 ### 3.2 Renderer module (`renderer`)
 
@@ -239,11 +244,16 @@ type PluginComposerTransformContrib = {
 
 type PluginSettingContrib = {
  key: string;
- title: string; // author language; the generated sheet does not localize
- description?: string;
+ /** Author language, or a locale map the host resolves (ADR 0340). */
+ title: string | { en: string; "zh-CN": string };
+ /** Same rule as `title`. */
+ description?: string | { en: string; "zh-CN": string };
  type: "string" | "number" | "boolean" | "select" | "json" | "shortcut";
  default?: unknown;
- enum?: Array<{ label: string; value: string | number | boolean }>;
+ enum?: Array<{
+   label: string | { en: string; "zh-CN": string };
+   value: string | number | boolean;
+ }>;
  /** Required for shortcut settings; invokes a declared plugin command. */
  command?: string;
  /** Fixed to plugin for now; global shortcut registration is not supported. */
@@ -652,10 +662,21 @@ type PluginCredentialContrib = {
   fields: Array<{
     key: string;                                // same grammar as id
     label: string | { en: string; "zh-CN": string };
-    secret?: boolean;                           // rendered masked in Settings
+    secret?: boolean;                           // never returned to the plugin
+    /** Input control; defaults from `secret` (password) else text. */
+    type?: "text" | "password" | "select";
+    /** `type: "select"` only; a secret field may not be a select. */
+    options?: Array<{ value: string; label: string | { en: string; "zh-CN": string } }>;
   }>;
   /** Hosts the slot may be injected into; absent means injected nowhere. */
   scope?: { domains: PluginNetDomain[] };
+  /**
+   * The slot holds up to `max` (1..5) separate instances. Absent keeps the
+   * single-value slot: same storage key, same `credentials.list` answer.
+   */
+  multiple?: { max: number };
+  /** Non-secret field whose value names an instance (an address, a login). */
+  labelField?: string;
 };
 
 type PluginWebhookContrib = {
@@ -685,6 +706,14 @@ type PluginTasksContrib = {
 - A credential slot the Settings sheet cannot render is refused: `kind` and at
   least one `fields` entry are required, field keys are unique, and a `scope`
   with no domain is invalid. The value is user-entered, never declared here
+- `multiple.max` is an integer from 1 to 5. `labelField` must name a declared
+  field that is not `secret`: that value is what `credentials.list` reports for
+  each instance, so a label read from a secret would publish the secret. A field
+  whose `type` is `select` needs a non-empty `options` list with unique values,
+  and may not be `secret`; `options` on any other control is refused
+- A slot that declares `multiple` holds several accounts (§5.5.1). Every
+  `credentialRef` then spells `"<slotId>#<instanceId>"`, and a reference without
+  an instance is refused with `CREDENTIAL_INSTANCE_REQUIRED`
 - `scope.domains` uses the same grammar as `net.domains`, and an injection must
   also be inside `net.domains`, so a slot can only narrow egress, never widen it
 - A webhook may lower `maxBodyBytes` (256 KiB) and `ratePerMinute` (120) and
@@ -698,6 +727,39 @@ type PluginTasksContrib = {
 - The capability permissions (`credentials.use`, `inbound.webhook`,
   `scheduler`, `tasks.manage`) and raw TCP (`manifest.net.tcp`, §5.3.2) are the
   four switches that must be declared alongside the field that uses them
+
+### 5.5.1 Multi-instance credential slots
+
+A slot that declares `multiple` holds up to `max` separate values — mailboxes,
+tenants, or accounts — under one declaration. The host issues every instance an
+opaque id (`acc_` plus eight hex digits); a plugin names neither the id nor how
+many instances exist, and learns both from `credentials.list`
+([03-plugin-api.md](03-plugin-api.md) §3.x).
+
+- Storage stays inside the encrypted secret store, so no database migration:
+  one blob per instance under `plugin:<pluginId>:cred:<slotId>#<instanceId>`,
+  and the instance list (id, label, non-secret field values, creation time) in
+  the per-plugin credential index. `<slotId>` is a contribution id and can never
+  contain `#`, so the separator is unambiguous.
+- `labelField` names a non-secret field, and its value is the instance's label.
+  That value — and only the non-secret fields — travels to the plugin:
+  `credentials.list` reports `publicFields`, never a `secret` field. This is the
+  single place a plugin reads something a user typed, and it exists because a
+  plugin cannot address an account it cannot identify. Every secret field stays
+  unreadable, exactly as for a single-value slot.
+- A slot that turns an existing single value into instances keeps that value:
+  the first read of the new shape copies the stored blob to the first instance
+  and only then removes the original, so at every moment at least one copy
+  exists. The migrated id is derived from the slot, so a retry after a partial
+  failure finishes the same migration instead of adding a second instance.
+- The reverse — a manifest that drops `multiple` — keeps the first instance's
+  values as the slot's single value, removes the rest, and writes one audit row
+  naming the ids it removed. Both directions are audited by id and never with a
+  field value.
+- A plugin may also ask the host to collect or drop an instance
+  (`credentials.requestAdd` / `requestRemove`); the host's own form is what
+  collects the values, never the plugin process
+  ([04-plugin-security.md](04-plugin-security.md) §8.3).
 
 ## 6. activationEvents (optional)
 

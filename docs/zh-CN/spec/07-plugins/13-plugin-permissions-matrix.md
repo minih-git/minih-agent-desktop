@@ -62,7 +62,7 @@
 | `embeddings.run` | high | `pi.embeddings.embed` | 安装时确认 | 用用户自己的向量模型把文本变成向量。文本会离开本机并消耗该服务额度；插件永远看不到凭据。仅 OpenAI 兼容接口；每次 1..=64 条、单条 8 KiB、总量 256 KiB，每分钟 120 次 |
 | `agent.complete` | 高 | `pi.agent.complete` | 安装时确认 | 宿主代发一次性补全；消耗用户额度；`includeSessionContext` 还需要 `session.read` |
 | `speech.adapter.register` | 高 | `pi.speech.registerAdapter` / `unregisterAdapter` | 安装时确认 | 注册语音协议。handle 留在插件进程；HTTP 计划由宿主用绑定密钥代发且必须同 origin |
-| `credentials.use` | 高 | 用户在设置里填写 `contributes.credentials` 槽位，宿主按 `credentialRef` 代为注入 | 安装时确认 | 宿主不提供插件可调用的凭据读取 API；只有目标同时位于槽位范围和 `manifest.net.domains` 内才注入。值存加密密钥库，不进 SQLite。插件不是操作系统沙箱，只应安装可信插件；远端响应可能回显凭据 |
+| `credentials.use` | 高 | 用户在设置或宿主对话框中填写 `contributes.credentials` 槽位，宿主按 `credentialRef` 代为注入，并可调用 `requestAdd` / `requestRemove` | 安装时确认 | 宿主不提供插件可调用的凭据读取 API；多实例槽位只公开实例 id、显示名与非 secret 字段值，供插件区分账号。只有目标同时位于槽位范围和 `manifest.net.domains` 内才注入。值存加密密钥库，不进 SQLite。插件不是操作系统沙箱，只应安装可信插件；远端响应可能回显凭据 |
 | `net.tcp` | 高 | `pi.net.tcp.connect` / `send` / `close`（宿主持有的套接字，目标是 `manifest.net.tcp` 里的字面端点） | 默认拒绝 | `host`、`port`、`tls` 都是字面值；不接受通配符，也不接受端口区间。同时最多四条连接——这是并发上限，不是白名单条数上限。插件拿到的是句柄而不是套接字，卸载、禁用、崩溃都会关闭全部连接 |
 | `inbound.webhook` | 高 | `contributes.webhooks`；宿主持有监听、令牌并投递 `inbound:webhook` 事件 | 安装时确认 | 局域网模式绑定所有接口并按 [ADR plugin-webhook-listener-boundary](/zh-CN/adr/plugin-webhook-listener-boundary) 过滤来源；明文 HTTP，直连公网子网也可能被允许。令牌不返回给插件。正文超过 256 KiB 返回 `413`，每分钟超过 120 次有效请求返回 `429`；manifest 只能调低上限 |
 | `mail.draft` | 中 | `pi.mail.draft.create` | 安装时确认 | 只把草稿写入宿主的草稿列表，没有发送路径，也不存在由另一个权限打开的发送路径 |
@@ -136,6 +136,8 @@ ADR 0088，以及
   `manifest.net.tcp` 需要 `net.tcp`；`manifest.tasks.manage` 需要
   `tasks.manage`。每个声明都在它所属字段的同一趟校验里检查，所以没人能用的块
   会让安装失败，而不是被悄悄丢掉
+- `credentials.use` 也覆盖宿主自有对话框（`requestAdd` / `requestRemove`）：用户在
+  那里输入的值从不进入插件进程，且窗口不在前台、或该插件已有对话框时，宿主拒绝弹框
 - `credentials.use` 永远替代不了出网权限：被注入的请求仍然需要 `net.fetch`
   （或 `net.tcp`）以及落在 `manifest.net.domains` 内的主机。槽位只是让密钥
   不进插件的手，并不会扩大插件本来就有出网范围

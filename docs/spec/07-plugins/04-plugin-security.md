@@ -522,10 +522,14 @@ author whether a connection is encrypted.
 - `pi.net.tcp.connect` matches the requested endpoint against that list after
   the manifest's own normalization; anything else is `PERMISSION_DENIED` before
   a socket exists.
-- **At most four connections open at once per plugin.** This is a concurrency
+- **At most eight connections open at once per plugin.** This is a concurrency
   ceiling that bounds the host's descriptors and buffers; it is deliberately
   *not* a cap on the allowlist, which stays unbounded so an author with ten
-  servers declares ten instead of reaching for Node's own `net` module.
+  servers declares ten instead of reaching for Node's own `net` module. The
+  ceiling was four: a mailbox plugin keeps one idle IMAP connection per account,
+  so five configured mailboxes needed five sockets before doing anything else
+  (ADR plugin-host-capabilities §4). The per-connection write buffer, connect
+  deadline, and TLS rules are unchanged.
 - The plugin gets a `connectionId` and events, never a socket, a stream, a TLS
   session, or a certificate handle. `tls` comes from the manifest, and the host
   performs the handshake itself, so there is no API to downgrade a connection
@@ -554,6 +558,35 @@ author whether a connection is encrypted.
 - Uninstall removes that plugin's TCP usage rows. Boot-time orphan
   reconciliation and retention pruning are follow-ups; an empty or unreadable
   plugin registry must not authorize deleting stored counters.
+
+**`contributes.credentials` — what a plugin may read, and who collects a value.**
+
+- A stored value is never returned to plugin code. `pi.credentials.list` answers
+  status, and for a slot that declares `multiple` also its instance ids, labels
+  and **non-secret** field values. A field marked `secret: true` never appears in
+  any answer, event, audit row, or log, on any path.
+- The non-secret exception is deliberate and narrow: a plugin cannot address one
+  of several mailboxes without knowing which address it is, and an address is not
+  the secret. A manifest cannot lift this: `labelField` must name a field that is
+  not `secret`, and the declaration is re-checked from the installed manifest
+  whenever the host reads the slot.
+- When a plugin wants the user to enter a value (`credentials.requestAdd` /
+  `requestRemove`), the **host** shows the form. The value travels renderer →
+  main → host-core and never passes through the plugin process, so a plugin
+  cannot observe or prefill what the user typed beyond the non-secret fields it
+  declared.
+- Three refusals bound the interruption a plugin can cause, and the host decides
+  each one before any UI exists:
+  `CREDENTIAL_DIALOG_UNAVAILABLE` while the app window is not in front (a
+  background plugin cannot pop a form), `CREDENTIAL_DIALOG_BUSY` while the same
+  plugin already has a dialog open or within 30 seconds of the user dismissing
+  one (a modal covers the app, so an immediate retry loop would be a denial of
+  service on the window), and `CREDENTIAL_LIMIT` when the slot already holds
+  `multiple.max` instances. An unanswered dialog is cancelled by a timeout,
+  by the plugin unloading, and by host shutdown, so no form outlives its requester.
+- Every instance change writes one audit row naming the plugin, the slot, and the
+  instance id — plus the ids removed by a downgrade or an uninstall. No audit row
+  carries a value, a label, or a store message.
 
 **`inbound.webhook` — a host-owned listener.**
 

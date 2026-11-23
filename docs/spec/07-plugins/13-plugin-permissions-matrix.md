@@ -59,7 +59,7 @@ Provide a permission–capability–risk–default-policy reference table for re
 | `embeddings.run` | high | `pi.embeddings.embed` | Confirm at install | Turns text into vectors with one of the user's own embedding models. The text leaves the machine and spends that provider's quota; the plugin never sees the credential. OpenAI-compatible endpoints only; 1..=64 texts, 8 KiB each, 256 KiB a call, 120 calls a minute |
 | `agent.complete` | high | `pi.agent.complete` | Confirm at install | Host-owned one-shot; spends user quota; `includeSessionContext` also needs `session.read` |
 | `speech.adapter.register` | high | `pi.speech.registerAdapter` / `unregisterAdapter` | Confirm at install | Registers a speech protocol. Handles stay in the guest; HTTP plans are executed by the host with the bound provider key and must stay on that origin. Built-in protocol ids are reserved |
-| `credentials.use` | high | `contributes.credentials` slots filled in Settings and used by host egress via `credentialRef` | Confirm at install | No plugin-facing host API returns a saved value; injection requires both the slot scope and `manifest.net.domains`. Values stay in the encrypted secret store, not SQLite. This is not an OS sandbox: install trusted plugins only, and remote responses may echo credentials |
+| `credentials.use` | high | `contributes.credentials` slots filled in Settings or a host dialog, used by host egress via `credentialRef`, plus `requestAdd` / `requestRemove` | Confirm at install | No plugin-facing host API returns a saved value; a multi-instance slot publishes its instance ids, labels and non-secret field values so the plugin can address an account. Injection requires both the slot scope and `manifest.net.domains`. Values stay in the encrypted secret store, not SQLite. This is not an OS sandbox: install trusted plugins only, and remote responses may echo credentials |
 | `net.tcp` | high | `pi.net.tcp.connect` / `send` / `close` (host-owned sockets to the literal endpoints in `manifest.net.tcp`) | Deny by default | Literal `host`, `port` and `tls`; no wildcard, no port range. At most four connections open at once — a concurrency ceiling, not a cap on the allowlist. The plugin gets a handle, never a socket, and every connection closes on unload, disable, and crash |
 | `inbound.webhook` | high | `contributes.webhooks`; host-owned listener, token and `inbound:webhook` events | Confirm at install | LAN mode binds all interfaces with the source filter in [ADR plugin-webhook-listener-boundary](../../adr/plugin-webhook-listener-boundary.md); it is plain HTTP and may admit directly connected public subnets. The token is never returned to plugins. Bodies above 256 KiB get `413`; over 120 accepted per minute get `429`; the manifest may lower either ceiling |
 | `mail.draft` | medium | `pi.mail.draft.create` | Confirm at install | Writes a draft into the host's draft list. There is no send path, in this grant or behind another |
@@ -143,6 +143,10 @@ plugin, so it carries three bounds the other modes do not:
   request still needs `net.fetch` (or `net.tcp`) and a host inside
   `manifest.net.domains`. The slot only takes the secret out of the plugin's
   hands; it does not widen the reach the plugin already had
+- `credentials.use` also covers the host-owned dialog (`requestAdd` /
+  `requestRemove`). The values the user types there never reach the plugin
+  process, and the host refuses to open a dialog while the app window is not in
+  front or while that plugin already has one open
 - `tasks.read` and `tasks.manage` are independent: listing the roster does not
   authorize creating a task, and creating one does not authorize reading
   another employee's tasks

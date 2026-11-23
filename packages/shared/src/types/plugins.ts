@@ -349,6 +349,16 @@ export type PluginServiceStatus = {
   message?: string;
   updatedAt: number;
 };
+/** One stored account of a multi-instance credential slot. Never a secret. */
+export type PluginCredentialInstanceStatus = {
+  instanceId: string;
+  /** The `labelField` value the user entered, so the sheet can name the account. */
+  label: string;
+  /** Non-secret field values only. */
+  publicFields: Record<string, string>;
+  configured: boolean;
+};
+
 /** Public credential-slot metadata and configuration state; never a value. */
 export type PluginCredentialStatus = {
   id: string;
@@ -358,10 +368,46 @@ export type PluginCredentialStatus = {
     key: string;
     label: string | { en: string; "zh-CN": string };
     secret?: boolean;
+    /** Input control; `secret` decides it when this is absent. */
+    type?: "text" | "password" | "select";
+    /** `type: "select"` only, labels already resolved by the host. */
+    options?: Array<{ value: string; label: string }>;
   }>;
   configured: boolean;
   lastUsedAt: number | null;
+  /** Present only for a slot that declares `multiple`. */
+  multiple?: true;
+  /** Present only for a slot that declares `multiple`. */
+  max?: number;
+  /** Present only for a slot that declares `multiple`, in creation order. */
+  instances?: PluginCredentialInstanceStatus[];
+  /** Field whose value names an instance. */
+  labelField?: string;
 };
+
+/**
+ * One host-owned credential dialog a plugin asked for
+ * (`pi.credentials.requestAdd` / `requestRemove`). Main pushes this to the
+ * renderer, which answers on the dialog-answer channel; the value the user types
+ * never reaches the plugin process.
+ */
+export type PluginCredentialDialogRequest = {
+  requestId: string;
+  kind: "add" | "remove";
+  pluginId: string;
+  pluginName: string;
+  slotId: string;
+  /** Set for `remove`: the instance the user is being asked to drop. */
+  instanceId?: string;
+  /** Set for `remove`: the label shown in the confirmation. */
+  instanceLabel?: string;
+};
+
+/** What the renderer answers one credential dialog with. */
+export type PluginCredentialDialogAnswer =
+  | { action: "submit"; fields: Record<string, string> }
+  | { action: "confirm" }
+  | { action: "cancel" };
 
 export type PluginSummary = {
   id: string;
