@@ -62,6 +62,14 @@ test("sidebar tags each row with its creator and folds one task's runs", async (
           originTaskId: "t1",
           updatedAt: older,
         }),
+        // An AI-created session that acts in a role: the tag also names it, so
+        // the person can tell why this row behaves the way it does (ADR
+        // session-create-model-and-role).
+        session("agent-role", "/alpha", {
+          origin: "agent",
+          originSession: { sessionId: "plain", title: "Plain", available: true },
+          agentName: "fixer",
+        }),
       ],
       sessionMeta: {},
       projectMeta: { "/alpha": { name: "Alpha" }, "/beta": { name: "Beta" } },
@@ -126,6 +134,21 @@ test("sidebar tags each row with its creator and folds one task's runs", async (
       "and says it was dispatched",
     );
 
+    // The role an AI-created session acts in rides on the same tooltip.
+    const roleTooltip = catalogs.en.nav.originDispatchedByRole
+      .replace("{{title}}", "Plain")
+      .replace("{{role}}", "fixer");
+    assert.ok(
+      rowHtml(html, "agent-role").includes(roleTooltip),
+      "the tooltip names the role the session acts in",
+    );
+    assert.ok(
+      rowHtml(html, "agent-made").includes(
+        catalogs.en.nav.originDispatchedBy.replace("{{title}}", "Plain"),
+      ),
+      "a session with no role keeps the shorter wording",
+    );
+
     // Two runs of one task are one row: the newest run stands for the task.
     assert.ok(rows(html).includes("run-new"));
     assert.ok(!rows(html).includes("run-old"), "the older run folds into the newest one");
@@ -142,7 +165,7 @@ test("sidebar tags each row with its creator and folds one task's runs", async (
       );
       assert.ok(allShown.includes("agent-made"), `origins=${JSON.stringify(origins)} shows all`);
       assert.ok(allShown.includes("run-new"));
-      assert.equal(allShown.length, 5, "one row per session, the folded task counted once");
+      assert.equal(allShown.length, 6, "one row per session, the folded task counted once");
     }
   } finally {
     if (previousDocument) globalThis.document = previousDocument;

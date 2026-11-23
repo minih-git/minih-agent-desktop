@@ -572,16 +572,20 @@ a usage tab.
   leaves it out. The models page and the chat model picker therefore agree, and
   a model the gateway keeps advertising cannot come back on its own.
 - The **session creation model** row names the model a session the Agent
-  creates for itself runs on (ADR session-create-tool). It renders only while at
-  least one provider can run a chat model right now — enabled, credentialed, and
-  offering a model that is not one of the user's image models — so it never
-  offers a pairing the runtime would refuse to launch a session on. Its options
+  creates for itself runs on when the call names no model and no role
+  (ADR session-create-tool, ADR session-create-model-and-role). It renders only
+  while at least one provider can run a chat model right now — enabled,
+  credentialed, and offering a model that is not one of the user's image
+  models — so it never offers a pairing the runtime would refuse to launch a
+  session on. Its options
   are those runnable models plus an explicit **Do not create sessions**, which
   is what an unset setting reads as and is the only way back to it: choosing it
   stores no model, and while none is stored the built-in `SessionCreate` tool
   refuses, so the Agent cannot create a session at all. A stored pairing the
   provider list no longer serves keeps showing as currently unavailable, so the
   user can see what changed and pick another one.
+  The row is the fallback: a `SessionCreate` call that names its own `model`, or a
+  role with its own pin, does not read it.
   When that model is available, a separate reasoning selector offers inheritance
   from the source session (the backward-compatible default), `omit` and the
   model's enabled thinking levels, using the same capability projection as the

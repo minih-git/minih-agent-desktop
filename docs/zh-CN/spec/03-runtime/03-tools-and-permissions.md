@@ -719,17 +719,27 @@ host-core 通过与其他桌面自持工具相同的 `tools.execute` 闸门授�
 它 steer 进正在运行的回合，若该回合不再接收输入则留在队首。提前被拒绝不会让已受理
 的投递失败：它继续排队，工具如实报告未插入，Main 记录这次拒绝。
 
-`SessionCreate({ title })` 在调用方会话的项目里建一个普通 Agent 模式会话，
-沿用调用方的思考等级与权限模式，使用 AI 设置里的 provider/model 绑定
-（`sessionCreateModel`）运行，并返回其 Session ID 供随后的 `SessionSend`
-投递。该设置未配置时调用以 `MODEL_NOT_CONFIGURED` 失败；绑定不在设置行提供的
-可选集合内时以 `MODEL_UNAVAILABLE` 失败；不会回退到应用默认模型。两侧用同一套
-规则解析这个集合：启用且已配置凭据、至少配置一个模型的提供方，再排除设置页排除
-的全部生图模型（`imageGenerationModels` 候选与当前生效的 `imageGeneration`
-默认合并而成）。创建本身不
-投递的跳数上限与八条收件箱约束。
-账本、权限上限、队列与跳数上限、来源标注与完成回调见
-[Agent 运行时 §5f.4](/zh-CN/spec/03-runtime/02-agent-runtime)。
+`SessionCreate({ title, model?, agent? })` 在调用方会话的项目里建一个普通 Agent
+模式会话，继承调用方的权限上限，并返回其 Session ID 供随后的 `SessionSend`
+投递。`model` 只能点名用户已开启「可供 AI 自动调度」的模型（即 `Task.model`
+遵守的同一个集合，由 Main 在任何会话行存在之前就拒绝越界的选择），或所指定角色
+自带的默认模型、或调用方当前正在使用的那个模型、或已配置的
+`sessionCreateModel`。两个参数都省略时跑在 `sessionCreateModel` 上，与旧行为
+完全一致；优先级为 `model` → 角色的 pin → `sessionCreateModel`。该设置未配置
+且未传 `model` 时以 `MODEL_NOT_CONFIGURED` 失败；绑定不在设置行提供的可选集合内
+时以 `MODEL_UNAVAILABLE` 失败；不会回退到应用默认模型。两侧用同一套规则解析这个
+集合：启用且已配置凭据、至少配置一个模型的提供方，再排除设置页排除的全部生图
+模型（`imageGenerationModels` 候选与当前生效的 `imageGeneration` 默认合并而成）。
+
+`agent` 点名一个启用中的子代理定义（用户没有停用的内置子代理，或用户自己的文档），
+其提示词会作为角色小节随每一轮进入新会话的系统提示词；未知或已停用的句柄以
+`INVALID_ARGUMENT` 失败并列出合法句柄。角色自己声明的 `permission` 会收窄继承来
+的上限——宿主取两者中更严格的一个——而角色的工具列表从不限制该会话：它仍然是用户
+可以接手的一段对话。角色的 `thinkingLevel` 优先于 `sessionCreateModel.thinkingLevel`
+（含 `off` 与 `omit`），后者优先于继承调用方；运行时能力钳制照旧，工具参数无法覆盖
+这些设置。账本、权限上限、队列与跳数上限、来源标注与完成回调见
+[Agent 运行时 §5f.4](/zh-CN/spec/03-runtime/02-agent-runtime)；模型与角色规则见 ADR
+[session-create-model-and-role](/adr/session-create-model-and-role)。
 
 ## 学习记忆与历史召回
 

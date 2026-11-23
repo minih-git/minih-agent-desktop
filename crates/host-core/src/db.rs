@@ -7,7 +7,7 @@ pub(crate) use serde_json::Value;
 pub(crate) use std::path::{Path, PathBuf};
 
 /// Current SQLite schema version.
-pub const SCHEMA_VERSION: i64 = 44;
+pub const SCHEMA_VERSION: i64 = 45;
 
 /// Absolute approval deadline for a newly submitted Plan or Goal proposal.
 pub const PLAN_APPROVAL_TIMEOUT_MS: i64 = 30 * 60 * 1000;
@@ -31,6 +31,7 @@ mod project_path_migration;
 mod prompt_notification_migration;
 mod repositories;
 mod schema;
+mod session_agent_role_migration;
 mod session_collaboration_migration;
 mod session_origin_migration;
 mod session_title_source_migration;
@@ -73,6 +74,7 @@ pub(crate) use repositories::{
     OBSOLETE_PLAN_APPROVAL_PERMISSION_MODE,
 };
 pub(crate) use schema::{PLAN_APPROVALS_SCHEMA, SCHEMA_LATEST, SESSION_TODO_DDL};
+pub(crate) use session_agent_role_migration::{migrate_v44_to_v45_tx, SESSION_AGENT_ROLE_COLUMNS};
 pub(crate) use session_origin_migration::{migrate_v43_to_v44_tx, SESSION_ORIGIN_COLUMNS};
 pub(crate) use session_title_source_migration::migrate_v22_to_v23;
 pub(crate) use task_card_draft_migration::TASK_CARD_DRAFT_DDL;

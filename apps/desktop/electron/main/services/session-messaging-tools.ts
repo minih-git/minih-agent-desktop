@@ -241,25 +241,39 @@ export function createSessionSendTool(service: SessionCollaborationService): Loc
 /**
  * Create the Agent session a hand-off needs when no target exists yet.
  *
- * Creation is its own step: the model names the session the user will see, and
- * receives the real Session ID to address afterwards. Everything the model
- * must not choose — the sender, the project, the model, the permission mode —
- * comes from the host and the user's settings.
+ * Creation is its own step: the model names the session the user will see, may
+ * pick the model it runs on and the role it acts in, and receives the real
+ * Session ID to address afterwards. Everything the model must not choose — the
+ * sender, the project, the permission ceiling — comes from the host.
  */
 export function createSessionCreateTool(service: SessionCollaborationService): LocalToolHandler {
   return async ({ sessionId, turnId, args, signal }) => {
     const parsed = parseArgs(args, ["title"]);
     if ("rejected" in parsed) return parsed.rejected;
+    const { record } = parsed;
+    const model = stringArg(record, "model");
+    const agent = stringArg(record, "agent");
     try {
       const created = (await service.invokeBuiltin({
         sessionId,
         turnId: turnId ?? "",
         operation: "create",
-        args: { title: stringArg(parsed.record, "title") },
+        args: {
+          title: stringArg(record, "title"),
+          ...(model ? { model } : {}),
+          ...(agent ? { agent } : {}),
+        },
         signal,
-      })) as { sessionId: string; title: string };
+      })) as { sessionId: string; title: string; modelKey?: string; agentName?: string };
+      // The report states what the session actually is: the model it will spend
+      // and the role it acts in. A caller that asked for a role needs to know it
+      // took effect before it writes the brief.
+      const facts = [
+        ...(created.agentName ? [`role=${created.agentName}`] : []),
+        ...(created.modelKey ? [`model=${created.modelKey}`] : []),
+      ];
       return success(
-        `Created Agent session ${created.sessionId} titled "${created.title}". It runs no turn until you deliver to it: call SessionSend with sessionId=${created.sessionId} and the task.`,
+        `Created Agent session ${created.sessionId} titled "${created.title}"${facts.length ? ` (${facts.join("; ")})` : ""}. It runs no turn until you deliver to it: call SessionSend with sessionId=${created.sessionId} and the task.`,
       );
     } catch (error) {
       return failure(errorCodeOf(error), errorMessageOf(error));

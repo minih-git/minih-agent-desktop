@@ -222,8 +222,9 @@ mod tests {
         assert_eq!(remaining(&tx).unwrap(), 0);
         assert_eq!(version(&db), 42);
         // The step stamps 42; newer steps own the head (v43 adds the plugin
-        // capability columns and tables, v44 the session origin).
-        assert_eq!(SCHEMA_VERSION, 44);
+        // capability columns and tables, v44 the session origin, v45 the
+        // delegate role a session acts in).
+        assert_eq!(SCHEMA_VERSION, 45);
     }
 
     #[test]

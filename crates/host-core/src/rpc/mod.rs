@@ -2864,15 +2864,44 @@ async fn handle_request(
             if let Some(project) = isolated_project.as_deref() {
                 worktree_rpc::ensure_local_project(&st.db, project)?;
             }
+            // An inherited ceiling is the source session's own mode. A caller
+            // that also names a mode may only narrow it, never widen it: a
+            // role-carrying session (ADR session-create-model-and-role) inherits
+            // the dispatching session's ceiling *and* a delegate role's own
+            // narrower scope, and the row may be no wider than either.
+            // `permissionMode` on its own is still ignored without a parent —
+            // unchanged behaviour, and the desktop's RACP create applies it in a
+            // second `session.configure` call.
             let permission_mode = if let Some(parent_id) = permission_parent {
-                Some(
-                    sessions::session_permission_mode(&st.db, &parent_id)
-                        .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
-                        .ok_or_else(|| rpc_err(1007, "parent session not found", "NOT_FOUND"))?,
-                )
+                let ceiling = sessions::session_permission_mode(&st.db, &parent_id)
+                    .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
+                    .ok_or_else(|| rpc_err(1007, "parent session not found", "NOT_FOUND"))?;
+                let requested = params
+                    .get("permissionMode")
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .filter(|mode| sessions::is_valid_permission_mode(mode))
+                            .ok_or_else(|| {
+                                rpc_err(
+                                    1002,
+                                    "permissionMode must be inherit, ask, accept-edits or auto",
+                                    "INVALID_PARAMS",
+                                )
+                            })
+                    })
+                    .transpose()?;
+                Some(match requested {
+                    Some(requested) => {
+                        sessions::narrower_permission_mode(&ceiling, requested).to_string()
+                    }
+                    None => ceiling,
+                })
             } else {
                 None
             };
+            let agent_name = crate::session_agent_role::from_params(&params)
+                .map_err(|e| rpc_err(1002, e.to_string(), "INVALID_PARAMS"))?;
             let session = sessions::create_session_with_origin(
                 &st.db,
                 sessions::SessionCreateOptions {
@@ -2902,6 +2931,10 @@ async fn handle_request(
                     // ordinary create operation always makes a conversation.
                     role: None,
                     bot_profile_json: None,
+                    // The delegate role a `SessionCreate({ agent })` call named.
+                    // Already normalized here, and the runtime resolves it
+                    // against the definitions it launches with on every turn.
+                    agent_name,
                 },
                 origin,
             )
@@ -8336,6 +8369,90 @@ mod tests {
             json!({ "origin": "agent", "originTaskId": "t1" }),
             json!({ "origin": "steward" }),
             json!({ "origin": 7 }),
+        ] {
+            let refused = handle_request(state.clone(), "session.create", params, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(refused.data.unwrap()["errorCode"], "INVALID_PARAMS");
+        }
+    }
+    /// `session.create` records the delegate role a hand-off asked for, and an
+    /// inherited ceiling plus a named mode end up the stricter of the two
+    /// (ADR session-create-model-and-role).
+    #[tokio::test]
+    async fn session_create_rpc_records_the_role_and_narrows_the_ceiling() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let parent = |mode: &str| {
+            sessions::create_session_with_options(
+                &app_state.db,
+                sessions::SessionCreateOptions {
+                    title: Some("Dispatcher".into()),
+                    permission_mode: Some(mode.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .id
+        };
+        let asking_parent = parent("ask");
+        let auto_parent = parent("auto");
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let created = handle_request(
+            state.clone(),
+            "session.create",
+            json!({
+                "title": "Review this",
+                "agentName": " fixer ",
+                "inheritPermissionFromSessionId": auto_parent,
+                // Narrower than the parent: the row may be no wider than either.
+                "permissionMode": "ask",
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(created["session"]["agentName"], json!("fixer"));
+        assert_eq!(created["session"]["permissionMode"], json!("ask"));
+
+        // Asking for more than the ceiling is refused by narrowing, not granted.
+        let clamped = handle_request(
+            state.clone(),
+            "session.create",
+            json!({
+                "inheritPermissionFromSessionId": asking_parent,
+                "permissionMode": "auto",
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(clamped["session"]["permissionMode"], json!("ask"));
+        assert!(
+            clamped["session"].get("agentName").is_none(),
+            "a session that names no role carries none"
+        );
+
+        // A branch is the person's own conversation, so the parent's role is not
+        // copied (the same rule the origin follows).
+        let forked = handle_request(
+            state.clone(),
+            "session.fork",
+            json!({ "sessionId": created["session"]["id"] }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(forked["session"].get("agentName").is_none());
+
+        // A value that cannot name a definition is refused before any row exists.
+        for params in [
+            json!({ "agentName": "" }),
+            json!({ "agentName": "Code Reviewer" }),
+            json!({ "agentName": 7 }),
         ] {
             let refused = handle_request(state.clone(), "session.create", params, tx.clone())
                 .await

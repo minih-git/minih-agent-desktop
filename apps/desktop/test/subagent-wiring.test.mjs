@@ -40,7 +40,11 @@ test("every launch resolves the subagent catalog and its pinned models", () => {
     sessionLaunchSource,
     /const localInstructionRoot = remoteWorkspace \? undefined : projectPath/,
   );
-  assert.match(sessionLaunchSource, /await loadSubagentDefinitions\(localInstructionRoot, \{/);
+  // One loader answers both "what may Task delegate to" and "what role may a new
+  // session act in" (ADR session-create-model-and-role), and the launch hands it
+  // the root it resolved above.
+  assert.ok(sessionLaunchSource.includes("loadSubagentDefinitions(instructionRoot, {"));
+  assert.ok(sessionLaunchSource.includes("loadProjectSubagentCatalog(projectPath, localInstructionRoot)"));
   assert.match(
     sessionLaunchSource,
     /userDocuments: await activeUserSubagentDocuments\(projectPath\),/,

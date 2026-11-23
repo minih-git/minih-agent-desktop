@@ -43,6 +43,7 @@ async fn new_session(env: &Env, project: &Path) -> String {
             permission_mode: None,
             role: None,
             bot_profile_json: None,
+            agent_name: None,
         },
     )
     .unwrap()
@@ -268,6 +269,7 @@ fn new_session_blocking(db: &Database, project: &Path) -> String {
             permission_mode: None,
             role: None,
             bot_profile_json: None,
+            agent_name: None,
         },
     )
     .unwrap()

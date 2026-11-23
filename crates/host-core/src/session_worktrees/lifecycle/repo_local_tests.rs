@@ -54,6 +54,7 @@ async fn new_session(env: &Env) -> String {
             permission_mode: None,
             role: Some("task".into()),
             bot_profile_json: None,
+            agent_name: None,
         },
     )
     .unwrap()

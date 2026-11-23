@@ -80,6 +80,14 @@ export type SessionSummary = {
   /** The scheduled task a run transcript belongs to. */
   originTaskId?: string;
   /**
+   * The delegate role this session acts in (ADR session-create-model-and-role):
+   * a subagent definition handle that `SessionCreate({ agent })` named. The
+   * runtime adds that definition's prompt to the system prompt on every turn,
+   * and the sidebar names it in the origin tag's tooltip. Older hosts and every
+   * ordinary conversation omit it.
+   */
+  agentName?: string;
+  /**
    * Present only for an isolated session (ADR 0329): its tools run in its own
    * git worktree. Older hosts and ordinary sessions omit it.
    */

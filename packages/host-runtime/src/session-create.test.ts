@@ -143,6 +143,24 @@ describe("createHostSession", () => {
     });
   });
 
+  it("never forwards a caller-supplied role", async () => {
+    // The delegate role an AI-created session acts in is Main's to stamp
+    // (ADR session-create-model-and-role); a remote caller builds its own field
+    // list and this is the proof that `agentName` is not in it.
+    const { host, calls } = fakeHost();
+
+    await createHostSession(() => host, {
+      projectId: "7",
+      title: "Hand-off",
+      agentName: "fixer",
+    } as Parameters<typeof createHostSession>[1]);
+
+    expect(calls.find((call) => call.method === "session.create")?.params).toEqual({
+      title: "Hand-off",
+      projectPath: "/home/user/app",
+    });
+  });
+
   it("reports a Host that is not running as retriable rather than as a missing session", async () => {
     await expect(createHostSession(() => null, { projectId: "7" })).rejects.toMatchObject({
       code: "AGENT_UNAVAILABLE",

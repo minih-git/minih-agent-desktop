@@ -311,6 +311,9 @@ pub(super) fn spawn_session(
             ),
             role: request.role,
             bot_profile_json: None,
+            // A plugin worker runs with every tool the session has; it acts in
+            // no delegate role (ADR session-create-model-and-role).
+            agent_name: None,
         },
         origin,
     )

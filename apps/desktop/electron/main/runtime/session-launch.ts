@@ -254,6 +254,29 @@ export function createSessionLaunchRuntime({
     }
   }
 
+  /**
+   * The delegates a project currently offers.
+   *
+   * One reader for both questions that depend on it: what `Task` may delegate
+   * to, and which role a new session may act in (ADR
+   * session-create-model-and-role). A builtin the user switched off is dropped
+   * here, so it is neither a delegate nor a role.
+   *
+   * `instructionRoot` is the launch's local instruction root: a remote workspace
+   * has none, because project files that merely share the remote path must never
+   * be scanned on this machine. `~/.agents/subagents` itself is global, so only
+   * the user-document read is project-scoped.
+   */
+  async function loadProjectSubagentCatalog(
+    projectPath: string | undefined,
+    instructionRoot: string | undefined,
+  ) {
+    return loadSubagentDefinitions(instructionRoot, {
+      userDocuments: await activeUserSubagentDocuments(projectPath),
+      disabledBuiltins: await disabledBuiltinSubagents(),
+    });
+  }
+
   /** Built-in skill activation is host-owned and defaults on. */
   async function disabledBuiltinSkills(): Promise<string[]> {
     if (!runtimeState.host?.isAvailable()) {
@@ -526,11 +549,7 @@ export function createSessionLaunchRuntime({
     // pinned model is resolved here because credentials and the models.dev catalog
     // live on this side. The user's own definitions (D202) are scope-filtered like the
     // skills above; a delegate the model can see is one it will try to call.
-    const subagentCatalog = await loadSubagentDefinitions(localInstructionRoot, {
-      userDocuments: await activeUserSubagentDocuments(projectPath),
-      // A switched-off builtin is dropped from what this prompt may delegate to.
-      disabledBuiltins: await disabledBuiltinSubagents(),
-    });
+    const subagentCatalog = await loadProjectSubagentCatalog(projectPath, localInstructionRoot);
     // A task runs as the role that owns it (employee mode 0.5 slice 6): the
     // definition is the employee's, read through the task row, because a task
     // session has no profile of its own. A failed read is not "no persona":
@@ -801,6 +820,11 @@ export function createSessionLaunchRuntime({
             root: extension.root,
           })),
         subagents: subagentCatalog.definitions,
+        // The delegate role this session acts in (ADR
+        // session-create-model-and-role). The runtime resolves the handle against
+        // the catalog above on every turn, so deleting or switching off the
+        // definition simply stops adding the role section.
+        ...(session.agentName ? { agentRoleName: session.agentName } : {}),
         // An employee runs as its definition (ADR bot-sessions-and-steward §2):
         // the definition's prompt and its tool ceiling replace the session's
         // default capability set. A named definition that does not resolve is
@@ -826,5 +850,9 @@ export function createSessionLaunchRuntime({
     resolveEffectiveCommandShell,
     resolveRuntimeModel,
     resolveAgentRuntimeLaunch,
+    // The role catalog `SessionCreate({ agent })` validates against. Only the
+    // user-document read is project-scoped; the definition directory is global.
+    resolveSessionAgentDefinitions: async (projectPath: string | undefined) =>
+      (await loadProjectSubagentCatalog(projectPath, projectPath)).definitions,
   };
 }

@@ -134,6 +134,12 @@ type RuntimeParams = {
   /** Delegates this session may spawn through `Task` (ADR 0062). */
   subagents?: SubagentDefinition[];
   /**
+   * The delegate role this session acts in (ADR session-create-model-and-role):
+   * the definition handle Electron main read from the session row. The runtime
+   * resolves it against `subagents` on every turn.
+   */
+  agentRoleName?: string;
+  /**
    * Whether this session is a task's own (employee mode 0.5 slice 4a), so it may
    * declare `TaskReport`. Main resolves it from the session's `role`.
    */
@@ -232,6 +238,12 @@ async function runtimeFor(
     | { definition: (typeof subagents)[number]; taskSession?: boolean }
     | { missingName: string }
     | undefined;
+  // The delegate role the session row names (ADR session-create-model-and-role).
+  // Trimmed here so an empty value means "no role" rather than a failed lookup.
+  const agentRoleName =
+    typeof params.agentRoleName === "string" && params.agentRoleName.trim()
+      ? params.agentRoleName.trim()
+      : undefined;
   const subagentModelKeys = params.subagentModelKeys ?? [];
   const subagentProviders = Object.fromEntries(
     Object.entries(params.subagentProviders ?? {}).map(([key, pinned]) => [
@@ -267,6 +279,9 @@ async function runtimeFor(
     trustedExtensions,
     subagents,
     ...(botPersona ? { botPersona } : {}),
+    // Part of the reuse match: a session that gained a role must get a fresh
+    // runtime rather than keep a prompt composed without one.
+    ...(agentRoleName ? { agentRoleName } : {}),
     ...(params.taskReporter === true ? { taskReporter: true } : {}),
     subagentProviders,
     subagentModelKeys,
@@ -349,6 +364,7 @@ async function runtimeFor(
     trustedExtensions,
     subagents,
     ...(botPersona ? { botPersona } : {}),
+    ...(agentRoleName ? { agentRoleName } : {}),
     subagentProviders,
     subagentModelKeys,
     projectPath: params.projectPath,

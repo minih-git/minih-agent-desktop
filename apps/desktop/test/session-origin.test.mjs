@@ -87,6 +87,38 @@ test("the tooltip names the session that dispatched the work", () => {
   });
 });
 
+test("the tooltip also names the role an agent-created session acts in", () => {
+  // `agentName` is what makes an AI-created session behave differently from the
+  // conversation it was handed off from, so the tag says it (ADR
+  // session-create-model-and-role).
+  const roleSession = session({
+    origin: "agent",
+    originSession: { sessionId: "p", title: "Parent", available: true },
+    agentName: "fixer",
+  });
+  assert.deepEqual(originTooltip(roleSession), {
+    key: "nav.originDispatchedByRole",
+    title: "Parent",
+    role: "fixer",
+  });
+
+  const orphanedRole = session({
+    origin: "agent",
+    originSession: { sessionId: "p", title: "", available: false },
+    agentName: "fixer",
+  });
+  assert.deepEqual(originTooltip(orphanedRole), {
+    key: "nav.originDispatchedByDeletedRole",
+    role: "fixer",
+  });
+
+  // An untagged conversation never reports a role, even if a row carries one.
+  assert.deepEqual(
+    originTooltip(session({ origin: "user", agentName: "fixer" })),
+    { key: "nav.originUser" },
+  );
+});
+
 test("a missing, malformed, or empty filter selects every origin", () => {
   assert.deepEqual(normalizeOrigins(undefined), [...SESSION_ORIGINS]);
   assert.deepEqual(normalizeOrigins("agent"), [...SESSION_ORIGINS]);
@@ -209,6 +241,13 @@ test("a renderer payload cannot carry a provenance key into the host", () => {
   assert.deepEqual(
     withoutSessionOrigin({ originSessionId: "s", originTaskId: "t", projectId: "3" }),
     { projectId: "3" },
+  );
+  // The delegate role is the same kind of host-side decision: a page cannot put
+  // a role's prompt into a session by asking for one (ADR
+  // session-create-model-and-role).
+  assert.deepEqual(
+    withoutSessionOrigin({ title: "Fix", agentName: "fixer", projectPath: "/repo" }),
+    { title: "Fix", projectPath: "/repo" },
   );
   // The original object is untouched: the caller's own reference is not mutated.
   assert.equal(input.origin, "agent");

@@ -1,4 +1,4 @@
-# 04. 数据存储（架构 v43）
+# 04. 数据存储（架构 v45）
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/03-runtime/04-data-storage) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
@@ -421,6 +421,17 @@ CREATE TABLE sessions (
   source      TEXT,                            -- import origin: claude-code | codex | opencode | pi
   deleted_at  INTEGER,                         -- plugin trash marker; null means active
   pinned      INTEGER NOT NULL DEFAULT 0,
+  -- 会话来源（架构 v44，ADR persisted-session-origin）。`user` 是用户自己打开的
+  -- 会话；其余四种记录创建者，侧栏据此打标。存列而不推导，是因为可推导的来源
+  -- 都会被裁剪。
+  origin      TEXT NOT NULL DEFAULT 'user'
+              CHECK (origin IN ('user', 'agent', 'plugin', 'task', 'scheduled')),
+  origin_session_id TEXT,                      -- 创建本会话的会话
+  origin_task_id    TEXT,                      -- 定时任务运行转录所属的任务
+  -- 本会话扮演的委派角色（架构 v45，ADR session-create-model-and-role）。
+  -- 一个子代理定义句柄，仅由 Electron 主进程在 `SessionCreate({ agent })` 指定时
+  -- 写入；运行时每轮把它变成系统提示词里的一节。NULL 表示没有角色。
+  agent_name  TEXT,
   last_seq    INTEGER NOT NULL DEFAULT 0,      -- message ordinal allocator
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
@@ -1030,6 +1041,22 @@ CREATE TABLE plugin_tcp_usage (
   卸载时删除 TCP 用量行；启动期孤儿对账留待后续，在插件注册表能可靠报告加载
   成功后再实现，绝不能把空或不可读的注册表当作插件已删除的证据。
 
+### 4.19f sessions — 会话扮演的委派角色（架构 v45，ADR session-create-model-and-role）
+
+一个可空列，用 `ALTER TABLE` 在自己的步骤里添加，列存在之后才写入 `user_version`，
+因此迁移是增量且幂等的：
+
+```sql
+ALTER TABLE sessions ADD COLUMN agent_name TEXT;
+```
+
+- 它保存一个子代理定义句柄，且只有 Electron 主进程会写入：内置 `SessionCreate`
+  工具记录自己申请的角色，渲染进程的 IPC 处理器会和 origin 列一样丢掉这个键。
+- 没有回填。旧版本从不记录角色，从任务的员工定义或插件的父会话推导，等于替一个
+  会话宣称某个没人给它选的角色。
+- 只读不改。定义后来被删除或被停用，句柄仍留在行里：运行时不再追加提示词小节，
+  侧栏气泡仍然写着那个角色。
+- `session.fork` 不复制它：分支是用户自己的会话，与 origin 同一条规则。
 ### 4.7 messages — 转录索引
 
 脚本本身是每个会话的 JSONL 文件（第 2.1 节）；这张表是它的

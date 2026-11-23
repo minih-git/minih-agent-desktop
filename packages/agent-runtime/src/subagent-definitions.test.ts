@@ -68,6 +68,13 @@ describe("builtin subagent documents", () => {
     const designer = definitions.find((definition) => definition.name === "ui-designer")!;
     expect(designer.tools).toContain("BrowserPreview");
     expect("maxTurns" in designer).toBe(false);
+    // The Settings editor's presets and the shipped documents describe the same
+    // delegate, so they agree on every builtin — capability prose lives in the
+    // generated catalog, not in two hand-written copies (ADR
+    // session-create-model-and-role).
+    for (const definition of definitions) {
+      expect(definition.description).toBe(findSubagentPreset(definition.name)?.description);
+    }
     expect(designer.description).toBe(findSubagentPreset("ui-designer")?.description);
     expect(designer.prompt).toBe(findSubagentPreset("ui-designer")?.body.trim());
   });

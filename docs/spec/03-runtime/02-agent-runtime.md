@@ -1564,27 +1564,53 @@ to existing sessions; both kinds start or queue the target turn, and the kind
 only frames intent. `SessionResult` reports deliveries the calling session made,
 never another sender's. Cancelling another sender's delivery stays plugin-only.
 
-#### 5f.4a Session creation (D672)
+#### 5f.4a Session creation, model and role
 
-`SessionCreate({ title })` creates one ordinary Agent-mode session and returns
-its Session ID; the delivery follows as a separate `SessionSend`, so creation
-never starts a turn, sends content, or spends quota on its own. The session runs
-on `settings.sessionCreateModel` — a provider/model binding the user selects in
-Models settings — and inherits the sending session's project and permission
-mode. The optional `sessionCreateModel.thinkingLevel` overrides the source
-session's thinking level, including explicit `off` and `omit`; when absent or
-null, the source session's level is inherited as before. This value comes only
-from settings, never from tool arguments. The existing runtime capability
-clamping still applies. While that setting is unset the tool fails with
-`MODEL_NOT_CONFIGURED`; while the binding is not one the settings row offers, it
-fails with `MODEL_UNAVAILABLE`. Both sides resolve that offer list the same way:
-a provider that is enabled, credentialed and configuring at least one model,
-minus every image model the settings page excludes — the stored
-`imageGenerationModels` candidates merged with the active `imageGeneration`
-default through the shared image helper. A pairing the row shows as
-currently unavailable therefore never creates a session. There is no fallback to
-the app default model. Only the title (1–80 characters) comes from the call: the
-model, project, permission mode and sender are all host- or settings-derived.
+`SessionCreate({ title, model?, agent? })` creates one ordinary Agent-mode
+session and returns its Session ID; the delivery follows as a separate
+`SessionSend`, so creation never starts a turn, sends content, or spends quota
+on its own. Only those three arguments come from the call: the sender, project
+and permission ceiling are host-derived.
+
+**The model.** Priority is `model` → the named role's own pin →
+`settings.sessionCreateModel` → `MODEL_NOT_CONFIGURED`. `model` must name a
+model the user enabled for AI delegation — the same `availableForSubagents` set
+`Task.model` obeys, refused by Main before any session exists. Three keys are
+not an override: the named role's own default, the exact model the dispatching
+session already runs on, and the session-creation model the user configured.
+Omitting both arguments reproduces the earlier behaviour exactly: the session
+runs on `sessionCreateModel`. While that setting is unset the tool fails with
+`MODEL_NOT_CONFIGURED`; while the pairing is not one the settings row offers
+(a provider that is enabled, credentialed and configuring at least one model,
+minus every image model the settings page excludes through the shared image
+helper), it fails with `MODEL_UNAVAILABLE`. There is no fallback to the app
+default model.
+
+**The role.** `agent` must name an enabled subagent definition — a builtin the
+user has not switched off (ADR 0270) or one of their own documents — and the new
+session stores that handle in `sessions.agent_name`. Every turn then resolves the
+handle against the definitions the launch carries and appends that definition's
+prompt as a role section of the system prompt; a handle that no longer resolves
+removes the section and reports one `agent_role_missing` diagnostic instead of
+failing the turn. The role narrows nothing: unlike an employee's persona it does
+not touch the tool catalog, because the created session is a conversation its
+person can take over. An unknown or switched-off handle fails with
+`INVALID_ARGUMENT` naming the handles that are valid.
+
+**Thinking and permission.** The thinking level is the role's
+`thinkingLevel`, then `sessionCreateModel.thinkingLevel` (including explicit
+`off` and `omit`), then the source session's level; runtime capability clamping
+still applies. The session inherits the sending session's permission ceiling
+(`inheritPermissionFromSessionId`) and is further narrowed by a role that
+declares its own `permission` — the host keeps the stricter of the two, so a
+created session is never wider than either.
+
+**One catalog, two tools.** `Task` and `SessionCreate` print the same generated
+delegate catalog (name, one-line purpose, capability columns derived from each
+definition's own tools, default model) and the same decision rule for choosing
+between delegation and a hand-off, so the two descriptions cannot drift. The
+capability prose the builtin descriptions used to carry by hand is gone: the
+table states it.
 
 Creation is `session.create`, so the new session is an ordinary session with no
 collaboration link and no plugin ownership. It appears in the session list, can
@@ -1593,9 +1619,9 @@ sessions under the same gate. Autonomous fan-out stays bounded by the delivery
 path: a created session does no work until a delivery arrives, and every
 delivery spends the hop budget and the eight-delivery inbox. Creation is not
 capped per turn — the approval card in Ask mode, or the user's Auto setting, is
-what governs how many sessions one turn may add. See ADR
-[session-create-tool](../../adr/session-create-tool.md).
-
+what governs how many sessions one turn may add. See ADRs
+[session-create-tool](../../adr/session-create-tool.md) and
+[session-create-model-and-role](../../adr/session-create-model-and-role.md).
 ## 6. Providers & models
 
 > Full policy: `11-provider-model-system.md`, `12-provider-config-schema.md`, `13-model-catalog-and-selection.md`.

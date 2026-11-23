@@ -199,6 +199,9 @@ fn handle_with_workspace_policy(
                 // An automation transcript is an ordinary session, never a bot.
                 role: None,
                 bot_profile_json: None,
+                // A task session acts as the employee's persona, which is
+                // resolved per launch; it carries no `SessionCreate` role.
+                agent_name: None,
             };
             // A `reuse` task continues its own previous conversation, but only
             // while that conversation still exists and still belongs to the same

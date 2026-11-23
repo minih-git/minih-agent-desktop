@@ -53,6 +53,12 @@ const collaboration = load("../electron/main/services/session-collaboration.ts",
   "@minih-agent/shared": shared,
   "../agent-host-bridge": {},
   "../plugin-agent-complete": {},
+  // Only the built-in `create` operation reaches it, which these tests never take.
+  "./session-create-target": {
+    resolveSessionCreateTarget() {
+      throw new Error("session create is not part of this test");
+    },
+  },
   "./task-status": taskStatus,
 });
 const { registerSessionIpc } = load("../electron/main/ipc/session-ipc.ts", {

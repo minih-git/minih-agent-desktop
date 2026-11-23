@@ -65,22 +65,41 @@ export function originLabelKey(origin: SessionOrigin): string | null {
 }
 
 /**
- * The tooltip key and its one interpolation.
+ * The tooltip key and its interpolations.
  *
  * A creator session that no longer exists keeps its tag but loses its title, so
- * the wording has to say so instead of showing an empty pair of quotes.
+ * the wording has to say so instead of showing an empty pair of quotes. A
+ * session the Agent created for a role also names that role (ADR
+ * session-create-model-and-role): `fixer` is what the person sees when the new
+ * session's behaviour surprises them, and the tag is where it belongs.
  */
-export function originTooltip(session: Pick<SessionSummary, "origin" | "originSession" | "originTaskId" | "title">): {
+export function originTooltip(
+  session: Pick<
+    SessionSummary,
+    "origin" | "originSession" | "originTaskId" | "title" | "agentName"
+  >,
+): {
   key: string;
   title?: string;
+  role?: string;
 } {
   switch (sessionOrigin(session)) {
     case "agent":
     case "plugin":
     case "task": {
       const source = session.originSession;
-      if (!source || !source.available || !source.title) return { key: "nav.originDispatchedByDeleted" };
-      return { key: "nav.originDispatchedBy", title: source.title };
+      const role = session.agentName?.trim() || undefined;
+      const reachable = Boolean(source && source.available && source.title);
+      if (!reachable) {
+        return role
+          ? { key: "nav.originDispatchedByDeletedRole", role }
+          : { key: "nav.originDispatchedByDeleted" };
+      }
+      return {
+        key: role ? "nav.originDispatchedByRole" : "nav.originDispatchedBy",
+        title: source!.title,
+        ...(role ? { role } : {}),
+      };
     }
     // A run names its task rather than a session; its own title is the task's
     // title, because `scheduled.run` creates the transcript with it.
