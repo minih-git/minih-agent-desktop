@@ -602,6 +602,30 @@ OpenAI Responses 适配器会把 `response.completed` 和
 终态事件之后也不会继续挂起本轮请求。pi-ai 1.0.0 已包含这项上游修复；
 1.0.0 hosted-search 补丁不再重复应用旧 0.99.1 终态事件代码。
 
+### 16.2 Minih Router 请求体压缩
+
+Minih Router 行的请求体在离开 runtime 之前先压缩。每轮都会重发整段会话，而
+Router 的数据面会解码 `Content-Encoding: identity | gzip | br | deflate | zstd`
+（自 0c33cd4a 起）并转发解码后的字节，因此厂商收到的字节与之前完全一致，提示词
+缓存不受影响；变化的只是线上表示。
+
+- 范围仅限 `vendorKey` 为 `minih-router` 的行。直连厂商的行保持适配器产出的
+  原始字节；Google 适配器完全接受不了调用方提供的 `fetch`
+  （`adapterAcceptsCustomFetch`），因此不在压缩范围内。
+- 压缩对象是适配器已经序列化好的字节，绝不解析、重新序列化或改写，逐字节回放与
+  keep-warm 前缀因此保持不变，且原始请求体仍可用于重发。
+- 设置 `Content-Encoding`，去掉过期的 `Content-Length`。小于 1 KiB 的请求体、
+  压缩后不会变小的请求体、以及自己已经声明了编码的请求，一律原样发送。
+- 优先 zstd；运行中的 Node 没有 zstd 编码器（`zlib.zstdCompress`，Node
+  22.15+/23.8+）时用 gzip。zstd 窗口固定在该 Router 8 MiB 解码上限以内，任何
+  体积的请求体都不会变成解码失败。
+- 压缩是最外层的 `fetch` 包装：端点回退（EasyTier 隧道 → 公网地址）与 provider
+  重试重发的是同一份已编码字节，后续包装不会再次编码。
+- 早于内容编码支持的网关会返回 `415` 并给出 `Accept-Encoding` 提示。runtime
+  用未压缩的原始请求重发这一次，并在本进程内对该 origin 关闭压缩；日志只记
+  origin，不含凭据。其他状态码原样返回。
+- 失败诊断仍上报 `requestBytes`；对这类行它是实际发送的字节数。
+
 ## 17. 多提供商产品规则
 
 1. 允许多个提供商具有相同的供应商密钥（例如两个 OpenRouter 帐户）。

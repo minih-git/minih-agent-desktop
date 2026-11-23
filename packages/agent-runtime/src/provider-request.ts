@@ -143,6 +143,7 @@ export function assembleProviderRequest(
             state: input.endpointFallbackState,
             ...(input.onTunnelFailure ? { onTunnelFailure: input.onTunnelFailure } : {}),
           },
+          input.provider,
         ),
         ...(input.onResponseSeen
           ? {

@@ -43,6 +43,7 @@ import {
   type ThinkingLevel,
 } from "@minih-agent/shared";
 import { genericModelConfig } from "./model-capabilities.js";
+import { withRouterRequestCompression } from "./router-request-compression.js";
 import { sessionAffinityCompat } from "./session-affinity.js";
 import type { ModelConfig } from "./thinking-level.js";
 
@@ -540,12 +541,19 @@ function describeEndpointFailure(error: unknown): string {
  * wrapper (response capture, header override); this only decides whether it
  * reaches the adapter. No-auth requests also strip pi-ai's required placeholder
  * credential before the request leaves the runtime.
+ *
+ * `provider` is the row the request is signed for. Only its vendor identity is
+ * read here: a Minih Router row's gateway decodes a compressed request body
+ * itself, which is worth the several-times smaller upload of a whole
+ * conversation, while a direct vendor row has no such contract and keeps the
+ * bytes its adapter produced.
  */
 export function providerRequestFetch(
   api: Api | undefined,
   fetchFn: FetchFunction | undefined,
   authKind?: string,
   endpointFallback?: ProviderEndpointFallback,
+  provider?: Pick<RuntimeProviderConfig, "vendorKey">,
 ): FetchFunction | undefined {
   if (!adapterAcceptsCustomFetch(api)) return undefined;
   const hasFallback = Boolean(
@@ -554,7 +562,8 @@ export function providerRequestFetch(
       endpointFallback.primaryBaseUrl.trim().replace(/\/+$/, "") !==
         endpointFallback.fallbackBaseUrl.trim().replace(/\/+$/, ""),
   );
-  if (authKind !== "none" && !hasFallback) return fetchFn;
+  const compressesForRouter = isMinihRouterVendorKey(provider?.vendorKey);
+  if (authKind !== "none" && !hasFallback && !compressesForRouter) return fetchFn;
   let wrapped: FetchFunction = fetchFn ?? globalThis.fetch.bind(globalThis);
   if (hasFallback) {
     wrapped = withEndpointFallback(
@@ -568,6 +577,11 @@ export function providerRequestFetch(
   }
   if (authKind === "none") {
     wrapped = withoutNoAuthCredential(wrapped);
+  }
+  if (compressesForRouter) {
+    // Outermost: the body is encoded once every other wrapper has finished with
+    // the request, so a re-send down this chain repeats the same bytes.
+    wrapped = withRouterRequestCompression(wrapped);
   }
   return wrapped;
 }

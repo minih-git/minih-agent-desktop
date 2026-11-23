@@ -735,6 +735,37 @@ the TCP connection open cannot hold the turn after the final event. Pi-ai
 1.0.0 includes this upstream fix. The 1.0.0 hosted-search patch does not need to
 reapply the old 0.99.1 terminal-event hunk.
 
+### 16.2 Minih Router request-body compression
+
+A Minih Router row's request body is compressed before the request leaves the
+runtime. Every round of a turn re-sends the whole conversation, while the
+Router's data plane decodes `Content-Encoding: identity | gzip | br | deflate |
+zstd` (since 0c33cd4a) and forwards the decoded bytes, so the vendor receives
+exactly the bytes it received before and its prompt cache is unaffected. Only
+the representation on the wire changes.
+
+- Scope is the `minih-router` `vendorKey` row. A direct vendor row keeps the
+  bytes its adapter produced, and the Google adapters are excluded because they
+  accept no caller-supplied `fetch` at all (`adapterAcceptsCustomFetch`).
+- The body is the bytes the adapter already serialized: never parsed,
+  re-serialized or edited. Byte-identical replay and keep-warm prefixes hold,
+  and the original body stays available for a re-send.
+- `Content-Encoding` is set and a stale `Content-Length` is dropped. A body
+  below 1 KiB, a body that would not shrink, and a request that already names
+  its own coding are sent unchanged.
+- zstd is preferred; gzip is used when the running Node has no zstd encoder
+  (`zlib.zstdCompress`, Node 22.15+/23.8+). The zstd window is pinned below the
+  Router's 8 MiB decoder limit, so no body size can become a decode failure.
+- Compression is the outermost `fetch` wrapper, so the endpoint fallback
+  (EasyTier tunnel → public address) and provider retries re-send the same
+  encoded bytes, and no later wrapper encodes them again.
+- A gateway from before content coding answers `415` with its `Accept-Encoding`
+  hint. The runtime re-sends that one request uncompressed and stops compressing
+  for that origin for the rest of the process, logging the origin without
+  credentials. Every other status is returned unchanged.
+- Failure diagnostics keep reporting `requestBytes`; for these rows it is the
+  size actually sent.
+
 ## 17. Multi-provider product rules
 
 1. Multiple providers of the same `vendorKey` are allowed and independent (for
