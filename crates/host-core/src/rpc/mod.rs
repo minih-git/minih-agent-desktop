@@ -1011,6 +1011,18 @@ fn normalize_settings_value(mut value: Value) -> Value {
         if unusable_template {
             object.remove(template_field);
         }
+        // `follow_current` and `previous_on_switch` name no binding, so a
+        // leftover id from an earlier `specific` choice is dropped instead of
+        // sitting in the store where nothing reads it.
+        if let Some(setting) = object.get("compactionModel").cloned() {
+            let mode = setting.get("mode").and_then(Value::as_str);
+            if matches!(mode, Some("follow_current") | Some("previous_on_switch")) {
+                let mut cleaned = setting.as_object().cloned().unwrap_or_default();
+                cleaned.remove("providerId");
+                cleaned.remove("modelId");
+                object.insert("compactionModel".into(), Value::Object(cleaned));
+            }
+        }
     }
     value
 }
@@ -1145,6 +1157,37 @@ fn validate_settings_value(value: &Value) -> Result<(), JsonRpcError> {
             }
         }
         thinking_level_param(binding)?;
+    }
+    // Which model summarizes context. Shape only, like the session-create
+    // binding above: whether that provider still resolves is decided when a
+    // compaction actually asks for it, so a disabled provider stays a state the
+    // user repairs in Settings instead of an invalid stored preference.
+    if let Some(setting) = object.get("compactionModel").filter(|v| !v.is_null()) {
+        match setting.get("mode").and_then(Value::as_str) {
+            Some("follow_current") | Some("previous_on_switch") => {}
+            Some("specific") => {
+                for (key, max) in [("providerId", 128), ("modelId", 256)] {
+                    if !setting
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .is_some_and(|s| !s.trim().is_empty() && s.len() <= max)
+                    {
+                        return Err(rpc_err(
+                            1002,
+                            "invalid compaction model binding",
+                            "INVALID_PARAMS",
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(rpc_err(
+                    1002,
+                    "compactionModel.mode must be follow_current, previous_on_switch, or specific",
+                    "INVALID_PARAMS",
+                ))
+            }
+        }
     }
     if let Some(binding) = object.get("imageGeneration").filter(|v| !v.is_null()) {
         for (key, max) in [("providerId", 128), ("modelId", 256)] {
@@ -9369,6 +9412,82 @@ mod tests {
             json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1", "thinkingLevel": 7 } }),
             json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1", "thinkingLevel": true } }),
             json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1", "thinkingLevel": "" } }),
+        ] {
+            let error = handle_request(state.clone(), "settings.set", invalid, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.data.unwrap()["errorCode"], "INVALID_PARAMS");
+        }
+    }
+
+    #[tokio::test]
+    async fn compaction_model_setting_roundtrips_and_validates_shape() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        // No provider row is required: the setting only has to carry a shape a
+        // compaction can resolve when it needs the summary model.
+        for mode in ["follow_current", "previous_on_switch"] {
+            handle_request(
+                state.clone(),
+                "settings.set",
+                json!({ "compactionModel": {
+                    "mode": mode, "providerId": "p1", "modelId": "m1"
+                } }),
+                tx.clone(),
+            )
+            .await
+            .unwrap();
+            let stored = handle_request(state.clone(), "settings.get", json!({}), tx.clone())
+                .await
+                .unwrap();
+            assert_eq!(stored["compactionModel"]["mode"], mode);
+            // A mode that names no binding keeps no stale id.
+            assert!(stored["compactionModel"].get("providerId").is_none());
+            assert!(stored["compactionModel"].get("modelId").is_none());
+        }
+
+        handle_request(
+            state.clone(),
+            "settings.set",
+            json!({ "compactionModel": {
+                "mode": "specific", "providerId": "p1", "modelId": "m1"
+            } }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let stored = handle_request(state.clone(), "settings.get", json!({}), tx.clone())
+            .await
+            .unwrap();
+        assert_eq!(stored["compactionModel"]["mode"], "specific");
+        assert_eq!(stored["compactionModel"]["providerId"], "p1");
+        assert_eq!(stored["compactionModel"]["modelId"], "m1");
+
+        // Clearing the setting is the documented way back to `follow_current`.
+        handle_request(
+            state.clone(),
+            "settings.set",
+            json!({ "compactionModel": null }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let cleared = handle_request(state.clone(), "settings.get", json!({}), tx.clone())
+            .await
+            .unwrap();
+        assert!(cleared["compactionModel"].is_null());
+
+        for invalid in [
+            json!({ "compactionModel": { "mode": "specific", "providerId": "", "modelId": "m1" } }),
+            json!({ "compactionModel": { "mode": "specific", "providerId": "p1" } }),
+            json!({ "compactionModel": { "mode": "specific", "providerId": "p1", "modelId": 7 } }),
+            json!({ "compactionModel": { "mode": "rollover" } }),
+            json!({ "compactionModel": {} }),
+            json!({ "compactionModel": "specific" }),
         ] {
             let error = handle_request(state.clone(), "settings.set", invalid, tx.clone())
                 .await

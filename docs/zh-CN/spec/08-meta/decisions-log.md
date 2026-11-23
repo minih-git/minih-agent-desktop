@@ -13,6 +13,8 @@
 
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
+| D691 | 摘要模型成为一个设置项 | **新增 `settings.compactionModel`，三种模式：`follow_current`（缺省即此，行为与之前完全一致）、`previous_on_switch`、`specific`。`specific` 对每种压缩原因都用选定的 `providerId`/`modelId` 生成摘要；`previous_on_switch` 只用于 `model_switch` 触发的 checkpoint，并用转录记录的产生被替换上下文的那个模型，其他原因仍用对话模型。选择结果等于对话模型时走原有路径。运行时用纯函数（`compaction-model.ts`）决定绑定，再通过反向 RPC（`provider.resolveCompactionModel`）向嵌入宿主解析传输与凭据，宿主只接受用户配置的绑定或本会话真实运行过的模型；凭据不进入事件、提示词、日志或 checkpoint。对话模型与 checkpoint 的 `providerId`/`modelId` 保持不变，因此 `previousModelSince` 不会把摘要模型误认为塑造上下文的模型；摘要模型记录在 `details.summaryModel` 中并通过压缩标记暴露。摘要模型不可用（提供商行已删除、凭据缺失、回复没有摘要文本）时回退到对话模型，并把原因写入 checkpoint 与 `compaction_summary_model` 诊断——绝不静默。摘要输入上限、输出预算、请求预留与分块规划都按摘要模型的窗口计算。`previous_on_switch` 复用上一个模型的缓存：摘要请求逐字节重放该模型收到的转录（系统提示词与工具声明在其首条 system 消息里），只追加摘要指令，沿用该模型的缓存身份与提供商默认保留策略，并禁止使用工具（`tool_choice: none`，并对回复做工具调用检查）；历史超出该模型窗口时退回序列化分块路径。host-core 校验设置形状并清理不再使用的绑定；不改 schema、迁移或 IPC 形状。** | 切换模型时，即将离开的模型恰好对摘要要读的历史保有热缓存，用它写摘要能把切换中最贵的一次请求变成最便宜的一次；其他压缩则用一个便宜的模型更划算。把对话模型保留为记录身份以维持 `previousModelSince`，把回退原因暴露出来则让被删账户或失效凭据可见，而不是看起来像缺省设置。 |
+
 | D690 | 切换模型后不再发送上一个模型的推理 | **provider 请求投影会在 pi-ai 的 `transformMessages` 把跨模型 thinking 块转成普通 text 之前，丢弃已完成轮次里 `providerId`/`modelId` 与本次请求绑定不同的 assistant 消息中的 `thinking` 块。已完成的轮次指最新用户消息之前的全部消息；进行中的轮次、同模型轮次、同模型轮次上的 `redacted` thinking，以及重放的保留推理 assistant（投影前已对齐实时身份）都保持原样。只做投影：转录、转录界面与 checkpoint 保留原有块，上下文预算估算的也是同一投影，因此 D669 的切换下限与 90% 触发点按请求实际携带的内容计算。丢弃后已无内容的 assistant 整条移除而不是留空，所以不会出现悬空的调用/结果配对。另外，摘要输入的序列化把每条 `[Assistant thinking]` 文本截断到 2 000 字符（与工具结果一致），`estimateSummaryPromptTokens` 也按同一截断文本估算。严格的 Completions 中转仍靠 pi-ai 既有的回填满足"全有或全无"的推理字段规则，填入的是文档化占位符而不是旧模型的推理。不改宿主 schema、迁移、IPC、设置或 checkpoint 结构。** | pi-ai 把跨模型 thinking 转成 `text` 而不是丢弃，新模型于是把上一个模型的推理当成自己的回答来读，并在本就冷掉的缓存上为每个 token 付费；已完成轮次的推理并不比它的回答、工具调用和工具结果多说任何东西。给摘要输入的思考文本设上限，可避免摘要请求把窗口大量花在摘要用不上的推理上。 |
 | D689 | 移除内置 Super Agent 层 | **删掉宿主为自己创建的那名管家，保留它下面的全部员工能力。删除项：`steward` 子代理定义及其提示词块、`STEWARD_ONLY_TOOLS`、`TaskCard` / `Roster` / `TaskStatus` 本地工具、整套 `taskCard.*` RPC 及其 IPC 处理与事件、`bot.roster`、`bot.seedDefaults`、共享任务卡编解码与渲染层 task-card / steward-name 模块、任务卡坞与管家坞、侧栏"待开工卡片"计数，以及招聘页的"启用 Super Agent"。保留且行为不变：bot 会话与 `bot_profile_json`、冻结在投递上的 Mandate 与 `session.collaboration.mandate`、`tasks.origin` 的 `('steward', 'direct')` CHECK 与历史行原值、阶段词汇、等你通道、阻塞卡与完成卡、接受并合并、接力链、员工经验、`SessionSend/Result/List/Create`、团队规范与每轮任务简报。缺口处理：`task.reassign` 不再在管家会话上拟卡，而是在所选员工处新建一个 `origin = direct` 任务并带上原目标与同一仓库，由 Main 起第一轮，原任务保持原样且不归档；全新安装员工数为 0，只有招聘区；stage、interrupted 与巡检通知改投通知中心（`task.failed` 行携带 `TASK_FAILED` / `TASK_BLOCKED` / `TASK_INTERRUPTED`，巡检为 `TASK_ANSWER_WAIT` / `TASK_ACCEPT_WAIT` / `TASK_STUCK` / `TASK_RUNNING_LONG`），恰好一次的键不变；`SessionSend` 的描述不再提管家。架构 v42 是对 `sessions` 的一条 UPDATE：`bot_profile_json.definition = 'steward'` 的行只去掉该键，name、duty、role、权限模式、转录与记忆全部保留，会话绝不删除；不重建任何表，只拒绝新增的外键违例，最后写入 `user_version = 42`。`task_card_drafts` 留在迁移链上但不再写入；`bot-persona` 的 `steward` → `none` 兼容判断保留到迁移之后。Super Agent 将在后续改动中以插件形式回归。见 ADR bot-sessions-and-steward 的"移除内置 Super Agent 层"。** | 管家是宿主唯一自建、且用户无法关掉的员工，因此无法跟随产品自身的修订；而一个驱动同样宿主表面的插件，能在受审查的权限边界内达成同一目标。把它作为一层移除，员工会话、任务与授权模型原样保留，代价是一名被删的派活者和四条被补上的路径，而不是重写员工模式。 |
 | D688 | 学习记忆自行整理 | **新增 `learnedMemory.curate`：本设备开关，默认关闭，且必须先有 `learnedMemory.model` 才能打开；打开后抽取出的候选直接生效（`suggested` → `active`，`origin` 仍为 `extracted`），不再等待建议箱，同时后台整理按作用域合并近似重复的笔记、用较新的一条替换被它否定的旧笔记，并改写抽取笔记的措辞。自动路径的删除一律是归档（`archived` + `superseded_by`），从不写入或清除屏蔽记录；用户亲手写过（`explicit` / `user_ui`）的笔记措辞永远不被改写，但它仍可作为合并或替换的目标。所有护栏都由宿主在事务内强制：单次上限为 `min(8, max(1, 该作用域活跃笔记的 20%))`、用户 30 天静默窗口、合并结果沿用同样的写入规则（1 KiB、凭据检测、屏蔽记录、来源取并集）、逐目标 `revision` 校验（任一不符则整条作废）、以及被撤销过的目标集合不再被提出。每次改动都在同一事务写入 `memory_revisions`，撤销以批次为单位——激活的撤销等同建议箱里的放弃，合并或替换的撤销还原目标，改写的撤销还原措辞；期间笔记被动过则返回 `MEMORY_UNDO_CONFLICT` 且不写入任何内容。脏作用域租约保证每个作用域每个本地日只跑一次，且在应用空闲十分钟、没有任何会话跑轮次之后。宿主架构 v41 新增 `memory_revisions`、`memory_curation_state`、`memory_curation_rejections`；同步格式、读取路径以及开关关闭时的行为都不变。取代 2026-10-19 的提议-复核设计，其逐条复核队列不再保留。员工经验的 `bot` 作用域不在本功能范围内：宿主在每个入口拒绝该作用域，脏标记跳过它。见 ADR learned-memory-consolidation、ADR agent-long-term-memory §4/§8 的 D688 修订，以及 E2E-MEMORY-auto-curation-applies-and-undoes。** | 建议箱让用户手工打理记忆，与学习记忆的目的相反，而早先的设计又用另一条队列回答同一个问题。归档本身可恢复、每次改动都带原因记录、撤销一键完成，因此建议箱提供的保护在事后同样可得，而每次整理的代价被上限与每日一次限制住。旧版应用无法打开迁移后的数据库，与每次架构升级相同。 |
@@ -5906,3 +5908,37 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 - 见 `03-runtime/02-agent-runtime.md` §5c 与其中的压缩小节，以及
   `packages/agent-runtime/src/cross-model-thinking.test.ts`、
   `runtime-cross-model-thinking.test.ts` 与 `pi-runtime-messages.test.ts`。
+
+## 2026-11-17 — 负责写摘要的模型成为可选项（D691）
+
+- 压缩一直用会话自己的模型写摘要。这在两处都不合适：切换模型时，上一个模型恰好对
+  摘要要读的历史保有热缓存；而其他压缩用便宜的模型效果一样好。
+- `settings.compactionModel` 增加三种模式。`follow_current` 是缺省值（不是设置项
+  时即为此），请求与现在完全一致；`specific` 让所有压缩原因都用同一个
+  provider/model；`previous_on_switch` 只作用于模型切换触发的 checkpoint，并使用
+  转录记录的产生被替换上下文的那个模型。
+- 运行时只根据设置决定绑定（`compaction-model.ts` 的
+  `compactionSummaryBinding`），再通过嵌入宿主（`provider.resolveCompactionModel`）
+  解析传输与凭据；宿主只为用户配置的绑定或本会话真实运行过的模型作答。凭据不会进入
+  事件、提示词、日志或 checkpoint。
+- 对话模型保留 checkpoint 记录的所有身份：`providerId`/`modelId` 仍是会话模型，
+  因此 `previousModelSince` 不会把摘要模型当成塑造上下文的模型，第二次切换压缩的
+  条件与之前相同。哪个模型写了摘要记录在不透明的 `details.summaryModel` 中，并通过
+  压缩标记到达转录行。
+- 摘要模型不可用——提供商行被删除、凭据缺失，或回复没有摘要文本——时回退到对话
+  模型。回退记录在 checkpoint 上（`summaryModel.fallback` 与被请求的绑定），并输出
+  `compaction_summary_model` 诊断，因此不会看起来像 `follow_current`。
+- 预检输入上限、输出预算、请求预留与分块规划都按摘要模型的窗口计算，小窗口摘要模型
+  不会被塞进按对话窗口尺寸准备的提示词。
+- `previous_on_switch` 复用上一个模型的缓存：摘要请求重放该模型收到的转录（系统
+  提示词与工具声明在其首条 system 消息中），只追加摘要指令，沿用其缓存身份与提供商
+  默认保留策略，并禁止使用工具（`tool_choice: none`，同时对回复做工具调用检查）。
+  历史超出该模型窗口或无法重建前缀时，退回序列化与分块路径。真实的缓存命中测量属于
+  付费提供商验证，不在本次改动范围内。
+- host-core 校验设置形状（模式取值，以及 `specific` 下非空且有长度上限的
+  `providerId`/`modelId`），并清理其他模式遗留的绑定；不需要 schema 或迁移：设置以
+  单个 JSON 值保存，旧版本会忽略该字段。
+- 见 `03-runtime/02-agent-runtime.md`（“Summary model”一节）、设置 IA 规格，以及
+  `packages/agent-runtime/src/compaction-model.test.ts`、
+  `runtime-compaction-model.test.ts`、`packages/shared/src/context-compaction.test.ts`
+  与 host-core 的 `compaction_model_setting_roundtrips_and_validates_shape` 测试。

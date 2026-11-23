@@ -1254,6 +1254,20 @@ export const ptBR = {
     sessionCreateModelHint: "Modelo com que o Agent executa as sessões que ele mesmo cria. Enquanto não estiver configurado, o Agent não pode criar sessões.",
     sessionCreateModelSaveFailed: "Não foi possível salvar o modelo de criação de sessão.",
     sessionCreateModelSelected: "Modelo de criação de sessão selecionado",
+    compactionModel: "Modelo de compactação",
+    compactionModelHint:
+      "Qual modelo resume o contexto quando a conversa é compactada. A conversa continua no próprio modelo.",
+    compactionModelFollowCurrent: "Seguir a conversa",
+    compactionModelPreviousOnSwitch: "Modelo anterior ao trocar",
+    compactionModelPreviousOnSwitchHint:
+      "Ao trocar de modelo, o modelo que está sendo deixado resume — o prefixo em cache torna essa a requisição mais barata. As demais compactações usam o modelo da conversa.",
+    compactionModelSpecific: "Usar um modelo específico",
+    compactionModelSpecificHint:
+      "Os resumos enviam o conteúdo da conversa para o provedor deste modelo.",
+    compactionModelModelLabel: "Modelo de resumo",
+    compactionModelUnavailable: "Indisponível",
+    compactionModelSaveFailed: "Não foi possível salvar o modelo de compactação.",
+    compactionModelSelected: "Modelo de compactação salvo",
     generatedImage: "Imagem gerada {{index}}",
     downloadGeneratedImage: "Baixar",
     revealGeneratedImage: "Mostrar na pasta",

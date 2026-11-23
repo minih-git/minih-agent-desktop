@@ -5,6 +5,7 @@ import {
   checkpointGeneration,
   compactionRecordId,
   checkpointSummarized,
+  checkpointSummaryModel,
   contextCompactionMark,
   estimateSummaryTokens,
 } from "./context-compaction.js";
@@ -43,6 +44,52 @@ describe("checkpointSummarized", () => {
     expect(checkpointSummarized({ strategy: "summary" })).toBe(true);
     expect(checkpointSummarized(undefined)).toBe(true);
     expect(checkpointSummarized("details")).toBe(true);
+  });
+});
+
+describe("checkpointSummaryModel", () => {
+  const summaryModel = {
+    providerId: "account-c",
+    modelId: "model-c",
+    source: "specific" as const,
+  };
+
+  it("reads the model that wrote the summary out of the opaque details value", () => {
+    expect(checkpointSummaryModel({ summaryModel })).toEqual(summaryModel);
+  });
+
+  it("carries a reported fallback for the row and the inspector", () => {
+    expect(
+      checkpointSummaryModel({
+        summaryModel: {
+          ...summaryModel,
+          fallback: "unavailable",
+          requestedProviderId: "account-c",
+          requestedModelId: "model-c",
+        },
+      }),
+    ).toEqual({
+      ...summaryModel,
+      fallback: "unavailable",
+      requestedProviderId: "account-c",
+      requestedModelId: "model-c",
+    });
+    expect(
+      contextCompactionMark(
+        record({ details: { summaryModel: { ...summaryModel, fallback: "failed" } } }),
+      ).summaryModel,
+    ).toEqual({ ...summaryModel, fallback: "failed" });
+  });
+
+  it("reads an absent or malformed value as the conversation model", () => {
+    expect(checkpointSummaryModel(undefined)).toBeUndefined();
+    expect(checkpointSummaryModel({})).toBeUndefined();
+    expect(checkpointSummaryModel({ summaryModel: "model-c" })).toBeUndefined();
+    expect(checkpointSummaryModel({ summaryModel: { providerId: "account-c" } })).toBeUndefined();
+    expect(
+      checkpointSummaryModel({ summaryModel: { ...summaryModel, source: "current" } }),
+    ).toBeUndefined();
+    expect(contextCompactionMark(record({ details: {} })).summaryModel).toBeUndefined();
   });
 });
 

@@ -94,6 +94,7 @@ export const HOST_PROXY_ALLOWED = new Set([
   "project.instructions.resolve",
   "provider.resolveAuth",
   "provider.resolveSubagentModel",
+  "provider.resolveCompactionModel",
   "app.health",
   // Trusted extensions (D387): answered by the embedding host, plus the
   // session methods the ExtensionAPI reaches (spec 16 §10.1).
@@ -478,6 +479,41 @@ export class AgentSidecar {
     return this.subagentModelResolver(key);
   }
 
+  /**
+   * On-demand resolution for the compaction summary model (D691). The runtime
+   * names the binding its setting or the switch selected; the embedding host
+   * decides whether that binding resolves and returns its transport and
+   * credential, so a summary request can never reach a provider the user did not
+   * configure.
+   */
+  private compactionModelResolver:
+    | ((params: { sessionId: string; providerId: string; modelId: string }) => Promise<unknown>)
+    | null = null;
+
+  setCompactionModelResolver(
+    resolver: (params: { sessionId: string; providerId: string; modelId: string }) => Promise<unknown>,
+  ): void {
+    this.compactionModelResolver = resolver;
+  }
+
+  private async resolveCompactionModel(
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    if (!this.compactionModelResolver) {
+      throw new Error("compaction model resolver unavailable");
+    }
+    const sessionId = String(params.sessionId ?? "").trim();
+    const providerId = String(params.providerId ?? "").trim();
+    const modelId = String(params.modelId ?? "").trim();
+    if (!sessionId || !providerId || !modelId) {
+      throw Object.assign(
+        new Error("invalid compaction model request; expected sessionId, providerId and modelId"),
+        { code: -32602 },
+      );
+    }
+    return this.compactionModelResolver({ sessionId, providerId, modelId });
+  }
+
   private async onLine(line: string) {
     if (!line.trim()) return;
     let msg: any;
@@ -546,6 +582,13 @@ export class AgentSidecar {
         }
         if (method === "provider.resolveSubagentModel") {
           const result = await this.resolveSubagentModel(params);
+          this.writeToChild(
+            JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\n",
+          );
+          return;
+        }
+        if (method === "provider.resolveCompactionModel") {
+          const result = await this.resolveCompactionModel(params);
           this.writeToChild(
             JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\n",
           );

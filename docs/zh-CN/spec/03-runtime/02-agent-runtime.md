@@ -454,6 +454,31 @@ pi 0.84.4+ 只在循环将要在同一次运行中开启另一个助手回合时
 纯函数（`model-switch-compaction.ts`），因此重启后也能识别同一次切换，不依赖内存
 状态。
 
+**摘要模型（D691）。** 由哪个模型写检查点的摘要现在是一个设置项，三种模式，
+存为 `settings.compactionModel`，缺省即为 `follow_current`（也就是原有行为）。
+`specific` 对每种压缩原因都用选定的 provider/model；`previous_on_switch` 只用于
+`model_switch` 检查点，并使用转录记录的产生被替换上下文的那个模型——其他原因仍然
+用对话模型。摘要模型等于对话模型时走原来的路径，因此 `follow_current` 与指向当前
+绑定的 `specific` 发出的请求与以前完全一致。运行时用纯函数（`compaction-model.ts`）
+根据设置、压缩原因与 `previousModelSince` 决定绑定，再通过既有的反向 RPC 边界
+（`provider.resolveCompactionModel`）向嵌入宿主解析传输与凭据；宿主只接受用户配置的
+绑定（`specific`）或本会话真实运行过的模型（`previous_on_switch`）。凭据不会进入
+事件、提示词或日志。
+
+对话自身的模型不受影响：请求、检查点的 `providerId`/`modelId` 以及
+`previousModelSince` 都仍是它，因此摘要模型永远不会被当成塑造上下文的模型。写摘要的
+模型记录在检查点不透明的 `details.summaryModel` 中，并通过压缩标记到达转录行；当选定
+绑定不可用（提供商被删除、凭据缺失、回复没有摘要文本）而由对话模型代写时，会带上
+`fallback`。回退绝不静默：检查点记录它，运行时输出 `compaction_summary_model` 诊断。
+
+摘要的尺寸按摘要模型计算：预检输入上限、输出预算、请求预留与分块规划都使用该模型的
+窗口，小窗口的摘要模型不会被塞进按对话窗口准备的提示词。`previous_on_switch` 的摘要
+请求会复用上一个模型的缓存：它重放该模型收到的同一份转录（系统提示词与工具声明在其
+首条 system 消息里），只把摘要指令作为新的用户消息追加，沿用该模型的缓存身份与提供商
+默认保留策略，并禁止使用工具（`tool_choice: none`，另外检查回复以避免工具调用被当成
+摘要）。历史超出该模型窗口、或无法重建前缀时，退回序列化提示词路径——正确，但没有
+缓存收益。
+
 摘要失败、被扩展取消，或压缩后体积没有变小的切换检查点都不算错误：不安装任何
 检查点（尤其不安装 retained-tail 回退），本轮带完整上下文继续，`compaction_end`
 报告 `ok: false` 并带上诊断（`compaction_failure`）。压缩期间用户点 Stop 会和

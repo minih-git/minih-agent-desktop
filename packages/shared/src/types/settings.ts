@@ -61,6 +61,34 @@ export type SessionCreateModelBinding = {
   thinkingLevel?: SessionThinkingLevel;
 };
 
+/**
+ * Which model summarizes a conversation when context is compacted.
+ *
+ * - `follow_current` (default, and what an absent setting means) summarizes
+ *   with the model the session runs on, exactly as before this setting existed.
+ * - `previous_on_switch` summarizes a `model_switch` checkpoint with the model
+ *   that produced the context being replaced, so the summary request can reuse
+ *   that model's cached prefix. Every other compaction reason still uses the
+ *   current model.
+ * - `specific` summarizes every compaction with the chosen binding.
+ *
+ * The setting never changes which model answers: the conversation, the
+ * checkpoint's `providerId`/`modelId`, and `previousModelSince` stay on the
+ * session's model.
+ */
+export type CompactionModelMode =
+  | "follow_current"
+  | "previous_on_switch"
+  | "specific";
+
+export type CompactionModelSetting = {
+  mode: CompactionModelMode;
+  /** Required for `specific`; ignored by the other modes. */
+  providerId?: string;
+  modelId?: string;
+};
+
+
 export type AppSettings = {
   imageGeneration?: import("../image-generation.js").ImageGenerationBinding | null;
   /** All models marked for image generation; absent falls back to imageGeneration. */
@@ -116,6 +144,12 @@ export type AppSettings = {
    * `MODEL_NOT_CONFIGURED` rather than falling back to the app default.
    */
   sessionCreateModel?: SessionCreateModelBinding | null;
+  /**
+   * Which model summarizes context. Absent means `follow_current`, the behavior
+   * this setting was introduced around, so an existing installation needs no
+   * migration and an older build ignores the field.
+   */
+  compactionModel?: CompactionModelSetting | null;
   /** Prevent idle system sleep while this desktop app runs; off when absent. */
   keepAwakeWhileRunning?: boolean;
   /** Configured command shell for the agent Bash protocol tool. */

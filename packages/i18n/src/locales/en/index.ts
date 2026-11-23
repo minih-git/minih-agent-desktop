@@ -1290,6 +1290,20 @@ export const en = {
     sessionCreateModelHint: "Model a session the Agent creates for itself runs on. While this is not configured, the Agent cannot create sessions.",
     sessionCreateModelSaveFailed: "Could not save the session creation model.",
     sessionCreateModelSelected: "Selected session creation model",
+    compactionModel: "Compaction model",
+    compactionModelHint:
+      "Which model summarizes context when the conversation is compacted. The conversation itself keeps running on its own model.",
+    compactionModelFollowCurrent: "Follow the conversation",
+    compactionModelPreviousOnSwitch: "Previous model on a switch",
+    compactionModelPreviousOnSwitchHint:
+      "When the session switches models, the model it is leaving writes the summary — its cached prefix makes that the cheapest request. Every other compaction uses the conversation model.",
+    compactionModelSpecific: "Use a specific model",
+    compactionModelSpecificHint:
+      "Summaries send the conversation content to this model's provider.",
+    compactionModelModelLabel: "Summary model",
+    compactionModelUnavailable: "Unavailable",
+    compactionModelSaveFailed: "Could not save the compaction model.",
+    compactionModelSelected: "Compaction model saved",
     generatedImage: "Generated image {{index}}",
     downloadGeneratedImage: "Download",
     revealGeneratedImage: "Show in folder",

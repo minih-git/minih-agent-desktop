@@ -766,6 +766,11 @@ export function createSessionLaunchRuntime({
         ...(overrides.turnId ? { turnId: overrides.turnId } : {}),
         thinkingLevel,
         infiniteProviderRetry: settings.infiniteProviderRetry === true,
+        // Which model summarizes context (D691). Only the choice crosses here:
+        // the runtime asks this process for that binding's credential when a
+        // compaction actually needs it, so no second provider's key rides on
+        // every launch.
+        compactionModel: settings.compactionModel ?? undefined,
         ...(jevApiKey ? { jevApiKey } : {}),
         commandShell,
         scratchDir: join(dataDir, "scratch", sessionId),

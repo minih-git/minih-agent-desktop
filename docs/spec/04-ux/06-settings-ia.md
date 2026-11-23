@@ -595,6 +595,19 @@ a usage tab.
   clears both choices. Both controls are disabled while saving. A stored level
   that is no longer supported is labeled unavailable rather than disguised as
   inheritance. The whole binding stays device-local and outside config sync.
+- The **compaction model** row chooses which model writes a context checkpoint's
+  summary (D691): **Follow the conversation** (absent setting, the behavior every
+  earlier build had), **Previous model on a switch** (only a `model_switch`
+  checkpoint, written by the model the session is leaving so its cached prefix
+  does the reading), or **Use a specific model** with a picker over the same
+  runnable candidates the session-creation row uses. `specific` shows the chosen
+  provider and model, an unavailable stored pairing stays visible as such, and a
+  separate summary-model selector appears for `specific` alone. The mode and the
+  binding are stored as `settings.compactionModel`, device-local and outside
+  config sync because they name this installation's provider rows. The row's copy
+  states the cost: `specific` sends the conversation content to that model's
+  provider. Saving is disabled while a write is in flight, and a pairing the
+  picker no longer offers is refused rather than stored.
 - Each chosen card shows the gateway's published record (vendor, category,
   copyable id, input/output prices per 1M tokens, context window, cache price,
   tiered-pricing marker), plus **Configure** and **Remove**, without an app-default
