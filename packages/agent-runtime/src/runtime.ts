@@ -9,7 +9,7 @@ import { resolveMcpToolSelection } from "./mcp-tool-selection.js";
 import { TOOL_ACTIVATION_SECTION, toolDeclarationPolicy, toolActivationSection, restoredToolActivation, syncToolActivation, type ToolDeclarationPolicy } from "./fixed-tool-declarations.js";
 import { orderSystemRows, SystemTranscriptJournal } from "./system-transcript-journal.js";
 import { planWorkspaceRequiredResult } from "./plan-workspace-error.js";
-import { accountModelStream } from "./request-usage.js";
+import { accountModelStream, type UsageObserver } from "./request-usage.js";
 import {
   assembleProviderRequest,
   providerRequestPrefixFingerprint,
@@ -124,6 +124,7 @@ import type {
   AskToolQuestion,
   AskToolRequest,
   AskToolResolution,
+  CompactionModelSetting,
   ContextCompactionFallback,
   CommandShellOption,
   ContextCompactionReason,
@@ -199,7 +200,7 @@ import {
 import { withExplicitRequired } from "./tool-schema.js";
 import { buildSessionContext } from "./session-context.js";
 import { collectMessageFileOperations, prepareCompaction } from "./pi-runtime-compaction-plan.js";
-import { compact } from "./pi-runtime-compaction-summary.js";
+import { compact, type SummaryConversationPrefix } from "./pi-runtime-compaction-summary.js";
 import {
   ESTIMATED_TEXT_CHARS_PER_TOKEN,
   estimateContextTokens,
@@ -260,9 +261,23 @@ import {
 import {
   modelSwitchCompactionNeeded,
   previousModelSince,
+  sameModelIdentity,
   type ModelBinding,
 } from "./model-switch-compaction.js";
 import { projectCrossModelThinking } from "./cross-model-thinking.js";
+import {
+  compactionSummaryBinding,
+  normalizeCompactionModelSetting,
+  resolveSummaryProviderFrom,
+  summaryConversationPrefixFor,
+  summaryModelDetailsFor,
+  summaryModelDiagnosticFor,
+  summaryModelLimits,
+  summarySizingFor,
+  type ResolvedCompactionModelSetting,
+  type SummarySizing,
+  type SummaryTarget,
+} from "./compaction-model.js";
 import { PathMutex } from "./path-lock.js";
 import { DelegationChainRegistry } from "./delegation-chain.js";
 import {
@@ -1167,6 +1182,8 @@ export type AgentRuntimeOptions = {
   /** Latest host-owned checkpoint used only to rebuild model context. */
   compaction?: ContextCompactionRecord;
   compactionSettings?: ContextCompactionSettings;
+  /** Which model summarizes context (D691). Absent means `follow_current`. */
+  compactionModel?: CompactionModelSetting | null;
   /**
    * Which compaction family to use. Tests set it explicitly; production reads
    * `MINIH_AGENT_COMPACTION_STRATEGY` and otherwise summarizes.
@@ -1247,8 +1264,14 @@ export type AgentRuntimeDiagnostic = {
    * `agent_role_missing`: the delegate role this session was created with no
    * longer names an enabled definition (ADR session-create-model-and-role). The
    * turn runs without the role section; this is the one report of it.
+   * `compaction_summary_model`: one compaction summarized with a model other
+   * than the session's, or had to fall back to it (D691).
    */
-  kind: "compaction_failure" | "compaction_shape" | "agent_role_missing";
+  kind:
+    | "compaction_failure"
+    | "compaction_shape"
+    | "compaction_summary_model"
+    | "agent_role_missing";
   sessionId: string;
   turnId?: string;
   requestId: string;
@@ -2277,6 +2300,23 @@ export class DesktopAgentRuntime {
   private activeCompaction?: ContextCompactionRecord;
   private compactionEnabled: boolean;
   private readonly compactionStrategy: CompactionStrategy;
+  /** Which model summarizes context (D691); absent means the session's model. */
+  private compactionModelSetting: ResolvedCompactionModelSetting = { mode: "follow_current" };
+  /** The summary target of the compaction in progress, when it is not the current model. */
+  private summaryTarget?: SummaryTarget;
+  /** Providers resolved on demand for a summary model, keyed `providerId/modelId`. */
+  private readonly summaryProviders = new Map<string, RuntimeProviderConfig>();
+  /**
+   * The last conversation request as a provider received it. A summary that runs
+   * on that same model replays this prefix instead of re-serializing the
+   * conversation, so the provider answers out of its own cache (D691).
+   */
+  private lastConversationRequest?: {
+    providerId: string;
+    modelId: string;
+    /** The normalized transcript the provider received, prompt and tools included. */
+    messages: Message[];
+  };
   private pendingUserMessageId?: string;
   private acceptingSteering = false;
   private steeringContinuation = false;
@@ -2398,6 +2438,7 @@ export class DesktopAgentRuntime {
     this.learnedMemoryRead = opts.learnedMemoryRead !== false;
     this.compactionEnabled = compactionEnabled(opts.compactionSettings);
     this.compactionStrategy = resolveCompactionStrategy(opts.compactionStrategy);
+    this.compactionModelSetting = normalizeCompactionModelSetting(opts.compactionModel);
 
     this.rebuildToolCatalog();
     const model = buildProviderModel(this.provider);
@@ -2466,6 +2507,15 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.agent = new Agent({
       streamFn: (m, context, options) => {
         this.setAgentActivity({ phase: "waiting-model", since: Date.now() });
+        // Park this request so a later summary can reuse its exact prefix when
+        // the user chose to summarize with the model that received it (D691):
+        // the system prompt, the tool declarations, and the projected messages
+        // are copied here, before anything else can rewrite them.
+        this.lastConversationRequest = {
+          providerId: this.provider.id,
+          modelId: this.provider.modelId,
+          messages: [...context.messages],
+        };
         // One trace per model request. The assistant `message_end` for this
         // request consumes it; a request that never settles leaves the previous
         // one replaced rather than reused.
@@ -3862,13 +3912,17 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    * both read this, so warm requests keep hitting the same cache prefix and no
    * threshold is computed on content the request no longer sends.
    */
-  private wireMessages(messages: AgentMessage[]): Message[] {
+  private wireMessages(
+    messages: AgentMessage[],
+    binding: ModelBinding = this.requestModelBinding(),
+    identity: ReasoningReplayIdentity = this.reasoningReplayIdentity(),
+  ): Message[] {
     return projectCrossModelThinking(
       alignRetainedReasoningIdentity(
         convertToLlm(this.dropDuplicateToolCalls(messages)),
-        this.reasoningReplayIdentity(),
+        identity,
       ),
-      this.requestModelBinding(),
+      binding,
     );
   }
 
@@ -7662,6 +7716,177 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.setAgentTools(this.activeTools());
   }
 
+  /**
+   * Apply the compaction-model setting (D691): at launch, and again whenever a
+   * reused runtime picks up a settings change.
+   *
+   * A changed choice drops every provider resolved for the previous one, so the
+   * next compaction asks the host again instead of reusing credentials the user
+   * may just have replaced or revoked.
+   */
+  setCompactionModel(setting?: CompactionModelSetting | null): void {
+    const next = normalizeCompactionModelSetting(setting);
+    const changed =
+      next.mode !== this.compactionModelSetting.mode ||
+      next.providerId !== this.compactionModelSetting.providerId ||
+      next.modelId !== this.compactionModelSetting.modelId;
+    this.compactionModelSetting = next;
+    if (changed) this.summaryProviders.clear();
+  }
+
+  /**
+   * The model one compaction summarizes with, credentials resolved. Always the
+   * conversation model unless the setting names another one for this reason, and
+   * always the conversation model when the chosen one cannot be resolved — with
+   * `fallback` recording what was asked for, so the checkpoint and its event can
+   * say so instead of looking like `follow_current`.
+   */
+  private async resolveSummaryTarget(
+    reason: ContextCompactionReason,
+  ): Promise<SummaryTarget> {
+    this.summaryTarget = undefined;
+    const current = this.currentSummaryTarget();
+    const choice = compactionSummaryBinding({
+      setting: this.compactionModelSetting,
+      reason,
+      previous: previousModelSince(this.fullEntries, this.activeCompaction),
+      current: this.requestModelBinding(),
+    });
+    if (choice.kind === "current") return current;
+    const requested = { providerId: choice.providerId, modelId: choice.modelId };
+    const provider = await this.resolveSummaryProvider(
+      choice.providerId,
+      choice.modelId,
+    );
+    if (!provider) {
+      return {
+        ...current,
+        source: choice.source,
+        fallback: { kind: "unavailable", ...requested },
+      };
+    }
+    const model = buildProviderModel(provider);
+    return {
+      providerId: provider.id,
+      modelId: model.id,
+      source: choice.source,
+      provider,
+      model,
+      limits: summaryModelLimits(model),
+    };
+  }
+
+  /**
+   * Ask the embedding host for one summary model's transport and credentials.
+   *
+   * The same reverse-RPC boundary the host already serves for Task model
+   * overrides: Electron main decides whether a binding resolves, so a compaction
+   * can never make the sidecar reach a provider the user did not configure, and
+   * the credential never appears in a prompt, event, or log line.
+   */
+  private async resolveSummaryProvider(
+    providerId: string,
+    modelId: string,
+  ): Promise<RuntimeProviderConfig | undefined> {
+    return resolveSummaryProviderFrom({
+      call: (method, params) =>
+        (this.host as { call: (m: string, p: unknown) => Promise<unknown> }).call(method, params),
+      sessionId: this.sessionId,
+      providerId,
+      modelId,
+      cache: this.summaryProviders,
+      isDisposed: () => this.disposed,
+      vendorAuthKind: OAUTH_AUTH_KIND,
+    });
+  }
+
+  /** The target in force for the compaction in progress, else the current model. */
+  private currentSummaryTarget(): SummaryTarget {
+    return this.summaryTarget ?? this.currentModelTarget();
+  }
+
+  /** The conversation model as a summary target. */
+  private currentModelTarget(): SummaryTarget {
+    return {
+      providerId: this.provider.id,
+      modelId: this.provider.modelId,
+      source: "current",
+      provider: this.provider,
+      model: this.model,
+      limits: summaryModelLimits(this.model),
+    };
+  }
+
+  /** The window a summary request is sized against (never the conversation's). */
+  private summarySizing(): SummarySizing {
+    return summarySizingFor(this.currentSummaryTarget());
+  }
+
+  /**
+   * The summary's model collection: the runtime's own when the conversation
+   * model summarizes (unchanged collection), otherwise one built for that
+   * provider with the same header and cache-key boundary.
+   */
+  private summaryModels(
+    target: SummaryTarget,
+    onUsage?: UsageObserver,
+    onShape?: (shape: CompactionRequestShape) => void,
+  ): Models {
+    return withCompactionRequestHeaders(
+      target.provider === this.provider
+        ? this.models
+        : createProviderModels(target.provider, target.model),
+      target.provider,
+      this.sessionId,
+      onUsage,
+      onShape,
+    );
+  }
+
+  /** What the checkpoint records about the model that summarized it. */
+  private summaryModelDetails(): Record<string, unknown> | undefined {
+    return summaryModelDetailsFor(this.summaryTarget);
+  }
+
+  private emitSummaryModelDiagnostic(requestId: string, target: SummaryTarget): void {
+    const data = summaryModelDiagnosticFor(target);
+    if (data) this.emitCompactionDiagnostic("compaction_summary_model", requestId, data);
+  }
+
+  /**
+   * The prefix a `previous_on_switch` summary appends its instruction to, or
+   * `undefined` when the summary has to use the serialized prompt instead.
+   *
+   * A runtime rebuilt by the switch has not sent that request itself, so the
+   * projection is rebuilt from the transcript with the previous model's
+   * identity; see `summaryConversationPrefixFor`.
+   */
+  private summaryReusePrefix(target: SummaryTarget): SummaryConversationPrefix | undefined {
+    const binding: ModelBinding = {
+      providerId: target.providerId,
+      modelId: target.modelId,
+      providerAliases: [target.provider.vendorKey ?? target.provider.id],
+    };
+    return summaryConversationPrefixFor({
+      target,
+      captured: this.lastConversationRequest,
+      sessionId: this.sessionId,
+      project: () =>
+        this.wireMessages(
+          this.agent.state.messages as unknown as AgentMessage[],
+          binding,
+          {
+            api: apiBindingForProviderModel(target.provider).api,
+            provider: target.provider.vendorKey ?? target.provider.id,
+            model: target.modelId,
+          },
+        ),
+      inputLimit: this.summaryInputLimit(),
+      estimate: (messages) =>
+        estimateContextTokens(messages as unknown as AgentMessage[], target.model).tokens,
+    });
+  }
+
   private contextBudget(messages: AgentMessage[]): ContextBudget {
     return this.measureContextBudget(messages).budget;
   }
@@ -8099,6 +8324,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       reason,
     });
     try {
+      // Which model summarizes is decided once per attempt, before any request
+      // is sized: the preflight limit, the chunk planner, and the request all
+      // read the same target.
+      this.summaryTarget = await this.resolveSummaryTarget(reason);
+      this.emitSummaryModelDiagnostic(randomUUID(), this.summaryTarget);
       const runner = this.extensionRunner;
       if (runner?.hasHandlers("session_before_compact")) {
         const decision = await runner.emit<{ cancel?: boolean }>(
@@ -8130,6 +8360,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       }
       return compacted;
     } finally {
+      this.summaryTarget = undefined;
       this.compactionAbort = undefined;
       this.compactionInProgress = false;
       if (this.agentActivity?.phase === "compacting") {
@@ -8434,20 +8665,28 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    * guard and the chunk planner have to agree on it, so it is computed once here
    * from the shared formula.
    */
-  private summaryInputLimit(budget: {
-    hardLimit: number;
-    requestHeadroom: number;
-  }): number {
+  /**
+   * The window a summary request is sized against. Defaults to the summary
+   * model's own limits; a caller may pass a simulated window (tests do), which
+   * changes nothing about which model writes the summary.
+   */
+  private summaryInputLimit(
+    budget: { hardLimit: number; requestHeadroom: number; modelMaxTokens?: number } =
+      this.summarySizing(),
+  ): number {
     return compactionSummaryInputLimit({
       hardLimit: budget.hardLimit,
       requestHeadroom: budget.requestHeadroom,
-      modelMaxTokens: this.model.maxTokens,
+      ...(budget.modelMaxTokens === undefined
+        ? { modelMaxTokens: this.summarySizing().modelMaxTokens }
+        : { modelMaxTokens: budget.modelMaxTokens }),
     });
   }
 
   private compactionSummaryWouldExceedBudget(
     preparation: ShapedPreparation,
-    budget: { hardLimit: number; requestHeadroom: number },
+    budget: { hardLimit: number; requestHeadroom: number; modelMaxTokens?: number } =
+      this.summarySizing(),
   ): boolean {
     // The summary covers the whole boundary range, so its input is the context
     // that tripped the hard limit. This sizes the prompt the way pi serializes
@@ -8455,10 +8694,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     // overstated tool-heavy sessions by several times and skipped summaries that
     // would have fit (#543). A prompt this large is now summarized in chunks
     // rather than skipped (#827); only the planner can still send the turn to
-    // retained-tail recovery.
-    return (
-      estimateSummaryPromptTokens(preparation) >= this.summaryInputLimit(budget)
-    );
+    // retained-tail recovery. The window is the summary model's (D691): a small
+    // summary model is not handed a prompt sized for the conversation's.
+    return estimateSummaryPromptTokens(preparation) >= this.summaryInputLimit(budget);
   }
 
   /**
@@ -8470,7 +8708,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    */
   private fitSummaryInputToBudget(
     preparation: ShapedPreparation,
-    budget: { hardLimit: number; requestHeadroom: number },
+    budget: { hardLimit: number; requestHeadroom: number; modelMaxTokens?: number } =
+      this.summarySizing(),
   ): ShapedPreparation | undefined {
     if (!this.compactionSummaryWouldExceedBudget(preparation, budget)) {
       return preparation;
@@ -8490,15 +8729,13 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    */
   private planSummaryRequests(
     preparation: ShapedPreparation,
-    budget: { hardLimit: number; requestHeadroom: number },
+    budget: { hardLimit: number; requestHeadroom: number; modelMaxTokens?: number } =
+      this.summarySizing(),
   ): AgentMessage[][] | undefined {
     const reduced = reduceSummaryInput(preparation) ?? preparation;
     const reserveTokens = compactionSummaryReserveTokens({
       previousSummary: preparation.previousSummary,
-      outputBudget: compactionSummaryOutputBudget({
-        requestHeadroom: budget.requestHeadroom,
-        modelMaxTokens: this.model.maxTokens,
-      }),
+      outputBudget: compactionSummaryOutputBudget(budget),
     });
     return planSummaryChunks(reduced, {
       summaryInputLimit: this.summaryInputLimit(budget),
@@ -8514,9 +8751,18 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     fallback?: ContextCompactionFallback,
   ): Promise<CheckpointPersistResult> {
     const systemMessage = systemTranscriptCheckpoint(this.agent.state.messages);
+    // Which model wrote the summary rides in the opaque `details` value: the
+    // record's own `providerId`/`modelId` must stay the conversation model, or
+    // `previousModelSince` would read a summary model as the model that shaped
+    // the context and trigger a spurious switch compaction (D691).
+    const summaryModel = fallback ? undefined : this.summaryModelDetails();
     checkpoint = {
       ...checkpoint,
-      details: { ...(isRecord(checkpoint.details) ? checkpoint.details : {}), ...(systemMessage ? { systemMessageJson: JSON.stringify(systemMessage) } : {}) },
+      details: {
+        ...(isRecord(checkpoint.details) ? checkpoint.details : {}),
+        ...(systemMessage ? { systemMessageJson: JSON.stringify(systemMessage) } : {}),
+        ...(summaryModel ?? {}),
+      },
     };
     const compactedBudget = this.contextBudget(
       this.liveSessionContext(checkpoint).messages,
@@ -8675,14 +8921,41 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     preparation: ShapedPreparation,
     signal: AbortSignal,
   ): Promise<Awaited<ReturnType<typeof compact>>> {
+    const target = this.currentSummaryTarget();
+    const result = await this.runSummary(target, preparation, signal);
+    if (result.ok || signal.aborted || target.source === "current") return result;
+    // A chosen summary model failed for a reason the retry policy did not clear
+    // (a deleted account, a revoked credential, a reply with no summary text).
+    // The checkpoint still has to be written, so the conversation model
+    // summarizes instead — and the fallback rides on the checkpoint details and
+    // its diagnostic, never as a silent `follow_current`.
+    const fallback: SummaryTarget = {
+      ...this.currentModelTarget(),
+      source: target.source,
+      fallback: {
+        kind: "failed",
+        providerId: target.providerId,
+        modelId: target.modelId,
+        reason: result.error.message,
+      },
+    };
+    this.summaryTarget = fallback;
+    this.emitSummaryModelDiagnostic(randomUUID(), fallback);
+    return this.runSummary(fallback, preparation, signal);
+  }
+
+  /** One summary request for `target`, with its own request-scope diagnostics. */
+  private async runSummary(
+    target: SummaryTarget,
+    preparation: ShapedPreparation,
+    signal: AbortSignal,
+  ): Promise<Awaited<ReturnType<typeof compact>>> {
     const usageTurnId = this.turnId;
     const requestId = randomUUID();
     this.compactionRequestShape = undefined;
     this.compactionShapeLogged = false;
-    const models = withCompactionRequestHeaders(
-      this.models,
-      this.provider,
-      this.sessionId,
+    const models = this.summaryModels(
+      target,
       (usage) => this.emit({ type: "usage", usage }, usageTurnId),
       (shape) => {
         this.compactionRequestShape = shape;
@@ -8693,6 +8966,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         });
       },
     );
+    const reuse = this.summaryReusePrefix(target);
     try {
       const result = await compact(
         preparation,
@@ -8700,7 +8974,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // compaction adapter calls `completeSimple` directly instead of
         // `streamFn`, so headers have to ride on the collection.
         models,
-        this.model,
+        target.model,
         undefined,
         agentThinkingLevel(this.thinkingLevel),
         // Without a policy pi-ai returns the first failed response as-is, which
@@ -8709,6 +8983,13 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         COMPACTION_SUMMARY_RETRY_POLICY,
         undefined,
         signal,
+        {
+          // The output allowance and the input guard are the summary model's:
+          // a small-window model must not be handed a prompt sized for the
+          // conversation's window.
+          reserveTokens: target.limits.requestHeadroom,
+          ...(reuse ? { reuse } : {}),
+        },
       );
       if (!result.ok) {
         this.emitCompactionFailureDiagnostic(
@@ -8721,6 +9002,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       return result;
     } catch (error) {
       this.emitCompactionFailureDiagnostic(requestId, "summary_provider", preparation.tokensBefore, error);
+      throw error;
       throw error;
     }
   }
@@ -8800,11 +9082,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         preparation.ok ? "No new context is available to compact" : preparation.error,
         {
           requestShape: "not_sent",
-          hardLimit: budget.hardLimit,
-          outputBudget: compactionSummaryOutputBudget({
-            requestHeadroom: budget.requestHeadroom,
-            modelMaxTokens: this.model.maxTokens,
-          }),
+          hardLimit: this.summarySizing().hardLimit,
+          outputBudget: compactionSummaryOutputBudget(this.summarySizing()),
           plannedChunks: 0,
         },
       );
@@ -8824,19 +9103,17 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       return this.buildRolloverCheckpoint(entries, budget, preparation.value);
     }
 
-    const summaryInput = this.fitSummaryInputToBudget(preparation.value, budget);
+    const summaryInput = this.fitSummaryInputToBudget(preparation.value);
     // No single prompt fits. The range is summarized in chunks instead of giving
     // up on the model: only a range that cannot be planned at all — empty, or
     // needing more requests than the planner allows — still falls back (#827).
     const chunks = summaryInput
       ? undefined
-      : this.planSummaryRequests(preparation.value, budget);
+      : this.planSummaryRequests(preparation.value);
+    const summarySizing = this.summarySizing();
     this.compactionDiagnosticBudget = {
-      hardLimit: budget.hardLimit,
-      outputBudget: compactionSummaryOutputBudget({
-        requestHeadroom: budget.requestHeadroom,
-        modelMaxTokens: this.model.maxTokens,
-      }),
+      hardLimit: summarySizing.hardLimit,
+      outputBudget: compactionSummaryOutputBudget(summarySizing),
       plannedChunks: chunks?.length ?? 1,
     };
     if (!summaryInput && !chunks) {
@@ -8847,11 +9124,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         "Compaction summary input exceeds the safe model budget",
         {
           requestShape: "not_sent",
-          hardLimit: budget.hardLimit,
-          outputBudget: compactionSummaryOutputBudget({
-            requestHeadroom: budget.requestHeadroom,
-            modelMaxTokens: this.model.maxTokens,
-          }),
+          hardLimit: this.summarySizing().hardLimit,
+          outputBudget: compactionSummaryOutputBudget(this.summarySizing()),
           plannedChunks: 0,
         },
       );

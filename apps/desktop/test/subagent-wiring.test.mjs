@@ -63,9 +63,10 @@ test("subagent models use the exact stored binding for thinking capability", () 
     /const effectiveSubagentModelConfig = \([\s\S]*?modelsDevCatalog\.configureAccount\(provider\)[\s\S]*?modelsDevCatalog\.modelConfigFor\(/,
   );
   // The helper is used for definition pins, the pre-resolved delegation
-  // catalog, and the on-demand Task.model path.
+  // catalog, the on-demand Task.model path, and the compaction summary model
+  // (D691), which resolves one binding the same way.
   const modelSource = [providerCatalogSource, sessionLaunchSource, desktopSidecarSource].join("\n");
-  assert.equal(modelSource.match(/effectiveSubagentModelConfig\(/g)?.length, 3);
+  assert.equal(modelSource.match(/effectiveSubagentModelConfig\(/g)?.length, 4);
   assert.match(
     sessionLaunchSource,
     /const configuredProvider = providers\.providers\.find\([\s\S]*?effectiveSubagentModelConfig\(/,

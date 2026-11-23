@@ -24,6 +24,7 @@ import {
   publishedThinkingLevels,
   sortThinkingLevels,
   type AppSettings,
+  type CompactionModelSetting,
   type ImageGenerationBinding,
   type ModelBinding,
   type ModelInfo,
@@ -48,6 +49,7 @@ import {
   SessionCreateModelRow,
   sessionCreateModelCandidates,
 } from "./SessionCreateModelRow";
+import { CompactionModelRow } from "./CompactionModelRow";
 import {
   bindingAfterRemoval,
   hiddenIdsWithout,
@@ -119,6 +121,7 @@ export function ModelsPage() {
   const [draftImageIds, setDraftImageIds] = useState<string[] | null>(null);
   const [changingImageModel, setChangingImageModel] = useState(false);
   const [changingSessionCreateModel, setChangingSessionCreateModel] = useState(false);
+  const [changingCompactionModel, setChangingCompactionModel] = useState(false);
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
 
@@ -550,6 +553,40 @@ export function ModelsPage() {
     }
   };
 
+  /**
+   * Which model summarizes context (D691).
+   *
+   * `specific` is accepted only for a pairing the picker offers right now, so
+   * the page never stores a summary model the runtime would have to fall back
+   * from. The other two modes name no binding and are always writable.
+   */
+  const setCompactionModel = async (setting: CompactionModelSetting) => {
+    setChangingCompactionModel(true);
+    try {
+      const current = await api.getSettings();
+      if (setting.mode === "specific") {
+        const candidates = sessionCreateModelCandidates(current, providers);
+        const offered = candidates.some(
+          (candidate) =>
+            candidate.provider.id === setting.providerId &&
+            modelWireIdsEqual(candidate.modelId, setting.modelId ?? ""),
+        );
+        if (!offered) {
+          showToast(t("settings.compactionModelSaveFailed"), { variant: "error" });
+          return;
+        }
+      }
+      const nextSettings = { ...current, compactionModel: setting };
+      await api.setSettings(nextSettings);
+      useAppStore.setState({ settings: nextSettings });
+      showToast(t("settings.compactionModelSelected"), { variant: "success" });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setChangingCompactionModel(false);
+    }
+  };
+
   const refreshCatalog = async () => {
     setRefreshingCatalog(true);
     try {
@@ -784,6 +821,20 @@ export function ModelsPage() {
               busy={changingSessionCreateModel}
               providerModels={providerModels}
               onChange={setSessionCreateModel}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {sessionCreateCandidates.length > 0 ? (
+        <section className="settings-card-block">
+          <div className="settings-panel model-default-panel">
+            <CompactionModelRow
+              settings={settings}
+              providers={providers}
+              busy={changingCompactionModel}
+              providerModels={providerModels}
+              onChange={setCompactionModel}
             />
           </div>
         </section>

@@ -4,6 +4,7 @@ import type {
   Api,
   AssistantMessage,
   Context,
+  Message,
   Model,
   Models,
   RetryCallbacks,
@@ -115,6 +116,35 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
 
 const MAX_SUMMARY_TOKENS = 0.8;
 
+/**
+ * The conversation request a `previous_on_switch` summary appends its
+ * instruction to (D691).
+ *
+ * The provider caches a prefix, so a summary that reuses the bytes the previous
+ * model already received — the same system prompt, the same tool declarations,
+ * the same projected messages — reads the whole history out of that cache; only
+ * the appended instruction is new. Everything here is copied from the request
+ * that model sent, so nothing is re-derived and nothing can drift.
+ */
+export type SummaryConversationPrefix = {
+  /**
+   * The normalized transcript the conversation request sent: the leading system
+   * message already carries the prompt and the tool declarations, so copying
+   * these messages copies both.
+   */
+  messages: Message[];
+  /** The cache key the conversation requests use, so the prefix lands there. */
+  sessionId: string;
+};
+
+/** Extra knobs the runtime passes for one summary request. */
+export type SummaryRequestOptions = {
+  /** Request headroom of the summary model's window; overrides `settings`. */
+  reserveTokens?: number;
+  /** Reuse a warm conversation prefix instead of serializing the range. */
+  reuse?: SummaryConversationPrefix;
+};
+
 async function requestSummary(
   messages: AgentMessage[],
   model: Model<Api>,
@@ -129,11 +159,14 @@ async function requestSummary(
     callbacks?: RetryCallbacks;
     prompt?: string;
     outputRatio?: number;
+    reserveTokens?: number;
+    reuse?: SummaryConversationPrefix;
   },
   models: Models,
 ): Promise<Result<{ text: string; usage: Usage }>> {
+  const summaryReserveTokens = options.reserveTokens ?? reserveTokens;
   const maxTokens = Math.min(
-    Math.floor((options.outputRatio ?? MAX_SUMMARY_TOKENS) * reserveTokens),
+    Math.floor((options.outputRatio ?? MAX_SUMMARY_TOKENS) * summaryReserveTokens),
     model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
   );
   const basePrompt = options.prompt ?? (options.previousSummary
@@ -142,28 +175,49 @@ async function requestSummary(
   const summaryPrompt = options.customInstructions
     ? `${basePrompt}\n\nAdditional focus: ${options.customInstructions}`
     : basePrompt;
-  const conversation = serializeConversation(convertToLlm(messages));
-  let promptText = `<conversation>\n${conversation}\n</conversation>\n\n`;
-  if (options.previousSummary) {
-    promptText += `<previous-summary>\n${options.previousSummary}\n</previous-summary>\n\n`;
-  }
-  promptText += summaryPrompt;
-  const context: Context = {
-    systemPrompt: SUMMARY_SYSTEM_PROMPT,
-    messages: [{
-      role: "user",
-      content: [{ type: "text", text: promptText }],
-      timestamp: Date.now(),
-    }],
-  };
+  // The carried summary is an instruction, not conversation: it rides with the
+  // prompt in both shapes, so the cached prefix stays exactly the conversation.
+  const carried = options.previousSummary
+    ? `<previous-summary>\n${options.previousSummary}\n</previous-summary>\n\n`
+    : "";
+  const reuse = options.reuse;
+  const context: Context = reuse
+    ? {
+        // No `systemPrompt`/`tools` here: those fields would make pi prepend a
+        // second system message, and the prefix has to stay byte-identical.
+        messages: [
+          ...reuse.messages,
+          {
+            role: "user",
+            content: [{ type: "text", text: `${carried}${summaryPrompt}` }],
+            timestamp: Date.now(),
+          },
+        ],
+      }
+    : (() => {
+        const conversation = serializeConversation(convertToLlm(messages));
+        const promptText = `<conversation>\n${conversation}\n</conversation>\n\n${carried}${summaryPrompt}`;
+        return {
+          systemPrompt: SUMMARY_SYSTEM_PROMPT,
+          messages: [{
+            role: "user",
+            content: [{ type: "text", text: promptText }],
+            timestamp: Date.now(),
+          }],
+        } as Context;
+      })();
   const requestOptions: SimpleStreamOptions = {
     maxTokens,
     ...(model.reasoning && options.thinkingLevel && options.thinkingLevel !== "off"
       ? { reasoning: options.thinkingLevel }
       : {}),
     ...(options.signal ? { signal: options.signal } : {}),
-    cacheRetention: "none",
-    sessionId: randomUUID(),
+    // A reused prefix keeps the conversation's own cache identity and the
+    // provider's default retention; the serialized prompt is a different
+    // request with nothing to hit, so it asks for no retention at all.
+    ...(reuse
+      ? { toolChoice: "none" as const, sessionId: reuse.sessionId }
+      : { cacheRetention: "none" as const, sessionId: randomUUID() }),
   };
   let response: AssistantMessage;
   const errorLabel = options.errorLabel ?? "Summarization";
@@ -211,6 +265,20 @@ async function requestSummary(
   // (thinking blocks are excluded). An empty checkpoint would look like a
   // successful compaction while silently discarding working context.
   const text = textFromContent(response.content);
+  // A reused prefix carries the conversation's tool declarations, so a model
+  // that answers with a tool call instead of prose produced no summary. Asking
+  // the provider to forbid tool use is not available everywhere (`toolChoice`
+  // is best-effort), so the reply is checked here as well.
+  const calledTool = response.content.some((block) => block.type === "toolCall");
+  if (reuse && calledTool) {
+    return {
+      ok: false,
+      error: new CompactionError(
+        "summarization_failed",
+        `${errorLabel} failed: the summary model called a tool instead of writing the summary`,
+      ),
+    };
+  }
   if (!text.trim()) {
     const limited =
       response.stopReason === "length"
@@ -277,10 +345,39 @@ export async function compact(
   retry: RetryPolicy | undefined,
   callbacks: RetryCallbacks | undefined,
   signal: AbortSignal | undefined,
+  options?: SummaryRequestOptions,
 ): Promise<Result<CompactResult>> {
   let summary: string;
   let usage: Usage | undefined;
-  if (preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0) {
+  if (options?.reuse) {
+    // A warm prefix carries the whole conversation, so it covers a split turn's
+    // two ranges at once: one request against the previous model's own bytes is
+    // exactly what makes this compaction cheap (D691). The retained suffix is
+    // summarized too, which only means the summary may mention work that is also
+    // replayed — the messages themselves are unchanged.
+    const result = await requestSummary(
+      [
+        ...preparation.messagesToSummarize,
+        ...(preparation.isSplitTurn ? preparation.turnPrefixMessages : []),
+      ],
+      model,
+      preparation.settings.reserveTokens,
+      {
+        ...(preparation.previousSummary ? { previousSummary: preparation.previousSummary } : {}),
+        ...(customInstructions ? { customInstructions } : {}),
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+        ...(retry ? { retry } : {}),
+        ...(callbacks ? { callbacks } : {}),
+        ...(signal ? { signal } : {}),
+        ...(options.reserveTokens ? { reserveTokens: options.reserveTokens } : {}),
+        reuse: options.reuse,
+      },
+      models,
+    );
+    if (!result.ok) return result;
+    summary = result.value.text;
+    usage = result.value.usage;
+  } else if (preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0) {
     let history = "No prior history.";
     let historyUsage: Usage | undefined;
     if (preparation.messagesToSummarize.length > 0) {
@@ -295,6 +392,7 @@ export async function compact(
           ...(retry ? { retry } : {}),
           ...(callbacks ? { callbacks } : {}),
           ...(signal ? { signal } : {}),
+          ...(options?.reserveTokens ? { reserveTokens: options.reserveTokens } : {}),
         },
         models,
       );
@@ -310,6 +408,7 @@ export async function compact(
         prompt: TURN_PREFIX_PROMPT,
         errorLabel: "Turn prefix summarization",
         outputRatio: 0.5,
+        ...(options?.reserveTokens ? { reserveTokens: options.reserveTokens } : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
         ...(retry ? { retry } : {}),
         ...(callbacks ? { callbacks } : {}),
@@ -332,6 +431,8 @@ export async function compact(
         ...(retry ? { retry } : {}),
         ...(callbacks ? { callbacks } : {}),
         ...(signal ? { signal } : {}),
+        ...(options?.reserveTokens ? { reserveTokens: options.reserveTokens } : {}),
+        ...(options?.reuse ? { reuse: options.reuse } : {}),
       },
       models,
     );

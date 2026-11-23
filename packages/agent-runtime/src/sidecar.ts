@@ -47,6 +47,7 @@ import type {
   AgentEventEnvelope,
   AskToolResolution,
   SubagentDefinition,
+  CompactionModelSetting,
   ContextCompactionRecord,
   ContextCompactionSettings,
   CommandShellOption,
@@ -164,6 +165,8 @@ type RuntimeParams = {
   /** Portable "use learned memory" switch; absent means on. */
   learnedMemoryRead?: boolean;
   compactionSettings?: ContextCompactionSettings;
+  /** Which model summarizes context (D691); absent means the session's model. */
+  compactionModel?: CompactionModelSetting | null;
   attachmentsDir?: string;
   userMessageId?: string;
   sessionMessage?: SessionMessageOrigin;
@@ -306,6 +309,7 @@ async function runtimeFor(
   if (reusable) {
     reusable.setPluginSkills(pluginSkills);
     reusable.setCompactionSettings(params.compactionSettings);
+    reusable.setCompactionModel(params.compactionModel);
     reusable.setInfiniteProviderRetry(params.infiniteProviderRetry === true);
     reusable.setMode(mode);
     return reusable;
@@ -359,6 +363,7 @@ async function runtimeFor(
     history,
     compaction,
     compactionSettings: params.compactionSettings,
+    compactionModel: params.compactionModel,
     pluginTools,
     pluginSkills,
     trustedExtensions,

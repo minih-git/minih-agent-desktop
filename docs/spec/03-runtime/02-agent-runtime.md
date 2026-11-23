@@ -800,6 +800,44 @@ model's reply becomes the newest assistant message. The decision is a pure
 function of the transcript (`model-switch-compaction.ts`), so a restart identifies
 the same switch without any in-memory state.
 
+**Summary model (D691).** Which model writes a checkpoint's summary is a setting
+with three modes, stored as `settings.compactionModel` and absent means
+`follow_current`, today's behavior. `specific` summarizes every compaction
+reason with the chosen provider/model; `previous_on_switch` summarizes only a
+`model_switch` checkpoint, and with the model the transcript says produced the
+context being replaced — every other reason still uses the conversation model.
+A summary model that is the conversation model resolves to the plain path, so
+`follow_current` and a `specific` choice naming the current binding issue the
+same request as before. The runtime decides the binding as a pure function of
+the setting, the reason, and `previousModelSince` (`compaction-model.ts`), then
+resolves its transport and credential from the embedding host over the existing
+reverse-RPC boundary (`provider.resolveCompactionModel`), which accepts only the
+binding the user configured (`specific`) or a model this session actually ran on
+(`previous_on_switch`). The credential never enters an event, prompt or log.
+
+The conversation's own model is untouched: the request, the checkpoint's
+`providerId`/`modelId`, and `previousModelSince` stay on it, so a summary model
+can never read as the model that shaped the context. The model that wrote the
+summary is recorded in the checkpoint's opaque `details.summaryModel` and
+reaches the transcript row through the mark — with `fallback` when the chosen
+binding could not be used (deleted provider, missing credential, a reply with no
+summary text) and the conversation model summarized instead. A fallback is never
+silent: the checkpoint records it and the runtime emits a
+`compaction_summary_model` diagnostic.
+
+Summary sizing follows the summary model: the preflight input limit, the output
+budget, the reserve passed to the request, and the chunk planner all use that
+model's window, so a small summary model is never handed a prompt sized for the
+conversation's. For `previous_on_switch` the summary request is built to reuse
+the previous model's cache: it replays the exact transcript that model received
+(system prompt and tool declarations ride in its leading system message),
+appends only the summary instruction as a new user message, keeps that model's
+cache identity and the provider's default retention, and asks for no tool use
+(`tool_choice: none`, plus a reply check so a tool call counts as a summary
+failure). A history that does not fit that model's window, or a replay whose
+prefix cannot be reconstructed, falls back to the serialized prompt — correct,
+just not cached.
+
 A failed, cancelled, or non-shrinking switch checkpoint is not an error: no
 checkpoint is installed — in particular no retained-tail fallback — the turn keeps
 its full context, and `compaction_end` reports `ok: false` with the diagnostic

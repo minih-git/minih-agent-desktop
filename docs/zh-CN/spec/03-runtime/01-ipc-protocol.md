@@ -608,7 +608,12 @@ type AgentEvent =
      mark?: { id: string; throughMessageId: string;
               generation: number; summaryTokens: number;
               summarized: boolean;
-              fallback?: "retained_tail" };
+              fallback?: "retained_tail";
+              summaryModel?: { providerId: string; modelId: string;
+                               source: "specific" | "previous";
+                               fallback?: "unavailable" | "failed";
+                               requestedProviderId?: string;
+                               requestedModelId?: string } };
      error?: { code: string; message: string } }
  | { type: "error"; error: AppError }
  | { type: "status"; status: AgentStatus };

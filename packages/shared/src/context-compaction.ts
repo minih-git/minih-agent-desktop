@@ -1,4 +1,5 @@
 import type {
+  CompactionSummaryModel,
   ContextCompactionFallback,
   ContextCompactionMark,
   ContextCompactionRecord,
@@ -79,10 +80,49 @@ export function checkpointFallback(
   return value === "retained_tail" ? value : undefined;
 }
 
+/**
+ * The model that wrote a checkpoint's summary, when it is not the conversation
+ * model (D691). Reads the opaque `details` value the host persists verbatim, so
+ * the record's own `providerId`/`modelId` keep naming the conversation model.
+ * An unknown shape reads as "the conversation model summarized", which is what
+ * every checkpoint written before this field means.
+ */
+export function checkpointSummaryModel(
+  details: unknown,
+): CompactionSummaryModel | undefined {
+  const value = (details as { summaryModel?: unknown } | null | undefined)?.summaryModel;
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const providerId = typeof record.providerId === "string" ? record.providerId.trim() : "";
+  const modelId = typeof record.modelId === "string" ? record.modelId.trim() : "";
+  const source =
+    record.source === "specific" || record.source === "previous"
+      ? record.source
+      : undefined;
+  if (!providerId || !modelId || !source) return undefined;
+  const fallback =
+    record.fallback === "unavailable" || record.fallback === "failed"
+      ? record.fallback
+      : undefined;
+  const requestedProviderId =
+    typeof record.requestedProviderId === "string" ? record.requestedProviderId.trim() : "";
+  const requestedModelId =
+    typeof record.requestedModelId === "string" ? record.requestedModelId.trim() : "";
+  return {
+    providerId,
+    modelId,
+    source,
+    ...(fallback ? { fallback } : {}),
+    ...(requestedProviderId ? { requestedProviderId } : {}),
+    ...(requestedModelId ? { requestedModelId } : {}),
+  };
+}
+
 export function contextCompactionMark(
   record: ContextCompactionRecord,
 ): ContextCompactionMark {
   const fallback = checkpointFallback(record.details);
+  const summaryModel = checkpointSummaryModel(record.details);
   return {
     id: record.id,
     throughMessageId: record.throughMessageId,
@@ -90,5 +130,6 @@ export function contextCompactionMark(
     summaryTokens: estimateSummaryTokens(record.summary ?? ""),
     summarized: checkpointSummarized(record.details),
     ...(fallback ? { fallback } : {}),
+    ...(summaryModel ? { summaryModel } : {}),
   };
 }

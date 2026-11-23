@@ -200,6 +200,33 @@ export type ContextCompactionMark = ContextCompactionStatus & {
    * notice as a summary.
    */
   fallback?: ContextCompactionFallback;
+  /**
+   * Which model wrote the summary, when the user chose one that is not the
+   * conversation model. Absent means the session's own model summarized, which
+   * is what every build before this setting did.
+   */
+  summaryModel?: CompactionSummaryModel;
+};
+
+/**
+ * The model a checkpoint's summary was written by, when it is not the
+ * conversation model.
+ *
+ * `fallback` records that the chosen model could not summarize — a deleted
+ * account, a revoked credential, a provider that answered with a tool call
+ * instead of prose — and the conversation model wrote the summary instead. The
+ * checkpoint never hides that: the transcript row and the context inspector read
+ * this mark, and the runtime logs a `compaction_summary_model` diagnostic.
+ */
+export type CompactionSummaryModel = {
+  providerId: string;
+  modelId: string;
+  /** Why this model: the `specific` setting, or the model being switched from. */
+  source: "specific" | "previous";
+  fallback?: "unavailable" | "failed";
+  /** The binding the setting or the switch asked for, when it fell back. */
+  requestedProviderId?: string;
+  requestedModelId?: string;
 };
 
 /**

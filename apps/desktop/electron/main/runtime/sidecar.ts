@@ -741,6 +741,105 @@ export function createSidecarRuntime({
       ...(modelConfig ? { modelConfig } : {}),
     };
   });
+  /**
+   * Compaction summary model (D691). The prompt cache makes the model being
+   * switched away from the cheapest one to summarize with, and a cheap model is
+   * cheaper for every other compaction. The runtime names the binding; this
+   * resolver is the only place that reads its credential, and it refuses any
+   * binding the user did not choose: a `specific` model must be exactly the
+   * configured one, and a `previous_on_switch` model must be one this session
+   * actually ran on.
+   */
+  s.setCompactionModelResolver(async ({ sessionId, providerId, modelId }) => {
+    const settings = await runtimeState.host!.call<any>("settings.get");
+    const configured = settings?.compactionModel;
+    const mode =
+      configured?.mode === "specific" || configured?.mode === "previous_on_switch"
+        ? configured.mode
+        : "follow_current";
+    const sameModel = (candidate: unknown) =>
+      typeof candidate === "string" &&
+      candidate.trim().toLowerCase() === modelId.trim().toLowerCase();
+    if (mode === "specific") {
+      if (configured?.providerId !== providerId || !sameModel(configured?.modelId)) {
+        throw new Error("compaction model is not the configured one");
+      }
+    } else if (mode === "previous_on_switch") {
+      const detail = await runtimeState.host!.call<{
+        session?: { messages?: any[] };
+      }>("session.get", { id: sessionId, messageLimit: 400 });
+      const ranOn = (detail?.session?.messages ?? []).some(
+        (row) =>
+          row?.role === "assistant" &&
+          row.providerId === providerId &&
+          sameModel(row.modelId),
+      );
+      if (!ranOn) throw new Error("model did not produce this session's context");
+    } else {
+      throw new Error("compaction model is not configured");
+    }
+
+    const allProviders = await listRuntimeProviders(false);
+    const provider = allProviders.find((candidate: any) => candidate.id === providerId);
+    if (!provider) throw new Error("compaction model provider is not configured");
+    const binding = provider.models?.find((candidate: any) => sameModel(candidate.id));
+    if (!binding) {
+      throw new Error(`model "${modelId}" is not offered by provider "${provider.name}"`);
+    }
+    const isVendorAccount = provider.authKind === OAUTH_AUTH_KIND;
+    let apiKey = "";
+    if (!isVendorAccount && provider.authKind !== "none") {
+      const secret = await runtimeState.host!.call<{ value?: string }>(
+        "providers.getSecret",
+        { id: provider.id },
+      );
+      apiKey = secret?.value ?? "";
+      if (!apiKey) throw new Error(`provider "${provider.name}" has no API key`);
+    }
+    await modelsDevCatalog.ensureLoaded();
+    let catalogModelConfig: Parameters<typeof modelConfigWithBinding>[0];
+    if (isVendorAccount) {
+      const vendorBinding = await vendorOAuth.bindingFor(provider.id, modelId);
+      if (!vendorBinding) {
+        throw new Error(`vendor "${provider.name}" does not offer "${modelId}"`);
+      }
+      catalogModelConfig =
+        vendorBinding.modelConfig ?? catalogModelConfigFor(modelsDevCatalog, {
+          providerId: provider.id,
+          vendorKey: provider.vendorKey,
+          baseUrl: vendorBinding.baseUrl ?? provider.baseUrl,
+          apiStyle: vendorBinding.apiStyle ?? provider.apiStyle,
+          modelId,
+        });
+    } else {
+      catalogModelConfig = catalogModelConfigFor(modelsDevCatalog, {
+        providerId: provider.id,
+        vendorKey: provider.vendorKey,
+        baseUrl: provider.baseUrl,
+        apiStyle: provider.apiStyle,
+        modelId,
+      });
+    }
+    const { modelConfig, capabilities } = effectiveSubagentModelConfig(
+      provider,
+      modelId,
+      catalogModelConfig,
+    );
+    return {
+      id: provider.id,
+      name: provider.name,
+      ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
+      ...(provider.vendorKey ? { vendorKey: provider.vendorKey } : {}),
+      modelId,
+      apiKey,
+      ...(provider.authKind ? { authKind: provider.authKind } : {}),
+      ...(provider.apiStyle ? { apiStyle: provider.apiStyle } : {}),
+      ...(provider.headers ? { headers: provider.headers } : {}),
+      supportsReasoning: capabilities.supportsReasoning,
+      supportedThinkingLevels: [...capabilities.supportedThinkingLevels],
+      ...(modelConfig ? { modelConfig } : {}),
+    };
+  });
   // Cross-session hand-off (ADR builtin-session-messaging): the user names a
   // session and the Agent delivers a task into it. The ledger, permissions and
   // callbacks stay in host-core; these handlers only bind the real sender.
