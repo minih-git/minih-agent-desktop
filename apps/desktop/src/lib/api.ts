@@ -453,8 +453,17 @@ export type BackgroundTaskOutput = {
   truncated: boolean;
 };
 
-/** \`session.create\` input: summary fields plus the isolation switch. */
-export type CreateSessionInput = Partial<SessionSummary> & {
+/**
+ * \`session.create\` input: summary fields plus the isolation switch.
+ *
+ * The provenance fields are excluded because the host decides them: only
+ * Electron main stamps an origin, and the preload drops these keys from any
+ * renderer payload (ADR persisted-session-origin).
+ */
+export type CreateSessionInput = Omit<
+  Partial<SessionSummary>,
+  "origin" | "originSession" | "originTaskId"
+> & {
   /** Run the session in its own git worktree (ADR 0329). */
   isolated?: boolean;
 };
@@ -464,6 +473,9 @@ function normalizeSession(session: SessionSummary): SessionSummary {
     ...safeSessionSummary(session),
     source: isRemoteSession(session) ? "remote" : session.source ?? "desktop",
     mode: normalizeMode((session as { mode?: unknown }).mode),
+    // A host that predates the origin column made ordinary conversations, so
+    // its silence is `user` rather than "unknown".
+    origin: session.origin ?? "user",
   };
 }
 

@@ -677,6 +677,14 @@ CREATE TABLE sessions (
   deleted_at  INTEGER,                         -- plugin trash marker; null means active
   pinned      INTEGER NOT NULL DEFAULT 0,
   last_seq    INTEGER NOT NULL DEFAULT 0,      -- current message count / ordinal allocator
+  -- Where the session came from (schema v44, ADR persisted-session-origin).
+  -- `user` is the person opening a conversation; the other four name the
+  -- creator the sidebar tags. Stored rather than derived because every derived
+  -- source is prunable.
+  origin      TEXT NOT NULL DEFAULT 'user'
+              CHECK (origin IN ('user', 'agent', 'plugin', 'task', 'scheduled')),
+  origin_session_id TEXT,                      -- the session that created this one
+  origin_task_id    TEXT,                      -- the scheduled task of a run
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
@@ -1724,12 +1732,17 @@ CREATE INDEX idx_task_runs ON task_runs(task_id, started_at DESC);
 ```
 
 A run that spawns a session gets its transcript for free via `session_id`.
-That transcript is identified as automation output by an `EXISTS` check against
-`task_runs` that every session summary and search hit carries as `scheduledRun`.
-The ownership is derived on read and never stored on the session row, so the
-SessionList and session search hide the transcript while it has a run, and
-deleting the task returns it to the ordinary lists instead of leaving it
-unreachable (issue #1291).
+Since schema v44 the transcript itself records that it is automation output:
+`scheduled.run` creates the session with `origin = 'scheduled'` and
+`origin_task_id = <task>`, and every summary reports those two fields
+([ADR persisted-session-origin](../../adr/persisted-session-origin.md)). The
+derived `EXISTS` check against `task_runs` stays on the summary as
+`scheduledRun` for older hosts and for the desktop tray, which has no room for a
+tag; listing and search read the stored origin instead.
+Nothing is hidden any more: the sidebar, its pinned rows, its Activity stream and
+session search list a run like any other conversation, tagged 定时, and one task's
+runs fold into a single row that opens the newest run. This replaces the hiding
+issue #1291 introduced.
 `scheduled.listRuns` answers two shapes: one task's own history (`taskId`, at most
 200 rows) and one newest run per task (`latestPerTask`, one row per task, never
 combined with `taskId`). The task column reads the second shape. A global window
@@ -1737,13 +1750,14 @@ over `task_runs` can be filled by one busy task — retention keeps the last 100
 runs *per task* — and would then report an idle task as never run, so the read
 that feeds the column is per task rather than a shared window.
 Retention keeps the newest 100 runs per task (`TASK_RUNS_KEEP`, applied on every
-boot). Ownership is derived from those rows, so a pruned run takes two things
-with it: the run leaves the task's history, and its session stops carrying
-`scheduledRun`, which returns that transcript to the SessionList and to session
-search. A task that runs faster than the kept window — an `interval` task from
-five minutes up, an hourly task after roughly four days — reaches that boundary;
-replacing the derived marker with a persistent origin is tracked with the rest
-of issue #1291.
+boot). Pruning takes the run out of the task's history and out of the derived
+`scheduledRun` marker, and the transcript keeps everything else: its
+`origin = 'scheduled'` and its `origin_task_id` are columns on the session, so
+the row stays tagged 定时 and stays folded under the task it came from. A task
+that runs faster than the kept window — an `interval` task from five minutes up,
+an hourly task after roughly four days — therefore keeps a stable sidebar
+history while its oldest runs leave the Scheduled page's own list. This closes
+the pruning gap issue #1291 tracked.
 The task page also reads at most 200 runs per task, the bound
 `scheduled.listRuns` enforces for a single task's history.
 The existing JSON extension stores `schedule: {hour, minute, weekday}`,

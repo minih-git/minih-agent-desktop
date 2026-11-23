@@ -74,6 +74,8 @@ for (const outcome of ["success", "exception", "reply_started"]) {
 }
 const { registerSessionIpc } = load("../electron/main/ipc/session-ipc.ts", {
   electron: { shell: {} }, "node:fs": fs, "node:path": path, "@minih-agent/shared": { ErrorCodes, IPC }, "../importers": {}, "../services/session-collaboration": {}, "../bootstrap/remote-hosts.js": {}, "../services/session-search": {},
+  "./internal-channels": { SESSION_CREATE_WITH_ORIGIN_CHANNEL: "internal/session-create" },
+  "./session-origin-payload": { withoutSessionOrigin: (input) => input ?? {} },
 });
 function ipcHarness(pending = false, result = { ok: true }) {
   const handlers = new Map(); const events = [];

@@ -129,7 +129,13 @@ pub fn search_in_scope(
                 (pi_search_contains(s.title, ?1) OR pi_search_contains(p.name, ?1)
                  OR pi_search_contains(p.path, ?1)) AS metadata_match,
                 EXISTS (SELECT 1 FROM task_runs r WHERE r.session_id = s.id) AS scheduled_run
+                , s.origin AS session_origin,
+                s.origin_task_id AS session_origin_task_id,
+                s.origin_session_id AS origin_session_id,
+                COALESCE(NULLIF(os.title, ''), os.id) AS origin_session_title,
+                (os.id IS NOT NULL AND os.deleted_at IS NULL) AS origin_session_available
          FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
+         LEFT JOIN sessions os ON os.id = s.origin_session_id
          LEFT JOIN matched ON matched.session_id = s.id
          WHERE s.deleted_at IS NULL AND (matched.count > 0 OR metadata_match)
            AND (?5 IS NULL OR p.path IN (SELECT value FROM json_each(?5)))

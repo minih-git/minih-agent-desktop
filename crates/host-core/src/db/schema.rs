@@ -117,6 +117,21 @@ CREATE TABLE sessions (
   owner_session_id TEXT,
   -- Archived with its task, in the same transaction (schema v33).
   archived_at INTEGER,
+  -- Where the session came from (ADR persisted-session-origin, schema v44).
+  -- `user` is the person opening a conversation; the other four name the
+  -- creator that made the row, which the sidebar tags and filters on. The
+  -- origin is stored rather than derived because every derived source is
+  -- prunable: `task_runs` keeps 100 runs per task, and
+  -- `session_collaboration_links` grants permissions rather than recording
+  -- provenance.
+  origin      TEXT NOT NULL DEFAULT 'user'
+              CHECK (origin IN ('user', 'agent', 'plugin', 'task', 'scheduled')),
+  -- The session that created this one: the `SessionCreate` source session, a
+  -- plugin's parent, or an employee. Deliberately not a foreign key — the
+  -- reference outlives its target so the tag can still say what made the row.
+  origin_session_id TEXT,
+  -- The scheduled task a run transcript belongs to (origin = 'scheduled').
+  origin_task_id TEXT,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );

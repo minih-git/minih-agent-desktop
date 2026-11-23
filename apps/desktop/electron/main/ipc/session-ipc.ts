@@ -28,6 +28,8 @@ import type { PluginRuntime } from "../plugin-runtime";
 import { readSessionCollaboration } from "../services/session-collaboration";
 import { searchSessionsAcrossSources } from "../services/session-search";
 import type { IpcRegistrar } from "./types";
+import { SESSION_CREATE_WITH_ORIGIN_CHANNEL } from "./internal-channels";
+import { withoutSessionOrigin } from "./session-origin-payload";
 import { getActiveRemoteHostsBoot } from "../bootstrap/remote-hosts.js";
 
 type RuntimeSession = {
@@ -250,7 +252,7 @@ export function registerSessionIpc({
       ].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
     };
   });
-  handle(IPC.invoke.sessionCreate, async (input = {}) => {
+  const createSession = async (input: Record<string, unknown> = {}) => {
     if (!host) throw new Error("host unavailable");
     const capabilityPromise = sessionCapabilityContext();
     const res = await host.call<{ session?: (RuntimeSession & { id?: string }) | null }>(
@@ -261,7 +263,15 @@ export function registerSessionIpc({
     if (!res.session) return res;
     const { providers, defaults } = await capabilityPromise;
     return { ...res, session: enrichSession(res.session, providers, defaults) };
-  });
+  };
+  // The renderer opens conversations, so its payload carries no provenance: the
+  // three origin keys are dropped before the host sees them.
+  handle(IPC.invoke.sessionCreate, async (input = {}) =>
+    createSession(withoutSessionOrigin(input)),
+  );
+  // Main's own trusted creators reach the same handler through a channel the
+  // renderer's whitelist does not contain, and keep the origin they set.
+  handle(SESSION_CREATE_WITH_ORIGIN_CHANNEL, async (input = {}) => createSession(input));
   handle(
     IPC.invoke.sessionFork,
     async (

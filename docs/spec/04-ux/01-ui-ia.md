@@ -251,9 +251,19 @@ destination, chat as the home surface, tools and permissions inline.
   descending, grouped by time (`Today`, `Yesterday`, `Previous 7 days`, `Previous 14 days`,
   `Older`), with each row displaying a two-line card (line 1: status indicator, task title,
   and owning project/workspace label; line 2: 2-line clamped preview of the latest user or
-  assistant message). A scheduled run's own conversation joins the stream only
-  while that run is executing: this is the one list that shows those
-  transcripts, and the row leaves again once the turn settles (issue #1291).
+  assistant message). A scheduled run's own conversation joins the stream like
+  any other session, tagged 定时 (ADR persisted-session-origin).
+- **Origin tag and filter**: a session row whose creator is not the person
+  carries one quiet label before its title — `Agent`, `插件`, `员工` or `定时` —
+  in the same faint vocabulary as the Pi and remote labels, with a tooltip naming
+  the session (or scheduled task) that dispatched it. The person's own
+  conversations carry no tag. The session view menu opens with the sort order and
+  the archived switch, then a multi-select of 手动 / Agent / 插件 / 员工 / 定时 that
+  narrows the project groups, the pinned rows and the Activity stream together;
+  when it hides anything the view-menu button keeps a dot so the filter is
+  discoverable and reversible. The selection persists with the other sidebar
+  preferences, and a preference written before the filter existed selects
+  everything.
 - **Project actions**: open folder reveals the primary project directory; Edit
   project changes the host-owned logical group name and adjusts eligible
   non-primary roots (keeping renderer metadata in sync); pin/unpin changes

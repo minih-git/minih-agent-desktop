@@ -438,7 +438,7 @@ CREATE INDEX idx_notifications_unread
     fn a_fresh_file_carries_the_exact_plugin_shapes() {
         let (_dir, db, _path) = database();
         let conn = db.conn();
-        assert_eq!(SCHEMA_VERSION, 43);
+        assert_eq!(SCHEMA_VERSION, 44);
         assert_eq!(version(conn), SCHEMA_VERSION);
 
         // notifications: the plugin family's five columns, and the two session

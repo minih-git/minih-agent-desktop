@@ -455,10 +455,10 @@ fn write_and_index(
         tx.execute(
             "INSERT INTO sessions (
                 id, title, project_id, provider_id, model_id, mode,
-                thinking_level, permission_mode, source, last_seq,
+                thinking_level, permission_mode, source, last_seq, origin,
                 created_at, updated_at
             ) VALUES (?1, ?2, ?3, NULL, NULL, 'agent', 'off', 'inherit',
-                       ?4, ?5, ?6, ?7)",
+                       ?4, ?5, 'plugin', ?6, ?7)",
             params![
                 prepared.session_id,
                 prepared.title,
@@ -697,10 +697,10 @@ pub fn import_batch(db: &Database, plugin_id: &str, params: &Value) -> Result<Va
             tx.execute(
                 "INSERT INTO sessions (
                     id, title, project_id, provider_id, model_id, mode,
-                    thinking_level, permission_mode, source, last_seq,
+                    thinking_level, permission_mode, source, last_seq, origin,
                     created_at, updated_at
                 ) VALUES (?1, ?2, ?3, NULL, NULL, 'agent', 'off', 'inherit',
-                           ?4, ?5, ?6, ?7)",
+                           ?4, ?5, 'plugin', ?6, ?7)",
                 params![
                     item.session_id,
                     item.title,

@@ -227,6 +227,8 @@ function forkHarness({ host, sidecar, activeTurns = new Map() }) {
     "../importers": { convertSession() {}, scanAllSources() {}, scanModelConfigs() {} },
     "../services/session-collaboration": { readSessionCollaboration() {} },
     "../services/session-search": { searchSessionsAcrossSources },
+  "./internal-channels": { SESSION_CREATE_WITH_ORIGIN_CHANNEL: "internal/session-create" },
+  "./session-origin-payload": { withoutSessionOrigin: (input) => input ?? {} },
     "../bootstrap/remote-hosts.js": { getActiveRemoteHostsBoot: () => null },
   });
   registerSessionIpc({

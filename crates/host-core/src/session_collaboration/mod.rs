@@ -285,7 +285,17 @@ pub(super) fn spawn_session(
         },
     )?
     .ok_or_else(|| anyhow!("NOT_FOUND: parent session"))?;
-    sessions::create_session_with_options(
+    // Where the worker came from, read off the identity its caller asked for: an
+    // employee's task session is `task` (and names the employee), every other
+    // worker is a plugin's (and the link row written beside it grants exactly
+    // that relationship). No spawn can produce a `user` session, so no call site
+    // can forget to say so.
+    let origin = if request.role.as_deref() == Some("task") {
+        crate::session_origin::SessionOriginFields::task(request.source)
+    } else {
+        crate::session_origin::SessionOriginFields::plugin(Some(request.source.to_string()))
+    };
+    sessions::create_session_with_origin(
         db,
         sessions::SessionCreateOptions {
             title: Some(request.title),
@@ -302,6 +312,7 @@ pub(super) fn spawn_session(
             role: request.role,
             bot_profile_json: None,
         },
+        origin,
     )
 }
 

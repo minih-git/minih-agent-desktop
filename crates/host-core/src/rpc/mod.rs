@@ -2832,6 +2832,12 @@ async fn handle_request(
         "session.create" => {
             let thinking_level = thinking_level_param(&params)?;
             let permission_parent = permission_parent_param(&params)?;
+            // Provenance is a host-side decision (ADR persisted-session-origin):
+            // only Electron main reaches this operation, the renderer's IPC
+            // handler drops these keys, and the RACP catalog builds its own
+            // payload. Omitted means an ordinary conversation.
+            let origin = crate::session_origin::SessionOriginFields::from_params(&params)
+                .map_err(|e| rpc_err(1002, e.to_string(), "INVALID_PARAMS"))?;
             // ADR 0329: an isolated session gets its own git worktree.
             let isolated = params
                 .get("isolated")
@@ -2867,7 +2873,7 @@ async fn handle_request(
             } else {
                 None
             };
-            let session = sessions::create_session_with_options(
+            let session = sessions::create_session_with_origin(
                 &st.db,
                 sessions::SessionCreateOptions {
                     title: params
@@ -2897,6 +2903,7 @@ async fn handle_request(
                     role: None,
                     bot_profile_json: None,
                 },
+                origin,
             )
             .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             let Some(project) = isolated_project else {
@@ -8275,6 +8282,66 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(malformed.data.unwrap()["errorCode"], "INVALID_PARAMS");
+    }
+
+    /// `session.create` stamps the origin Electron main names, refuses one it
+    /// cannot represent, and defaults to an ordinary conversation (ADR
+    /// persisted-session-origin).
+    #[tokio::test]
+    async fn session_create_rpc_stamps_a_validated_origin() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let parent_id = sessions::create_session_with_options(
+            &app_state.db,
+            sessions::SessionCreateOptions {
+                title: Some("Hand-off source".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .id;
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let ordinary = handle_request(state.clone(), "session.create", json!({}), tx.clone())
+            .await
+            .unwrap();
+        assert_eq!(ordinary["session"]["origin"], json!("user"));
+        assert!(ordinary["session"].get("originSession").is_none());
+
+        let handed_off = handle_request(
+            state.clone(),
+            "session.create",
+            json!({ "origin": "agent", "originSessionId": parent_id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(handed_off["session"]["origin"], json!("agent"));
+        assert_eq!(
+            handed_off["session"]["originSession"]["sessionId"],
+            json!(parent_id)
+        );
+        assert_eq!(
+            handed_off["session"]["originSession"]["title"],
+            json!("Hand-off source")
+        );
+
+        // A run names its task, never a session; an unknown origin is refused
+        // rather than stored.
+        for params in [
+            json!({ "origin": "scheduled" }),
+            json!({ "origin": "scheduled", "originSessionId": parent_id }),
+            json!({ "origin": "agent", "originTaskId": "t1" }),
+            json!({ "origin": "steward" }),
+            json!({ "origin": 7 }),
+        ] {
+            let refused = handle_request(state.clone(), "session.create", params, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(refused.data.unwrap()["errorCode"], "INVALID_PARAMS");
+        }
     }
 
     #[tokio::test]

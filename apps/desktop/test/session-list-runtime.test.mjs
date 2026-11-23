@@ -11,6 +11,11 @@ const imports = {
   "@minih-agent/shared": { IPC }, "../importers": {},
   "../services/session-collaboration": {}, "../services/session-search": {},
   "../bootstrap/remote-hosts.js": { getActiveRemoteHostsBoot: () => null },
+  // The two seams that keep a session's provenance a main-side decision
+  // (ADR persisted-session-origin): the reserved channel name and the strip
+  // the renderer path applies.
+  "./internal-channels": { SESSION_CREATE_WITH_ORIGIN_CHANNEL: "internal/session-create" },
+  "./session-origin-payload": { withoutSessionOrigin: (input) => input ?? {} },
 };
 const loaded = { exports: {} };
 new Function("require", "exports", "module", outputText)((id) => {

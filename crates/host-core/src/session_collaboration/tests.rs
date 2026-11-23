@@ -830,3 +830,40 @@ fn a_follow_up_is_checked_against_the_tasks_own_authorization() {
         "the task's own authorization, not the sender's"
     );
 }
+
+/// A spawned worker records the plugin path that made it (ADR
+/// persisted-session-origin): the origin column names the plugin origin and the
+/// parent session, which is the same relationship the link row grants.
+#[test]
+fn a_spawned_worker_is_tagged_as_a_plugin_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let parent = session(&db, "Parent");
+    let spawned = handle(
+        &db,
+        "session.collaboration.spawn",
+        &json!({
+            "sourceSessionId": parent,
+            "pluginId": "pi.session-orchestrator",
+            "content": "Audit the migration",
+            "idempotencyKey": "spawn-one"
+        }),
+    )
+    .unwrap();
+    let worker = spawned["sessionId"].as_str().unwrap();
+    let summary = sessions::session_summary(&db, worker).unwrap().unwrap();
+    assert_eq!(summary.origin, crate::session_origin::ORIGIN_PLUGIN);
+    assert_eq!(
+        summary
+            .origin_session
+            .as_ref()
+            .map(|o| o.session_id.as_str()),
+        Some(parent.as_str())
+    );
+    // The tag survives the creator: a deleted parent leaves the origin in place
+    // and only the reference becomes unavailable.
+    sessions::delete_session(&db, &parent).unwrap();
+    let after = sessions::session_summary(&db, worker).unwrap().unwrap();
+    assert_eq!(after.origin, crate::session_origin::ORIGIN_PLUGIN);
+    assert_eq!(after.origin_session.map(|o| o.available), Some(false));
+}

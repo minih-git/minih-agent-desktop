@@ -100,6 +100,11 @@ fn a_task_session_inherits_the_employees_configuration_but_not_its_identity() {
         std::fs::canonicalize(&repo_path).unwrap().to_string_lossy()
     );
     assert!(session["botProfile"].is_null(), "a task is not an employee");
+    // A task session is tagged as the employee's work, and names the employee,
+    // so the sidebar can say who dispatched it (ADR persisted-session-origin).
+    assert_eq!(session["origin"], json!("task"));
+    assert_eq!(session["originSession"]["sessionId"], json!(owner));
+    assert_eq!(session["originSession"]["available"], json!(true));
     let task = &created["task"];
     assert_eq!(task["employeeSessionId"], json!(owner));
     assert_eq!(task["origin"], json!("direct"));

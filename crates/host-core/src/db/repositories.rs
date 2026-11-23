@@ -415,6 +415,14 @@ impl Database {
             // already gone.
             super::plugin_capabilities_migration::migrate(&conn, path)?;
         }
+        if migrated_version <= 43 {
+            // Where a session came from (ADR persisted-session-origin). Three
+            // additive columns and one backfill that reads the evidence the old
+            // schema already held — the plugin link row, an employee task's
+            // role, and the run that owns a transcript. No table is rebuilt, so
+            // a long-lived file keeps every row it had.
+            super::session_origin_migration::migrate(&conn, path)?;
+        }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;
         crate::session_collaboration::recover(&db)?;

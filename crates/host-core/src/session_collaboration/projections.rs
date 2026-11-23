@@ -23,8 +23,26 @@ fn creator(db: &Database, session_id: &str) -> Result<Option<Value>> {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    Ok(value.map(|(session_id, title, available)| {
-        json!({"sessionId":session_id,"title":title,"available":available})
+    if let Some((session_id, title, available)) = value {
+        return Ok(Some(
+            json!({"sessionId":session_id,"title":title,"available":available}),
+        ));
+    }
+    // Not a plugin worker, so the session row itself is the only place its
+    // creator is recorded: an agent hand-off, an employee's task session or a
+    // plugin's non-spawn session names its source there. Read through the same
+    // resolver the sidebar tag uses so the two cannot disagree.
+    let source: Option<String> = db
+        .conn()
+        .prepare_cached("SELECT origin_session_id FROM sessions WHERE id = ?1")?
+        .query_row(params![session_id], |row| row.get(0))
+        .optional()?
+        .flatten();
+    let Some(source) = source else {
+        return Ok(None);
+    };
+    Ok(crate::session_origin::resolve(db, &source)?.map(|origin| {
+        json!({"sessionId":origin.session_id,"title":origin.title,"available":origin.available})
     }))
 }
 

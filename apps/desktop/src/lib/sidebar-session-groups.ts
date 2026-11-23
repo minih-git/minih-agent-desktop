@@ -1,6 +1,5 @@
 import type { SessionSummary } from "@minih-agent/shared";
 import { isRemoteSession } from "./remote-session-safety.ts";
-import { isAutomationSession } from "./session-origin.ts";
 import type { ProjectMeta, SessionMeta } from "./sidebar-preferences";
 
 export function normalizeProjectPath(projectPath?: string | null): string | null {
@@ -181,28 +180,27 @@ function optionalSessionTimestamp(value?: string | null): number | null {
  * Return all visible sessions across all projects and temporary chats ordered
  * by latest activity (`updatedAt` descending) for the sidebar Activity panel.
  *
- * A scheduled run owns its transcript, so the Scheduled page is its entry point
- * and every other list keeps it out (issue #1291). This feed is the one
- * exception, and only while the run is still executing: live work belongs in
- * the stream, a settled run does not.
+ * Every session the sidebar lists belongs here, a scheduled run included: its
+ * row carries the 定时 tag, and hiding it here as well as in the project groups
+ * would make the feed disagree with the list beside it (ADR
+ * persisted-session-origin). The origin filter is applied by the caller, so
+ * this feed has one reason to drop a row: its project or itself is archived.
  */
 export function getSidebarActivitySessions({
   sessions,
   sessionMeta,
   projectMeta,
   showArchived,
-  runningSessionIds,
 }: {
   sessions: readonly SessionSummary[];
   sessionMeta: Record<string, SessionMeta>;
   projectMeta: Record<string, ProjectMeta>;
   showArchived: boolean;
-  /** Sessions executing a turn right now, as the renderer knows them. */
-  runningSessionIds: ReadonlySet<string>;
 }): SessionSummary[] {
   return sessions
     .filter((session) => {
-      if (isAutomationSession(session) && !runningSessionIds.has(session.id)) return false;
+      // A run's transcript is a listed session now that it carries its origin
+      // tag (ADR persisted-session-origin); the activity view keeps it.
       const path = normalizeProjectPath(session.projectPath);
       const project = path ? (projectMeta[path] ?? projectMeta[session.projectPath!]) : undefined;
       return (
