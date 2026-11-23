@@ -1010,7 +1010,7 @@ export const ptBR = {
       offline: "Offline",
     },
     settings: {
-      title: "Funcionários",
+      title: "Super Agent",
       listTitle: "Seus funcionários",
       listDescription: "Um funcionário é uma conversa duradoura com um nome, uma função e um nível de permissão.",
       empty: "Nenhum funcionário ainda",
@@ -1338,7 +1338,7 @@ export const ptBR = {
       skills: "Habilidades",
       mcp: "MCP",
       subagents: "Subagentes",
-      employees: "Funcionários",
+      employees: "Super Agent",
       projects: "Projetos",
       sync: "Sincronização",
       remoteHosts: "Hosts remotos",

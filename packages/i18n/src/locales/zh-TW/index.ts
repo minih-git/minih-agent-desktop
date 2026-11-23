@@ -1011,7 +1011,7 @@ export const zhTW = {
       offline: "離線",
     },
     settings: {
-      title: "員工",
+      title: "Super Agent",
       listTitle: "你的員工",
       listDescription: "員工是一條長期對話，擁有名字、職責與權限檔。",
       empty: "尚無員工",
@@ -1345,7 +1345,7 @@ sklm: {
       skills: "技能",
       mcp: "MCP",
       subagents: "子智慧體",
-      employees: "員工",
+      employees: "Super Agent",
       projects: "專案",
       sync: "雲端同步",
       remoteHosts: "遠端主機",

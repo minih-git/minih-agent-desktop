@@ -1004,7 +1004,7 @@ export const fr = {
       "offline": "Hors ligne",
     },
     "settings": {
-      "title": "Employés",
+      "title": "Super Agent",
       "listTitle": "Vos employés",
       "listDescription": "Un employé est une conversation durable dotée d'un nom, d'une mission et d'un niveau d'autorisation.",
       "empty": "Aucun employé pour l'instant",
@@ -1349,7 +1349,7 @@ sklm: {
       "skills": "Compétences",
       "mcp": "MCP",
       "subagents": "Sous-agents",
-      "employees": "Employés",
+      "employees": "Super Agent",
       "projects": "Projets",
       "sync": "Synchronisation cloud",
       "remoteHosts": "Hôtes distants",

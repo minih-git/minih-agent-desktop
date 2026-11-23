@@ -1035,7 +1035,7 @@ export const zhCN = {
       offline: "离线",
     },
     settings: {
-      title: "员工",
+      title: "Super Agent",
       listTitle: "你的员工",
       listDescription: "员工是一条长期对话，带名字、职责和权限档。",
       empty: "还没有员工",
@@ -1369,7 +1369,7 @@ sklm: {
       skills: "技能",
       mcp: "MCP",
       subagents: "子智能体",
-      employees: "员工",
+      employees: "Super Agent",
       projects: "项目",
       sync: "云同步",
       remoteHosts: "远程主机",

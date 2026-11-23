@@ -1022,7 +1022,7 @@ export const tr = {
       offline: "Çevrimdışı",
     },
     settings: {
-      title: "Çalışanlar",
+      title: "Super Agent",
       listTitle: "Çalışanlarınız",
       listDescription: "Bir çalışan; adı, görevi ve izin düzeyi olan uzun ömürlü bir sohbettir.",
       empty: "Henüz çalışan yok",
@@ -1362,7 +1362,7 @@ sklm: {
       skills: "Beceriler",
       mcp: "MCP",
       subagents: "Alt ajanlar",
-      employees: "Çalışanlar",
+      employees: "Super Agent",
       projects: "Projeler",
       sync: "Bulut senkronizasyonu",
       remoteHosts: "Uzak ana bilgisayarlar",

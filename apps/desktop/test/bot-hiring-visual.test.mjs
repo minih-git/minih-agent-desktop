@@ -235,7 +235,12 @@ async function render(kind) {
     for (const name of ["普通员工", "Router 后端", "Desktop 前端"]) {
       await until(() => document.body.textContent.includes(name), "employee " + name);
     }
-    if (document.body.textContent.includes("Super Agent")) {
+    // The page title now reads "Super Agent" too, so the check looks at the
+    // roster: what must not be there is a steward row.
+    const rosterText = [...document.querySelectorAll(".bot-list-row")]
+      .map((row) => row.textContent)
+      .join("\n");
+    if (rosterText.includes("Super Agent")) {
       throw new Error("the employee page still renders Super Agent");
     }
     const card = [...document.querySelectorAll(".settings-card-block")]

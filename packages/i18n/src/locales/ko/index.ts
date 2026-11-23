@@ -1015,7 +1015,7 @@ export const ko = {
       offline: "오프라인",
     },
     settings: {
-      title: "직원",
+      title: "Super Agent",
       listTitle: "내 직원",
       listDescription: "직원은 이름, 업무, 권한 등급을 가진 오래 유지되는 대화입니다.",
       empty: "아직 직원이 없습니다",
@@ -1354,7 +1354,7 @@ sklm: {
       skills: "스킬",
       mcp: "MCP",
       subagents: "서브에이전트",
-      employees: "직원",
+      employees: "Super Agent",
       projects: "프로젝트",
       sync: "클라우드 동기화",
       remoteHosts: "원격 호스트",

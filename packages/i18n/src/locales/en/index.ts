@@ -1048,7 +1048,7 @@ export const en = {
       offline: "Offline",
     },
     settings: {
-      title: "Employees",
+      title: "Super Agent",
       listTitle: "Your employees",
       listDescription: "An employee is a long-lived conversation with a name, a duty and a permission level.",
       empty: "No employees yet",
@@ -1389,7 +1389,7 @@ sklm: {
       skills: "Skills",
       mcp: "MCP",
       subagents: "Subagents",
-      employees: "Employees",
+      employees: "Super Agent",
       projects: "Projects",
       sync: "Cloud sync",
       remoteHosts: "Remote hosts",

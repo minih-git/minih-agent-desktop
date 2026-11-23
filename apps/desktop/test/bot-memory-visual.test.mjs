@@ -245,7 +245,7 @@ async function render(kind) {
     : windowShell({ activeSessionId: "router", settingsPage: settingsEmployeesPage() });
   flushSync(() => rootNode.render(scene));
   if (kind !== "sidebar-accepted") {
-    await until(() => document.body.textContent.includes("员工"), "the settings page");
+    await until(() => document.body.textContent.includes("Super Agent"), "the settings page");
     await until(() => document.body.textContent.includes("经验"), "the experience card");
     // The picture is only useful if it is the real window: the settings chrome
     // (title, category rail, content column) has to be laid out, not just the card.
