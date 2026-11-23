@@ -297,3 +297,91 @@ WebSocket calls, and the host-performed IMAP login of a credential-bearing
   with no storage and no owner; `notify.center` needs a durable row, a 200-row
   cap, an unread count and an uninstall path, and conflating them would give
   every plugin that shows a toast a permanent inbox entry.
+## 4. Multi-instance credential slots and the TCP ceiling (2026-11-23, 1.9.0)
+
+This section amends two of the decisions above. Everything else in this ADR
+stands.
+
+### The problem
+
+`contributes.credentials` describes *a* credential: one slot, one value. A
+mailbox plugin therefore configures one account, while the work it exists for —
+"watch my three inboxes" — needs several. The only ways out were a slot per
+mailbox (the manifest cannot know how many the user has), settings the plugin
+owns (outside the host's encrypted store, its audit trail, and its uninstall
+path), or a second account the user has to fake by editing the same value back
+and forth.
+
+The second number is the same story from the other side. A mailbox plugin keeps
+one idle IMAP connection per account so new mail arrives without polling. With a
+four-connection ceiling, a five-mailbox plugin spends five of its budget on
+being idle and has nothing left for the work.
+
+### Decision
+
+1. A slot may declare `multiple: { max }` (1..5). Absent keeps the released
+   single-value slot exactly: same storage key, same `credentials.list` answer,
+   same `credentialRef` spelling. Backwards compatibility is the hard
+   requirement; the feature is additive.
+2. Instances live in the encrypted secret store
+   (`plugin:<id>:cred:<slot>#<instanceId>`) with their metadata in the existing
+   per-plugin credential index. No schema change, and a `<slotId>` cannot
+   contain `#`, so the reference grammar is unambiguous.
+3. `credentialRef` addresses one instance as `"<slotId>#<instanceId>"`. A
+   reference without an instance on such a slot is `CREDENTIAL_INSTANCE_REQUIRED`;
+   a `#` suffix on a single-value slot is `INVALID_ARGUMENT`. The gate order on
+   every path is unchanged: permission → egress allowlist → slot → `scope ∩ net`
+   → value.
+4. A plugin may name an instance, so it must be able to identify one. The
+   manifest declares `labelField`, which must name a **non-secret** field, and
+   `credentials.list` returns each instance's id, label, and non-secret field
+   values. This is the one place a plugin reads something a user typed, and it is
+   a deliberate exception: a mailbox address is how a plugin tells one account
+   from another, and it is not the secret. Every `secret` field stays unreadable
+   on every path.
+5. Collecting a value stays a host act. `credentials.requestAdd` /
+   `requestRemove` ask the host to show **its own** form; the value travels
+   renderer → main → host-core and never through the plugin process. Three
+   refusals bound the interruption: no dialog while the app window is not in
+   front, one dialog at a time per plugin, `CREDENTIAL_LIMIT` at `max`, and a
+   30-second cooldown after the user dismisses one — a modal covers the whole app,
+   so an immediate retry would take the window from the user. An answered dialog
+   starts no cooldown.
+   `credentials:changed` is how the plugin learns to re-read the list.
+6. Upgrading an existing single slot into a multi-instance one keeps the value:
+   the host copies the stored blob into the first instance and only then removes
+   the original, with an instance id derived from the slot so a retry finishes
+   the same migration instead of adding a second instance. Downgrading folds the
+   first instance back and removes the rest. Both directions are audited by id,
+   never with a value.
+7. `MAX_CONNECTIONS_PER_PLUGIN` rises from 4 to 8. The ceiling bounds the host's
+   descriptors and memory; it was never a cap on the allowlist. The
+   per-connection write buffer, connect deadline, and TLS rules do not move.
+
+### Consequences
+
+- A plugin upgrades from one mailbox to five without a manifest rewrite, and an
+  existing single-account install keeps working with no migration of its own.
+- The `credentials.list` answer grows a shape a plugin can branch on: a
+  single-value slot still answers `{id, configured}`, so no released plugin sees
+  a different payload.
+- The dialog is a new way a plugin can reach the user. It is bounded by
+  foreground presence, one-at-a-time ownership, a timeout, and an instance limit,
+  and it is audited per call.
+- Eight sockets per plugin is still a ceiling that keeps a runaway plugin from
+  exhausting descriptors; it is not a per-host budget.
+
+### Alternatives
+
+- **A credential slot per account, declared at install.** Rejected: the manifest
+  cannot know how many accounts a user has, so it would cap the feature at
+  authoring time.
+- **Let the plugin collect the values with its own form.** Rejected: that puts
+  the plaintext in the process the host is protecting, and gives up the audit
+  entry and the foreground rule.
+- **Return only `instanceId` and no label.** Rejected: the plugin would be unable
+  to say which account a row is, and would have to ask the user to remember an
+  opaque id.
+- **Raise the TCP ceiling to "no limit".** Rejected: a bound is what keeps one
+  plugin's loop from taking the host's descriptors down with it. Eight covers the
+  idle-connection design with room for the work the connection exists for.

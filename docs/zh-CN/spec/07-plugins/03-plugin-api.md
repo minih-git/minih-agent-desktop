@@ -1058,16 +1058,36 @@ type PluginGlobalShortcut = {
 这不是操作系统沙箱。见 [ADR plugin-host-capabilities](/zh-CN/adr/plugin-host-capabilities)
 和 [04-plugin-security.md](/zh-CN/spec/07-plugins/04-plugin-security) §8.3。
 
-**实现状态。** `pi.net.tcp`、`pi.credentials.list`、`pi.notify.center`、
-`pi.inbound.getReceivers`、`inbound:webhook`、`schedule:fire` 和 `pi.tasks.*`
-已实现。插件任务最高为 `accept-edits`；按动作审批可用前显式请求 `auto` 会被拒绝。
+**实现状态。** `pi.net.tcp`、`pi.credentials.list` / `requestAdd` /
+`requestRemove`、`pi.notify.center`、`pi.inbound.getReceivers`、
+`inbound:webhook`、`schedule:fire` 和 `pi.tasks.*` 已实现。插件任务最高为 `accept-edits`；按动作审批可用前显式请求 `auto` 会被拒绝。
 `pi.net.fetch`、`pi.net.websocket.connect` 与 `pi.net.tcp.connect` 支持
 `credentialRef` 注入，最后一项仅限 `imap` 槽位。`pi.mail` 仍仅注册；调用前应
 检查是否存在（§8）。
 
 ```ts
-// credentials.use：宿主注入用户填写的槽位；插件只可查询配置状态。
-pi.credentials.list(): Promise<Array<{ id: string; configured: boolean }>>
+// credentials.use：宿主注入用户填写的槽位；插件只能读到配置状态、实例 id 与
+// 非 secret 字段值。
+pi.credentials.list(): Promise<Array<{
+  id: string;
+  configured: boolean;
+  /** 仅声明了 `multiple` 的槽位出现。 */
+  multiple?: true;
+  max?: number;
+  /** 仅声明了 `multiple` 的槽位出现，按创建顺序。 */
+  instances?: Array<{
+    instanceId: string;                    // 宿主生成的不透明 id
+    label: string;                          // 槽位 `labelField` 的值
+    publicFields: Record<string, string>;   // 仅非 secret 字段
+    configured: true;
+  }>;
+}>>
+// 由宿主自己的表单收集值；插件只拿到实例 id。
+pi.credentials.requestAdd(slotId: string): Promise<{ instanceId: string } | { cancelled: true }>
+pi.credentials.requestRemove(
+  slotId: string,
+  instanceId: string,
+): Promise<{ removed: true } | { cancelled: true }>
 pi.net.fetch(input: { …; credentialRef?: string })
 pi.net.websocket.connect(input: { …; credentialRef?: string })
 
@@ -1132,6 +1152,21 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   和对应网络权限。即使有 `net.anyHost`，目标也须同时位于槽位 `scope.domains` 与
   `manifest.net.domains` 内，否则发送前以 `PERMISSION_DENIED` 拒绝。引用无效或
   未声明返回 `INVALID_ARGUMENT`；槽位未配置返回 `CREDENTIAL_NOT_CONFIGURED`。
+  每条路径的检查顺序都一致：权限 → 出站白名单 → 槽位 → `scope ∩ net` → 读值。
+- **实例。** 声明了 `multiple` 的槽位以 `"<slotId>#<instanceId>"` 寻址。只写槽位
+  返回 `CREDENTIAL_INSTANCE_REQUIRED`；实例不存在返回 `CREDENTIAL_NOT_CONFIGURED`；
+  给单值槽位加实例后缀是 `INVALID_ARGUMENT`。`credentials.list` 报告 `instances`，
+  插件据此区分自己的账号，而每个实例的 `publicFields` 只包含槽位的非 secret 字段——
+  `secret` 字段不出现在任何回答里。
+- **宿主对话框。** `requestAdd` 与 `requestRemove` 请**宿主**弹出自己的表单；用户输入
+  的值经渲染层 → Main → host-core，从不经过插件进程。`requestAdd` 回答新实例的
+  `instanceId`，`requestRemove` 回答 `removed: true`，用户关闭表单时两者都回答
+  `{cancelled: true}`。拒绝码：达到 `multiple.max` 为 `CREDENTIAL_LIMIT`；同一插件
+  已有待处理对话框、以及用户刚刚关闭对话框后 30 秒内为 `CREDENTIAL_DIALOG_BUSY`
+  （模态框会遮住应用，立刻重试等于把窗口从用户手里抢走）；宿主窗口不在前台为
+  `CREDENTIAL_DIALOG_UNAVAILABLE`（后台插件不能打断用户）。用户已作答（保存或确认）
+  的对话框不进入冷却。存储层的拒绝（非法或
+  重名的显示名）以带码错误返回，不返回宿主自己的文本。
 - `basic` 字段为 `username` / `password`，`bearer` 为 `token`，`header` 为
   `name` / `value`，`oauth2` 为 `accessToken`；不实现 OAuth 刷新。HTTP 和
   WebSocket 拒绝 `imap`。设置保存时整体替换槽位，已保存值不回显。
@@ -1143,8 +1178,9 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
 - **`net.tcp` 端点是字面的。** `endpoint` 必须出现在 `manifest.net.tcp` 内
   （按清单自身的规范化结果比较主机与端口），否则 `PERMISSION_DENIED`。`tls`
   来自清单条目，绝不来自调用；TLS 始终校验证书，并以端点主机作为 SNI。每个
-  插件最多四条连接，包含连接中和关闭中的连接；第五条以 `LIMIT_EXCEEDED`
-  被拒。对未知或已关闭的句柄调用 `send` / `close` 返回 `NOT_FOUND`。连接默认
+  插件最多**八条**连接，包含连接中和关闭中的连接；下一条以 `LIMIT_EXCEEDED`
+  被拒。上限从四条提高，是因为邮件插件要为每个账号常驻一条 IMAP 空闲连接
+  （ADR plugin-host-capabilities §4）；缓冲、超时与 TLS 规则不变。对未知或已关闭的句柄调用 `send` / `close` 返回 `NOT_FOUND`。连接默认
   超时 15 秒，最长 60 秒；建立后没有空闲超时，待写缓冲上限为 1 MiB。TCP
   不使用用户 HTTP 代理。
   `open`、`data`、`close`、`error` 事件只投递给所属插件；数据事件携带
@@ -1295,6 +1331,9 @@ pi.events.off(event, handler)
   一次运行中的第一个工作区可能先不带文件夹发送一次、再带文件夹重发一次，因为项目组记录是在那次推送
   之后才读取的。
 - `plugin:settingsChanged`（由插件设置页面编辑触发）
+- `credentials:changed` —— 载荷 `{ slotId }`，在该槽位有实例被增加、删除或替换时发送，
+  不论来自设置页还是宿主对话框。插件读不到值，所以这个事件就是它重新读取
+  `credentials.list` 的信号
 - `appearance:changed` —— 载荷是 `PluginAppearance`，在应用配色或语言变化时发送，
   因此插件进程可以像打开的面板一样实时重标文案（ADR 0280）。
 - `session:modelChanged` — `{ sessionId, modelKey, thinkingLevel }`，在成功的

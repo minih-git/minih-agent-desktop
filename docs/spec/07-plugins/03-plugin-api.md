@@ -1335,7 +1335,8 @@ code; this is not an OS sandbox. See
 [ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md) and
 [04-plugin-security.md](04-plugin-security.md) §8.3.
 
-**Implementation status.** `pi.net.tcp`, `pi.credentials.list`, `pi.notify.center`,
+**Implementation status.** `pi.net.tcp`, `pi.credentials.list` /
+`requestAdd` / `requestRemove`, `pi.notify.center`,
 `pi.inbound.getReceivers`, `inbound:webhook`, `schedule:fire` and `pi.tasks.*` are
 implemented. Plugin tasks run at most at `accept-edits`; explicit `auto` requests
 are denied until action-based approval is available. `pi.net.fetch`,
@@ -1344,8 +1345,28 @@ last one only for an `imap` slot. `pi.mail` remains registration only; plugins
 must check for unavailable methods before calling (§8).
 
 ```ts
-// credentials.use: the host injects a user-filled slot; only status is readable.
-pi.credentials.list(): Promise<Array<{ id: string; configured: boolean }>>
+// credentials.use: the host injects a user-filled slot; only status, the
+// instance ids and the non-secret field values are readable.
+pi.credentials.list(): Promise<Array<{
+  id: string;
+  configured: boolean;
+  /** Present only for a slot that declares `multiple`. */
+  multiple?: true;
+  max?: number;
+  /** Present only for a slot that declares `multiple`; oldest first. */
+  instances?: Array<{
+    instanceId: string;                    // opaque, host-issued
+    label: string;                          // the slot's `labelField` value
+    publicFields: Record<string, string>;   // non-secret fields only
+    configured: true;
+  }>;
+}>>
+// The host's own form collects the values; the plugin only learns the id.
+pi.credentials.requestAdd(slotId: string): Promise<{ instanceId: string } | { cancelled: true }>
+pi.credentials.requestRemove(
+  slotId: string,
+  instanceId: string,
+): Promise<{ removed: true } | { cancelled: true }>
 pi.net.fetch(input: { …; credentialRef?: string })
 pi.net.websocket.connect(input: { …; credentialRef?: string })
 
@@ -1411,7 +1432,28 @@ Semantics:
   target must be in both the slot's `scope.domains` and `manifest.net.domains`
   even with `net.anyHost`, or the host refuses it (`PERMISSION_DENIED`) before
   transport. Invalid or undeclared references return `INVALID_ARGUMENT`; an
-  unconfigured slot returns `CREDENTIAL_NOT_CONFIGURED`.
+  unconfigured slot returns `CREDENTIAL_NOT_CONFIGURED`. The checks keep this
+  order on every path: permission → egress allowlist → slot → `scope ∩ net` →
+  value.
+- **Instances.** A slot that declares `multiple` is addressed as
+  `"<slotId>#<instanceId>"`. Naming the slot alone returns
+  `CREDENTIAL_INSTANCE_REQUIRED`; an instance that is not stored returns
+  `CREDENTIAL_NOT_CONFIGURED`; a `#instances` suffix on a single-value slot is
+  `INVALID_ARGUMENT`. `credentials.list` reports `instances` so the plugin can
+  tell its accounts apart, and each instance's `publicFields` carries the slot's
+  non-secret fields only — a `secret` field is never part of any answer.
+- **Host-owned dialogs.** `requestAdd` and `requestRemove` ask the *host* to show
+  its own form; the value the user types goes renderer → main → host-core and
+  never through this process. `requestAdd` answers the new `instanceId`,
+  `requestRemove` answers `removed: true`, and both answer `{cancelled: true}`
+  when the user closes the form. Refusals: `CREDENTIAL_LIMIT` at
+  `multiple.max`; `CREDENTIAL_DIALOG_BUSY` while this plugin already has a dialog
+  open, and for 30 seconds after the user dismissed one (a modal covers the app,
+  so an immediate retry loop would take the window away from the user);
+  `CREDENTIAL_DIALOG_UNAVAILABLE` while the app window is not in front, so a
+  background plugin cannot interrupt the user. A dialog the user answered — saved
+  or confirmed — starts no cooldown. A store refusal (an invalid or
+  duplicate label) comes back as a coded error, never as text from the host.
 - Field keys are `username` / `password` for `basic`, `token` for `bearer`,
   `name` / `value` for `header`, and `accessToken` for `oauth2`. OAuth refresh
   is not implemented. `imap` is refused for HTTP and WebSocket. Users replace a
@@ -1427,9 +1469,12 @@ Semantics:
   `manifest.net.tcp` (host and port are compared after the manifest's own
   normalization), or the call fails `PERMISSION_DENIED`. `tls` comes from the
   manifest entry, never from the call. TLS always verifies the certificate and
-  uses the endpoint host for SNI. At most **four connections** per plugin may
-  exist at once, including connecting and closing sockets; the fifth `connect`
-  is refused with `LIMIT_EXCEEDED`. `send` and `close` on an unknown or closed
+  uses the endpoint host for SNI. At most **eight connections** per plugin may
+  exist at once, including connecting and closing sockets; the next `connect`
+  is refused with `LIMIT_EXCEEDED`. The bound was raised from four for mailbox
+  plugins, which keep one idle IMAP connection per account (ADR
+  plugin-host-capabilities §4); the buffer, timeout, and TLS rules are
+  unchanged. `send` and `close` on an unknown or closed
   `connectionId` return `NOT_FOUND`. The connection deadline defaults to 15 s
   and is capped at 60 s; established connections have no idle timeout. The
   write buffer is capped at 1 MiB. TCP bypasses the user's HTTP proxy.
@@ -1633,6 +1678,10 @@ Delivered today:
   first push.
 - `plugin:settingsChanged` is delivered after edits from the generated Plugins
   settings UI.
+- `credentials:changed` — payload `{ slotId }`, sent when an instance of that
+  slot was added, removed, or replaced, whether from the Settings sheet or from a
+  host dialog. The plugin cannot read a value, so this event is how it learns to
+  re-read `credentials.list`.
 - `appearance:changed` — payload is `PluginAppearance`, sent whenever the app
   palette or language changes, so a plugin process can relabel live the same way
   an open panel does (ADR 0280).
@@ -1835,9 +1884,10 @@ The desktop plugin runtime now implements the MVP host API surface used by local
 - `net.tcp.connect` / `send` / `close` (`net.tcp`; host-owned sockets, literal
   endpoint allowlist, bounded, released with the plugin), where `credentialRef`
   makes the host perform the IMAP login for an `imap` slot
-- `pi.credentials.list`, `pi.notify.center`, `pi.inbound.getReceivers`,
-  `inbound:webhook`, `schedule:fire` and `pi.tasks.*`; plugin tasks are capped
-  at `accept-edits` and cannot request `auto` until action-based approval exists
+- `pi.credentials.list` / `requestAdd` / `requestRemove`, `pi.notify.center`,
+  `pi.inbound.getReceivers`, `inbound:webhook`, `schedule:fire` and `pi.tasks.*`;
+  plugin tasks are capped at `accept-edits` and cannot request `auto` until
+  action-based approval exists
 - `credentialRef` for fetch and WebSocket, and for TCP with an `imap` slot
 
 `pi.audio.*` is present in the plugin host process and callable: all ten

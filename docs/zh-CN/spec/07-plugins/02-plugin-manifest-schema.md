@@ -108,8 +108,12 @@ locale 声明。扩展页、插件启动器和市场（从 catalog 条目读取�
 4. 该块是展示元数据。格式错误（不是 locale → 对象的对象）会让 manifest 校验失败；
    条目里未知的 locale 与未知字段一律忽略。
 5. 该块只服务身份文案（`name`、`description`、`safetyNotes`）。插件自有文案——面板、
-   视图、widget、生成式设置、toast、运行时命令标题——不在这里翻译。宿主只发布当前
+   视图、widget、toast、运行时命令标题——不在这里翻译。宿主只发布当前
    语言（`pi.app.getLocale`、`appearance:changed`），由插件自行本地化（ADR 0280）。
+6. 生成式 `contributes.settings` 是例外：它的 `title`、`description` 与 `enum[].label`
+   同样接受 `{ en, "zh-CN" }` 对象，由宿主在渲染设置面板之前解析为应用语言
+   （ADR 0340）。纯字符串是作者自己的语言，原样显示，因此新规则之前写的 manifest
+   渲染结果完全不变。
 
 ### 3.2 渲染模块（`renderer`）
 
@@ -201,11 +205,16 @@ type PluginComposerTransformContrib = {
 
 type PluginSettingContrib = {
  key: string;
- title: string; // 作者语言；生成式设置面板不做本地化
- description?: string;
+ /** 作者语言，或由宿主解析的多语言对象（ADR 0340）。 */
+ title: string | { en: string; "zh-CN": string };
+ /** 规则同 `title`。 */
+ description?: string | { en: string; "zh-CN": string };
  type: "string" | "number" | "boolean" | "select" | "json" | "shortcut";
  default?: unknown;
- enum?: Array<{ label: string; value: string | number | boolean }>;
+ enum?: Array<{
+   label: string | { en: string; "zh-CN": string };
+   value: string | number | boolean;
+ }>;
  command?: string; // shortcut 设置调用这个已声明的插件命令
  scope?: "plugin"; // 暂不支持全局插件快捷键
  secret?: boolean;
@@ -532,10 +541,21 @@ type PluginCredentialContrib = {
   fields: Array<{
     key: string;                                // 与 id 同一套语法
     label: string | { en: string; "zh-CN": string };
-    secret?: boolean;                           // 在设置里以掩码渲染
+    secret?: boolean;                           // 永不返回给插件
+    /** 输入控件；缺省时按 secret 推导（secret 为 password，否则 text）。 */
+    type?: "text" | "password" | "select";
+    /** 仅 `type: "select"` 使用；secret 字段不可为 select。 */
+    options?: Array<{ value: string; label: string | { en: string; "zh-CN": string } }>;
   }>;
   /** 允许注入的主机；缺失表示无处注入。 */
   scope?: { domains: PluginNetDomain[] };
+  /**
+   * 该槽位可容纳最多 `max`（1..5）个实例。缺失即为单值槽位：
+   * 存储键相同，`credentials.list` 的回答相同。
+   */
+  multiple?: { max: number };
+  /** 非 secret 字段，其值作为实例的显示名（邮箱地址、登录名）。 */
+  labelField?: string;
 };
 
 type PluginWebhookContrib = {
@@ -564,6 +584,12 @@ type PluginTasksContrib = {
 
 - 设置面板渲染不出来的凭据槽位会被拒绝：`kind` 与至少一个 `fields` 条目必填，
   字段 key 不得重复，`scope` 里没有域也不合法。值由用户输入，绝不在这里声明
+- `multiple.max` 是 1 到 5 的整数。`labelField` 必须指向一个已声明且不是 `secret` 的
+  字段：`credentials.list` 用它给每个实例命名，若显示名取自 secret 就等于泄露 secret。
+  `type: "select"` 的字段必须有非空 `options` 且取值唯一，并且不能是 `secret`；其他控件
+  声明 `options` 会被拒绝
+- 声明了 `multiple` 的槽位容纳多个账号（§5.5.1）。此时每个 `credentialRef` 写成
+  `"<slotId>#<instanceId>"`，不带实例的引用会以 `CREDENTIAL_INSTANCE_REQUIRED` 被拒绝
 - `scope.domains` 与 `net.domains` 同一套语法，而且注入目标还必须落在
   `net.domains` 内，所以槽位只能收窄出网范围，永远不能放宽
 - webhook 可以调低 `maxBodyBytes`（256 KiB）与 `ratePerMinute`（120），
@@ -575,6 +601,30 @@ type PluginTasksContrib = {
 - 能力权限（`credentials.use`、`inbound.webhook`、`scheduler`、`tasks.manage`）
   与原始 TCP（`manifest.net.tcp`，§5.3.2）是必须与使用它们的字段一起声明的
   四个开关
+
+### 5.5.1 多实例凭据槽位
+
+声明了 `multiple` 的槽位在同一份声明下容纳最多 `max` 份独立的值——多个邮箱、租户或
+账号。每个实例的 id 由宿主生成（`acc_` 加 8 位十六进制），插件既不能指定 id，也不能
+指定实例数量，两者都从 `credentials.list` 得知
+（[03-plugin-api.md](03-plugin-api.md) §3.x）。
+
+- 存储仍在加密的 secret store 内，因此不需要数据库迁移：每个实例一份 blob，键为
+  `plugin:<pluginId>:cred:<slotId>#<instanceId>`；实例清单（id、显示名、非 secret
+  字段值、创建时间）写进插件既有的凭据索引。`<slotId>` 是贡献 id，永远不含 `#`，
+  因此分隔符没有歧义。
+- `labelField` 指向一个非 secret 字段，其值就是实例的显示名。只有这个值与各非 secret
+  字段会传给插件：`credentials.list` 报告 `publicFields`，永远不含 `secret` 字段。
+  这是插件唯一能读到用户填写内容的地方，因为插件无法给一个自己认不出的账号发消息；
+  密码与授权码依旧拿不到。
+- 既有的单值槽位升级为多实例槽位时，原来的值不会丢：宿主第一次读到新形态时先把已存
+  blob 复制成第一个实例，成功之后才删除原值，因此任何时刻至少存在一份副本。迁移出的
+  实例 id 由槽位推导而来，所以中途失败后重试会补齐同一次迁移，而不是多出一个实例。
+- 反方向——manifest 去掉 `multiple`——会把第一个实例的值写回单值槽位、删除其余实例，
+  并写一条只含 id 的审计行。两个方向都不记录字段值。
+- 插件也可以请宿主代为收集或删除实例（`credentials.requestAdd` /
+  `requestRemove`）：值由宿主自己的表单收集，从不经过插件进程
+  （[04-plugin-security.md](04-plugin-security.md) §8.3）。
 
 ## 6. activationEvents（可选）
 

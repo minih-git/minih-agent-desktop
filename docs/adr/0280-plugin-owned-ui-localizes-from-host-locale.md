@@ -37,6 +37,10 @@ A plugin process can already read the app language (`pi.app.getLocale`,
    Generated `contributes.settings` `title` / `description` / `enum[].label`
    stay author-language plain strings. A plugin that needs a localized
    settings surface ships `settingsDestinations`.
+   *Amended by [ADR 0340](0340-plugin-setting-labels-localize.md): generated
+   settings rows do accept a locale map from 1.9.0. The rest of this decision —
+   no locale maps on other contribution fields, plugin-owned copy localizes
+   itself — stands.*
 4. Host-owned surfaces that render without plugin code keep the contracts
    they already have: `manifest.i18n` (ADR 0267) and the shipped chrome
    labels in (2) of the Context.
