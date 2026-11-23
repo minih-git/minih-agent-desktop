@@ -91,6 +91,7 @@ import {
   type Api,
   type AssistantMessage,
   type ImageContent,
+  type Message,
   type Model,
   type Models,
   type SimpleStreamOptions,
@@ -259,7 +260,9 @@ import {
 import {
   modelSwitchCompactionNeeded,
   previousModelSince,
+  type ModelBinding,
 } from "./model-switch-compaction.js";
+import { projectCrossModelThinking } from "./cross-model-thinking.js";
 import { PathMutex } from "./path-lock.js";
 import { DelegationChainRegistry } from "./delegation-chain.js";
 import {
@@ -2595,9 +2598,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             sessionId: this.sessionId, turnId: this.turnId, message,
           });
         });
-        return alignRetainedReasoningIdentity(
-          convertToLlm(this.dropDuplicateToolCalls(messages)), this.reasoningReplayIdentity(),
-        );
+        return this.wireMessages(messages);
       },
       prepareRequest: ({ context }) => this.prepareToolDeclarations(context),
       prepareNextTurnWithContext: (context, signal) =>
@@ -2882,10 +2883,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
   private keepWarmContext(): TranscriptContext {
     const messages = this.agent.state.messages as unknown as AgentMessage[];
     return {
-      messages: alignRetainedReasoningIdentity(
-        convertToLlm(this.dropDuplicateToolCalls(messages)),
-        this.reasoningReplayIdentity(),
-      ) as unknown as TranscriptContext["messages"],
+      messages: this.wireMessages(messages) as unknown as TranscriptContext["messages"],
     } as TranscriptContext;
   }
 
@@ -3840,6 +3838,37 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     return entries.filter(
       (entry) =>
         entry.message.role !== "assistant" || entry.message.content.length > 0,
+    );
+  }
+
+  /**
+   * The identity the next provider request carries: the account row the runtime
+   * bills, and the vendor key pi-ai stamps on the assistant messages it writes.
+   * Both spellings name this binding, so both are aliases of it.
+   */
+  private requestModelBinding(): ModelBinding {
+    return {
+      providerId: this.provider.id,
+      modelId: this.provider.modelId,
+      providerAliases: [this.model.provider],
+    };
+  }
+
+  /**
+   * The transcript exactly as the next provider request carries it: pi-ai's
+   * message projection, then the replay identity a retained-reasoning assistant
+   * needs to keep its thinking, then the cross-model projection that removes
+   * reasoning a different model produced. Keep-warm and the budget estimate
+   * both read this, so warm requests keep hitting the same cache prefix and no
+   * threshold is computed on content the request no longer sends.
+   */
+  private wireMessages(messages: AgentMessage[]): Message[] {
+    return projectCrossModelThinking(
+      alignRetainedReasoningIdentity(
+        convertToLlm(this.dropDuplicateToolCalls(messages)),
+        this.reasoningReplayIdentity(),
+      ),
+      this.requestModelBinding(),
     );
   }
 
@@ -7640,17 +7669,21 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
   private measureContextBudget(
     messages: AgentMessage[],
   ): { budget: ContextBudget; anchored: boolean } {
-    const budget = contextBudgetFor(this.model, messages);
+    // Every caller asks about the next request, not about the stored transcript:
+    // reasoning a different model produced does not travel with it, so neither
+    // the estimate nor the thresholds derived from it may charge for that text.
+    const projected = projectCrossModelThinking(messages, this.requestModelBinding());
+    const budget = contextBudgetFor(this.model, projected);
     // Calibration learns from message usage; the output-cap estimator adds the
     // active system prompt and tool schemas that the provider also receives.
     // The two are combined by `contextBudgetTokens`: the full-request estimate
     // is the floor of a projection with no usage anchor, and an anchored
     // projection already carries that request's prompt and schemas.
-    const estimate = estimateContextTokens(messages, this.model);
+    const estimate = estimateContextTokens(projected, this.model);
     const calibratedMessageTokens = this.contextCalibration.correct(estimate);
     const requestTokens = estimateOutputCapInputTokens(
       {
-        messages: messages.filter(
+        messages: projected.filter(
           (message): message is Extract<AgentMessage, { content: unknown }> =>
             message.role !== "system" && "content" in message,
         ),
@@ -7740,13 +7773,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const budget = this.contextBudget(messages);
     return modelSwitchCompactionNeeded({
       previous: previousModelSince(this.fullEntries, this.activeCompaction),
-      current: {
-        providerId: this.provider.id,
-        modelId: this.provider.modelId,
-        // pi-ai stamps an assistant message with the vendor key, which still
-        // names this binding.
-        providerAliases: [this.model.provider],
-      },
+      current: this.requestModelBinding(),
       tokens: budget.tokens,
       budget,
       compactionEnabled: this.compactionEnabled,

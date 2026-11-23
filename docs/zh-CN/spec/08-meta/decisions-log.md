@@ -13,6 +13,7 @@
 
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
+| D690 | 切换模型后不再发送上一个模型的推理 | **provider 请求投影会在 pi-ai 的 `transformMessages` 把跨模型 thinking 块转成普通 text 之前，丢弃已完成轮次里 `providerId`/`modelId` 与本次请求绑定不同的 assistant 消息中的 `thinking` 块。已完成的轮次指最新用户消息之前的全部消息；进行中的轮次、同模型轮次、同模型轮次上的 `redacted` thinking，以及重放的保留推理 assistant（投影前已对齐实时身份）都保持原样。只做投影：转录、转录界面与 checkpoint 保留原有块，上下文预算估算的也是同一投影，因此 D669 的切换下限与 90% 触发点按请求实际携带的内容计算。丢弃后已无内容的 assistant 整条移除而不是留空，所以不会出现悬空的调用/结果配对。另外，摘要输入的序列化把每条 `[Assistant thinking]` 文本截断到 2 000 字符（与工具结果一致），`estimateSummaryPromptTokens` 也按同一截断文本估算。严格的 Completions 中转仍靠 pi-ai 既有的回填满足"全有或全无"的推理字段规则，填入的是文档化占位符而不是旧模型的推理。不改宿主 schema、迁移、IPC、设置或 checkpoint 结构。** | pi-ai 把跨模型 thinking 转成 `text` 而不是丢弃，新模型于是把上一个模型的推理当成自己的回答来读，并在本就冷掉的缓存上为每个 token 付费；已完成轮次的推理并不比它的回答、工具调用和工具结果多说任何东西。给摘要输入的思考文本设上限，可避免摘要请求把窗口大量花在摘要用不上的推理上。 |
 | D689 | 移除内置 Super Agent 层 | **删掉宿主为自己创建的那名管家，保留它下面的全部员工能力。删除项：`steward` 子代理定义及其提示词块、`STEWARD_ONLY_TOOLS`、`TaskCard` / `Roster` / `TaskStatus` 本地工具、整套 `taskCard.*` RPC 及其 IPC 处理与事件、`bot.roster`、`bot.seedDefaults`、共享任务卡编解码与渲染层 task-card / steward-name 模块、任务卡坞与管家坞、侧栏"待开工卡片"计数，以及招聘页的"启用 Super Agent"。保留且行为不变：bot 会话与 `bot_profile_json`、冻结在投递上的 Mandate 与 `session.collaboration.mandate`、`tasks.origin` 的 `('steward', 'direct')` CHECK 与历史行原值、阶段词汇、等你通道、阻塞卡与完成卡、接受并合并、接力链、员工经验、`SessionSend/Result/List/Create`、团队规范与每轮任务简报。缺口处理：`task.reassign` 不再在管家会话上拟卡，而是在所选员工处新建一个 `origin = direct` 任务并带上原目标与同一仓库，由 Main 起第一轮，原任务保持原样且不归档；全新安装员工数为 0，只有招聘区；stage、interrupted 与巡检通知改投通知中心（`task.failed` 行携带 `TASK_FAILED` / `TASK_BLOCKED` / `TASK_INTERRUPTED`，巡检为 `TASK_ANSWER_WAIT` / `TASK_ACCEPT_WAIT` / `TASK_STUCK` / `TASK_RUNNING_LONG`），恰好一次的键不变；`SessionSend` 的描述不再提管家。架构 v42 是对 `sessions` 的一条 UPDATE：`bot_profile_json.definition = 'steward'` 的行只去掉该键，name、duty、role、权限模式、转录与记忆全部保留，会话绝不删除；不重建任何表，只拒绝新增的外键违例，最后写入 `user_version = 42`。`task_card_drafts` 留在迁移链上但不再写入；`bot-persona` 的 `steward` → `none` 兼容判断保留到迁移之后。Super Agent 将在后续改动中以插件形式回归。见 ADR bot-sessions-and-steward 的"移除内置 Super Agent 层"。** | 管家是宿主唯一自建、且用户无法关掉的员工，因此无法跟随产品自身的修订；而一个驱动同样宿主表面的插件，能在受审查的权限边界内达成同一目标。把它作为一层移除，员工会话、任务与授权模型原样保留，代价是一名被删的派活者和四条被补上的路径，而不是重写员工模式。 |
 | D688 | 学习记忆自行整理 | **新增 `learnedMemory.curate`：本设备开关，默认关闭，且必须先有 `learnedMemory.model` 才能打开；打开后抽取出的候选直接生效（`suggested` → `active`，`origin` 仍为 `extracted`），不再等待建议箱，同时后台整理按作用域合并近似重复的笔记、用较新的一条替换被它否定的旧笔记，并改写抽取笔记的措辞。自动路径的删除一律是归档（`archived` + `superseded_by`），从不写入或清除屏蔽记录；用户亲手写过（`explicit` / `user_ui`）的笔记措辞永远不被改写，但它仍可作为合并或替换的目标。所有护栏都由宿主在事务内强制：单次上限为 `min(8, max(1, 该作用域活跃笔记的 20%))`、用户 30 天静默窗口、合并结果沿用同样的写入规则（1 KiB、凭据检测、屏蔽记录、来源取并集）、逐目标 `revision` 校验（任一不符则整条作废）、以及被撤销过的目标集合不再被提出。每次改动都在同一事务写入 `memory_revisions`，撤销以批次为单位——激活的撤销等同建议箱里的放弃，合并或替换的撤销还原目标，改写的撤销还原措辞；期间笔记被动过则返回 `MEMORY_UNDO_CONFLICT` 且不写入任何内容。脏作用域租约保证每个作用域每个本地日只跑一次，且在应用空闲十分钟、没有任何会话跑轮次之后。宿主架构 v41 新增 `memory_revisions`、`memory_curation_state`、`memory_curation_rejections`；同步格式、读取路径以及开关关闭时的行为都不变。取代 2026-10-19 的提议-复核设计，其逐条复核队列不再保留。员工经验的 `bot` 作用域不在本功能范围内：宿主在每个入口拒绝该作用域，脏标记跳过它。见 ADR learned-memory-consolidation、ADR agent-long-term-memory §4/§8 的 D688 修订，以及 E2E-MEMORY-auto-curation-applies-and-undoes。** | 建议箱让用户手工打理记忆，与学习记忆的目的相反，而早先的设计又用另一条队列回答同一个问题。归档本身可恢复、每次改动都带原因记录、撤销一键完成，因此建议箱提供的保护在事后同样可得，而每次整理的代价被上限与每日一次限制住。旧版应用无法打开迁移后的数据库，与每次架构升级相同。 |
 | D687 | Bot 会话与管家 | **bot 是一条带 `role: bot` 与 `botProfile` 的持久 Agent 会话（name、avatar、duty、可空 `homeHostId`、权限模式、`mustAsk`，以及必填且默认开启的 `observe`），而不是新实体；管家是内置 bot，工具只有 `SessionList/Send/Result/Create` 与任务卡工具，没有 Write/Edit/Bash/plugin/MCP 工具，也不继承工具；确认后的任务卡冻结成不可改写、有界的 Mandate 存在其 ADR 0239 账本条目上，执行方按 `min(卡片, 来源上限, bot 上限)` 重算权限并取 `mustAsk` 并集；进度使用 dsh 的六值 report（progress/waiting/ready/blocked/failed/dropped）与六行 stage，只有 `person/*` 打扰人。架构 v30 -> v31 单步追加 `sessions.role`、`sessions.bot_profile_json`，以及账本上的 `mandate_json`、`stage`、`report_seq`。跨机派活是后续单独的 `cross-host-collab` 决策。见 ADR bot-sessions-and-steward。** | 员工需要一个活得比一次对话更久的身份、一份冻结的授权记录，以及一套说明"谁在挡着这件事"的词汇；会话、协作账本与 delegate 工具作用域已经分别拥有身份、投递与权限，为其中任何一项再建实体都会让同一个工作者出现两个真相来源。 |
@@ -5875,3 +5876,33 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 - 见 ADR bot-sessions-and-steward 的"移除内置 Super Agent 层"、
   `03-runtime/04-data-storage.md` §4.19c、`03-runtime/06-host-rpc-protocol.md`、
   `03-runtime/10-session-state-machine.md` §6 与 `06-delivery/04-e2e-test-plan.md`。
+
+## 2026-11-17 — 切换模型后不再发送上一个模型的推理（D690）
+
+- 切换模型会保留转录，而 pi-ai 的 `transformMessages` 会把每个跨模型 thinking
+  块转成 `text` 块而不是丢弃，于是新模型把上一个模型的推理当成自己的回答来读，
+  请求还要在本就冷掉的缓存上为它的每个 token 付费。
+- provider 请求投影（`cross-model-thinking.ts`，作用于运行时的 `convertToLlm`
+  视图与 keep-warm 上下文）现在会把这些块从已完成轮次的 assistant 消息中移除：
+  已完成轮次是最新用户消息之前的全部消息，身份按开关压缩决策本就接受的
+  `providerId`/`modelId`（含 vendor key 别名）判断。没有记录来源的行按其他模型
+  处理，与 pi-ai 的判定一致。
+- 不受影响：同模型轮次的思考与签名、同模型行上的 `redacted` thinking、进行中轮次
+  自身的推理，以及重放的保留推理 assistant —— 它们在投影之前已对齐实时身份，
+  因此 #296 的重放仍能到达 wire。
+- 只剩推理的 assistant 会整条移除而不是留空：provider 拒绝内容为空的 assistant，
+  pi-ai 的 Completions 适配器本来也会丢掉它，转录重建同样会丢弃这类行，所以不会
+  出现悬空的调用/结果配对。连续两条用户消息也是重建转录本就会产生的形状。
+- 只做投影。转录、转录界面与 checkpoint 保留每一个原样记录的块，改变的只有 wire
+  视图。上下文预算按同一投影度量，因此 D669 的切换下限与 90% 自动触发点不再统计
+  请求不会携带的推理。
+- 摘要输入的序列化把每条 `[Assistant thinking]` 文本截断到 2 000 字符，与工具
+  结果一致；`estimateSummaryPromptTokens` 按同一截断文本估算，因此预检守卫、分块
+  规划器与真实请求三者一致。
+- 严格的 Completions 中转仍满足"全有或全无"的推理字段规则：pi-ai 既有的回填会在
+  被投影掉的推理位置上填入文档化占位符；而当历史里所有 assistant 都失去推理时，
+  请求就以完全没有该字段的形式发出。
+- 不改宿主 schema、迁移、IPC 形状、设置或 checkpoint 字段。
+- 见 `03-runtime/02-agent-runtime.md` §5c 与其中的压缩小节，以及
+  `packages/agent-runtime/src/cross-model-thinking.test.ts`、
+  `runtime-cross-model-thinking.test.ts` 与 `pi-runtime-messages.test.ts`。

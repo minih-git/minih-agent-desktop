@@ -136,8 +136,12 @@ describe("Flash reasoning after Desktop session restoration", () => {
       if (sameModel) {
         expect(assistant).toMatchObject({ content: "answer", reasoning_content: "private plan" });
       } else {
-        expect(assistant?.content).toContain("private plan");
+        // D690: another model's reasoning is not replayed at all. pi-ai used to
+        // turn the block into plain text, so the new model read it as its own
+        // answer; the answer text and the rest of the turn still travel.
+        expect(assistant).toMatchObject({ content: "answer" });
         expect(assistant).not.toMatchObject({ reasoning_content: "private plan" });
+        expect(JSON.stringify(assistant)).not.toContain("private plan");
       }
     } finally { await runtime.dispose(); }
   });

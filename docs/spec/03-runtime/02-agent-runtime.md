@@ -754,9 +754,12 @@ The incoming user prompt participates in budgeting before the first provider
 request. The automatic summary request retries transient provider failures
 under a bounded pi-ai retry policy (3 retries, 2s/4s/8s backoff, cancelled by
 Stop); deterministic failures such as quota or auth return at once. The
-preflight guard sizes the prompt pi actually serializes — tool results already
-capped — rather than the raw messages, and when that prompt still exceeds the
-window it tries exactly one reduced input (tool results cut to a short prefix,
+preflight guard sizes the prompt pi actually serializes — tool results capped at
+2 000 characters and each assistant's `[Assistant thinking]` trace capped at
+2 000 characters too, so a session's long reasoning traces cannot make the
+summary request pay for text the summary cannot use — rather than the raw
+messages, and when that prompt still exceeds the window it tries exactly one
+reduced input (tool results cut to a short prefix,
 thinking dropped, no message removed). If even that input does not fit, the range
 is split into contiguous chunks that each do: at most 16 requests, each carrying
 the previous chunk's summary through pi's update-the-summary prompt, with the
@@ -1000,6 +1003,20 @@ criterion-by-criterion report of what was met and the evidence observed.
   `model.id` (same as live requests), not the account row id — including when
   `seedDelegateMessages` rebuilds a Task(resume) history — so same-model
   Completions reasoning stays in `reasoning_content` under a vendorKey binding.
+- A request carries no reasoning another model produced. Before pi-ai's
+  `transformMessages` — which would convert a cross-model thinking block into
+  plain text and make the new model read the old model's reasoning as if it
+  were its own answer — the runtime drops those blocks from every assistant
+  message of a completed turn, meaning the messages before the latest user
+  message (D690). The persisted transcript, the transcript UI and the
+  checkpoint keep every block they recorded: this is a projection. A
+  same-model turn's thinking, the running turn's own reasoning, and the
+  replayed retained-reasoning assistants (stamped with the live identity
+  first) are untouched, and an assistant whose only content was reasoning is
+  removed rather than emptied, so no empty assistant reaches a provider and no
+  call/result pair can strand. The budget estimate reads the same projection,
+  so the switch-compaction floor and the automatic trigger are not computed on
+  text the request no longer carries.
 - Restored history also reconstructs tool call/result pairs from persisted
   tool rows (`toolCallId`/`toolArgs`/`toolResult`), so a recreated runtime
   keeps its full working context — file contents read, command output —

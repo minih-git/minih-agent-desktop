@@ -176,6 +176,17 @@ function safeJsonStringify(value: unknown): string {
   }
 }
 
+/**
+ * Per-thinking-block character cap in the serialized conversation.
+ *
+ * A reasoning trace is the largest thing a summary request can carry that the
+ * summary cannot use: the checkpoint states decisions and results, not the path
+ * to them. Agent models emit traces several times longer than their answers, so
+ * without a cap a session's summary request paid for its reasoning twice — once
+ * in the prompt, once in the summary it crowds out.
+ */
+export const SUMMARY_THINKING_MAX_CHARS = 2_000;
+
 function truncateForSummary(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n\n[... ${text.length - maxChars} more characters truncated]`;
@@ -206,7 +217,11 @@ export function serializeConversation(messages: Message[]): string {
           if (projection !== undefined) hostedSearch.push(safeJsonStringify(projection));
         }
       }
-      if (thinking.length) parts.push(`[Assistant thinking]: ${thinking.join("\n")}`);
+      if (thinking.length) {
+        parts.push(
+          `[Assistant thinking]: ${truncateForSummary(thinking.join("\n"), SUMMARY_THINKING_MAX_CHARS)}`,
+        );
+      }
       if (message.content.some((block) => block.type === "text")) {
         parts.push(`[Assistant]: ${textFromContent(message.content)}`);
       }
