@@ -440,30 +440,37 @@ test("automation ownership keeps run transcripts out of the lists", async () => 
   });
 });
 
-test("the session list and search both consume the ownership rule", async () => {
+test("the session list and search both consume the origin rule", async () => {
   const { readFile } = await import("node:fs/promises");
   const sidebar = await readFile(new URL("../src/components/Sidebar.tsx", import.meta.url), "utf8");
-  assert.match(sidebar, /import \{ listableSessions \} from "\.\.\/lib\/session-origin";/);
   assert.match(
     sidebar,
-    /listableSessions\(sessions\)/,
-    "the sidebar drops automation transcripts before grouping",
+    /foldScheduledRuns\(candidates\)/,
+    "the sidebar folds one task's runs into its newest row",
+  );
+  assert.match(
+    sidebar,
+    /sessionMatchesOrigins\(session, sessionOrigins\)/,
+    "and applies the origin filter to the groups",
   );
   const search = await readFile(new URL("../src/hooks/use-session-search.ts", import.meta.url), "utf8");
-  assert.match(
+  assert.doesNotMatch(
     search,
-    /state\.hits\.filter\(\(hit\) => !isAutomationSession\(hit\.session\)\)/,
-    "search never offers one as a conversation to open",
+    /isAutomationSession/,
+    "search lists a run's transcript like any other conversation",
   );
   const palette = await readFile(
     new URL("../src/components/SearchDialog.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(
-    palette,
-    /listableSessions\(q \? search\.hits\.map/,
-    "and its empty-query recents list applies the same rule",
+  assert.doesNotMatch(palette, /listableSessions/, "its recents list does the same");
+  // The one list that still hides them: the native tray, whose rows are a
+  // single line of text with no room for the tag.
+  const tray = await readFile(
+    new URL("../electron/main/tray-sessions.ts", import.meta.url),
+    "utf8",
   );
+  assert.match(tray, /session\.scheduledRun !== true/);
 });
 
 test("a run's transcript follows the run, not just its session", async () => {

@@ -221,9 +221,9 @@ mod tests {
         let tx = db.conn().unchecked_transaction().unwrap();
         assert_eq!(remaining(&tx).unwrap(), 0);
         assert_eq!(version(&db), 42);
-        // The step stamps 42; a newer step owns the head (v43 adds the plugin
-        // capability columns and tables).
-        assert_eq!(SCHEMA_VERSION, 43);
+        // The step stamps 42; newer steps own the head (v43 adds the plugin
+        // capability columns and tables, v44 the session origin).
+        assert_eq!(SCHEMA_VERSION, 44);
     }
 
     #[test]

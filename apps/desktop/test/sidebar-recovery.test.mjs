@@ -6,7 +6,8 @@ const key = "pi.desktop.sidebarPreferences";
 const preferences = (paths = ["/work/alpha", "/work/beta"]) => ({
   sessionMeta: { conversation: { pinned: true, manualTitle: true } },
   projectMeta: { "/work/alpha": { name: "Alpha", collapsed: true, order: 1 } },
-  projectSort: "manual", sessionView: { sort: "recent", archived: false },
+  projectSort: "manual",
+  sessionView: { sort: "recent", archived: false, origins: ["user", "agent", "plugin", "task", "scheduled"] },
   openProjectPaths: paths,
 });
 

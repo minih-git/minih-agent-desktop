@@ -783,6 +783,11 @@ test("a built-in create makes a session on the user's model and reports its id",
     projectPath: "/work/app",
     thinkingLevel: "high",
     inheritPermissionFromSessionId: "source-session",
+    // The row records that the agent made it, and names the session it came
+    // from — never the id the tool arguments tried to claim
+    // (ADR persisted-session-origin).
+    origin: "agent",
+    originSessionId: "source-session",
   });
   // The project and thinking level are all the create path needs, so the read
   // must not pull the whole transcript along with them.

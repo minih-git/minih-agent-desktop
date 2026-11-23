@@ -1,4 +1,8 @@
 import type { ProjectWorkspace, SessionSort } from "@minih-agent/shared";
+import {
+  normalizeOrigins,
+  type SessionOrigin,
+} from "../features/sessions/session-origin-tags.ts";
 export type { SessionSort } from "@minih-agent/shared";
 export { sortSessions, sessionIsPinned, sessionIsArchived } from "@minih-agent/shared";
 
@@ -37,7 +41,15 @@ export type SidebarPreferences = {
   sessionMeta: Record<string, SessionMeta>;
   projectMeta: Record<string, ProjectMeta>;
   projectSort: ProjectSort;
-  sessionView: { sort: SessionSort; archived: boolean };
+  sessionView: {
+    sort: SessionSort;
+    archived: boolean;
+    /**
+     * Which origins the sidebar lists (ADR persisted-session-origin). A copy
+     * written before the filter existed has no such key, which reads as "all".
+     */
+    origins: SessionOrigin[];
+  };
   openProjectPaths: string[];
 };
 
@@ -183,6 +195,7 @@ export function loadSidebarPreferences(raw: unknown = read(SIDEBAR_PREFERENCES_K
           : typeof view.showArchived === "boolean"
             ? view.showArchived
             : false,
+      origins: normalizeOrigins(view.origins),
     },
     openProjectPaths: cleanPaths(root.openProjectPaths),
   };
@@ -217,6 +230,7 @@ export function saveSidebarPreferences(value: SidebarPreferences): void {
     sessionView: {
       sort: sessionSort(value.sessionView.sort),
       archived: value.sessionView.archived === true,
+      origins: normalizeOrigins(value.sessionView.origins),
     },
     openProjectPaths: cleanPaths(value.openProjectPaths),
   };
@@ -280,7 +294,12 @@ export async function restoreSidebarPreferences(port: {
 export function sidebarPreferencesState(preferences: SidebarPreferences) {
   return {
     ...preferences,
-    sessionView: { ...preferences.sessionView, sortBy: preferences.sessionView.sort, showArchived: preferences.sessionView.archived },
+    sessionView: {
+      ...preferences.sessionView,
+      sortBy: preferences.sessionView.sort,
+      showArchived: preferences.sessionView.archived,
+      origins: preferences.sessionView.origins,
+    },
     openProjects: preferences.openProjectPaths.map(path => {
       const project = projectWorkspaceFromPath(path);
       const name = preferences.projectMeta[normalizeProjectPath(path) ?? ""]?.name;

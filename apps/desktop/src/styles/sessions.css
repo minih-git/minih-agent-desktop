@@ -696,6 +696,23 @@
   opacity: 1;
 }
 
+/* The view menu is hiding a session type: one dot says so, and the button
+   stays visible so the filter can be undone (ADR persisted-session-origin). */
+.sidebar-toolbar-button.filtered {
+  position: relative;
+  opacity: 1;
+}
+
+.sidebar-filter-indicator {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-3xs);
+  background: var(--ds-accent);
+}
+
 .sidebar-session-group-header:hover .sidebar-session-group-add,
 .sidebar-session-group-header:focus-within .sidebar-session-group-add {
   opacity: 1;

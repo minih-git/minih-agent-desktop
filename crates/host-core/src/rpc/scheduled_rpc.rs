@@ -200,9 +200,6 @@ fn handle_with_workspace_policy(
                 role: None,
                 bot_profile_json: None,
             };
-            let uses_task_execution_settings = task.permission_mode.is_some()
-                || task.thinking_level.is_some()
-                || (task.provider_id.is_some() && task.model_id.is_some());
             // A `reuse` task continues its own previous conversation, but only
             // while that conversation still exists and still belongs to the same
             // project; a deleted one, or a re-pointed task, opens a fresh one.
@@ -217,20 +214,18 @@ fn handle_with_workspace_policy(
             let session_id = match reused {
                 Some(session_id) => session_id,
                 None => {
-                    let session = if automatic || uses_task_execution_settings {
-                        sessions::create_session_with_options(&st.db, options)
-                    } else {
-                        sessions::create_session(
-                            &st.db,
-                            options.title,
-                            options.mode,
-                            options.provider_id,
-                            options.model_id,
-                            options.project_path,
-                        )
-                    }
-                    .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
-                    session.id
+                    // The run transcript is stamped as automation output. The
+                    // legacy constructor the non-automatic branch used only
+                    // passed the option fields that branch leaves unset, so
+                    // both branches now create through the same origin-aware
+                    // call.
+                    sessions::create_session_with_origin(
+                        &st.db,
+                        options,
+                        crate::session_origin::SessionOriginFields::scheduled(id),
+                    )
+                    .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
+                    .id
                 }
             };
             let run_id = match scheduled::begin_run(&st.db, id, Some(&session_id)) {
@@ -385,6 +380,13 @@ mod tests {
             .unwrap()
             .expect("the run's session exists");
         assert!(detail.summary.scheduled_run);
+        // The transcript keeps its provenance in a column, which outlives the
+        // run row the page prunes after 100 runs (ADR persisted-session-origin).
+        assert_eq!(
+            detail.summary.origin,
+            crate::session_origin::ORIGIN_SCHEDULED
+        );
+        assert_eq!(detail.summary.origin_task_id.as_deref(), Some(id.as_str()));
 
         let page = crate::session_search::search(&st.db, "Nightly", 0, 30).unwrap();
         let hit = page

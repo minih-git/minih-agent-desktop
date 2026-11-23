@@ -38,7 +38,9 @@ test("bootstrap restores sidebar organization before persisting the active works
   const h = harness();
   const backup = { sessionMeta: { running: { manualTitle: true, pinned: true } },
     projectMeta: { "/alpha": { name: "Retained Alpha", collapsed: true } },
-    projectSort: "manual", sessionView: { sort: "name", archived: false }, openProjectPaths: ["/alpha", "/beta"] };
+    projectSort: "manual",
+    sessionView: { sort: "name", archived: false, origins: ["user", "agent", "plugin", "task", "scheduled"] },
+    openProjectPaths: ["/alpha", "/beta"] };
   const writes = [];
   h.api.getSidebarPreferences = async () => backup;
   h.api.setSidebarPreferences = async (value) => { writes.push(value); };

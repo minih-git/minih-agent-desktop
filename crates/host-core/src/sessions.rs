@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::db::{ms_to_ts, now_ms, ts_to_ms, Database};
 use crate::notifications::{self, Notification};
+use crate::session_origin::SessionOriginFields;
 use std::collections::HashMap;
 
 use crate::transcripts::{self, CompactionRecord, MessageRecord, RevisionRecord};
@@ -109,6 +110,10 @@ pub fn is_valid_session_role(role: &str) -> bool {
 
 fn default_session_role() -> Option<String> {
     Some("user".to_string())
+}
+
+fn default_session_origin() -> String {
+    crate::session_origin::ORIGIN_USER.to_string()
 }
 
 /// Behaviour classes a task card or a bot profile may ask to confirm. The
@@ -298,6 +303,21 @@ pub struct SessionSummary {
     /// absent instead of being guessed at.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot_profile: Option<Value>,
+    /// Where this session came from (ADR persisted-session-origin): `user` for a
+    /// conversation the person opened, otherwise the kind of creator that made
+    /// it. Always reported — a host that never stored the column answers `user`
+    /// — so the sidebar never has to guess.
+    #[serde(default = "default_session_origin")]
+    pub origin: String,
+    /// The session that created this one, resolved to a title for the tag's
+    /// tooltip. Absent when the origin names no session, or when that session is
+    /// gone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_session: Option<crate::session_origin::OriginSessionRef>,
+    /// The scheduled task a run transcript belongs to; read even after the task
+    /// itself was deleted, which is why it is a column and not a join.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1510,8 +1530,14 @@ const SUMMARY_SELECT: &str =
              ORDER BY m.seq DESC
              LIMIT 1) AS last_message_preview,
             s.role AS session_role,
-            s.bot_profile_json AS bot_profile_json
+            s.bot_profile_json AS bot_profile_json,
+            s.origin AS session_origin,
+            s.origin_task_id AS session_origin_task_id,
+            s.origin_session_id AS origin_session_id,
+            COALESCE(NULLIF(os.title, ''), os.id) AS origin_session_title,
+            (os.id IS NOT NULL AND os.deleted_at IS NULL) AS origin_session_available
      FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
+          LEFT JOIN sessions os ON os.id = s.origin_session_id
      WHERE s.deleted_at IS NULL";
 
 pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionSummary> {
@@ -1529,6 +1555,7 @@ pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Sess
             .flatten()
             .as_deref(),
     );
+    let (origin, origin_session, origin_task_id) = crate::session_origin::from_row(row);
     Ok(SessionSummary {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -1550,6 +1577,9 @@ pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Sess
         ),
         role,
         bot_profile,
+        origin,
+        origin_session,
+        origin_task_id,
     })
 }
 
@@ -1579,8 +1609,13 @@ pub fn list_sessions(db: &Database) -> Result<Vec<SessionSummary>> {
     Ok(out)
 }
 
-/// Backwards-compatible session constructor.  New callers that need an
-/// explicit thinking level should use [`create_session_with_thinking`].
+/// Backwards-compatible session constructor, kept for the tests that only want
+/// a plain conversation.
+///
+/// Every production creator goes through [`create_session_with_origin`] now that
+/// the row records what made it (ADR persisted-session-origin), so this pair
+/// exists for fixtures alone.
+#[cfg(test)]
 pub fn create_session(
     db: &Database,
     title: Option<String>,
@@ -1611,6 +1646,7 @@ pub struct SessionCreateOptions {
     pub bot_profile_json: Option<String>,
 }
 
+#[cfg(test)]
 pub fn create_session_with_thinking(
     db: &Database,
     title: Option<String>,
@@ -1645,6 +1681,23 @@ pub fn create_session_with_options(
     db: &Database,
     options: SessionCreateOptions,
 ) -> Result<SessionSummary> {
+    create_session_with_origin(db, options, SessionOriginFields::user())
+}
+
+/// Create a session stamped with where it came from (ADR
+/// persisted-session-origin).
+///
+/// Reserved for the host-side writers that know the creator: the built-in
+/// `SessionCreate` tool, a plugin spawn, an employee task and a scheduled run.
+/// The origin is validated before the row is written, so a caller cannot pair
+/// an origin with a reference that origin cannot carry. Forking is not one of
+/// these: a branch is the person's own conversation, so it keeps `user`.
+pub fn create_session_with_origin(
+    db: &Database,
+    options: SessionCreateOptions,
+    origin: SessionOriginFields,
+) -> Result<SessionSummary> {
+    origin.validate()?;
     let SessionCreateOptions {
         title,
         mode,
@@ -1707,8 +1760,10 @@ pub fn create_session_with_options(
         .prepare_cached(
             "INSERT INTO sessions (
                 id, title, project_id, provider_id, model_id, mode, thinking_level,
-                permission_mode, title_source, role, bot_profile_json, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+                permission_mode, title_source, role, bot_profile_json,
+                origin, origin_session_id, origin_task_id, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                       ?12, ?13, ?14, ?15, ?15)",
         )?
         .execute(params![
             id,
@@ -1722,6 +1777,9 @@ pub fn create_session_with_options(
             title_source,
             role,
             bot_profile,
+            origin.origin,
+            origin.origin_session_id,
+            origin.origin_task_id,
             now
         ])?;
     Ok(SessionSummary {
@@ -1745,6 +1803,14 @@ pub fn create_session_with_options(
         bot_profile: bot_profile
             .as_deref()
             .and_then(|raw| read_bot_profile(Some(raw))),
+        // Resolved here so the caller of a create can show the tag without a
+        // second read; the same one-indexed-row lookup the list performs.
+        origin_session: match origin.origin_session_id.as_deref() {
+            Some(source) => crate::session_origin::resolve(db, source)?,
+            None => None,
+        },
+        origin_task_id: origin.origin_task_id.clone(),
+        origin: origin.origin.clone(),
     })
 }
 
@@ -2174,6 +2240,12 @@ pub fn fork_session_through(
         created_at,
         // A fork is the user's own conversation, not the automation's transcript.
         scheduled_run: false,
+        // Branching is the person's own action, so the child is a `user` session
+        // even when its parent was created by an agent, a plugin or a task. The
+        // origin is provenance, not a trait of the conversation.
+        origin: crate::session_origin::ORIGIN_USER.to_string(),
+        origin_session: None,
+        origin_task_id: None,
         // A new or forked session starts without a worktree (ADR 0329).
         worktree: None,
         // Forking a bot keeps it the same employee; the child is not a new one.
@@ -5640,6 +5712,10 @@ mod tests {
             // An imported conversation is never an employee.
             role: Some("user".into()),
             bot_profile: None,
+            // Imported by the person, so it carries no creator tag.
+            origin: crate::session_origin::ORIGIN_USER.into(),
+            origin_session: None,
+            origin_task_id: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-02T00:00:00Z".into(),
         };
@@ -5697,6 +5773,10 @@ mod tests {
             // An imported conversation is never an employee.
             role: Some("user".into()),
             bot_profile: None,
+            // Imported by the person, so it carries no creator tag.
+            origin: crate::session_origin::ORIGIN_USER.into(),
+            origin_session: None,
+            origin_task_id: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-01T00:00:00Z".into(),
         };
@@ -6925,6 +7005,10 @@ mod tests {
             // An imported conversation is never an employee.
             role: Some("user".into()),
             bot_profile: None,
+            // Imported by the person, so it carries no creator tag.
+            origin: crate::session_origin::ORIGIN_USER.into(),
+            origin_session: None,
+            origin_task_id: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-01T00:00:00Z".into(),
         };
@@ -9440,5 +9524,80 @@ mod tests {
             after_assistant.last_message_preview.as_deref(),
             Some("Completed the sidebar activity view and updated collapsed project badges.")
         );
+    }
+
+    /// A hand-off records who made it, the summary resolves that creator for the
+    /// tag's tooltip, and a branch off it is the person's own conversation again
+    /// (ADR persisted-session-origin).
+    #[test]
+    fn an_agent_made_session_reports_its_creator_and_a_branch_does_not_inherit() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+        let parent = create_session_with_options(
+            &db,
+            SessionCreateOptions {
+                title: Some("Parent".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let child = create_session_with_origin(
+            &db,
+            SessionCreateOptions {
+                title: Some("Child".into()),
+                ..Default::default()
+            },
+            crate::session_origin::SessionOriginFields::from_params(&json!({
+                "origin": "agent",
+                "originSessionId": parent.id.clone()
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(child.origin, "agent");
+        assert_eq!(
+            child
+                .origin_session
+                .as_ref()
+                .map(|origin| origin.title.as_str()),
+            Some("Parent"),
+            "the create answers with the creator it resolved"
+        );
+
+        // The list and the single read agree with the create.
+        let listed = list_sessions(&db)
+            .unwrap()
+            .into_iter()
+            .find(|summary| summary.id == child.id)
+            .unwrap();
+        assert_eq!(listed.origin, "agent");
+        assert_eq!(
+            listed
+                .origin_session
+                .as_ref()
+                .map(|origin| origin.session_id.as_str()),
+            Some(parent.id.as_str())
+        );
+        assert!(
+            session_summary(&db, &child.id)
+                .unwrap()
+                .unwrap()
+                .origin_session
+                .unwrap()
+                .available
+        );
+
+        // Branching is the person's own action: the child of an agent-made
+        // session is not agent-made itself.
+        let ForkSessionResult::Created(branch) =
+            fork_session_through(&db, &child.id, None, None).unwrap()
+        else {
+            panic!("expected a forked session");
+        };
+        assert_eq!(branch.summary.origin, crate::session_origin::ORIGIN_USER);
+        assert!(branch.summary.origin_session.is_none());
+        let saved = get_session(&db, &branch.summary.id).unwrap().unwrap();
+        assert_eq!(saved.summary.origin, crate::session_origin::ORIGIN_USER);
+        assert!(saved.summary.origin_session.is_none());
     }
 }

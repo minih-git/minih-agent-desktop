@@ -629,6 +629,10 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
             mode: "agent",
             providerId: binding.providerId,
             modelId: binding.modelId,
+            // The sidebar tags this conversation as the agent's hand-off and
+            // names the session it came from (ADR persisted-session-origin).
+            origin: "agent",
+            originSessionId: sourceSessionId,
             // A hand-off belongs in the session's own project, and a session
             // the Agent creates must not carry a wider permission mode than
             // the one it was started from.

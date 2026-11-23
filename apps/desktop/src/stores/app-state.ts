@@ -1,4 +1,5 @@
 import type { RecentModel } from "../lib/recent-models";
+import type { SessionOrigin } from "../features/sessions/session-origin-tags.ts";
 import type { RemoteProjectTarget } from "../lib/remote-project-session";
 import type {
   AgentEventEnvelope,
@@ -376,6 +377,7 @@ export type AppState = {
   setSessionSort: (sort: SessionSort) => void;
   setSessionArchiveVisibility: (show: boolean) => void;
   setSessionView: (view: Partial<SessionView> | boolean) => void;
+  setSessionOrigins: (origins: SessionOrigin[]) => void;
   setShowArchived: (show: boolean) => void;
   renameProject: (path: string, name: string) => void;
   toggleProjectPinned: (path: string, pinned?: boolean) => void;
@@ -524,4 +526,6 @@ export type SessionView = {
   /** Whether archived sessions are included in sidebar queries. */
   archived: boolean;
   showArchived?: boolean;
+  /** Origins the sidebar lists; every origin is selected by default. */
+  origins: SessionOrigin[];
 };

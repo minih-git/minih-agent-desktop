@@ -4,6 +4,7 @@ import { isIP } from "node:net";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { SESSION_COLLABORATION_OPERATIONS } from "./session-collaboration-control";
+import { SESSION_CREATE_WITH_ORIGIN_CHANNEL } from "./ipc/internal-channels";
 
 /** A small JSON Schema subset used by MCP's tools/list response. */
 export type McpJsonSchema = {
@@ -817,9 +818,30 @@ export function createMcpControlController(options: {
         });
       }
       const sanitized = args.map((value) => stripSecretMaterial(value)) as unknown[];
+      // A plugin creates sessions on its own behalf: main stamps the origin and
+      // the session whose turn it was, on a channel the renderer cannot reach
+      // (ADR persisted-session-origin).
+      const pluginSessionCreate =
+        operation.id === "session/create" && input.source === "plugin";
+      const invokeArgs = pluginSessionCreate
+        ? [
+            {
+              ...(sanitized[0] && typeof sanitized[0] === "object" && !Array.isArray(sanitized[0])
+                ? (sanitized[0] as Record<string, unknown>)
+                : {}),
+              origin: "plugin",
+              ...(input.pluginContext?.sessionId
+                ? { originSessionId: input.pluginContext.sessionId }
+                : {}),
+            },
+          ]
+        : sanitized;
       const result = operation.channel === "internal:session-collaboration"
-        ? await options.invokeSessionCollaboration!({ ...input, args: sanitized })
-        : await options.invoke(operation.channel, sanitized);
+        ? await options.invokeSessionCollaboration!({ ...input, args: invokeArgs })
+        : await options.invoke(
+            pluginSessionCreate ? SESSION_CREATE_WITH_ORIGIN_CHANNEL : operation.channel,
+            invokeArgs,
+          );
       await options.onOperationComplete?.(operation, result, sanitized, input.source);
       return result;
     },

@@ -94,6 +94,44 @@
 - **Specs / acceptance:** Settings IA models page; runtime §5f.4a; C/E, quality,
   accessibility. Isolated component/Host coverage, not installed-app acceptance.
 
+## E2E-SESSION-origin-tag-and-filter
+
+- **Preconditions:** Request worktree, reused dependencies, isolated Electron
+  profile and a temporary data directory; a session created by the built-in
+  session-creation tool, one created by a plugin, an employee's task session, a
+  scheduled task's run, and an ordinary conversation, all in one project.
+- **Steps:** Open the sidebar; check each row's label and tooltip. Delete the
+  session that dispatched the agent session and re-check its tooltip. Open the
+  session view menu, deselect 手动, reopen the app, then re-select every type.
+  Open the scheduled task's row, then its menu's run list, then the "all runs"
+  entry. Run the same task twice more and re-check the folded row.
+- **Expected:** Each non-user row carries one label before its title — Agent,
+  插件, 员工, 定时 — in the same faint style as the Pi and remote labels, and the
+  person's own conversation carries none. A tooltip names the dispatching
+  session, and switches to the deleted-session wording once it is gone. The
+  view menu keeps the sort order and archived switch on top, then the five-type
+  multi-select; deselecting a type removes exactly those rows from the project
+  groups, the pinned rows and the Activity stream, the view-menu button keeps its
+  indicator, and the selection survives a restart with every type selected again
+  after re-selecting them. A scheduled task shows one row that opens its newest
+  run, its menu lists the five newest runs plus the link to the Scheduled page's
+  history, and a third run keeps the same single row. A run whose task id no
+  longer resolves stays its own row with the 定时 label.
+- **Automation:**
+  `apps/desktop/test/session-origin.test.mjs` covers the tag, tooltip,
+  filter normalization, the persisted preference's back-compatibility, the fold
+  and the renderer payload strip; Host
+  `session_origin_migration::tests`, `rpc::tests::session_create_rpc_stamps_a_validated_origin`,
+  `sessions::tests::an_agent_made_session_reports_its_creator_and_a_branch_does_not_inherit`,
+  `session_collaboration::tests::a_spawned_worker_is_tagged_as_a_plugin_session`,
+  `tasks_tests::a_task_session_inherits_the_employees_configuration_but_not_its_identity`
+  and `rpc::scheduled_rpc::tests::automation_sessions_are_marked_and_released_with_their_task`
+  cover the stored origin per writer; `packages/host-runtime/src/session-create.test.ts`
+  pins that a remote create cannot set one.
+- **Scope:** Component/Host coverage and a manual sidebar pass; not installed-app
+  acceptance. See ADR persisted-session-origin, runtime §04-data-storage, UI IA
+  sidebar, component spec §6.
+
 ## E2E-PROVIDER-anthropic-fallback-preserves-version-path
 
 - **Preconditions:** Request worktree with reused dependencies; local synthetic

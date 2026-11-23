@@ -26,11 +26,13 @@ const REFRESH_AFTER_INVOKE = new Set<string>([
 
 /** Main owns native presentation; durable records still come exclusively from Host. */
 /**
- * Scheduled-task run transcripts are entered from the Scheduled page, so the
- * tray never offers one as a recent conversation — or as a running session it
- * could switch to (issue #1291). Ownership is reported by the host as
- * `scheduledRun` on each summary; this is the main-process twin of the
- * renderer's `isAutomationSession`.
+ * Scheduled-task run transcripts stay out of the native tray.
+ *
+ * The sidebar lists them with the 定时 tag beside the title, but a tray menu is
+ * one line of text per row and has no second line for a tag: a run there would
+ * read as a conversation the person started. This is the main-process twin of
+ * the renderer's `isAutomationSession`, and the one list left that still hides
+ * them (ADR persisted-session-origin).
  */
 export function trayVisibleSessions(
   sessions: readonly SessionSummary[],

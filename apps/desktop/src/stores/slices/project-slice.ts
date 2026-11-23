@@ -255,6 +255,7 @@ export function createProjectSlice({
   | "setSessionSort"
   | "setSessionArchiveVisibility"
   | "setSessionView"
+  | "setSessionOrigins"
   | "setShowArchived"
   | "archiveProject"
   | "toggleProjectPinned"
@@ -626,11 +627,17 @@ export function createProjectSlice({
       persistCurrentSidebar(get);
     },
 
+    setSessionOrigins: (origins) => {
+      set((state) => ({ sessionView: { ...state.sessionView, origins } }));
+      persistCurrentSidebar(get);
+    },
+
     setSessionView: (view) => {
       if (typeof view === "boolean") {
         get().setSessionArchiveVisibility(view);
         return;
       }
+      if (view.origins) get().setSessionOrigins(view.origins);
       if (view.sort || view.sortBy) {
         get().setSessionSort(view.sort ?? view.sortBy ?? get().sessionView.sort);
       }

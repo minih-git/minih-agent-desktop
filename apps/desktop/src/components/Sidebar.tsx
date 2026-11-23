@@ -46,8 +46,19 @@ import {
   resetProjectSessionPage,
   showMoreProjectSessions,
 } from "../lib/sidebar-project-sessions";
-import { listableSessions } from "../lib/session-origin";
 import { isEmployeeSession } from "../lib/session-origin";
+import { SessionOriginTag } from "../features/sessions/SessionOriginTag.tsx";
+import {
+  foldScheduledRuns,
+  type SessionListRow,
+} from "../features/sessions/scheduled-run-groups.ts";
+import {
+  SESSION_ORIGINS,
+  originFilterActive,
+  originLabelKey,
+  sessionMatchesOrigins,
+  type SessionOrigin,
+} from "../features/sessions/session-origin-tags.ts";
 import {
   composerDropItems,
   hasComposerFileDrag,
@@ -294,6 +305,7 @@ export function Sidebar({
   const setSessionSort = useAppStore((s) => s.setSessionSort);
   const moveSessionProject = useAppStore((s) => s.moveSessionProject);
   const setSessionArchiveVisibility = useAppStore((s) => s.setSessionArchiveVisibility);
+  const setSessionOrigins = useAppStore((s) => s.setSessionOrigins);
   const toggleProjectPinned = useAppStore((s) => s.toggleProjectPinned);
   const archiveProjectAction = useAppStore((s) => s.archiveProject);
   const restoreProject = useAppStore((s) => s.restoreProject);
@@ -511,6 +523,19 @@ export function Sidebar({
 
   const showArchived = sessionView.archived;
   const sessionSort = sessionView.sort;
+  // Every origin is listed until the view menu narrows it (ADR
+  // persisted-session-origin); a preference written before the filter existed
+  // reads as all of them.
+  const sessionOrigins = sessionView.origins ?? SESSION_ORIGINS;
+  const toggleSessionOrigin = useCallback((origin: SessionOrigin) => {
+    const selected = new Set(sessionOrigins);
+    if (selected.has(origin)) selected.delete(origin);
+    else selected.add(origin);
+    // Deselecting the last origin would empty the sidebar with no way back
+    // except this menu, so the last one stays selected.
+    if (selected.size === 0) return;
+    setSessionOrigins(SESSION_ORIGINS.filter((value) => selected.has(value)));
+  }, [sessionOrigins, setSessionOrigins]);
   const displaySessionSort: Exclude<SessionSort, "manual"> =
     sessionSort === "manual" ? "recent" : sessionSort;
   const displayProjectSort: ProjectSort = projectSort;
@@ -713,22 +738,22 @@ export function Sidebar({
   }, [t]);
 
   const filtered = useMemo(() => {
-    // A scheduled run's transcript belongs to the Scheduled page, not to the
-    // project groups: that page's task column and run history are its entry
-    // point (issue #1291). The session stays in the store so the chat surface
-    // can still resolve its title, source, and capabilities when it is opened
-    // from there.
+    // A scheduled run's transcript is listed like any other conversation now
+    // that its row says where it came from (ADR persisted-session-origin); the
+    // runs of one task fold into the newest one so a nightly task cannot bury
+    // the project group.
     // An employee is a session too, but it is entered from the employee group
     // below (ADR bot-sessions-and-steward §1): listing it here as well would
     // give one employee two rows with two different affordances.
-    const candidates = listableSessions(sessions)
+    const candidates = sessions
       .filter((session) => !isEmployeeSession(session))
+      .filter((session) => sessionMatchesOrigins(session, sessionOrigins))
       .filter((session) => showArchived || !sessionArchived(session, sessionMeta[session.id]));
     // Empty sessions are durable sidebar rows now. Their message count, not
     // their title, controls New Task reuse, so a manual rename never changes
     // the empty-slot behavior.
-    return candidates;
-  }, [sessions, showArchived, sessionMeta]);
+    return foldScheduledRuns(candidates);
+  }, [sessions, showArchived, sessionMeta, sessionOrigins]);
 
   const compareSessions = useCallback((a: SessionSummary, b: SessionSummary) => {
     const aMeta = sessionMeta[a.id] ?? {};
@@ -1089,18 +1114,17 @@ export function Sidebar({
     () => new Set(Object.keys(runningSessions).filter((id) => runningSessions[id])),
     [runningSessions],
   );
-  // The feed reads the store rather than `filtered`: it is the one list that
-  // shows a scheduled run's own session, and only while that run executes.
+  // The feed reads the store rather than `filtered` because it is chronological
+  // and unfolder, but it answers to the same origin filter as the groups.
   const activitySessions = useMemo(
     () =>
       getSidebarActivitySessions({
-        sessions,
+        sessions: sessions.filter((session) => sessionMatchesOrigins(session, sessionOrigins)),
         sessionMeta,
         projectMeta,
         showArchived,
-        runningSessionIds,
       }),
-    [sessions, sessionMeta, projectMeta, showArchived, runningSessionIds],
+    [sessions, sessionMeta, projectMeta, showArchived, sessionOrigins],
   );
   // Flat ordered list of every visible session id — used for Shift+click range selection.
   const flatSessionOrder = useMemo(() => {
@@ -1844,7 +1868,7 @@ export function Sidebar({
   };
 
   const renderSessionRows = (
-    items: SessionSummary[],
+    items: SessionListRow[],
     options?: { temporary?: boolean; projectPath?: string; global?: boolean; activity?: boolean },
   ) => items.map((session) => {
     const meta = sessionMeta[session.id] ?? {};
@@ -1951,6 +1975,7 @@ export function Sidebar({
           {sessionPinned(session, meta) ? (
             <IconPin size={11} className="thread-item-pin" aria-hidden />
           ) : null}
+          <SessionOriginTag session={session} />
           {session.source === "pi-native" ? (
             <span className="thread-item-source" title="Native Pi session">Pi</span>
           ) : null}
@@ -2306,11 +2331,35 @@ export function Sidebar({
             <span>{showArchived ? t("nav.hideArchived", { defaultValue: "Hide archived" }) : t("nav.showArchived", { defaultValue: "Show archived" })}</span>
             <span className={`sidebar-checkbox ${showArchived ? "checked" : ""}`}>{showArchived ? "✓" : ""}</span>
           </button>
+          <div className="sidebar-popover-divider" />
+          <div className="sidebar-popover-title">
+            {t("nav.originFilter", { defaultValue: "Sessions to show" })}
+          </div>
+          {SESSION_ORIGINS.map((origin) => {
+            const labelKey = origin === "user" ? "nav.originUser" : originLabelKey(origin);
+            const selected = sessionOrigins.includes(origin);
+            return (
+              <button
+                key={origin}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={selected}
+                data-action="toggle-session-origin"
+                data-origin={origin}
+                onClick={() => toggleSessionOrigin(origin)}
+              >
+                <span>{labelKey ? t(labelKey, { defaultValue: origin }) : origin}</span>
+                <span className={`sidebar-checkbox ${selected ? "checked" : ""}`}>{selected ? "✓" : ""}</span>
+              </button>
+            );
+          })}
         </div>,
       );
     }
-    const session = sessionMenu
-      ? sessions.find((item) => item.id === sessionMenu)
+    // The row the menu opened on is a list row: a folded scheduled task keeps
+    // its group here so the menu can disclose the runs behind it.
+    const session: SessionListRow | undefined = sessionMenu
+      ? filtered.find((item) => item.id === sessionMenu)
       : undefined;
     const entry = projectMenu
       ? projectEntries.find((item) => item.key === projectMenu)
@@ -2363,6 +2412,44 @@ export function Sidebar({
             </>
           ) : (
           <>
+            {session.scheduledGroup ? (
+              <>
+                <div className="sidebar-popover-title">
+                  {t("nav.scheduledRunCount", {
+                    count: session.scheduledGroup.runCount,
+                    defaultValue: "{{count}} runs",
+                  })}
+                </div>
+                {session.scheduledGroup.runs.map((run) => (
+                  <button
+                    key={run.id}
+                    type="button"
+                    role="menuitem"
+                    data-action="open-scheduled-run"
+                    data-session-id={run.id}
+                    onClick={() => {
+                      closeMenus(false);
+                      void selectProjectSession(run);
+                    }}
+                  >
+                    <span>{run.updatedAt}</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-action="open-scheduled-history"
+                  onClick={() => {
+                    closeMenus(false);
+                    setPage("scheduled");
+                  }}
+                >
+                  <IconClock size={14} />
+                  {t("nav.scheduledRunsAll", { defaultValue: "All runs" })}
+                </button>
+                <div className="sidebar-popover-divider" />
+              </>
+            ) : null}
             {session.source !== "pi-native" ? (
               <button
                 ref={menuFirstItemRef}
@@ -2720,12 +2807,16 @@ export function Sidebar({
               <div className="sidebar-menu-wrap">
                 <TooltipButton
                   type="button"
-                  className={`sidebar-toolbar-button ${sortOpen ? "active" : ""}`}
+                  className={`sidebar-toolbar-button ${sortOpen ? "active" : ""} ${originFilterActive(sessionOrigins) ? "filtered" : ""}`}
                   data-action="session-sort"
+                  data-filtered={originFilterActive(sessionOrigins) ? "true" : undefined}
                   ariaLabel={t("nav.sortSessions", { defaultValue: "Sort sessions" })}
                   tooltip={t("nav.sortSessions", { defaultValue: "Sort sessions" })}
                   aria-haspopup="menu"
                   aria-expanded={sortOpen}
+                  aria-describedby={
+                    originFilterActive(sessionOrigins) ? "sidebar-session-filter-state" : undefined
+                  }
                   onClick={(event) => {
                     if (sortOpen) {
                       closeMenus();
@@ -2740,6 +2831,14 @@ export function Sidebar({
                   }}
                 >
                   <IconArrowUpDown size={14} />
+                  {originFilterActive(sessionOrigins) ? (
+                    <span className="sidebar-filter-indicator" aria-hidden />
+                  ) : null}
+                  {originFilterActive(sessionOrigins) ? (
+                    <span id="sidebar-session-filter-state" className="sr-only">
+                      {t("nav.originFilterActive", { defaultValue: "Some session types are hidden" })}
+                    </span>
+                  ) : null}
                 </TooltipButton>
               </div>
               <TooltipButton

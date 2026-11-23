@@ -421,3 +421,4 @@ Each ADR includes:
 | parent-steers-running-delegation | [The parent steers a running delegation](parent-steers-running-delegation.md) | Accepted for implementation (amends ADR 0062's write-once brief; adds `TaskSend`; sibling and cross-session addressing stay withdrawn per ADR 0165) |
 | plugin-host-capabilities | [Six host capabilities, one permission each](plugin-host-capabilities.md) | Accepted for implementation; B-0 registers declarations, and B2 implements inbound webhooks |
 | plugin-webhook-listener-boundary | [Webhook listener boundary and isolated token presentation](plugin-webhook-listener-boundary.md) | Accepted for implementation |
+| persisted-session-origin | [A session records how it was created](persisted-session-origin.md) | Accepted for implementation (2026-11-23; schema v44; supersedes the derived-only ownership that hid automation transcripts, issue #1291) |

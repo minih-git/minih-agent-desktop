@@ -66,6 +66,8 @@ const { registerSessionIpc } = load("../electron/main/ipc/session-ipc.ts", {
   "../services/session-collaboration": collaboration,
   "../bootstrap/remote-hosts.js": { getActiveRemoteHostsBoot: () => null },
   "../services/session-search": { searchSessionsAcrossSources: async () => ({ hits: [], nextOffset: null }) },
+  "./internal-channels": { SESSION_CREATE_WITH_ORIGIN_CHANNEL: "internal/session-create" },
+  "./session-origin-payload": { withoutSessionOrigin: (input) => input ?? {} },
 });
 
 function harness(answer = async () => ({ ok: true })) {

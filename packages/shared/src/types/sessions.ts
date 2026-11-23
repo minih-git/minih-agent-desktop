@@ -65,11 +65,20 @@ export type SessionSummary = {
   supportedThinkingLevels?: ThinkingLevel[];
   /**
    * True when this session is the transcript owned by a scheduled-task run.
-   * The automation owns it: the SessionList and global session search hide it,
-   * and the Scheduled page is its entry point (`todos`-style automation output).
+   * Kept for compatibility with hosts that predate `origin`; an automation
+   * transcript is now listed and tagged like any other session.
    * Older hosts omit it, so `undefined` means an ordinary conversation.
    */
   scheduledRun?: boolean;
+  /**
+   * Where the session came from (ADR persisted-session-origin). Older hosts
+   * omit it, which reads as `user`.
+   */
+  origin?: SessionOrigin;
+  /** The session that created this one, resolved for the tag's tooltip. */
+  originSession?: SessionOriginRef;
+  /** The scheduled task a run transcript belongs to. */
+  originTaskId?: string;
   /**
    * Present only for an isolated session (ADR 0329): its tools run in its own
    * git worktree. Older hosts and ordinary sessions omit it.
@@ -91,6 +100,22 @@ export type SessionSummary = {
   botProfile?: BotProfile;
   updatedAt: string;
   createdAt: string;
+};
+
+/**
+ * How a session was created. `user` is the person opening a conversation; the
+ * others name the creator the sidebar tags.
+ */
+export type SessionOrigin = "user" | "agent" | "plugin" | "task" | "scheduled";
+
+/**
+ * The session that created another one. `available` is false once that session
+ * is gone, and `title` is empty then: the tag stays, the link does not.
+ */
+export type SessionOriginRef = {
+  sessionId: string;
+  title: string;
+  available: boolean;
 };
 
 export type SessionDetail = SessionSummary & {

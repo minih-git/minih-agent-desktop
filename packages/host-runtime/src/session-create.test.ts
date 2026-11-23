@@ -6,6 +6,10 @@
  * looked up by id and never invented, only the fields `SessionCreateParams`
  * defines are forwarded, and a permission mode is applied in the second call
  * host-core needs.
+ *
+ * Provenance is not one of those fields (ADR persisted-session-origin): the
+ * desktop's own creators stamp an origin in Electron main, and a remote caller
+ * that supplies one must not be able to tag a session as an agent's work.
  */
 import { describe, expect, it } from "vitest";
 
@@ -120,6 +124,23 @@ describe("createHostSession", () => {
     await createHostSession(() => host, { title: "Loose" });
 
     expect(calls.find((call) => call.method === "session.create")?.params).toEqual({ title: "Loose" });
+  });
+
+  it("never forwards a caller-supplied origin", async () => {
+    const { host, calls } = fakeHost();
+
+    await createHostSession(() => host, {
+      projectId: "7",
+      title: "Hand-off",
+      origin: "agent",
+      originSessionId: "somebody-else",
+      originTaskId: "task-1",
+    } as Parameters<typeof createHostSession>[1]);
+
+    expect(calls.find((call) => call.method === "session.create")?.params).toEqual({
+      title: "Hand-off",
+      projectPath: "/home/user/app",
+    });
   });
 
   it("reports a Host that is not running as retriable rather than as a missing session", async () => {

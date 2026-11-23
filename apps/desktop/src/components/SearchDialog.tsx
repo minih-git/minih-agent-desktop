@@ -2,7 +2,6 @@ import { OverlayBackdrop } from "./ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
-import { listableSessions } from "../lib/session-origin";
 import { runPaletteCommand } from "../lib/commands";
 import { isDefaultSessionTitle, useAppStore } from "../stores/app-store";
 import { normalizeProjectPath } from "../lib/sidebar-session-groups";
@@ -150,7 +149,9 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
     // Recents come from the store, so the same ownership rule applies here:
     // a scheduled run's transcript is entered from the Scheduled page, never
     // offered as a conversation to switch to (issue #1291).
-    const source = listableSessions(q ? search.hits.map((hit) => hit.session) : sessions);
+    // A scheduled run is a session like any other now that it carries its
+    // origin tag, so search and recents list it.
+    const source = q ? search.hits.map((hit) => hit.session) : sessions;
     const hits = new Map(search.hits.map((hit) => [hit.session.id, hit]));
     for (const session of source) {
       // Untitled drafts carry no searchable signal; they stay sidebar-only.
