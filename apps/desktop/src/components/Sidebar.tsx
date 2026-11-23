@@ -47,6 +47,7 @@ import {
   showMoreProjectSessions,
 } from "../lib/sidebar-project-sessions";
 import { isEmployeeSession } from "../lib/session-origin";
+import { formatRelativeMoment } from "../features/scheduled/scheduled-format.ts";
 import { SessionOriginTag } from "../features/sessions/SessionOriginTag.tsx";
 import {
   foldScheduledRuns,
@@ -264,7 +265,7 @@ export function Sidebar({
   onAnimationEnd?: ReactAnimationEventHandler<HTMLElement>;
   defaultActivityOpen?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const selectingSessionId = useAppStore((s) => s.selectingSessionId);
@@ -1114,12 +1115,16 @@ export function Sidebar({
     () => new Set(Object.keys(runningSessions).filter((id) => runningSessions[id])),
     [runningSessions],
   );
-  // The feed reads the store rather than `filtered` because it is chronological
-  // and unfolder, but it answers to the same origin filter as the groups.
+  // The feed reads the store rather than `filtered` because the groups' history
+  // caps do not apply to it, but it answers to the same origin filter and the
+  // same scheduled-task fold: a five-minute task runs 288 times a day and would
+  // otherwise own the whole stream.
   const activitySessions = useMemo(
     () =>
       getSidebarActivitySessions({
-        sessions: sessions.filter((session) => sessionMatchesOrigins(session, sessionOrigins)),
+        sessions: foldScheduledRuns(
+          sessions.filter((session) => sessionMatchesOrigins(session, sessionOrigins)),
+        ),
         sessionMeta,
         projectMeta,
         showArchived,
@@ -2432,7 +2437,13 @@ export function Sidebar({
                       void selectProjectSession(run);
                     }}
                   >
-                    <span>{run.updatedAt}</span>
+                    <span>
+                      {formatRelativeMoment(
+                        run.updatedAt,
+                        Date.now(),
+                        i18n.resolvedLanguage ?? i18n.language,
+                      )}
+                    </span>
                   </button>
                 ))}
                 <button

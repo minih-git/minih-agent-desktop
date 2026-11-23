@@ -50,6 +50,51 @@ test("the plugin and MCP paths share desktop operation validation", async () => 
   ]);
 });
 
+test("a plugin cannot state where its new session came from", async () => {
+  const calls = [];
+  const controller = createMcpControlController({
+    channels: { sessionCreate: "minih-agent-desktop/session/create" },
+    invoke: async (channel, args) => {
+      calls.push({ channel, args });
+      return { session: { id: "created" } };
+    },
+  });
+
+  // Outside an in-flight tool there is no parent session, so an id the plugin
+  // supplied must be dropped rather than stored as the session's creator
+  // (ADR persisted-session-origin).
+  await controller.invoke({
+    operation: "session/create",
+    source: "plugin",
+    args: [{ title: "Forged", origin: "agent", originSessionId: "victim", originTaskId: "t1" }],
+  });
+  assert.equal(calls[0].channel, "minih-agent-desktop/internal/session-create-with-origin");
+  assert.deepEqual(calls[0].args, [{ title: "Forged", origin: "plugin" }]);
+
+  // Inside a turn the parent is the session the tool runs in, never the id the
+  // plugin named.
+  await controller.invoke({
+    operation: "session/create",
+    source: "plugin",
+    pluginContext: { pluginId: "acme", sessionId: "caller" },
+    args: [{ title: "Inside", origin: "task", originSessionId: "victim" }],
+  });
+  assert.deepEqual(calls[1].args, [
+    { title: "Inside", origin: "plugin", originSessionId: "caller" },
+  ]);
+
+  // The external MCP surface keeps the renderer's channel: it is not a plugin,
+  // and that handler strips the same keys before the host sees them, so the
+  // session it creates is an ordinary conversation.
+  await controller.invoke({
+    operation: "session/create",
+    source: "mcp",
+    args: [{ title: "External", originSessionId: "victim" }],
+  });
+  assert.equal(calls[2].channel, "minih-agent-desktop/session/create");
+  assert.deepEqual(calls[2].args, [{ title: "External", originSessionId: "victim" }]);
+});
+
 async function post(url, token, body, headers = {}) {
   const response = await fetch(url, {
     method: "POST",
