@@ -5,6 +5,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { SESSION_COLLABORATION_OPERATIONS } from "./session-collaboration-control";
 import { SESSION_CREATE_WITH_ORIGIN_CHANNEL } from "./ipc/internal-channels";
+import { withoutSessionOrigin } from "./ipc/session-origin-payload";
 
 /** A small JSON Schema subset used by MCP's tools/list response. */
 export type McpJsonSchema = {
@@ -823,12 +824,14 @@ export function createMcpControlController(options: {
       // (ADR persisted-session-origin).
       const pluginSessionCreate =
         operation.id === "session/create" && input.source === "plugin";
+      // The plugin's own arguments are stripped of every origin key first: a
+      // plugin outside a tool call has no parent session, and one inside a call
+      // must not be able to name a creator other than the session whose turn it
+      // is running in (ADR persisted-session-origin).
       const invokeArgs = pluginSessionCreate
         ? [
             {
-              ...(sanitized[0] && typeof sanitized[0] === "object" && !Array.isArray(sanitized[0])
-                ? (sanitized[0] as Record<string, unknown>)
-                : {}),
+              ...withoutSessionOrigin(sanitized[0]),
               origin: "plugin",
               ...(input.pluginContext?.sessionId
                 ? { originSessionId: input.pluginContext.sessionId }

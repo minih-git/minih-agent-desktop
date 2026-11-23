@@ -26,6 +26,9 @@ const {
 const { SCHEDULED_RUNS_SHOWN, foldScheduledRuns } = await import(
   "../src/features/sessions/scheduled-run-groups.ts"
 );
+const { getSidebarActivitySessions } = await import(
+  "../src/lib/sidebar-session-groups.ts"
+);
 const { loadSidebarPreferences, SIDEBAR_PREFERENCES_KEY } = await import(
   "../src/lib/sidebar-preferences.ts"
 );
@@ -120,6 +123,27 @@ test("one task's runs fold into its newest run", () => {
     folded.scheduledGroup.runs.map((run) => run.id),
     ["r2", "r3", "r1"],
     "the expansion is newest first",
+  );
+});
+
+test("the activity feed folds one task's runs like the project groups do", () => {
+  // A five-minute task runs 288 times a day; a feed that listed every run would
+  // be all automation and no conversation.
+  const runs = [
+    session({ id: "r1", origin: "scheduled", originTaskId: "t1", updatedAt: "2026-01-01T00:00:00.000Z" }),
+    session({ id: "r2", origin: "scheduled", originTaskId: "t1", updatedAt: "2026-01-02T00:00:00.000Z" }),
+    session({ id: "chat", origin: "user", updatedAt: "2025-12-31T00:00:00.000Z" }),
+  ];
+  const feed = getSidebarActivitySessions({
+    sessions: foldScheduledRuns(runs),
+    sessionMeta: {},
+    projectMeta: {},
+    showArchived: false,
+  });
+  assert.deepEqual(
+    feed.map((row) => row.id),
+    ["r2", "chat"],
+    "the newest run stands for the task, in the feed's own time order",
   );
 });
 

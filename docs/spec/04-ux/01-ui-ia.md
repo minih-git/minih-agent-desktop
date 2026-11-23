@@ -251,8 +251,10 @@ destination, chat as the home surface, tools and permissions inline.
   descending, grouped by time (`Today`, `Yesterday`, `Previous 7 days`, `Previous 14 days`,
   `Older`), with each row displaying a two-line card (line 1: status indicator, task title,
   and owning project/workspace label; line 2: 2-line clamped preview of the latest user or
-  assistant message). A scheduled run's own conversation joins the stream like
-  any other session, tagged 定时 (ADR persisted-session-origin).
+  assistant message). A scheduled task's runs join the stream folded into their
+  newest run, tagged 定时, the same way the project groups fold them — an
+  `interval` task would otherwise own the whole feed (ADR
+  persisted-session-origin).
 - **Origin tag and filter**: a session row whose creator is not the person
   carries one quiet label before its title — `Agent`, `插件`, `员工` or `定时` —
   in the same faint vocabulary as the Pi and remote labels, with a tooltip naming
