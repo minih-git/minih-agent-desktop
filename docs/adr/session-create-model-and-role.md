@@ -81,11 +81,19 @@ person can open, type into and take over, and a session whose tools silently
 differ from its own mode is a permission bug the ADR does not want.
 
 **Permission never widens.** The created session inherits the dispatching
-session's ceiling (`inheritPermissionFromSessionId`), and a role that declares
-its own `permission` narrows it further: `session.create` keeps the stricter of
-the two, so a `permissionMode` on the request can only ever narrow an inherited
-ceiling. That clamp is the one behavioural change to `session.create`, and it
-applies equally to the plugin spawn path (which passes both fields).
+session's ceiling as its row value (`inheritPermissionFromSessionId`), so an
+`inherit` parent keeps following the global default exactly as before. A role that
+declares its own `permission` narrows it further: `session.create` compares that
+request against the parent's **effective** mode — what `inherit` resolves to right
+now — and stores the request only when it is strictly narrower; otherwise the
+parent's row value stays. The comparison is deliberately against the effective
+mode and not against a rank of the stored value: ranking `inherit` as narrowest
+would read "the global default" as "the strictest", so a role's `ask` on a global
+`auto` machine would be stored as `inherit` and the role session would run at
+`auto`. Naming `inherit`, or naming the mode that is already effective, is
+inheritance spelled out and changes nothing. That clamp is the one behavioural
+change to `session.create`, and it applies equally to the plugin spawn path
+(which passes both fields).
 
 **Thinking level.** The role's `thinkingLevel` → `sessionCreateModel.thinkingLevel`
 → the source session's level, clamped by the runtime against the chosen model

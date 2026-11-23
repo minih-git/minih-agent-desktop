@@ -1600,10 +1600,13 @@ person can take over. An unknown or switched-off handle fails with
 **Thinking and permission.** The thinking level is the role's
 `thinkingLevel`, then `sessionCreateModel.thinkingLevel` (including explicit
 `off` and `omit`), then the source session's level; runtime capability clamping
-still applies. The session inherits the sending session's permission ceiling
-(`inheritPermissionFromSessionId`) and is further narrowed by a role that
-declares its own `permission` — the host keeps the stricter of the two, so a
-created session is never wider than either.
+still applies. The session inherits the sending session's permission row value
+(`inheritPermissionFromSessionId`), so an `inherit` parent keeps following the
+global default. A role that declares its own `permission` narrows it further:
+`session.create` compares that request against the parent's *effective* mode —
+what `inherit` resolves to now — and stores it only when it is strictly narrower,
+so a created session is never wider than the effective ceiling. Naming `inherit`,
+or naming the mode that is already effective, changes nothing.
 
 **One catalog, two tools.** `Task` and `SessionCreate` print the same generated
 delegate catalog (name, one-line purpose, capability columns derived from each

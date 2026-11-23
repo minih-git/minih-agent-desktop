@@ -90,32 +90,6 @@ pub fn is_valid_permission_mode(mode: &str) -> bool {
     PERMISSION_MODES.contains(&mode)
 }
 
-/// How wide a permission mode is; higher is wider.
-///
-/// `inherit` ranks narrowest on purpose: it names no concrete mode, so a caller
-/// that only knows an inheriting ceiling can never use it to widen a definition's
-/// own scope (ADR session-create-model-and-role). An unknown value ranks the same
-/// way, so a malformed mode can only ever reduce authority.
-fn permission_rank(mode: &str) -> u8 {
-    match mode {
-        "auto" => 2,
-        "accept-edits" => 1,
-        _ => 0,
-    }
-}
-
-/// The stricter of two permission modes.
-///
-/// Used where a new session inherits a ceiling and also carries a narrower one of
-/// its own: the row may never end up wider than either.
-pub(crate) fn narrower_permission_mode<'a>(ceiling: &'a str, requested: &'a str) -> &'a str {
-    if permission_rank(ceiling) <= permission_rank(requested) {
-        ceiling
-    } else {
-        requested
-    }
-}
-
 fn default_permission_mode() -> String {
     "inherit".to_string()
 }

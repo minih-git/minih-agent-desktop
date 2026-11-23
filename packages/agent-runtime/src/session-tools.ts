@@ -2,6 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { SubagentDefinition } from "@minih-agent/shared";
 
 import {
+  DELEGATE_CAPABILITIES_NOTE,
   DELEGATE_DECISION_RULE,
   DELEGATE_DEFAULT_MODEL_NOTE,
   delegateCatalogTable,
@@ -133,7 +134,9 @@ export function sessionCreateDescription(definitions: readonly SubagentDefinitio
   return [
     sessionToolDescriptions.SessionCreate,
     DELEGATE_DECISION_RULE,
+    "The table below describes `Task` delegates. A session you create with `agent` is not restricted to that definition's tools: it keeps this session's full tool catalog and only takes the role's prompt, its default model, its thinking level and (when narrower) its permission. Read the tool columns as \"what that role is good at\", not as what `SessionSend` can hand it.",
     `Subagent roles you may name as \`agent\`:\n${delegateCatalogTable(definitions)}`,
+    DELEGATE_CAPABILITIES_NOTE,
     DELEGATE_DEFAULT_MODEL_NOTE,
   ].join("\n\n");
 }

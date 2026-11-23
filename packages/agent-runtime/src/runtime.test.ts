@@ -8924,9 +8924,9 @@ describe("DesktopAgentRuntime subagents", () => {
     // session-create-model-and-role): one row per definition, with the
     // capabilities derived from its own tools.
     expect(tool.description).toContain(
-      "| explorer | Search the workspace and report findings. | read-only | inherits the session |",
+      "| explorer | Search the workspace and report findings. | no | no | no | inherits the session |",
     );
-    expect(tool.description).toContain("| reviewer | Review a diff. | read-only, Bash |");
+    expect(tool.description).toContain("| reviewer | Review a diff. | yes | no | no |");
 
     await runtime.dispose();
   });
@@ -8978,7 +8978,7 @@ describe("DesktopAgentRuntime subagents", () => {
     expect(subagentRuns.calls[0].systemPrompt).toContain("Skill");
     expect(subagentRuns.calls[0].systemPrompt).toContain("demo.hello/release-notes");
     expect(subagentRuns.calls[0].systemPrompt).toContain("You may change files");
-    expect(taskTool(runtime).description).toContain("| inherits parent tools |");
+    expect(taskTool(runtime).description).toContain("| parent | parent | parent |");
 
     await runtime.dispose();
   });
