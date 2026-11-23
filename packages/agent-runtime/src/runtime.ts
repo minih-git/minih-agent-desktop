@@ -35,7 +35,17 @@ import { imageGenerationDescription, imageGenerationParameters } from "./image-g
 import { todoWriteDescription, todoWriteParameters } from "./todo-tool.js";
 import { createJevClassifierTool } from "./jev-classifier-tool.js";
 import { scheduledToolParameters, scheduledToolDescriptions } from "./scheduled-tools.js";
-import { sessionToolParameters, sessionToolDescriptions } from "./session-tools.js";
+import {
+  sessionCreateDescription,
+  sessionToolParameters,
+  sessionToolDescriptions,
+} from "./session-tools.js";
+import {
+  DELEGATE_DECISION_RULE,
+  DELEGATE_DEFAULT_MODEL_NOTE,
+  delegateCatalogTable,
+} from "./delegate-catalog.js";
+import { resolveAgentRole } from "./agent-role.js";
 import { CORE_PERSONA_TOOLS, personaToolDenial } from "./mode-tool-access.js";
 import {
   MEMORY_REMEMBER_TOOL_NAME,
@@ -1180,6 +1190,17 @@ export type AgentRuntimeOptions = {
    */
   subagents?: SubagentDefinition[];
   /**
+   * The delegate role this session acts in (ADR session-create-model-and-role):
+   * a definition handle the trusted `SessionCreate` tool stamped on the row.
+   *
+   * Unlike `botPersona` it narrows nothing — the session keeps its own tools and
+   * permission mode, because it is a conversation the person can take over. The
+   * runtime resolves the handle against `subagents` at every turn start, so editing
+   * or deleting the definition takes effect on the next turn; a handle that no
+   * longer resolves removes the section and reports one diagnostic.
+   */
+  agentRoleName?: string;
+  /**
    * The definition an employee session runs as (ADR bot-sessions-and-steward §2).
    *
    * When Electron main resolves a `botProfile.definition`, the runtime runs the
@@ -1218,7 +1239,12 @@ export type AgentRuntimeOptions = {
 };
 
 export type AgentRuntimeDiagnostic = {
-  kind: "compaction_failure" | "compaction_shape";
+  /**
+   * `agent_role_missing`: the delegate role this session was created with no
+   * longer names an enabled definition (ADR session-create-model-and-role). The
+   * turn runs without the role section; this is the one report of it.
+   */
+  kind: "compaction_failure" | "compaction_shape" | "agent_role_missing";
   sessionId: string;
   turnId?: string;
   requestId: string;
@@ -1257,6 +1283,8 @@ export type RuntimeMatchConfig = {
   subagentProviders?: Record<string, RuntimeProviderConfig>;
   /** Resolved keys explicitly opted into Task.model selection; pins alone grant no override. */
   subagentModelKeys?: string[];
+  /** The delegate role this session acts in; a changed value retires the runtime. */
+  agentRoleName?: string;
   /**
    * The employee definition the caller wants this session to run as. It is a
    * compare item of its own: the tool ceiling is fixed at construction, so a
@@ -2011,6 +2039,14 @@ export class DesktopAgentRuntime {
   private readonly taskReporter: boolean;
   /** That definition's prompt, composed into the system prompt. */
   private personaPrompt?: string;
+  /** The delegate role this session acts in, as stored on the session row. */
+  private agentRoleName?: string;
+  /** That definition's prompt as a role section, recomposed at every turn start. */
+  private agentRolePrompt?: string;
+  /** The role section a relabel could not apply because a nudge owned the prompt. */
+  private agentRoleStale = false;
+  /** A missing role is worth one diagnostic, not one per turn. */
+  private agentRoleReported = false;
   /**
    * Value identity of the definition captured at construction, so the reuse
    * check can see a persona that appeared, changed, or disappeared.
@@ -2327,6 +2363,12 @@ export class DesktopAgentRuntime {
       // it belongs in the system prompt rather than in a user turn.
       this.personaPrompt = opts.botPersona.definition.prompt.trim();
     }
+    // The role section is captured here so the first composed prompt already
+    // carries it; every later turn re-resolves it (ADR
+    // session-create-model-and-role). A handle that resolves to nothing is not
+    // an error at construction: the prompt simply has no role section.
+    this.agentRoleName = opts.agentRoleName?.trim() || undefined;
+    this.agentRolePrompt = resolveAgentRole(this.agentRoleName, this.subagents)?.section;
     this.subagentProviders = opts.subagentProviders ?? {};
     this.subagentModelKeys = new Set(opts.subagentModelKeys ?? []);
     this.subagentOverrideProviders = {};
@@ -3038,6 +3080,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // APPEND_SYSTEM.md so the narrower rule reads closer to the request,
         // and before project instructions so the workspace keeps the last word.
         ...(this.modelSystemPrompt ? [this.modelSystemPrompt] : []),
+        // The role this session acts in (ADR session-create-model-and-role): the
+        // definition's own prompt, as a section after the user's APPEND and the
+        // model's instructions and before the workspace's own rules.
+        ...(this.agentRolePrompt ? [this.agentRolePrompt] : []),
         ...(this.personaPrompt ? [this.personaPrompt] : []),
         ...(optionalToolsPrompt ? [optionalToolsPrompt] : []),
         ...(projectPrompt ? [projectPrompt] : []),
@@ -3072,12 +3118,59 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.setAgentSystemPrompt(this.composeSystemPrompt());
   }
 
-  /** Apply a resumable-list refresh that a transient prompt variant deferred. */
+  /**
+   * Apply the prompt refreshes a transient variant deferred.
+   *
+   * Both the resumable list and the delegate role wait for the same moment: the
+   * cleanup that restores the composed prompt, which is the only point where
+   * recomposing is safe.
+   */
   private applyPendingResumablePrompt(): void {
+    if (this.agentRoleStale) {
+      this.agentRoleStale = false;
+      this.refreshAgentRole();
+    }
     if (!this.resumablePromptStale) return;
     this.resumablePromptStale = false;
     this.refreshResumablePrompt();
   }
+
+  /**
+   * Re-resolve the session's delegate role at the start of a turn.
+   *
+   * Cheap and idempotent: the definitions this launch carries are the source of
+   * truth, so editing one takes effect on the next turn and deleting or
+   * switching one off drops the section. Recomposing the prompt follows the same
+   * rule as the resumable list — a transient variant owns the live prompt until
+   * its own cleanup restores the composed text.
+   */
+  private refreshAgentRole(): void {
+    if (!this.agentRoleName) return;
+    const resolution = resolveAgentRole(this.agentRoleName, this.subagents);
+    const section = resolution?.section;
+    if (section === this.agentRolePrompt) return;
+    this.agentRolePrompt = section;
+    // A role whose definition is gone is not a failed turn: the session is the
+    // conversation the person opened it as, and one diagnostic says why the
+    // section it was created with is no longer there.
+    if (!section && resolution?.missing && !this.agentRoleReported) {
+      this.agentRoleReported = true;
+      this.onDiagnostic({
+        kind: "agent_role_missing",
+        sessionId: this.sessionId,
+        ...(this.turnId ? { turnId: this.turnId } : {}),
+        requestId: `agent-role:${resolution.missing}`,
+        data: { agentName: resolution.missing },
+      });
+    }
+    if (!this.agent || this.composedSystemPrompt === undefined) return;
+    if (this.agentSystemPromptContent() !== this.composedSystemPrompt) {
+      this.agentRoleStale = true;
+      return;
+    }
+    this.setAgentSystemPrompt(this.composeSystemPrompt());
+  }
+
 
   /**
    * Host failures and mutation-failure termination are recorded per tool-call
@@ -3318,6 +3411,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       // item, or becoming a steward would keep the previous turn's toolset.
       ["botPersona", this.personaIdentity === personaFingerprint(config.botPersona)],
       ["taskReporter", this.taskReporter === (config.taskReporter === true)],
+      ["agentRoleName", (this.agentRoleName ?? "") === (config.agentRoleName?.trim() ?? "")],
       ["subagents", safeJson(this.subagents) === safeJson(config.subagents ?? [])],
       ["subagentProviders", safeJson(this.subagentProviders) === safeJson(config.subagentProviders ?? {})],
       ["subagentModelKeys", safeJson([...this.subagentModelKeys].sort()) === safeJson([...new Set(config.subagentModelKeys ?? [])].sort())],
@@ -3836,6 +3930,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const describe = (toolName: string): string => {
       if (toolName === "GenerateImages") return imageGenerationDescription;
       if (scheduledToolDescriptions[toolName]) return scheduledToolDescriptions[toolName];
+      // `SessionCreate` prints the same delegate catalog and decision rule as
+      // `Task` (ADR session-create-model-and-role), so it is composed rather
+      // than read from the static table.
+      if (toolName === "SessionCreate") return sessionCreateDescription(this.subagents);
       if (sessionToolDescriptions[toolName]) return sessionToolDescriptions[toolName];
       if (memoryToolDescriptions[toolName]) return memoryToolDescriptions[toolName];
       if (backgroundTaskToolDescriptions[toolName]) return backgroundTaskToolDescriptions[toolName];
@@ -5362,14 +5460,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    */
   private buildSubagentTool(): AgentTool {
     const names = this.subagents.map((definition) => definition.name);
-    const catalog = this.subagents
-      .map((definition) => {
-        const defaultModel = definition.model
-          ? `${subagentModelKey(definition.model)}; omit model or repeat this key to keep this default.`
-          : "inherits the session.";
-        return `- ${definition.name} (tools: ${subagentToolsLabel(definition)}): ${definition.description} Default model: ${defaultModel}`;
-      })
-      .join("\n");
+    // The catalog and the decision rule come from one generator shared with
+    // `SessionCreate`'s description (ADR session-create-model-and-role), so the
+    // two tools cannot describe the same delegates differently.
+    const catalog = delegateCatalogTable(this.subagents);
     return {
       name: SUBAGENT_TOOL_NAME,
       label: "Task",
@@ -5387,7 +5481,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         "`task` is the delegate's brief. It cannot see this conversation, so state the goal, the paths and facts it cannot infer, and exactly what to report back. A running delegate can be corrected with TaskSend, but the brief is what it plans from: a vague brief costs more than a correction.",
         "To run delegates concurrently, emit several Task calls in one assistant message. A message that mixes Task with any other tool runs one call at a time. You may keep working or talk to the user while they run; the runtime delivers their reports when they finish. Call TaskStop only to cancel. When a running delegate is heading the wrong way, TaskSend corrects it in place — do not stop and restart it just to re-aim it.",
         "To continue a previous subagent, pass its `resume` id (the `delegationId` returned by Task). Saying \"reuse\" in prose is not enough. Do not pass `model` when resuming; start a new delegation to change models.",
+        DELEGATE_DECISION_RULE,
         `Available subagents:\n${catalog}`,
+        DELEGATE_DEFAULT_MODEL_NOTE,
       ].join("\n\n"),
       parameters: Type.Object({
         agent: Type.String({
@@ -9920,6 +10016,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       this.activateDeferredTools(selectedTools);
       this.setAgentTools(this.activeTools());
     }
+    // The role is resolved from the definitions this launch carries, so the
+    // prompt of this turn reflects the catalog as it is now (ADR
+    // session-create-model-and-role).
+    this.refreshAgentRole();
     this.refreshResumablePrompt();
     this.pathInstructionClaims.clear();
     this.pendingUserMessageId = userMessageId;

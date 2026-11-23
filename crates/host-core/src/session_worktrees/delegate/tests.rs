@@ -42,6 +42,7 @@ async fn env() -> Env {
                 permission_mode: None,
                 role: None,
                 bot_profile_json: None,
+                agent_name: None,
             },
         )
         .unwrap()

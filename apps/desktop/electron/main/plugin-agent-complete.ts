@@ -39,6 +39,12 @@ export function asPluginThinkingLevel(value: unknown): ThinkingLevel {
 type ListedProvider = {
   id: string;
   name: string;
+  /**
+   * The vendor alias a definition pin and the delegation catalog spell, e.g.
+   * `anthropic`. `providers.list` reports it, and `SessionCreate.model` accepts
+   * it, so the shape has to say it exists (ADR session-create-model-and-role).
+   */
+  vendorKey?: string;
   enabled?: boolean;
   hasSecret?: boolean;
   hasOauth?: boolean;

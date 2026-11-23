@@ -33,7 +33,7 @@ Each ADR includes:
 | network-center-gateway-issued-identity | [Gateway-issued network center identity](network-center-gateway-issued-identity.md) | Accepted for implementation |
 | remote-control-router-account-binding | [Router-account binding for remote control](remote-control-router-account-binding.md) | Accepted for implementation (post-MVP; D666; amends ADR 0331) |
 | builtin-session-messaging | [Built-in session messaging tools](builtin-session-messaging.md) | Accepted (D663) |
-| session-create-tool | [Agent-created sessions for a hand-off with no target](session-create-tool.md) | Accepted (D672; amends D663) |
+| session-create-tool | [Agent-created sessions for a hand-off with no target](session-create-tool.md) | Accepted (D672; amends D663; decision 2 superseded by session-create-model-and-role) |
 | context-usage-tool | [Model-facing context usage report](context-usage-tool.md) | Accepted (D684; amends ADR 0064) |
 | device-local-project-lists-in-config-sync | [Device-local project lists in configuration sync](device-local-project-lists-in-config-sync.md) | Accepted |
 | router-account-configuration-backup | [Router-account hosted configuration backup](router-account-configuration-backup.md) | Accepted; supersedes the S3-only transport decision |
@@ -423,3 +423,4 @@ Each ADR includes:
 | plugin-host-capabilities | [Six host capabilities, one permission each](plugin-host-capabilities.md) | Accepted for implementation; B-0 registers declarations, and B2 implements inbound webhooks |
 | plugin-webhook-listener-boundary | [Webhook listener boundary and isolated token presentation](plugin-webhook-listener-boundary.md) | Accepted for implementation |
 | persisted-session-origin | [A session records how it was created](persisted-session-origin.md) | Accepted for implementation (2026-11-23; schema v44; supersedes the derived-only ownership that hid automation transcripts, issue #1291) |
+| session-create-model-and-role | [The AI picks the model and a role for a session it creates](session-create-model-and-role.md) | Accepted for implementation (2026-11-23; schema v45; supersedes session-create-tool decision 2 and its `availableForSubagents` rejection) |

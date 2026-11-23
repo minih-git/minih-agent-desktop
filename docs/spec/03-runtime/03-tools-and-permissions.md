@@ -887,22 +887,35 @@ steers it into the running turn and leaves it first in the queue when that turn
 accepts no more input. A refused promotion does not fail an accepted delivery:
 it stays queued, the tool reports no insertion, and Main logs the refusal.
 
-`SessionCreate({ title })` creates one ordinary Agent-mode session in the
-caller's project with the caller's permission mode, runs it on the provider/model
-binding in Models settings (`sessionCreateModel`), and returns its Session ID
-for a following `SessionSend`. An optional `sessionCreateModel.thinkingLevel`
-selects the created session's reasoning effort (including `off` and `omit`);
-absent/null preserves inheritance from the caller. Tool arguments cannot
-override that user setting, and existing runtime capability clamping remains.
-While that setting is unset the call fails with `MODEL_NOT_CONFIGURED`, and while the binding is not one the
-settings row offers it fails with `MODEL_UNAVAILABLE`; there is no fallback to
-the app default model. Both sides resolve that offer list the same way: an
-enabled, credentialed provider configuring at least one model, minus every image
-model the settings page excludes (the stored `imageGenerationModels` candidates
-merged with the active `imageGeneration` default). The
-ledger, permission ceiling,
-inbox and hop bounds, provenance and completion callbacks are the ones in
-[agent runtime §5f.4](02-agent-runtime.md).
+`SessionCreate({ title, model?, agent? })` creates one ordinary Agent-mode
+session in the caller's project, inherits the caller's permission ceiling and
+returns its Session ID for a following `SessionSend`. `model` must name a model
+the user enabled for AI delegation — the `availableForSubagents` set `Task.model`
+obeys, refused by Main before any session exists — or the named role's own
+default, or the exact model the caller already runs on, or the configured
+`sessionCreateModel`. With both arguments omitted it runs on
+`sessionCreateModel`, keeping the earlier behaviour; priority is `model` → the
+role's pin → `sessionCreateModel`. While that setting is unset and no `model` is
+passed the call fails with `MODEL_NOT_CONFIGURED`, and a binding the settings row
+does not offer fails with `MODEL_UNAVAILABLE`; there is no fallback to the app
+default model. Both sides resolve that offer list the same way: an enabled,
+credentialed provider configuring at least one model, minus every image model the
+settings page excludes (the stored `imageGenerationModels` candidates merged with
+the active `imageGeneration` default).
+
+`agent` names an enabled subagent definition (a builtin the user did not switch
+off, or one of their own documents) whose prompt the created session carries as a
+role section on every turn; an unknown or switched-off handle fails with
+`INVALID_ARGUMENT` listing the valid ones. A role that declares its own
+`permission` narrows the inherited ceiling — the host keeps the stricter of the
+two — while its tools never restrict the session, which stays a conversation its
+person can take over. Its `thinkingLevel` outranks
+`sessionCreateModel.thinkingLevel` (including `off` and `omit`), which outranks
+inheritance from the caller; existing runtime capability clamping remains, and no
+tool argument can override those settings. The ledger, permission ceiling, inbox
+and hop bounds, provenance and completion callbacks are the ones in
+[agent runtime §5f.4](02-agent-runtime.md); the model and role rules are ADR
+[session-create-model-and-role](../../adr/session-create-model-and-role.md).
 
 ## Learned memory and history recall
 

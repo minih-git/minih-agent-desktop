@@ -132,6 +132,13 @@ CREATE TABLE sessions (
   origin_session_id TEXT,
   -- The scheduled task a run transcript belongs to (origin = 'scheduled').
   origin_task_id TEXT,
+  -- The delegate role this session acts in (ADR session-create-model-and-role,
+  -- schema v45). A subagent definition handle, written only by Electron main
+  -- when `SessionCreate({ agent })` names one. The runtime adds that
+  -- definition's prompt to the system prompt on every turn, and the sidebar
+  -- tooltip reads it. Nullable: every ordinary conversation, and every role a
+  -- later version stops offering, simply has no section.
+  agent_name  TEXT,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );

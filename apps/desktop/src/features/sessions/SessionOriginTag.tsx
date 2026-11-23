@@ -13,12 +13,16 @@ import {
  * Same `.thread-item-source` element as the Pi and remote labels, so the row
  * keeps one quiet vocabulary: a word, faint, single line. The person's own
  * conversations carry no tag — the absence is what "I made this" looks like —
- * and the tooltip names the session (or task) that dispatched it.
+ * and the tooltip names the session (or task) that dispatched it, plus the role
+ * an Agent-created session acts in (ADR session-create-model-and-role).
  */
 export function SessionOriginTag({
   session,
 }: {
-  session: Pick<SessionSummary, "origin" | "originSession" | "originTaskId" | "title">;
+  session: Pick<
+    SessionSummary,
+    "origin" | "originSession" | "originTaskId" | "title" | "agentName"
+  >;
 }) {
   const { t } = useTranslation();
   const labelKey = originLabelKey(sessionOrigin(session));
@@ -28,7 +32,11 @@ export function SessionOriginTag({
     <span
       className="thread-item-source"
       data-origin={sessionOrigin(session)}
-      title={t(tooltip.key, { title: tooltip.title, defaultValue: "" })}
+      title={t(tooltip.key, {
+        title: tooltip.title,
+        role: tooltip.role,
+        defaultValue: "",
+      })}
     >
       {t(labelKey)}
     </span>

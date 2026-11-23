@@ -423,6 +423,14 @@ impl Database {
             // a long-lived file keeps every row it had.
             super::session_origin_migration::migrate(&conn, path)?;
         }
+        if migrated_version <= 44 {
+            // The delegate role a session was created to act in (ADR
+            // session-create-model-and-role). One nullable column and no
+            // backfill: the role was never recorded before this version, so
+            // guessing one would claim a session acts as a role nobody chose.
+            // Additive and idempotent, so a long-lived file keeps every row.
+            super::session_agent_role_migration::migrate(&conn, path)?;
+        }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;
         crate::session_collaboration::recover(&db)?;

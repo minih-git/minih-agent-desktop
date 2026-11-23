@@ -59,7 +59,7 @@ export function subagentDefinitionDir(_workspaceRoot: string): string {
 export const BUILTIN_SUBAGENT_DOCUMENTS: readonly string[] = [
   `---
 name: explorer
-description: Fast codebase search and pattern matching — find files, locate implementations and answer "where is X?" / "how does Y work?". Use when answering needs a sweep over many files and you only want the conclusion. Has Bash — use it when the task needs CLI commands (gh, git, npm, cargo, etc.).
+description: Fast codebase search and pattern matching — find files, locate implementations and answer "where is X?" / "how does Y work?". Use when answering needs a sweep over many files and you only want the conclusion.
 tools: [Read, Glob, Grep, Bash]
 ---
 
@@ -84,7 +84,7 @@ than a guess.
 </answer>`,
   `---
 name: code-reviewer
-description: Review specific code or a specific change for defects. Use for a second opinion on correctness, edge cases and missing tests before you commit. Has NO Bash or shell access — cannot run CLI commands (gh, git, npm, etc.). If the task needs shell commands, use explorer or fixer instead.
+description: Review specific code or a specific change for defects. Use for a second opinion on correctness, edge cases and missing tests before you commit.
 tools: [Read, Glob, Grep]
 ---
 
@@ -123,7 +123,7 @@ assertion or error, and the \`path:line\` you believe is responsible. Keep the
 raw output out of the report except for the lines that carry the failure.`,
   `---
 name: fixer
-description: Implement a complete multi-file change from a spec. Use when a feature or fix spans several files and the work is separable — it can write files inside the workspace while you keep working.
+description: Implement a complete multi-file change from a spec. Use when a feature or fix spans several files and the work is separable, so you keep working while it does.
 tools: [Read, Glob, Grep, Edit, Write, Bash]
 ---
 
@@ -155,7 +155,7 @@ Report in this shape:
 </verification>`,
   `---
 name: ui-designer
-description: Design and implement a web interface from a brief — visual system, motion and complete interaction states, inspected in the browser preview or project browser tests. Use for building or restyling a UI when the visual work should run in its own context.
+description: Design and implement a web interface from a brief — visual system, motion and complete interaction states. Use for building or restyling a UI when the visual work should run in its own context.
 tools: [Read, Glob, Grep, BrowserPreview, Bash, Edit, Write]
 ---
 

@@ -452,6 +452,22 @@ export function createSidecarRuntime({
           },
         );
       }
+      // The delegate role a session was created with no longer names an enabled
+      // definition (ADR session-create-model-and-role). The runtime drops the
+      // prompt section and reports it once per session; this is where it becomes
+      // visible in the app log, because nothing about the row changed.
+      if (
+        diagnostic.kind === "agent_role_missing" &&
+        typeof diagnostic.sessionId === "string" &&
+        diagnostic.data &&
+        typeof diagnostic.data === "object"
+      ) {
+        logger.app("session", "warn", "delegate role definition is unavailable", {
+          sessionId: diagnostic.sessionId,
+          ...(typeof diagnostic.turnId === "string" ? { turnId: diagnostic.turnId } : {}),
+          data: diagnostic.data,
+        });
+      }
       return;
     }
     // permissions.request reaches the renderer once, via wireHost; the

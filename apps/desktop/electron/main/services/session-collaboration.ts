@@ -6,16 +6,11 @@ import type {
   SessionCollaborationMessage,
   SessionCollaborationSummary,
 } from "@minih-agent/shared";
-import {
-  decodeMandate,
-  encodeMandate,
-  imageGenerationBindings,
-  isImageGenerationModel,
-  modelWireIdsEqual,
-} from "@minih-agent/shared";
+import { decodeMandate, encodeMandate, type SubagentDefinition } from "@minih-agent/shared";
 import { DESKTOP_PRINCIPAL, type AgentHostBridge } from "../agent-host-bridge";
 import { listReadyPluginModels, parsePluginModelKey } from "../plugin-agent-complete";
 import type { McpControlInvokeInput } from "../mcp-control";
+import { resolveSessionCreateTarget } from "./session-create-target";
 
 type Host = { call<T>(method: string, params?: Record<string, unknown>): Promise<T> };
 type Sidecar = { call<T>(method: string, params: Record<string, unknown>): Promise<T> };
@@ -47,6 +42,13 @@ export type SessionCollaborationDependencies = {
   getActiveTurn: (sessionId: string) => string | undefined;
   flushTranscript: () => Promise<boolean>;
   isPluginLoaded: (pluginId: string) => boolean;
+  /**
+   * The delegate definitions `SessionCreate({ agent })` may name, resolved for
+   * the project the new session will join (enabled builtins and the user's own
+   * documents). Optional so a test double need not wire the loader; a double
+   * without it offers no role, which is the safe direction.
+   */
+  subagentDefinitions?: (projectPath: string | undefined) => Promise<readonly SubagentDefinition[]>;
   isQuitting: () => boolean;
   onChanged: () => void;
   /**
@@ -582,69 +584,83 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         }
         case "create": {
           const title = text(input.args, "title");
+          const modelArg = text(input.args, "model", false);
+          const agentArg = text(input.args, "agent", false);
           const [settings, listed, source] = await Promise.all([
             host.call<AppSettings>("settings.get"),
             host.call<{ providers: Parameters<typeof listReadyPluginModels>[0] }>(
               "providers.list",
               { includeDisabled: false },
             ),
-            // Only the project and thinking level are wanted, so the transcript
-            // is not loaded to create a session.
-            host.call<{ session?: { projectPath?: string; thinkingLevel?: string } }>(
-              "session.get",
-              { id: sourceSessionId, messageLimit: 1 },
-            ),
+            // Only the host-owned facts are wanted, so the transcript is not
+            // loaded to create a session.
+            host.call<{
+              session?: {
+                projectPath?: string;
+                thinkingLevel?: string;
+                providerId?: string;
+                modelId?: string;
+              };
+            }>("session.get", { id: sourceSessionId, messageLimit: 1 }),
           ]);
           checkCurrent(host, input.signal);
-          const binding = settings?.sessionCreateModel;
-          if (!binding?.providerId || !binding?.modelId) {
-            fail(
-              "MODEL_NOT_CONFIGURED",
-              "No session creation model is configured. Choose one in Settings > AI (session creation model) before creating a session.",
-            );
-          }
-          // The same ready-model catalog the settings row offers, minus the
-          // image models it excludes, so a pairing the row shows as unavailable
-          // can never create a session either. Both sides resolve that set with
-          // the shared image helper, and the row adds nothing of its own. The
-          // choice is the user's, never the model's: no argument can name it.
-          const imageModels = imageGenerationBindings(
-            settings.imageGenerationModels,
-            settings.imageGeneration,
-          );
-          const chosen = listReadyPluginModels(listed.providers, settings)
-            .filter((item) => !isImageGenerationModel(imageModels, item.providerId, item.modelId))
-            .find((item) =>
-              item.providerId === binding.providerId && modelWireIdsEqual(item.modelId, binding.modelId),
-            );
-          if (!chosen) {
-            fail(
-              "MODEL_UNAVAILABLE",
-              `The configured session creation model "${binding.providerId}/${binding.modelId}" is not available. Pick another one in Settings > AI.`,
-            );
-          }
-          const thinkingLevel = binding.thinkingLevel ?? source.session?.thinkingLevel;
+          // The role's catalog is the one this machine offers right now: a
+          // definition the user switched off cannot become a session's role
+          // (ADR 0270), and the created session runs in the same project as the
+          // session that dispatched it, so the user documents are scope-filtered
+          // the same way its launch is.
+          const definitions = (await deps.subagentDefinitions?.(source.session?.projectPath)) ?? [];
+          checkCurrent(host, input.signal);
+          // Model and role are the only two things the call may choose; the
+          // sender, the project and the permission ceiling stay host-side. The
+          // priority chain and every refusal live in one testable resolver
+          // (ADR session-create-model-and-role).
+          const resolved = resolveSessionCreateTarget({
+            args: { model: modelArg, agent: agentArg },
+            definitions,
+            providers: listed.providers,
+            settings,
+            source: {
+              ...(source.session?.projectPath ? { projectPath: source.session.projectPath } : {}),
+              ...(source.session?.thinkingLevel
+                ? { thinkingLevel: source.session.thinkingLevel }
+                : {}),
+              ...(source.session?.providerId ? { providerId: source.session.providerId } : {}),
+              ...(source.session?.modelId ? { modelId: source.session.modelId } : {}),
+            },
+          });
+          if (!resolved.ok) fail(resolved.code, resolved.message);
+          const target = resolved.target;
           const created = await host.call<{ session?: { id?: string; title?: string } }>("session.create", {
             title,
             mode: "agent",
-            providerId: binding.providerId,
-            modelId: binding.modelId,
+            providerId: target.providerId,
+            modelId: target.modelId,
             // The sidebar tags this conversation as the agent's hand-off and
-            // names the session it came from (ADR persisted-session-origin).
+            // names the session it came from (ADR persisted-session-origin),
+            // and records the role it acts in.
             origin: "agent",
             originSessionId: sourceSessionId,
+            ...(target.agentName ? { agentName: target.agentName } : {}),
             // A hand-off belongs in the session's own project, and a session
             // the Agent creates must not carry a wider permission mode than
-            // the one it was started from.
+            // the one it was started from: the host keeps the stricter of that
+            // ceiling and the role's own scope.
             ...(source.session?.projectPath ? { projectPath: source.session.projectPath } : {}),
-            ...(thinkingLevel ? { thinkingLevel } : {}),
+            ...(target.permissionMode ? { permissionMode: target.permissionMode } : {}),
+            ...(target.thinkingLevel ? { thinkingLevel: target.thinkingLevel } : {}),
             inheritPermissionFromSessionId: sourceSessionId,
           });
           checkCurrent(host, input.signal);
           const createdId = created.session?.id;
           if (!createdId) fail("FAILED", "The host did not return the created session");
           deps.onChanged();
-          return { sessionId: createdId, title: created.session?.title ?? title };
+          return {
+            sessionId: createdId,
+            title: created.session?.title ?? title,
+            modelKey: target.modelKey,
+            ...(target.agentName ? { agentName: target.agentName } : {}),
+          };
         }
         default:
           return fail("NOT_FOUND", "Unknown session tool operation");

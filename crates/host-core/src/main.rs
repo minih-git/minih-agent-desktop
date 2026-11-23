@@ -31,6 +31,7 @@ mod rpc;
 mod scheduled;
 mod scratch;
 mod secrets;
+mod session_agent_role;
 mod session_collaboration;
 mod session_origin;
 mod session_search;

@@ -17,6 +17,8 @@ export * from "./subagent.js";
 export { classifySidecarCrash, sidecarCrashErrorCode } from "./sidecar-crash.js";
 export type { SidecarCrash, SidecarCrashKind } from "./sidecar-crash.js";
 export * from "./subagent-definitions.js";
+export * from "./delegate-catalog.js";
+export * from "./agent-role.js";
 export * from "./stream-coalescer.js";
 export * from "./extensions/index.js";
 export { startAuthenticatedProxyRelay } from "./authenticated-proxy-relay.js";

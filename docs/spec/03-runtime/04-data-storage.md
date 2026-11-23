@@ -1,4 +1,4 @@
-# 04. Data Storage (Schema v43)
+# 04. Data Storage (Schema v45)
 
 ### Native project path aliases (v29 to v30)
 
@@ -685,6 +685,11 @@ CREATE TABLE sessions (
               CHECK (origin IN ('user', 'agent', 'plugin', 'task', 'scheduled')),
   origin_session_id TEXT,                      -- the session that created this one
   origin_task_id    TEXT,                      -- the scheduled task of a run
+  -- The delegate role this session acts in (schema v45, ADR
+  -- session-create-model-and-role). A subagent definition handle, written only
+  -- by Electron main when `SessionCreate({ agent })` names one; the runtime
+  -- turns it into a prompt section on every turn. Null means no role.
+  agent_name  TEXT,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
@@ -1455,6 +1460,27 @@ CREATE TABLE plugin_tcp_usage (
   are deleted on uninstall. Boot-time orphan reconciliation for TCP is deferred
   until the plugin registry reports a trustworthy successful load; an empty or
   unreadable registry must never be treated as proof that plugins were removed.
+
+### 4.19f sessions — the delegate role (schema v45, ADR session-create-model-and-role)
+
+One nullable column, added with `ALTER TABLE` in its own step and stamped only
+once the column exists, so the migration is additive and idempotent:
+
+```sql
+ALTER TABLE sessions ADD COLUMN agent_name TEXT;
+```
+
+- It stores a subagent definition handle, and only Electron main writes it: the
+  built-in `SessionCreate` tool records the role it asked for, and the renderer's
+  IPC handler drops the key the way it drops the origin columns.
+- There is no backfill. The role was never recorded before this version, and
+  deriving one from a task's employee or a plugin's parent would claim a session
+  acts in a role nobody chose for it.
+- It is read, never edited. A definition that is later deleted or switched off
+  leaves the handle in place; the runtime stops adding the prompt section and the
+  sidebar tooltip keeps naming the role.
+- `session.fork` does not copy it: a branch is the person's own conversation, the
+  same rule the origin follows.
 
 ### 4.7 messages — transcript index
 

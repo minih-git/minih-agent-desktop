@@ -50,6 +50,13 @@ const { createSessionCollaborationService } = load(
     "../agent-host-bridge": { DESKTOP_PRINCIPAL: { kind: "desktop" } },
     // Only used by the plugin-agent completion path, which these tests never take.
     "../plugin-agent-complete": {},
+    // Only the built-in `create` operation reaches it, which these tests never
+    // take; the real resolver is covered by session-collaboration-service.
+    "./session-create-target": {
+      resolveSessionCreateTarget() {
+        throw new Error("session create is not part of this test");
+      },
+    },
     "./task-status": taskStatus,
   },
 );

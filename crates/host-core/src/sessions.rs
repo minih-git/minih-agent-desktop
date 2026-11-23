@@ -90,6 +90,32 @@ pub fn is_valid_permission_mode(mode: &str) -> bool {
     PERMISSION_MODES.contains(&mode)
 }
 
+/// How wide a permission mode is; higher is wider.
+///
+/// `inherit` ranks narrowest on purpose: it names no concrete mode, so a caller
+/// that only knows an inheriting ceiling can never use it to widen a definition's
+/// own scope (ADR session-create-model-and-role). An unknown value ranks the same
+/// way, so a malformed mode can only ever reduce authority.
+fn permission_rank(mode: &str) -> u8 {
+    match mode {
+        "auto" => 2,
+        "accept-edits" => 1,
+        _ => 0,
+    }
+}
+
+/// The stricter of two permission modes.
+///
+/// Used where a new session inherits a ceiling and also carries a narrower one of
+/// its own: the row may never end up wider than either.
+pub(crate) fn narrower_permission_mode<'a>(ceiling: &'a str, requested: &'a str) -> &'a str {
+    if permission_rank(ceiling) <= permission_rank(requested) {
+        ceiling
+    } else {
+        requested
+    }
+}
+
 fn default_permission_mode() -> String {
     "inherit".to_string()
 }
@@ -318,6 +344,13 @@ pub struct SessionSummary {
     /// itself was deleted, which is why it is a column and not a join.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_task_id: Option<String>,
+    /// The delegate role this session acts in (ADR session-create-model-and-role):
+    /// a subagent definition handle, set by the trusted `SessionCreate` tool. The
+    /// runtime adds that definition's prompt on every turn and the sidebar names
+    /// it in the origin tag's tooltip. Absent for every conversation that acts as
+    /// no role, which is all of them before schema v45.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1534,6 +1567,7 @@ const SUMMARY_SELECT: &str =
             s.origin AS session_origin,
             s.origin_task_id AS session_origin_task_id,
             s.origin_session_id AS origin_session_id,
+            s.agent_name AS session_agent_name,
             COALESCE(NULLIF(os.title, ''), os.id) AS origin_session_title,
             (os.id IS NOT NULL AND os.deleted_at IS NULL) AS origin_session_available
      FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
@@ -1556,6 +1590,11 @@ pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Sess
             .as_deref(),
     );
     let (origin, origin_session, origin_task_id) = crate::session_origin::from_row(row);
+    let agent_name = row
+        .get::<_, Option<String>>("session_agent_name")
+        .ok()
+        .flatten()
+        .filter(|name| !name.trim().is_empty());
     Ok(SessionSummary {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -1580,6 +1619,7 @@ pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Sess
         origin,
         origin_session,
         origin_task_id,
+        agent_name,
     })
 }
 
@@ -1644,6 +1684,10 @@ pub struct SessionCreateOptions {
     pub role: Option<String>,
     /// Encoded bot profile; normalized and required together with `role: bot`.
     pub bot_profile_json: Option<String>,
+    /// The delegate role the session acts in (ADR session-create-model-and-role),
+    /// already validated by [`crate::session_agent_role::normalize_agent_name`].
+    /// `None` for every ordinary conversation.
+    pub agent_name: Option<String>,
 }
 
 #[cfg(test)]
@@ -1668,6 +1712,7 @@ pub fn create_session_with_thinking(
             permission_mode: None,
             role: None,
             bot_profile_json: None,
+            agent_name: None,
         },
     )
 }
@@ -1708,6 +1753,7 @@ pub fn create_session_with_origin(
         permission_mode,
         role,
         bot_profile_json,
+        agent_name,
     } = options;
     let now = now_ms();
     let id = Uuid::new_v4().to_string();
@@ -1727,6 +1773,12 @@ pub fn create_session_with_origin(
     // and a profile on a conversation would be an identity nothing reads.
     let role = role.unwrap_or_else(|| "user".into());
     validate_session_role(&role)?;
+    // The delegate role is stored verbatim once it has a definition handle's
+    // shape; whether a definition of that name still exists is the runtime's
+    // question on every turn, not a reason to refuse the row.
+    let agent_name = agent_name
+        .map(|name| crate::session_agent_role::normalize_agent_name(&name))
+        .transpose()?;
     let bot_profile = match (role.as_str(), bot_profile_json.as_deref()) {
         ("bot", Some(raw)) => {
             let value: Value = serde_json::from_str(raw)
@@ -1761,9 +1813,10 @@ pub fn create_session_with_origin(
             "INSERT INTO sessions (
                 id, title, project_id, provider_id, model_id, mode, thinking_level,
                 permission_mode, title_source, role, bot_profile_json,
-                origin, origin_session_id, origin_task_id, created_at, updated_at
+                origin, origin_session_id, origin_task_id, agent_name,
+                created_at, updated_at
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                       ?12, ?13, ?14, ?15, ?15)",
+                       ?12, ?13, ?14, ?15, ?16, ?16)",
         )?
         .execute(params![
             id,
@@ -1780,6 +1833,7 @@ pub fn create_session_with_origin(
             origin.origin,
             origin.origin_session_id,
             origin.origin_task_id,
+            agent_name,
             now
         ])?;
     Ok(SessionSummary {
@@ -1811,6 +1865,7 @@ pub fn create_session_with_origin(
         },
         origin_task_id: origin.origin_task_id.clone(),
         origin: origin.origin.clone(),
+        agent_name,
     })
 }
 
@@ -2246,6 +2301,10 @@ pub fn fork_session_through(
         origin: crate::session_origin::ORIGIN_USER.to_string(),
         origin_session: None,
         origin_task_id: None,
+        // A branch is the person's own conversation, so it acts in no role of
+        // its own: the parent's `agentName` is not copied (ADR
+        // session-create-model-and-role), the same way its creator is not.
+        agent_name: None,
         // A new or forked session starts without a worktree (ADR 0329).
         worktree: None,
         // Forking a bot keeps it the same employee; the child is not a new one.
@@ -5716,6 +5775,8 @@ mod tests {
             origin: crate::session_origin::ORIGIN_USER.into(),
             origin_session: None,
             origin_task_id: None,
+            // An imported conversation acts in no delegate role.
+            agent_name: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-02T00:00:00Z".into(),
         };
@@ -5777,6 +5838,8 @@ mod tests {
             origin: crate::session_origin::ORIGIN_USER.into(),
             origin_session: None,
             origin_task_id: None,
+            // An imported conversation acts in no delegate role.
+            agent_name: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-01T00:00:00Z".into(),
         };
@@ -7009,6 +7072,8 @@ mod tests {
             origin: crate::session_origin::ORIGIN_USER.into(),
             origin_session: None,
             origin_task_id: None,
+            // An imported conversation acts in no delegate role.
+            agent_name: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-01T00:00:00Z".into(),
         };

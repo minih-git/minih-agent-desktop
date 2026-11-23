@@ -106,7 +106,7 @@ export const SUBAGENT_PRESETS: readonly SubagentPreset[] = [
     id: "fixer",
     name: "Fixer",
     description:
-      "Implement a complete multi-file change from a spec. Use when a feature or fix spans several files and the work is separable — it can write files inside the workspace while you keep working.",
+      "Implement a complete multi-file change from a spec. Use when a feature or fix spans several files and the work is separable, so you keep working while it does.",
     tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
     body:
       `You are Fixer — a fast, focused implementation specialist. The main agent\n` +
@@ -140,7 +140,7 @@ export const SUBAGENT_PRESETS: readonly SubagentPreset[] = [
     id: "ui-designer",
     name: "UI designer",
     description:
-      "Design and implement a web interface from a brief — visual system, motion and complete interaction states, inspected in the browser preview or project browser tests. Use for building or restyling a UI when the visual work should run in its own context.",
+      "Design and implement a web interface from a brief — visual system, motion and complete interaction states. Use for building or restyling a UI when the visual work should run in its own context.",
     tools: ["Read", "Glob", "Grep", "BrowserPreview", "Bash", "Edit", "Write"],
     body: `You are UI designer — a senior UI/UX designer and frontend engineer. The main
 agent hands you one interface task with its brief; deliver a working,

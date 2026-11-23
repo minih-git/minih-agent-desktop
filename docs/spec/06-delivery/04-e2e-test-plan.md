@@ -94,6 +94,48 @@
 - **Specs / acceptance:** Settings IA models page; runtime §5f.4a; C/E, quality,
   accessibility. Isolated component/Host coverage, not installed-app acceptance.
 
+## E2E-SESSION-create-picks-model-and-role
+
+- **Preconditions:** Request worktree, reused dependencies, isolated Electron
+  profile and temporary data directory, synthetic provider/model bindings only.
+  One provider offers a model marked "Available for AI delegation", one offers a
+  model that is not, the session creation model names a third, and there is one
+  user subagent document that pins its own model and declares
+  `permission: ask`. One builtin is switched off in Subagents settings.
+- **Steps:** From an Agent session, request a hand-off (1) with no `model` and no
+  `agent`, (2) naming the opted-in model, (3) naming a model that is not opted
+  in, (4) naming the user role with no `model`, (5) naming the switched-off
+  builtin, (6) naming the opted-in model together with the role. Open the
+  sidebar row of each created session and read its tooltip. Then delete the
+  user's definition document and run one more turn in the session it created.
+- **Expected:** (1) reproduces the earlier behaviour exactly: the session runs on
+  the session-creation model and carries no role. (2) runs on the named model.
+  (3) is refused with `PERMISSION_DENIED` before any session appears in the
+  list. (4) runs on the role's own pin and records the role; the created
+  session's permission mode is the stricter of the caller's ceiling and `ask`.
+  (5) is refused with `INVALID_ARGUMENT` naming the handles that are valid, and
+  no row is created. (6) prefers the named model over the role's pin. Every
+  created row's tooltip names the dispatching session and, when one was asked
+  for, the role (`由「X」派发 · fixer`). After the document is deleted, the next
+  turn runs without the role section, logs one diagnostic, and the tooltip keeps
+  naming the role the row recorded.
+- **Automation:** `apps/desktop/test/session-collaboration-service.test.mjs`
+  drives the built-in create path against the real resolver (priority chain,
+  every refusal, stamped `agentName`/`origin`, permission narrowing);
+  `apps/desktop/test/session-origin.test.mjs` and
+  `apps/desktop/test/sidebar-origin-rendering.test.mjs` cover the tooltip with
+  and without a role, the deleted-creator wording, and the renderer payload
+  strip; Host `rpc::tests::session_create_rpc_records_the_role_and_narrows_the_ceiling`
+  and `db::session_agent_role_migration::tests` cover the stored column, the
+  no-copy rule on fork and the migration from v44; runtime
+  `packages/agent-runtime/src/agent-role.test.ts`,
+  `src/delegate-catalog.test.ts` and the `delegate role a session acts in` block
+  of `src/runtime.test.ts` cover the section, the one-diagnostic rule and the
+  shared catalog both tool descriptions print.
+- **Scope:** Component/Host coverage and a manual sidebar pass; not installed-app
+  acceptance. See ADR session-create-model-and-role, runtime §5f.4a, tools §10.2,
+  data storage §4.19f, Settings IA models page.
+
 ## E2E-SESSION-origin-tag-and-filter
 
 - **Preconditions:** Request worktree, reused dependencies, isolated Electron
@@ -11371,6 +11413,7 @@ selection already in place shows it without waiting for another event.
 | Acceptance | Scenarios |
 |---|---|
 | C / E / Quality / Accessibility — Agent-created session effort | E2E-SESSION-create-thinking-setting |
+| C / E / F / Quality — Agent-created session model, role and sidebar role tooltip | E2E-SESSION-create-picks-model-and-role |
 | B / C / E / F / Quality / Accessibility — Selected capabilities 2026-10-28 | E2E-UPSTREAM-20261028-selected-capabilities |
 | C / E / F / Quality / Accessibility — Selected upstream fixes 2026-10-26 | E2E-UPSTREAM-20261026-selected-reliability |
 | B / C / E / Quality / Accessibility — Selected upstream fixes 2026-10-25 | E2E-UPSTREAM-20261025-selected-reliability |

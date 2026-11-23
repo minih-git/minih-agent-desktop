@@ -379,6 +379,50 @@ test("a create refusal keeps the host's error code", async () => {
   assert.match(result.content, /MODEL_NOT_CONFIGURED/);
 });
 
+test("a create forwards the model and role it was given and reports them back", async () => {
+  const fake = service(() => ({
+    sessionId: "created-session",
+    title: "Fix the build",
+    modelKey: "anthropic/claude-sonnet-4",
+    agentName: "fixer",
+  }));
+  const result = await createSessionCreateTool(fake)({
+    sessionId: "source-session",
+    toolCallId: "call-22",
+    turnId: "turn-1",
+    args: { title: "Fix the build", model: "anthropic/claude-sonnet-4", agent: "fixer" },
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(result.ok, true);
+  // The two optional arguments reach the service; the sender and the turn come
+  // from the local-tool context, never from the arguments.
+  assert.deepEqual(fake.calls[0].args, {
+    title: "Fix the build",
+    model: "anthropic/claude-sonnet-4",
+    agent: "fixer",
+  });
+  assert.equal(fake.calls[0].sessionId, "source-session");
+  assert.equal(fake.calls[0].turnId, "turn-1");
+  // The model reads what the session actually is before it writes the brief.
+  assert.match(result.content, /role=fixer/);
+  assert.match(result.content, /model=anthropic\/claude-sonnet-4/);
+});
+
+test("a create with no model and no role reports neither", async () => {
+  const fake = service(() => ({ sessionId: "created-session", title: "Review", modelKey: "p1/m1" }));
+  const result = await createSessionCreateTool(fake)({
+    sessionId: "source-session",
+    toolCallId: "call-23",
+    turnId: "turn-1",
+    args: { title: "Review" },
+    signal: new AbortController().signal,
+  });
+
+  assert.deepEqual(fake.calls[0].args, { title: "Review" });
+  assert.doesNotMatch(result.content, /role=/);
+});
+
 test("a follow-up is addressed by taskId and needs no session id", async () => {
   const fake = service(() => message({ status: "queued" }));
   const result = await createSessionSendTool(fake)({

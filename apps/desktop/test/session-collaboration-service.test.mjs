@@ -28,6 +28,15 @@ const pluginAgentComplete = load("../electron/main/plugin-agent-complete.ts", {
   "@minih-agent/shared": await import("@minih-agent/shared"),
 });
 
+// The real resolver, not a stub: the priority chain (model → role pin →
+// session-creation model) and the refusals are what the create path is
+// (ADR session-create-model-and-role).
+const sessionCreateTarget = load("../electron/main/services/session-create-target.ts", {
+  "@minih-agent/shared": await import("@minih-agent/shared"),
+  "@minih-agent/agent-runtime": await import("@minih-agent/agent-runtime"),
+  "../plugin-agent-complete": pluginAgentComplete,
+});
+
 const { createSessionCollaborationService } = load("../electron/main/services/session-collaboration.ts", {
   "node:crypto": crypto,
   // The real shared helpers, not a stub: the model-identity comparison that
@@ -36,6 +45,7 @@ const { createSessionCollaborationService } = load("../electron/main/services/se
   "@minih-agent/shared": await import("@minih-agent/shared"),
   "../agent-host-bridge": { DESKTOP_PRINCIPAL: { kind: "desktop" } },
   "../plugin-agent-complete": pluginAgentComplete,
+  "./session-create-target": sessionCreateTarget,
   // The steward's task board (employee mode 0.5 slice 3): pure derivations over
   // `task.list` + `bot.list`, so it loads with no host at all.
   "./task-status": load("../electron/main/services/task-status.ts", {
@@ -86,6 +96,11 @@ function createService(overrides = {}) {
     flushTranscript: overrides.flushTranscript ?? (async () => true),
     isPluginLoaded: () => overrides.pluginLoaded ?? true,
     isQuitting: () => overrides.quitting ?? false,
+    // A double with no role catalog offers none: `agent` is then refused, which
+    // is the safe direction for a test that does not care about roles.
+    ...(overrides.subagentDefinitions
+      ? { subagentDefinitions: overrides.subagentDefinitions }
+      : {}),
     onChanged: () => changes.push({}),
     log: (message, data) => logs.push({ message, data }),
   };
@@ -772,7 +787,11 @@ test("a built-in create makes a session on the user's model and reports its id",
     sourceSessionId: "someone-else",
   });
 
-  assert.deepEqual(created, { sessionId: "created-session", title: "Review the diff" });
+  assert.deepEqual(created, {
+    sessionId: "created-session",
+    title: "Review the diff",
+    modelKey: "p1/m1",
+  });
   const calls = methodCalls(host, "session.create");
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].params, {
@@ -889,4 +908,158 @@ test("a built-in create uses the configured thinking level instead of the source
     assert.equal(created.params.inheritPermissionFromSessionId, "source-session");
     assert.equal(created.params.projectPath, "/work/app");
   }
+});
+
+// ---- model and role selection (ADR session-create-model-and-role) ----------
+
+const DELEGATION_PROVIDER = {
+  id: "p1",
+  name: "Provider one",
+  enabled: true,
+  hasSecret: true,
+  // m1 is the session-creation model, m2 a role pin nobody opted into, m3 the
+  // only model the user enabled for AI delegation.
+  models: [{ id: "m1" }, { id: "m2" }, { id: "m3", availableForSubagents: true }],
+};
+
+function definition(overrides = {}) {
+  return {
+    name: "fixer",
+    description: "Implement a complete multi-file change from a spec.",
+    tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+    prompt: "You are Fixer — implement the change the task describes.",
+    source: "builtin",
+    ...overrides,
+  };
+}
+
+function createWithRoles({
+  settings = { sessionCreateModel: { providerId: "p1", modelId: "m1" } },
+  definitions = [definition()],
+  providers = [DELEGATION_PROVIDER],
+} = {}) {
+  const host = createHostFor(settings, providers);
+  const created = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-1" },
+    subagentDefinitions: async () => definitions,
+  });
+  return { host, ...created };
+}
+
+test("a built-in create runs on a model the user enabled for AI delegation", async () => {
+  const { host, service } = createWithRoles();
+
+  const created = await invokeBuiltinCreate(service, { title: "Review", model: "p1/m3" });
+
+  assert.equal(created.modelKey, "p1/m3");
+  const [call] = methodCalls(host, "session.create");
+  assert.equal(call.params.providerId, "p1");
+  assert.equal(call.params.modelId, "m3");
+  // Naming a model is not authorization to set a role or a ceiling.
+  assert.equal(call.params.agentName, undefined);
+  assert.equal(call.params.permissionMode, undefined);
+  assert.equal(call.params.inheritPermissionFromSessionId, "source-session");
+});
+
+test("a built-in create refuses a model outside the delegation opt-in before any session exists", async () => {
+  const { host, service } = createWithRoles();
+
+  await assert.rejects(invokeBuiltinCreate(service, { title: "Review", model: "p1/m2" }), {
+    code: "PERMISSION_DENIED",
+  });
+  assert.deepEqual(methodCalls(host, "session.create"), []);
+});
+
+test("a built-in create refuses a model key it cannot resolve", async () => {
+  const { host, service } = createWithRoles();
+
+  await assert.rejects(invokeBuiltinCreate(service, { title: "Review", model: "ghost/m1" }), {
+    code: "MODEL_UNAVAILABLE",
+  });
+  assert.deepEqual(methodCalls(host, "session.create"), []);
+});
+
+test("a role's own model pin needs no delegation opt-in and stamps the role", async () => {
+  const { host, service } = createWithRoles({
+    definitions: [
+      definition({
+        model: { providerId: "provider-one", modelId: "m2" },
+        thinkingLevel: "low",
+        permission: "ask",
+      }),
+    ],
+  });
+
+  const created = await invokeBuiltinCreate(service, { title: "Fix the build", agent: "fixer" });
+
+  assert.equal(created.agentName, "fixer");
+  assert.equal(created.modelKey, "p1/m2");
+  const [call] = methodCalls(host, "session.create");
+  assert.equal(call.params.providerId, "p1");
+  assert.equal(call.params.modelId, "m2");
+  assert.equal(call.params.agentName, "fixer");
+  // The role's own thinking level, and its narrower scope handed to the host,
+  // which keeps the stricter of it and the inherited ceiling.
+  assert.equal(call.params.thinkingLevel, "low");
+  assert.equal(call.params.permissionMode, "ask");
+  assert.equal(call.params.inheritPermissionFromSessionId, "source-session");
+  assert.equal(call.params.origin, "agent");
+  assert.equal(call.params.originSessionId, "source-session");
+});
+
+test("a model argument outranks a role's own pin", async () => {
+  const { host, service } = createWithRoles({
+    definitions: [definition({ model: { providerId: "provider-one", modelId: "m2" } })],
+  });
+
+  await invokeBuiltinCreate(service, { title: "Fix", agent: "fixer", model: "p1/m3" });
+
+  const [call] = methodCalls(host, "session.create");
+  assert.equal(call.params.modelId, "m3");
+  assert.equal(call.params.agentName, "fixer");
+});
+
+test("an unknown or switched-off role is refused and names the ones that are valid", async () => {
+  // A switched-off builtin never reaches this list (ADR 0270), so "disabled" and
+  // "unknown" are one refusal with one message.
+  const { host, service } = createWithRoles();
+
+  await assert.rejects(invokeBuiltinCreate(service, { title: "Fix", agent: "code-reviewer" }), {
+    code: "INVALID_ARGUMENT",
+    message: /Available: fixer/,
+  });
+  assert.deepEqual(methodCalls(host, "session.create"), []);
+});
+
+test("a role whose definition declares no scope adds no permission narrowing", async () => {
+  const { host, service } = createWithRoles({ definitions: [definition({ permission: "inherit" })] });
+
+  await invokeBuiltinCreate(service, { title: "Fix", agent: "fixer" });
+
+  const [call] = methodCalls(host, "session.create");
+  assert.equal(call.params.permissionMode, undefined);
+  assert.equal(call.params.agentName, "fixer");
+});
+
+test("a model key may be spelled with the vendor alias the catalog prints", async () => {
+  // The delegation catalog and a definition pin spell a model `vendor/model`,
+  // while `providers.list` keys it by provider id. Both spellings have to land on
+  // the same row, or the catalog would advertise a key the tool then refuses.
+  const vendorProvider = {
+    id: "p9",
+    name: "Acme Gateway",
+    vendorKey: "acme",
+    enabled: true,
+    hasSecret: true,
+    models: [{ id: "m9", availableForSubagents: true }],
+  };
+  const { host, service } = createWithRoles({ providers: [vendorProvider] });
+
+  const created = await invokeBuiltinCreate(service, { title: "Review", model: "acme/m9" });
+
+  assert.equal(created.modelKey, "p9/m9");
+  const [call] = methodCalls(host, "session.create");
+  assert.equal(call.params.providerId, "p9");
+  assert.equal(call.params.modelId, "m9");
 });

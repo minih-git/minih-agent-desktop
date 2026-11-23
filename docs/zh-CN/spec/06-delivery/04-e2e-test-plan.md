@@ -71,6 +71,39 @@
   明确标记不可用，非法强度被拒绝。项目与权限继承不变。
 - **自动化：** `apps/desktop/test/session-create-thinking-user-path.test.mjs`
   在隔离 Chromium 中操作生产 React 菜单；创建服务回归覆盖全部八种强度；
+## E2E-SESSION-create-picks-model-and-role
+
+- **前提：** 任务工作树、复用依赖、隔离 Electron profile 与临时数据目录，仅使用
+  合成 provider/model 配置。一个 provider 提供标记为「可供 AI 自动调度」的模型，
+  另一个不提供；新建会话模型指向第三个；用户子代理文档自带模型 pin 并声明
+  `permission: ask`。在 Subagents 设置里停用一个内置子代理。
+- **步骤：** 从一个 Agent 会话发起交接：(1) 不传 `model`、不传 `agent`；
+  (2) 指定已开启调度的模型；(3) 指定未开启调度的模型；(4) 只指定用户角色；
+  (5) 指定已停用的内置子代理；(6) 同时指定已开启调度的模型与角色。打开每个已
+  创建会话的侧栏行并读取气泡。随后删除该用户定义文档，在它创建的那个会话里再
+  跑一轮。
+- **预期：** (1) 完全复现旧行为：跑在新建会话模型上，且不带角色。(2) 跑在指定
+  模型上。(3) 返回 `PERMISSION_DENIED`，且会话列表里不会出现新行。(4) 跑在角色
+  自己的 pin 上并记录角色；新会话的权限模式取调用方上限与 `ask` 中更严格的一个。
+  (5) 返回 `INVALID_ARGUMENT` 并列出合法句柄，不创建任何行。(6) 指定模型优先于
+  角色 pin。每个已创建行的气泡都写明派发会话，指定了角色时还写明角色
+  （`由「X」派发 · fixer`）。文档删除后，下一轮不再带角色小节、只记一条诊断，
+  气泡仍写着行里记录的角色。
+- **自动化：** `apps/desktop/test/session-collaboration-service.test.mjs` 用真实
+  resolver 驱动内置创建路径（优先级链、各类拒绝、写入的 `agentName`/`origin`、
+  权限收窄）；`apps/desktop/test/session-origin.test.mjs` 与
+  `apps/desktop/test/sidebar-origin-rendering.test.mjs` 覆盖带角色与不带角色的
+  气泡、创建者已删除的说法以及渲染进程载荷的剥离；Host 的
+  `rpc::tests::session_create_rpc_records_the_role_and_narrows_the_ceiling` 与
+  `db::session_agent_role_migration::tests` 覆盖列存储、fork 不复制以及 v44 迁移；
+  运行时 `packages/agent-runtime/src/agent-role.test.ts`、
+  `src/delegate-catalog.test.ts` 与 `src/runtime.test.ts` 的
+  `delegate role a session acts in` 块覆盖角色小节、只报一次诊断，以及两个工具
+  描述共用的同一张目录表。
+- **范围：** 组件与 Host 覆盖加一次手动侧栏检查，不代表已安装应用验收。参见 ADR
+  session-create-model-and-role、运行时 §5f.4a、工具 §10.2、数据存储 §4.19f、
+  设置 IA 模型页面。
+
   Host 的 `session_create_model_setting_roundtrips_and_validates_shape` 验证持久化。
 - **规格与验收：** 模型设置 IA、运行时 §5f.4a、C/E、品质与无障碍。
   这是隔离组件与 Host 覆盖，不代表已安装应用验收。
@@ -6042,6 +6075,7 @@ eleven-tool-round desktop paths are verified by
 | 验收 | 应用场景 |
 |---|---|
 | C / E / 品质 / 无障碍 — Agent 新建会话思考强度 | E2E-SESSION-create-thinking-setting |
+| C / E / F / 品质 — Agent 新建会话的模型、角色与侧栏角色气泡 | E2E-SESSION-create-picks-model-and-role |
 | B / C / E / F / 品质 / 无障碍 — 2026-10-28 选择性能力迁移 | E2E-UPSTREAM-20261028-selected-capabilities |
 | C / E / F / 品质 / 无障碍 — 2026-10-26 选择性上游修复 | E2E-UPSTREAM-20261026-selected-reliability |
 | B / C / E / 品质 / 无障碍 — 2026-10-25 选择性上游修复 | E2E-UPSTREAM-20261025-selected-reliability |

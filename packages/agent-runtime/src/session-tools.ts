@@ -1,4 +1,11 @@
 import { Type } from "@earendil-works/pi-ai";
+import type { SubagentDefinition } from "@minih-agent/shared";
+
+import {
+  DELEGATE_DECISION_RULE,
+  DELEGATE_DEFAULT_MODEL_NOTE,
+  delegateCatalogTable,
+} from "./delegate-catalog.js";
 
 /**
  * Built-in cross-session delivery tools (ADR builtin-session-messaging) and
@@ -75,6 +82,25 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
       maxLength: 80,
       description: "Short title for the new session, as it will appear in the session list.",
     }),
+    // The role is a handle from the catalog in this tool's description; the
+    // schema stays a plain string so the description owns the list and the
+    // refusal names what is currently valid.
+    agent: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 40,
+        description:
+          "Subagent definition the new session acts in for its whole life, from the catalog in this description. Omit for a session with no role.",
+      }),
+    ),
+    model: Type.Optional(
+      Type.String({
+        minLength: 3,
+        maxLength: 200,
+        description:
+          "Override the model this session runs on, e.g. 'anthropic/claude-sonnet-4-20250514'. Only choose a model listed for AI delegation, or the `Default model` of the role you name. Omit to use the session creation model from Settings > AI.",
+      }),
+    ),
   },
   SessionResult: {
     sessionId,
@@ -92,5 +118,22 @@ export const sessionToolDescriptions: Record<string, string> = {
   SessionResult:
     "Read the durable outcome of the latest delivery this session made into a session, or of one such delivery by messageId: status, result, error and the task text. Use it after a SessionSend to check a delivery that has not completed, or when the completion notice is not enough. Deliveries sent by other sessions or plugins are not readable here.",
   SessionCreate:
-    "Create a new Agent session, so work can be handed to a session that does not exist yet. Use it when the user names a target session and SessionList shows none, then deliver the task to the returned Session ID with SessionSend. The new session runs on the model configured in Settings > AI (session creation model) and inherits this session's project, thinking level and permission mode; while that setting is unset this tool refuses instead of spending the app default model. It creates the session only: it starts no turn, sends no task, and does not rename or reuse an existing session.",
+    "Create a new Agent session, so work can be handed to a session that does not exist yet. Use it when the user names a target session and SessionList shows none, then deliver the task to the returned Session ID with SessionSend. `agent` makes the new session act in one subagent definition's role for its whole life; `model` picks the model it runs on. With both omitted it runs on the session creation model from Settings > AI and acts in no role — and while that setting is unset, this tool refuses instead of spending the app default model. The new session inherits this session's project, thinking level and permission ceiling. It creates the session only: it starts no turn, sends no task, and does not rename or reuse an existing session.",
 };
+
+/**
+ * `SessionCreate`'s full description: what the tool does, the one decision rule
+ * it shares with `Task`, and the delegate catalog both print.
+ *
+ * The catalog rides here rather than in the system prompt for the same reason
+ * `Task`'s does: it changes with the definition files, and the tool is the only
+ * thing that changes with them.
+ */
+export function sessionCreateDescription(definitions: readonly SubagentDefinition[]): string {
+  return [
+    sessionToolDescriptions.SessionCreate,
+    DELEGATE_DECISION_RULE,
+    `Subagent roles you may name as \`agent\`:\n${delegateCatalogTable(definitions)}`,
+    DELEGATE_DEFAULT_MODEL_NOTE,
+  ].join("\n\n");
+}

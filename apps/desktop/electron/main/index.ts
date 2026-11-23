@@ -786,6 +786,9 @@ const sessionCollaboration = createSessionCollaborationService({
     return persistenceOutbox.size() === 0;
   },
   isPluginLoaded: (pluginId) => plugins.listLoaded().some((plugin) => plugin.manifest.id === pluginId),
+  // `SessionCreate({ agent })` may only name a role this project offers.
+  subagentDefinitions: (projectPath) =>
+    createdSessionLaunchRuntime.resolveSessionAgentDefinitions(projectPath),
   isQuitting: () => mainState.quitting,
   onChanged: () => sendToRenderer(IPC.event.sessionsChanged, { reason: "session.collaboration" }),
   onTaskChanged: () => taskChanges.reconcileStages(),

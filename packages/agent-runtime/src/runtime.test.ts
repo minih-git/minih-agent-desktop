@@ -24,6 +24,7 @@ import { providerRequestPrefixFingerprint } from "./provider-request.js";
 import { estimateContextTokens as estimateTranscriptTokens } from "@earendil-works/pi-ai/utils/estimate";
 import { buildSessionContext } from "./session-context.js";
 import { estimateContextTokens as estimateAgentContextTokens, estimateTokens } from "./pi-runtime-estimates.js";
+import { DELEGATE_DECISION_RULE, delegateCatalogTable } from "./delegate-catalog.js";
 import {
   COMPACTION_FALLBACK_MARKER,
   DesktopAgentRuntime,
@@ -199,6 +200,8 @@ function createRuntime(
     jevApiKey: string;
     turnId: string;
     host: { call: ReturnType<typeof vi.fn>; onNotification?: ReturnType<typeof vi.fn> };
+    agentRoleName: string;
+    onDiagnostic: (diagnostic: unknown) => void;
     onEvent: (envelope: unknown) => void;
     botPersona: { definition: SubagentDefinition; taskSession?: boolean } | { missingName: string };
     taskReporter: boolean;
@@ -227,6 +230,7 @@ function createRuntime(
     modelSystemPrompt: overrides.modelSystemPrompt,
     pluginTools: overrides.pluginTools,
     subagents: overrides.subagents,
+    ...(overrides.agentRoleName ? { agentRoleName: overrides.agentRoleName } : {}),
     subagentProviders: overrides.subagentProviders,
     subagentModelKeys: overrides.subagentModelKeys,
     projectInstructions: overrides.projectInstructions,
@@ -237,6 +241,7 @@ function createRuntime(
     ...(overrides.taskReporter ? { taskReporter: true } : {}),
     trustedExtensions: overrides.trustedExtensions,
     onEvent: overrides.onEvent ?? vi.fn(),
+    onDiagnostic: (overrides.onDiagnostic ?? vi.fn()) as never,
     keepWarmLedger: overrides.keepWarmLedger,
   });
 }
@@ -8915,11 +8920,13 @@ describe("DesktopAgentRuntime subagents", () => {
 
     // Core, so delegation needs no ToolSearch round trip first.
     expect(tool).toBeDefined();
-    expect((runtime as any).deferredToolNames.has("Task")).toBe(false);
+    // The catalog is the shared generated table (ADR
+    // session-create-model-and-role): one row per definition, with the
+    // capabilities derived from its own tools.
     expect(tool.description).toContain(
-      "- explorer (tools: Read, Glob, Grep): Search the workspace and report findings.",
+      "| explorer | Search the workspace and report findings. | read-only | inherits the session |",
     );
-    expect(tool.description).toContain("- reviewer (tools: Read, Bash): Review a diff.");
+    expect(tool.description).toContain("| reviewer | Review a diff. | read-only, Bash |");
 
     await runtime.dispose();
   });
@@ -8971,7 +8978,7 @@ describe("DesktopAgentRuntime subagents", () => {
     expect(subagentRuns.calls[0].systemPrompt).toContain("Skill");
     expect(subagentRuns.calls[0].systemPrompt).toContain("demo.hello/release-notes");
     expect(subagentRuns.calls[0].systemPrompt).toContain("You may change files");
-    expect(taskTool(runtime).description).toContain("(tools: inherit)");
+    expect(taskTool(runtime).description).toContain("| inherits parent tools |");
 
     await runtime.dispose();
   });
@@ -9031,7 +9038,9 @@ describe("DesktopAgentRuntime subagents", () => {
     expect(host.call).toHaveBeenCalledWith("provider.resolveSubagentModel", { key: "remote/remote-model" });
     await taskTool(runtime).execute("own-pin", { agent: "reviewer", task: "Review." });
     expect(subagentRuns.calls[0].provider).toBe(remote);
-    expect(taskTool(runtime).description).toContain("Default model: remote/remote-model");
+    // The private pin is the definition's own default, printed in the shared
+    // catalog's Default model column — still not an override key.
+    expect(taskTool(runtime).description).toContain("| remote/remote-model |");
     const echoed = await taskTool(runtime).execute("own-pin-echo", {
       agent: "reviewer", task: "Review.", model: "remote/remote-model",
     });
@@ -14484,5 +14493,112 @@ describe("DesktopAgentRuntime keep-warm (ADR 0339)", () => {
     } finally {
       await runtime.dispose();
     }
+  });
+});
+
+describe("the delegate role a session acts in (ADR session-create-model-and-role)", () => {
+  const fixer: SubagentDefinition = {
+    name: "fixer",
+    description: "Implement a complete multi-file change from a spec.",
+    tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+    prompt: "You are Fixer — implement the change the task describes.",
+    source: "builtin",
+  };
+
+  function promptOf(runtime: DesktopAgentRuntime): string {
+    return (runtime as unknown as { agent: { state: { systemPrompt: string } } }).agent.state
+      .systemPrompt;
+  }
+
+  /** Every tool this runtime declares, deferred or not, with its description. */
+  function toolCatalogOf(runtime: DesktopAgentRuntime): Map<string, AgentTool> {
+    return (runtime as unknown as { toolCatalog: Map<string, AgentTool> }).toolCatalog;
+  }
+
+  /** Answer one turn with a fixed message and no tool calls. */
+  function answerOnce(runtime: DesktopAgentRuntime): void {
+    (runtime as unknown as { models: { streamSimple: () => unknown } }).models = {
+      streamSimple: () => {
+        const message = assistantMessage({
+          content: [{ type: "text", text: "Understood." }],
+        }) as unknown as AssistantMessage;
+        const stream = createAssistantMessageEventStream();
+        queueMicrotask(() => {
+          stream.push({ type: "start", partial: message });
+          stream.push({ type: "done", reason: "stop", message });
+          stream.end(message);
+        });
+        return stream;
+      },
+    };
+  }
+
+  it("puts the role's own prompt in the system prompt", async () => {
+    const runtime = createRuntime({
+      subagents: [fixer],
+      agentRoleName: "fixer",
+    });
+
+    const prompt = promptOf(runtime);
+    expect(prompt).toContain("## Your role: fixer");
+    expect(prompt).toContain("You are Fixer — implement the change the task describes.");
+    // A role is a prompt section, not a tool ceiling: the session keeps the
+    // catalog it had (ADR §"a section, not a persona").
+    expect(toolCatalogOf(runtime).has("Write")).toBe(true);
+    await runtime.dispose();
+  });
+
+  it("adds no role section to a session that names none", async () => {
+    const runtime = createRuntime({ subagents: [fixer] });
+
+    expect(promptOf(runtime)).not.toContain("## Your role:");
+    await runtime.dispose();
+  });
+
+  it("drops the section and reports one diagnostic when the definition is gone", async () => {
+    const diagnostics: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    const runtime = createRuntime({
+      // The handle resolves at construction...
+      subagents: [fixer],
+      agentRoleName: "fixer",
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic as never),
+    });
+    expect(promptOf(runtime)).toContain("## Your role: fixer");
+
+    // ...and the definition was deleted or switched off before the next turn, so
+    // this launch carries no definition of that name.
+    (runtime as unknown as { subagents: SubagentDefinition[] }).subagents = [];
+    answerOnce(runtime);
+    await runtime.prompt("What is left to do?", "user-1", "turn-1");
+
+    expect(promptOf(runtime)).not.toContain("## Your role:");
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      kind: "agent_role_missing",
+      sessionId: "session-1",
+      data: { agentName: "fixer" },
+    });
+
+    // One report, not one per turn: the session keeps running as the
+    // conversation it is.
+    await runtime.prompt("And now?", "user-2", "turn-2");
+    expect(diagnostics).toHaveLength(1);
+    await runtime.dispose();
+  });
+
+  it("prints one delegate catalog and one decision rule in both tool descriptions", async () => {
+    const runtime = createRuntime({ subagents: [fixer] });
+    // `SessionCreate` is on demand, so its declaration is read from the catalog
+    // rather than from the currently active tool list.
+    const catalog = toolCatalogOf(runtime);
+    const task = catalog.get("Task")?.description ?? "";
+    const create = catalog.get("SessionCreate")?.description ?? "";
+    const table = delegateCatalogTable([fixer]);
+
+    expect(task).toContain(table);
+    expect(create).toContain(table);
+    expect(task).toContain(DELEGATE_DECISION_RULE);
+    expect(create).toContain(DELEGATE_DECISION_RULE);
+    await runtime.dispose();
   });
 });
