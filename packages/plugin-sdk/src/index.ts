@@ -65,10 +65,33 @@ export type PluginNetFetchInput = {
   credentialRef?: string;
 };
 
-/** One declared credential slot and whether the user filled it. Never a value. */
+/** One instance of a multi-instance credential slot. Never a secret. */
+export type PluginCredentialInstanceStatus = {
+  /** Host-generated, opaque; the value `credentialRef` spells after `#`. */
+  instanceId: string;
+  /** The `labelField` value, so a plugin can name the account. */
+  label: string;
+  /** Non-secret field values only. Secret fields never appear here. */
+  publicFields: Record<string, string>;
+  configured: true;
+};
+
+/**
+ * One declared credential slot and whether the user filled it. Never a secret.
+ *
+ * A single-instance slot answers `{id, configured}` exactly as released. A slot
+ * that declares `multiple` adds the three instance fields, and its `configured`
+ * still means "at least one instance".
+ */
 export type PluginCredentialSlotStatus = {
   id: string;
   configured: boolean;
+  /** Present only for a slot that declares `multiple`. */
+  multiple?: true;
+  /** Present only for a slot that declares `multiple`. */
+  max?: number;
+  /** Present only for a slot that declares `multiple`; oldest first. */
+  instances?: PluginCredentialInstanceStatus[];
 };
 
 export type PluginNetFetchResult = {
@@ -631,16 +654,20 @@ export type PluginSettingType =
   | "shortcut";
 
 export type PluginSettingOption = {
-  label: string;
+  /** Resolved by the host to the app language; a plain string is as written. */
+  label: PluginLocalizedString | string;
   value: string | number | boolean;
 };
 
 export type PluginSettingContrib = {
   key: string;
-  /** Author-language label for the generated sheet. Not a locale map (ADR 0280). */
-  title: string;
-  /** Author-language help text for the generated sheet. */
-  description?: string;
+  /**
+   * Label for the generated sheet. A locale map is resolved to the app language
+   * (ADR 0340); a plain string is the author's own language.
+   */
+  title: PluginLocalizedString | string;
+  /** Help text for the generated sheet. Same rule as `title`. */
+  description?: PluginLocalizedString | string;
   type: PluginSettingType;
   default?: unknown;
   enum?: PluginSettingOption[];
@@ -1854,13 +1881,31 @@ export type PluginHostApi = {
     };
   };
   /**
-   * Declared credential slots (`credentials.use`). Status only — whether the
-   * user filled a slot — because the host injects the value into the egress
-   * path a `credentialRef` names. There is no call that returns a secret, and
-   * the list carries declared slots only, never the host's own credentials.
+   * Declared credential slots (`credentials.use`). `list` answers status answer
+   * only — whether the user filled a slot, plus the non-secret fields of a
+   * multi-instance slot — because the host injects the value into the egress
+   * path a `credentialRef` names. No call returns a secret, and the list carries
+   * declared slots only, never the host's own credentials.
+   *
+   * `requestAdd` and `requestRemove` ask the *host* to collect or drop an
+   * instance: the host shows its own form, the user fills it, and the value
+   * never passes through this process. Both answer `cancelled` when the user
+   * declines or closes the dialog.
    */
   credentials: {
     list: () => Promise<PluginCredentialSlotStatus[]>;
+    /**
+     * Ask the host to add one instance to a slot that declares `multiple`.
+     * Refused with `CREDENTIAL_LIMIT` at `multiple.max`, with
+     * `CREDENTIAL_DIALOG_BUSY` while this plugin already has a dialog open, and
+     * with `CREDENTIAL_DIALOG_UNAVAILABLE` while the app window is not in front.
+     */
+    requestAdd: (slotId: string) => Promise<{ instanceId: string } | { cancelled: true }>;
+    /** Ask the host to remove one instance, after the user confirms. */
+    requestRemove: (
+      slotId: string,
+      instanceId: string,
+    ) => Promise<{ removed: true } | { cancelled: true }>;
   };
   events: {
     on: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -2447,9 +2492,22 @@ export function validateContributions(
       return `duplicate setting key "${setting.key}"`;
     }
     settingKeys.add(setting.key);
-    if (typeof setting.title !== "string" || !setting.title.trim()) {
+    if (setting.title === undefined) {
       return `setting "${setting.key}" requires a title`;
     }
+    const settingTitleError = localizedStringError(
+      setting.title,
+      `setting "${setting.key}" title`,
+    );
+    if (settingTitleError) return settingTitleError;
+    if (typeof setting.title === "string" && !setting.title.trim()) {
+      return `setting "${setting.key}" requires a title`;
+    }
+    const settingDescriptionError = localizedStringError(
+      setting.description,
+      `setting "${setting.key}" description`,
+    );
+    if (settingDescriptionError) return settingDescriptionError;
     if (
       setting.type !== "string" &&
       setting.type !== "number" &&
@@ -2497,7 +2555,7 @@ export function validateContributions(
         if (
           !option ||
           typeof option !== "object" ||
-          typeof option.label !== "string" ||
+          !isValidSettingOptionLabel(option.label) ||
           !["string", "number", "boolean"].includes(typeof option.value)
         ) {
           return `select setting "${setting.key}" has an invalid enum option`;
@@ -2905,6 +2963,11 @@ export function validateContributions(
   return undefined;
 }
 
+function isValidSettingOptionLabel(label: unknown): boolean {
+  if (localizedStringError(label, "setting enum option label")) return false;
+  return typeof label === "string" ? Boolean(label.trim()) : typeof label === "object";
+}
+
 function isValidShortcutShape(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const parts = value.split("+").filter(Boolean);
@@ -3107,19 +3170,24 @@ export {
   type PluginTcpEndpoint,
 } from "./net-policy.js";
 export {
+  MAX_CREDENTIAL_INSTANCES,
   MAX_WEBHOOK_BODY_BYTES,
   MAX_WEBHOOK_RATE_PER_MINUTE,
   MIN_SCHEDULE_INTERVAL_MINUTES,
   DEFAULT_PLUGIN_TASK_PERMISSION_MODE,
+  PLUGIN_CREDENTIAL_FIELD_TYPES,
   PLUGIN_CREDENTIAL_KINDS,
   PLUGIN_SCHEDULE_RUN_WHEN,
   PLUGIN_TASK_PERMISSION_MODES,
+  credentialFieldType,
   validateCredentialContributions,
   validateScheduleContributions,
   validateTasksContribution,
   validateWebhookContributions,
   type PluginCredentialContrib,
   type PluginCredentialFieldContrib,
+  type PluginCredentialFieldOption,
+  type PluginCredentialFieldType,
   type PluginCredentialKind,
   type PluginScheduleContrib,
   type PluginScheduleRunWhen,
