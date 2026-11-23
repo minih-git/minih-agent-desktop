@@ -891,3 +891,7 @@ fn validated_fields(
 #[cfg(test)]
 #[path = "credentials_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "credential_instances_tests.rs"]
+mod instance_tests;
