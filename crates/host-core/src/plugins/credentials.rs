@@ -25,7 +25,9 @@
 //! encrypted like the slots, so it is not a second plaintext record of a user's
 //! credentials, and it needs no database migration.
 
+use super::credential_instances::{self, split_ref, InstanceMeta};
 use super::{is_contrib_id, plugin_display_locale, PluginSummary};
+use crate::db::Database;
 use crate::secrets::SecretStore;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -39,6 +41,8 @@ pub(crate) const CREDENTIAL_NOT_CONFIGURED: &str = "CREDENTIAL_NOT_CONFIGURED";
 pub(crate) const CREDENTIAL_INVALID: &str = "CREDENTIAL_INVALID";
 /// The request names a slot the installed manifest does not declare.
 pub(crate) const CREDENTIAL_SLOT_NOT_DECLARED: &str = "CREDENTIAL_SLOT_NOT_DECLARED";
+/// A multi-instance slot already holds `multiple.max` instances.
+pub(crate) const CREDENTIAL_LIMIT: &str = "CREDENTIAL_LIMIT";
 
 /// Largest string one credential field may carry (8 KiB). The Settings sheet
 /// asks for a token or a login, never a document; the bound keeps a malformed
@@ -56,6 +60,10 @@ pub(crate) enum CredentialError {
     Invalid(String),
     /// The slot is declared but holds nothing this host can inject.
     NotConfigured(String),
+    /// A multi-instance slot was named without an instance.
+    InstanceRequired(String),
+    /// The slot already holds `multiple.max` instances.
+    Limit(String),
     /// The encrypted store failed. Messages never contain a field value.
     Storage(String),
 }
@@ -67,6 +75,8 @@ impl std::fmt::Display for CredentialError {
             | Self::SlotNotDeclared(message)
             | Self::Invalid(message)
             | Self::NotConfigured(message)
+            | Self::InstanceRequired(message)
+            | Self::Limit(message)
             | Self::Storage(message) => f.write_str(message),
         }
     }
@@ -74,6 +84,14 @@ impl std::fmt::Display for CredentialError {
 
 fn storage(error: anyhow::Error) -> CredentialError {
     CredentialError::Storage(format!("credential store failure: {error}"))
+}
+
+/// One option of a `select` field, as the manifest declares it.
+#[derive(Debug, Clone)]
+pub(crate) struct DeclaredFieldOption {
+    pub value: String,
+    /// `label`, still raw: a plain string or a per-locale object.
+    pub label: Value,
 }
 
 /// One field of a slot as the manifest declares it. Only the declaration is
@@ -84,6 +102,10 @@ pub(crate) struct DeclaredField {
     /// `label`, still raw: a plain string or a per-locale object.
     pub label: Value,
     pub secret: bool,
+    /// `type`, defaulted from `secret` exactly as the SDK does.
+    pub control: String,
+    /// `select` only; empty for every other control.
+    pub options: Vec<DeclaredFieldOption>,
 }
 
 /// One slot as the manifest declares it.
@@ -98,6 +120,10 @@ pub(crate) struct DeclaredSlot {
     /// `scope.domains`; empty when the slot declares no scope, which the host
     /// reads as "injected nowhere".
     pub domains: Vec<String>,
+    /// `multiple.max`; `None` is the released single-instance slot.
+    pub multiple_max: Option<u32>,
+    /// `labelField`: the non-secret field that names an instance.
+    pub label_field: Option<String>,
 }
 
 impl DeclaredSlot {
@@ -110,29 +136,38 @@ impl DeclaredSlot {
 /// can grow (a rotation timestamp, say) without guessing what an old blob is.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct StoredSlot {
-    fields: BTreeMap<String, String>,
+pub(crate) struct StoredSlot {
+    pub fields: BTreeMap<String, String>,
 }
 
-/// Every slot this host has written for one plugin, so an uninstall can clear
-/// slots whose manifest declaration is already gone.
+/// Every slot — and every multi-instance slot's instance list — this host has
+/// written for one plugin, so an uninstall can clear what the current manifest no
+/// longer declares.
+///
+/// No `deny_unknown_fields`: this blob is the one record an older build may read
+/// after a newer one wrote it, and refusing it would make every stored credential
+/// unreadable after a downgrade. An unknown key is ignored instead.
 #[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PluginIndex {
-    slots: BTreeSet<String>,
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginIndex {
+    #[serde(default)]
+    pub slots: BTreeSet<String>,
+    /// Multi-instance slots only, keyed by slot id, in creation order.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub instances: BTreeMap<String, Vec<InstanceMeta>>,
 }
 
 impl PluginIndex {
-    fn insert(&mut self, slot_id: &str) -> bool {
+    pub(crate) fn insert(&mut self, slot_id: &str) -> bool {
         self.slots.insert(slot_id.to_string())
     }
 
-    fn remove(&mut self, slot_id: &str) -> bool {
+    pub(crate) fn remove(&mut self, slot_id: &str) -> bool {
         self.slots.remove(slot_id)
     }
 }
 
-fn slot_ref(plugin_id: &str, slot_id: &str) -> String {
+pub(crate) fn slot_ref(plugin_id: &str, slot_id: &str) -> String {
     format!("plugin:{plugin_id}:cred:{slot_id}")
 }
 
@@ -161,14 +196,14 @@ fn last_used_guard() -> MutexGuard<'static, BTreeMap<(String, String), i64>> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn remember_used(plugin_id: &str, slot_id: &str) {
+pub(crate) fn remember_used(plugin_id: &str, slot_id: &str) {
     last_used_guard().insert(
         (plugin_id.to_string(), slot_id.to_string()),
         super::Utc::now().timestamp_millis(),
     );
 }
 
-fn forget_used(plugin_id: &str, slot_id: &str) {
+pub(crate) fn forget_used(plugin_id: &str, slot_id: &str) {
     last_used_guard().remove(&(plugin_id.to_string(), slot_id.to_string()));
 }
 
@@ -266,6 +301,8 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
                     .get("secret")
                     .and_then(Value::as_bool)
                     .unwrap_or(false),
+                control: field_control(id, field, plugin)?,
+                options: field_options(id, field, plugin)?,
             });
         }
         if declared_fields.is_empty() {
@@ -274,6 +311,8 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
                 plugin.id
             )));
         }
+        let multiple_max = multiple_max_of(id, entry, plugin)?;
+        let label_field = label_field_of(id, entry, &declared_fields, plugin)?;
         let domains = entry
             .get("scope")
             .and_then(Value::as_object)
@@ -299,9 +338,135 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
                 .to_string(),
             fields: declared_fields,
             domains,
+            multiple_max,
+            label_field,
         });
     }
     Ok(slots)
+}
+
+/// The largest instance count a slot may declare. The same 1–5 bound the SDK
+/// enforces: the Settings sheet has to draw the list, and the host has to hold it.
+const MAX_INSTANCES: u64 = 5;
+
+/// `type`, by the same rule as the SDK: what the field declares, else what
+/// `secret` implies. An unknown control is a manifest this host cannot render.
+fn field_control(
+    slot_id: &str,
+    field: &Value,
+    plugin: &PluginSummary,
+) -> Result<String, CredentialError> {
+    let secret = field.get("secret").and_then(Value::as_bool) == Some(true);
+    let declared = field.get("type").and_then(Value::as_str);
+    match declared {
+        None => Ok(if secret { "password" } else { "text" }.to_string()),
+        // A masked field cannot be a dropdown: the option list is manifest data,
+        // and the value in it would be the very thing being kept secret.
+        Some("select") if secret => Err(CredentialError::PluginInvalid(format!(
+            "PLUGIN_INVALID: credential slot {slot_id} of plugin {} declares a secret select field",
+            plugin.id
+        ))),
+        Some(control @ ("text" | "password" | "select")) => Ok(control.to_string()),
+        Some(_) => Err(CredentialError::PluginInvalid(format!(
+            "PLUGIN_INVALID: credential slot {slot_id} of plugin {} declares a field with an unsupported type",
+            plugin.id
+        ))),
+    }
+}
+
+/// `options` for a `select` field, and nothing for any other control.
+fn field_options(
+    slot_id: &str,
+    field: &Value,
+    plugin: &PluginSummary,
+) -> Result<Vec<DeclaredFieldOption>, CredentialError> {
+    let select = field.get("type").and_then(Value::as_str) == Some("select");
+    let invalid = || {
+        CredentialError::PluginInvalid(format!(
+            "PLUGIN_INVALID: credential slot {slot_id} of plugin {} declares unusable select options",
+            plugin.id
+        ))
+    };
+    let Some(options) = field.get("options") else {
+        if select {
+            return Err(invalid());
+        }
+        return Ok(Vec::new());
+    };
+    if !select {
+        return Err(invalid());
+    }
+    let Some(options) = options.as_array().filter(|options| !options.is_empty()) else {
+        return Err(invalid());
+    };
+    let mut declared = Vec::with_capacity(options.len());
+    for option in options {
+        let value = option
+            .get("value")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(invalid)?;
+        if declared
+            .iter()
+            .any(|entry: &DeclaredFieldOption| entry.value == value)
+        {
+            return Err(invalid());
+        }
+        declared.push(DeclaredFieldOption {
+            value: value.to_string(),
+            label: option.get("label").cloned().unwrap_or(Value::Null),
+        });
+    }
+    Ok(declared)
+}
+
+/// `multiple.max`, the only thing that makes a slot hold more than one value.
+fn multiple_max_of(
+    slot_id: &str,
+    entry: &Value,
+    plugin: &PluginSummary,
+) -> Result<Option<u32>, CredentialError> {
+    let Some(multiple) = entry.get("multiple") else {
+        return Ok(None);
+    };
+    let max = multiple.get("max").and_then(Value::as_u64);
+    match max {
+        Some(max) if (1..=MAX_INSTANCES).contains(&max) => Ok(Some(max as u32)),
+        _ => Err(CredentialError::PluginInvalid(format!(
+            "PLUGIN_INVALID: credential slot {slot_id} of plugin {} declares multiple.max outside 1..={MAX_INSTANCES}",
+            plugin.id
+        ))),
+    }
+}
+
+/// `labelField`: a declared, non-secret field. A label read from a secret would
+/// publish the secret to `credentials.list`.
+fn label_field_of(
+    slot_id: &str,
+    entry: &Value,
+    fields: &[DeclaredField],
+    plugin: &PluginSummary,
+) -> Result<Option<String>, CredentialError> {
+    let Some(raw) = entry.get("labelField") else {
+        return Ok(None);
+    };
+    let key = raw
+        .as_str()
+        .filter(|key| is_contrib_id(key))
+        .ok_or_else(|| {
+            CredentialError::PluginInvalid(format!(
+                "PLUGIN_INVALID: credential slot {slot_id} of plugin {} declares an invalid labelField",
+                plugin.id
+            ))
+        })?;
+    match fields.iter().find(|field| field.key == key) {
+        Some(field) if !field.secret => Ok(Some(key.to_string())),
+        _ => Err(CredentialError::PluginInvalid(format!(
+            "PLUGIN_INVALID: credential slot {slot_id} of plugin {} declares labelField {key} without a non-secret field of that key",
+            plugin.id
+        ))),
+    }
 }
 
 fn manifest_path(plugin: &PluginSummary) -> Result<PathBuf, CredentialError> {
@@ -372,11 +537,11 @@ fn declared_text(raw: &Value, locale: &str) -> String {
 /// A manifest that added a field makes an older blob incomplete. Reporting it
 /// as unconfigured is the fail-closed answer: the user re-enters the slot
 /// instead of the host injecting half a credential.
-fn covers(stored: &StoredSlot, slot: &DeclaredSlot) -> bool {
+pub(crate) fn covers(stored: &StoredSlot, slot: &DeclaredSlot) -> bool {
     slot.field_keys().all(|key| stored.fields.contains_key(key))
 }
 
-fn read_slot(
+pub(crate) fn read_slot(
     secrets: &SecretStore,
     plugin_id: &str,
     slot_id: &str,
@@ -392,7 +557,10 @@ fn read_slot(
         .map_err(|_| CredentialError::Storage("stored credential slot is unreadable".into()))
 }
 
-fn read_index(secrets: &SecretStore, plugin_id: &str) -> Result<PluginIndex, CredentialError> {
+pub(crate) fn read_index(
+    secrets: &SecretStore,
+    plugin_id: &str,
+) -> Result<PluginIndex, CredentialError> {
     match secrets.get(&index_ref(plugin_id)) {
         Ok(Some(raw)) => serde_json::from_str::<PluginIndex>(&raw)
             .map_err(|_| CredentialError::Storage("stored credential index is unreadable".into())),
@@ -401,13 +569,13 @@ fn read_index(secrets: &SecretStore, plugin_id: &str) -> Result<PluginIndex, Cre
     }
 }
 
-fn write_index(
+pub(crate) fn write_index(
     secrets: &SecretStore,
     plugin_id: &str,
     index: &PluginIndex,
 ) -> Result<(), CredentialError> {
     let reference = index_ref(plugin_id);
-    if index.slots.is_empty() {
+    if index.slots.is_empty() && index.instances.is_empty() {
         return secrets.delete(&reference).map_err(storage);
     }
     let payload = serde_json::to_string(index).map_err(|error| storage(error.into()))?;
@@ -415,83 +583,142 @@ fn write_index(
     Ok(())
 }
 
-fn configured(
+/// One slot's configured state plus its instance list.
+///
+/// A single-instance slot answers the released `configured` flag and no
+/// instances. A slot whose manifest dropped `multiple` folds its stored
+/// instances back into the released single value here, so a downgrade is
+/// resolved on the first read rather than losing the user's account.
+fn slot_state(
     secrets: &SecretStore,
     plugin_id: &str,
     slot: &DeclaredSlot,
-) -> Result<bool, CredentialError> {
-    Ok(read_slot(secrets, plugin_id, &slot.id)?
-        .map(|stored| covers(&stored, slot))
-        .unwrap_or(false))
+    db: Option<&Database>,
+) -> Result<(bool, Vec<credential_instances::InstanceSnapshot>), CredentialError> {
+    if slot.multiple_max.is_some() {
+        let instances = credential_instances::instances(secrets, plugin_id, slot, db)?;
+        return Ok((!instances.is_empty(), instances));
+    }
+    if let Some(stored) = read_slot(secrets, plugin_id, &slot.id)? {
+        return Ok((covers(&stored, slot), Vec::new()));
+    }
+    let kept = credential_instances::fold_back_for_read(secrets, plugin_id, slot, db)?;
+    Ok((kept.is_some(), Vec::new()))
+}
+
+/// The declared fields of one slot as the Settings sheet renders them.
+fn declared_fields_json(slot: &DeclaredSlot, locale: &str) -> Vec<Value> {
+    slot.fields
+        .iter()
+        .map(|field| {
+            let mut entry = json!({
+                "key": field.key,
+                "label": declared_text(&field.label, locale),
+                "secret": field.secret,
+                "type": field.control,
+            });
+            if field.control == "select" {
+                entry["options"] = json!(field
+                    .options
+                    .iter()
+                    .map(|option| json!({
+                        "value": option.value,
+                        "label": declared_text(&option.label, locale),
+                    }))
+                    .collect::<Vec<_>>());
+            }
+            entry
+        })
+        .collect()
 }
 
 /// Slot metadata plus `configured` / `lastUsedAt`, and not one stored value.
 ///
 /// This is what the Settings sheet renders, for an enabled or a disabled plugin
-/// alike: everything except the two state fields comes from the installed
-/// manifest, so no plugin process is involved.
+/// alike: everything except the state fields comes from the installed manifest,
+/// so no plugin process is involved. A multi-instance slot adds its instance list
+/// — ids, labels and non-secret field values only.
 pub(crate) fn status(
     secrets: &SecretStore,
     plugin: &PluginSummary,
     locale: &str,
+    db: Option<&Database>,
 ) -> Result<Value, CredentialError> {
     let declared = declared_slots(plugin)?;
     let mut slots = Vec::with_capacity(declared.len());
     for slot in &declared {
-        let fields: Vec<Value> = slot
-            .fields
-            .iter()
-            .map(|field| {
-                json!({
-                    "key": field.key,
-                    "label": declared_text(&field.label, locale),
-                    "secret": field.secret,
-                })
-            })
-            .collect();
-        slots.push(json!({
+        let (configured, instances) = slot_state(secrets, &plugin.id, slot, db)?;
+        let mut entry = json!({
             "id": slot.id,
             "title": declared_text(&slot.title, locale),
             "kind": slot.kind,
-            "fields": fields,
+            "fields": declared_fields_json(slot, locale),
             "scope": { "domains": slot.domains },
-            "configured": configured(secrets, &plugin.id, slot)?,
+            "configured": configured,
             "lastUsedAt": last_used(&plugin.id, &slot.id),
-        }));
+        });
+        if let Some(max) = slot.multiple_max {
+            entry["multiple"] = json!(true);
+            entry["max"] = json!(max);
+            entry["instances"] = json!(instances
+                .iter()
+                .map(credential_instances::public_json)
+                .collect::<Vec<_>>());
+        }
+        if let Some(label_field) = &slot.label_field {
+            entry["labelField"] = json!(label_field);
+        }
+        slots.push(entry);
     }
     Ok(json!({ "slots": slots }))
 }
 
 /// The same slots with nothing but their state, for callers that only need to
-/// know which ones are filled (the Plugins page badge, a pre-flight check).
+/// know which ones are filled (the Plugins page badge, a pre-flight check) — and,
+/// for a multi-instance slot, which instances exist and what they are called.
 pub(crate) fn list(
     secrets: &SecretStore,
     plugin: &PluginSummary,
+    db: Option<&Database>,
 ) -> Result<Value, CredentialError> {
     let declared = declared_slots(plugin)?;
     let mut slots = Vec::with_capacity(declared.len());
     for slot in &declared {
-        slots.push(json!({
-            "id": slot.id,
-            "configured": configured(secrets, &plugin.id, slot)?,
-        }));
+        let (configured, instances) = slot_state(secrets, &plugin.id, slot, db)?;
+        let mut entry = json!({ "id": slot.id, "configured": configured });
+        if let Some(max) = slot.multiple_max {
+            entry["multiple"] = json!(true);
+            entry["max"] = json!(max);
+            entry["instances"] = json!(instances
+                .iter()
+                .map(credential_instances::public_json)
+                .collect::<Vec<_>>());
+        }
+        slots.push(entry);
     }
     Ok(json!({ "slots": slots }))
 }
 
-/// Store one whole slot.
+/// Store one slot's value.
 ///
-/// The index is written before the blob: a slot the index does not list would
-/// survive an uninstall, while an index entry without a blob only costs one
-/// failed delete later.
+/// A single-instance slot is one blob; its index entry is written first, because
+/// a slot the index does not list would survive an uninstall. A multi-instance
+/// slot gains one more instance and answers its id; a value stored before the
+/// manifest declared `multiple` is migrated first so the new instance cannot
+/// overwrite the account already there.
 pub(crate) fn set(
     secrets: &SecretStore,
     plugin: &PluginSummary,
     slot_id: &str,
     fields: Map<String, Value>,
-) -> Result<(), CredentialError> {
+    db: Option<&Database>,
+) -> Result<Option<String>, CredentialError> {
     let slot = declared_slot(plugin, slot_id)?;
     let values = validated_fields(&slot, fields)?;
+    if slot.multiple_max.is_some() {
+        credential_instances::instances(secrets, &plugin.id, &slot, db)?;
+        return credential_instances::add(secrets, &plugin.id, &slot, &values, db).map(Some);
+    }
     let mut index = read_index(secrets, &plugin.id)?;
     if index.insert(slot_id) {
         write_index(secrets, &plugin.id, &index)?;
@@ -503,10 +730,11 @@ pub(crate) fn set(
         .map_err(storage)?;
     // A fresh value has not been handed to anyone yet.
     forget_used(&plugin.id, slot_id);
-    Ok(())
+    Ok(None)
 }
 
-/// Drop one slot. Returns whether a value was there.
+/// Drop one slot, or one instance of a multi-instance slot. Returns whether a
+/// value was there.
 ///
 /// The slot does not have to be declared any more: a manifest that dropped a
 /// slot must not strand its stored value, so the plugin's existence is the only
@@ -515,17 +743,26 @@ pub(crate) fn clear(
     secrets: &SecretStore,
     plugin: &PluginSummary,
     slot_id: &str,
+    instance_id: Option<&str>,
+    db: Option<&Database>,
 ) -> Result<bool, CredentialError> {
     if !is_contrib_id(slot_id) {
         return Err(CredentialError::Invalid(format!(
             "{CREDENTIAL_INVALID}: invalid credential slot id"
         )));
     }
+    if let Some(instance_id) = instance_id {
+        return credential_instances::remove(secrets, &plugin.id, slot_id, instance_id, db);
+    }
     let reference = slot_ref(&plugin.id, slot_id);
-    let existed = secrets.has(&reference);
+    let mut existed = secrets.has(&reference);
     secrets.delete(&reference).map_err(storage)?;
     let mut index = read_index(secrets, &plugin.id)?;
-    if index.remove(slot_id) {
+    if index.instances.contains_key(slot_id) {
+        existed |= credential_instances::clear_slot(secrets, &plugin.id, slot_id, &mut index, db)?;
+    }
+    let unlisted = index.remove(slot_id);
+    if unlisted || existed {
         write_index(secrets, &plugin.id, &index)?;
     }
     forget_used(&plugin.id, slot_id);
@@ -534,33 +771,57 @@ pub(crate) fn clear(
 
 /// The declared fields of one slot, ready for host-owned injection.
 ///
-/// This is the only path that returns plaintext, and it fails closed: an
-/// incomplete blob, an undeclared field set or a missing value all answer
-/// `CREDENTIAL_NOT_CONFIGURED` rather than a partial credential.
+/// The one path that returns plaintext, and it fails closed: an incomplete blob,
+/// an undeclared field set or a missing value all answer `CREDENTIAL_NOT_CONFIGURED`
+/// rather than a partial credential. `raw_ref` is a slot id, or `slot#instanceId`
+/// for a multi-instance slot.
 pub(crate) fn resolve(
     secrets: &SecretStore,
     plugin: &PluginSummary,
-    slot_id: &str,
+    raw_ref: &str,
+    db: Option<&Database>,
 ) -> Result<BTreeMap<String, String>, CredentialError> {
+    let (slot_id, instance) = split_ref(raw_ref);
     let slot = declared_slot(plugin, slot_id)?;
+    if slot.multiple_max.is_some() {
+        let instance_id = credential_instances::required_instance(&slot, instance)?;
+        return credential_instances::resolve(secrets, &plugin.id, &slot, instance_id);
+    }
+    if instance.is_some() {
+        return Err(CredentialError::Invalid(format!(
+            "{CREDENTIAL_INVALID}: credential slot {slot_id} of plugin {} holds a single value",
+            plugin.id
+        )));
+    }
     let not_configured = || {
         CredentialError::NotConfigured(format!(
             "{CREDENTIAL_NOT_CONFIGURED}: credential slot {slot_id} of plugin {} has no stored value",
             plugin.id
         ))
     };
-    let stored = read_slot(secrets, &plugin.id, slot_id)?.ok_or_else(not_configured)?;
-    let mut fields = BTreeMap::new();
-    for key in slot.field_keys() {
-        let value = stored.fields.get(key).ok_or_else(not_configured)?;
-        fields.insert(key.to_string(), value.clone());
+    if let Some(stored) = read_slot(secrets, &plugin.id, slot_id)? {
+        let mut fields = BTreeMap::new();
+        for key in slot.field_keys() {
+            let value = stored.fields.get(key).ok_or_else(not_configured)?;
+            fields.insert(key.to_string(), value.clone());
+        }
+        remember_used(&plugin.id, slot_id);
+        return Ok(fields);
     }
-    remember_used(&plugin.id, slot_id);
-    Ok(fields)
+    // Nothing at the released reference: a slot that stopped declaring
+    // `multiple` still has its first account stored as an instance.
+    match credential_instances::fold_back_for_read(secrets, &plugin.id, &slot, db)? {
+        Some(fields) => {
+            remember_used(&plugin.id, slot_id);
+            Ok(fields)
+        }
+        None => Err(not_configured()),
+    }
 }
 
-/// Remove every slot this host stored for a plugin, including slots the current
-/// manifest no longer declares, plus the plugin's index.
+/// Remove every value this host stored for a plugin — single slots, every
+/// instance of a multi-instance slot, including slots the current manifest no
+/// longer declares — plus the plugin's index.
 ///
 /// Called on uninstall only. Disabling a plugin keeps the values: re-enabling
 /// must not ask the user to paste a token the host still holds.
@@ -575,6 +836,7 @@ pub(crate) fn purge_plugin(data_dir: &Path, plugin_id: &str) -> Result<usize, Cr
         }
         secrets.delete(&reference).map_err(storage)?;
     }
+    removed += credential_instances::purge(&secrets, plugin_id, &index)?;
     secrets.delete(&index_ref(plugin_id)).map_err(storage)?;
     forget_plugin_usage(plugin_id);
     Ok(removed)
