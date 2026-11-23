@@ -154,7 +154,11 @@ import {
 } from "./plugin-websocket";
 import type { PluginTcpEvent, PluginTcpRegistry } from "./plugin-tcp";
 import { resolveTcpImapCredential } from "./plugin-tcp-credentials";
-import { declaredSlots } from "./plugin-credential-slots";
+import { declaredSlots, slotHoldsInstances } from "./plugin-credential-slots";
+import type {
+  PluginCredentialDialogAnswer,
+  PluginCredentialDialogPort,
+} from "./plugin-credential-dialog";
 import {
   PluginCredentialBroker,
   type PluginCredentialCallContext,
@@ -590,6 +594,12 @@ export type PluginHostServices = {
   /** `plugins.credentials.status`: configured state only, never a value. */
   listPluginCredentialSlots?: (pluginId: string) => Promise<PluginCredentialSlotState[]>;
   /**
+   * The host-owned form behind `credentials.requestAdd` / `requestRemove`. Absent
+   * means the host cannot ask the user, and both calls refuse instead of
+   * pretending to have added or removed anything.
+   */
+  credentialDialogs?: PluginCredentialDialogPort;
+  /**
    * Read-only conversation archive (ADR conversation-archive). The host side is
    * `plugin.conversations.*`; each method receives the calling plugin's id.
    */
@@ -653,6 +663,8 @@ const HOST_API_ALLOWLIST = new Set([
   "net.fetch",
   "net.getCapabilities",
   "credentials.list",
+  "credentials.requestAdd",
+  "credentials.requestRemove",
   "inbound.getReceivers",
   "bus.publish",
   "bus.subscribe",
@@ -2002,7 +2014,11 @@ export class PluginRuntime {
     await this.hostApi(loaded).themes.setVariables(themeId, { "--nexus-backdrop-blur": blur });
   }
 
-  /** Manifest settings as the installed-plugin sheet reads them. Titles stay the author's language; plugin-owned UI localizes via `app.getLocale` / `appearance:changed` (ADR 0280). */
+  /**
+   * Manifest settings as the installed-plugin sheet reads them. A locale map on
+   * `title` / `description` / an option label is resolved to the app language
+   * here (ADR 0340); a plain string stays the author's language.
+   */
   async getPluginSettings(pluginId: string): Promise<PluginSettingDefinition[]> {
     const loaded = this.loaded.get(pluginId);
     if (!loaded) throw apiError("NOT_FOUND", `plugin not loaded: ${pluginId}`);
@@ -2048,7 +2064,12 @@ export class PluginRuntime {
     loaded: LoadedPlugin,
     values: Record<string, unknown>,
   ): Promise<PluginSettingDefinition[]> {
-    return pluginSettingsView(loaded.manifest.contributes?.settings, values, await this.readyModels());
+    return pluginSettingsView(
+      loaded.manifest.contributes?.settings,
+      values,
+      await this.readyModels(),
+      this.services.getLocale?.(),
+    );
   }
 
   private async readyModels(): Promise<PluginModelInfo[]> {
@@ -2371,6 +2392,9 @@ export class PluginRuntime {
   async unload(pluginId: string): Promise<void> {
     const loaded = this.loaded.get(pluginId);
     if (loaded) {
+      // A credential form for a plugin that is going away has nobody to answer
+      // for it; leaving it on screen would outlive the plugin.
+      this.services.credentialDialogs?.cancelPlugin(pluginId);
       loaded.disposing = true;
       this.toolInvocations.cancelOwner(loaded, "Plugin unloaded");
       // An explicit stop ends supervision; a supervisor-driven reload keeps it.
@@ -3017,6 +3041,112 @@ export class PluginRuntime {
         this.assertPermission(loaded, "credentials.use");
         return this.credentialBroker().list(this.credentialContext(loaded));
       }
+      case "credentials.requestAdd": {
+        this.assertPermission(loaded, "credentials.use");
+        const slotId = String(args[0] ?? "");
+        const slot = declaredSlots(loaded.manifest.contributes?.credentials).find(
+          (entry) => entry.id === slotId,
+        );
+        if (!slot) throw apiError("INVALID_ARGUMENT", `credential slot is not declared: ${slotId}`);
+        if (!slotHoldsInstances(slot)) {
+          throw apiError(
+            "INVALID_ARGUMENT",
+            `credential slot ${slotId} holds a single value; only a slot that declares multiple can be added to`,
+          );
+        }
+        const dialogs = this.services.credentialDialogs;
+        if (!dialogs) {
+          throw apiError("UNSUPPORTED", "the host cannot ask the user for a credential");
+        }
+        // The count is read before the form: asking the user to fill a form for
+        // a slot that is already full would waste their time.
+        const states = await this.services.listPluginCredentialSlots?.(pluginId);
+        const state = states?.find((entry) => entry.id === slotId);
+        if (state && (state.instances?.length ?? 0) >= (state.max ?? slot.multipleMax ?? 0)) {
+          throw apiError("CREDENTIAL_LIMIT", "the credential slot holds as many instances as its manifest allows");
+        }
+        try {
+          const result = await dialogs.add({
+            pluginId,
+            pluginName: resolvePluginLocalizedString(
+              loaded.manifest.name,
+              this.services.getLocale?.(),
+              pluginId,
+            ),
+            slotId,
+          });
+          this.services.audit?.({
+            pluginId,
+            api: "credentials.requestAdd",
+            ok: !("cancelled" in result),
+            ...("instanceId" in result ? { credential: slotId, credentialInstance: result.instanceId } : { errorCode: "CANCELLED" }),
+            ts: Date.now(),
+          });
+          return result;
+        } catch (error) {
+          this.services.audit?.({
+            pluginId,
+            api: "credentials.requestAdd",
+            ok: false,
+            errorCode: (error as { code?: string }).code ?? "UNAVAILABLE",
+            ts: Date.now(),
+          });
+          throw error;
+        }
+      }
+      case "credentials.requestRemove": {
+        this.assertPermission(loaded, "credentials.use");
+        const slotId = String(args[0] ?? "");
+        const instanceId = String(args[1] ?? "");
+        const slot = declaredSlots(loaded.manifest.contributes?.credentials).find(
+          (entry) => entry.id === slotId,
+        );
+        if (!slot) throw apiError("INVALID_ARGUMENT", `credential slot is not declared: ${slotId}`);
+        if (!slotHoldsInstances(slot)) {
+          throw apiError("INVALID_ARGUMENT", `credential slot ${slotId} holds a single value`);
+        }
+        const dialogs = this.services.credentialDialogs;
+        if (!dialogs) {
+          throw apiError("UNSUPPORTED", "the host cannot ask the user about a credential");
+        }
+        const state = (await this.services.listPluginCredentialSlots?.(pluginId))?.find(
+          (entry) => entry.id === slotId,
+        );
+        const instance = state?.instances?.find((entry) => entry.instanceId === instanceId);
+        if (!instance) {
+          throw apiError("CREDENTIAL_NOT_CONFIGURED", "the credential instance is not configured");
+        }
+        try {
+          const result = await dialogs.remove({
+            pluginId,
+            pluginName: resolvePluginLocalizedString(
+              loaded.manifest.name,
+              this.services.getLocale?.(),
+              pluginId,
+            ),
+            slotId,
+            instanceId,
+            label: instance.label,
+          });
+          this.services.audit?.({
+            pluginId,
+            api: "credentials.requestRemove",
+            ok: "removed" in result,
+            ...("removed" in result ? { credential: slotId, credentialInstance: instanceId } : { errorCode: "CANCELLED" }),
+            ts: Date.now(),
+          });
+          return result;
+        } catch (error) {
+          this.services.audit?.({
+            pluginId,
+            api: "credentials.requestRemove",
+            ok: false,
+            errorCode: (error as { code?: string }).code ?? "UNAVAILABLE",
+            ts: Date.now(),
+          });
+          throw error;
+        }
+      }
       case "net.websocket.connect": {
         this.assertPermission(loaded, "net.websocket");
         const descriptor = (args[0] ?? {}) as {
@@ -3177,7 +3307,7 @@ export class PluginRuntime {
             : undefined;
           if (this.loaded.get(pluginId) !== loaded || loaded.disposing) throw apiError("CONNECT_FAILED", "the plugin is no longer loaded");
           const result = await registry.connect({ pluginId, endpoint, timeoutMs: descriptor.timeoutMs, ...(credential ? { imap: credential.imap } : {}) });
-          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: true, ts: Date.now(), host: endpoint.host, port: endpoint.port, connectionId: result.connectionId, ...(credential ? { credential: credential.slotId, scheme: "imaps" } : {}) });
+          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: true, ts: Date.now(), host: endpoint.host, port: endpoint.port, connectionId: result.connectionId, ...(credential ? { credential: credential.slotId, ...(credential.instanceId ? { credentialInstance: credential.instanceId } : {}), scheme: "imaps" } : {}) });
           return result;
         } catch (error) {
           const code = (error as { code?: string }).code ?? "CONNECT_FAILED";
@@ -4987,6 +5117,31 @@ export class PluginRuntime {
    * still loaded. A frame that arrives after unload is dropped rather than
    * queued for a process that no longer exists.
    */
+  /**
+   * The renderer's answer to one host credential dialog. `false` means no dialog
+   * is waiting on it — a late answer, or a reloaded window.
+   */
+  answerCredentialDialog(
+    requestId: string,
+    answer: PluginCredentialDialogAnswer,
+  ): boolean {
+    return this.services.credentialDialogs?.answer(requestId, answer) ?? false;
+  }
+
+  /**
+   * Tell one plugin that a credential slot changed. The plugin cannot read the
+   * values, so this is how it learns to re-read `credentials.list` — after the
+   * Settings sheet or a host dialog added, changed, or removed an instance.
+   */
+  notifyCredentialsChanged(pluginId: string, slotId: string): void {
+    const loaded = this.loaded.get(pluginId);
+    loaded?.child?.postMessage({
+      t: "event",
+      event: "credentials:changed",
+      args: [{ slotId }],
+    });
+  }
+
   deliverSocketEvent(pluginId: string, event: PluginSocketEvent): void {
     const loaded = this.loaded.get(pluginId);
     if (!loaded?.child) return;

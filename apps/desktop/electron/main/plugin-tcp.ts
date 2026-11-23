@@ -36,8 +36,16 @@ import { connect as tlsConnect } from "node:tls";
 import { PluginTcpImapLogin, type ImapCredentials } from "./plugin-tcp-imap-login";
 import { PluginSocketError } from "./plugin-websocket";
 
-/** Concurrent connections, in-flight connects included. */
-export const MAX_CONNECTIONS_PER_PLUGIN = 4;
+/**
+ * Concurrent connections per plugin, in-flight connects included.
+ *
+ * Raised from 4 to 8 for mailbox plugins: an IMAP client keeps one idle
+ * connection per account so new mail arrives without polling, so a five-account
+ * plugin needs five sockets before it has done anything else. The bound still
+ * limits a runaway plugin; the per-connection buffer and timeout limits below are
+ * unchanged.
+ */
+export const MAX_CONNECTIONS_PER_PLUGIN = 8;
 export const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 /** A caller may ask for longer, and gets this instead. */
 export const MAX_CONNECT_TIMEOUT_MS = 60_000;

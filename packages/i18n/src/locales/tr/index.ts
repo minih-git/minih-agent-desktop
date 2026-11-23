@@ -1,7 +1,24 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const tr = {
-  pluginCredentials: en.pluginCredentials,
+  pluginCredentials: {
+    ...en.pluginCredentials,
+    add: "Ekle",
+    cancel: "İptal",
+    remove: "Kaldır",
+    addFailed: "Bu hesap eklenemedi. Tüm alanları kontrol edin.",
+    removeFailed: "Bu hesap kaldırılamadı. Daha sonra tekrar deneyin.",
+    limitReached: "İzin verilen {{max}} hesabın tümü yapılandırıldı.",
+    instanceCount: "{{count}}/{{max}} hesap",
+    instanceFallback: "Hesap {{index}}",
+    noInstances: "Henüz hesap yapılandırılmadı.",
+    selectPlaceholder: "Bir seçenek seçin",
+    confirmRemove: "Hesabı kaldır",
+    dialogTitleAdd: "{{plugin}} hesap eklemek istiyor",
+    dialogTitleRemove: "{{plugin}} hesap kaldırmak istiyor",
+    dialogHintAdd: "Bunu burada siz girersiniz; {{plugin}} yazdığınızı hiçbir zaman görmez.",
+    dialogHintRemove: "“{{label}}” kaldırıldıktan sonra geri alınamaz.",
+  },
   sidebarPluginView: {
     back: "Sohbete dön",
   },

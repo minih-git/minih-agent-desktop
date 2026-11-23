@@ -1,7 +1,24 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const ko = {
-  pluginCredentials: en.pluginCredentials,
+  pluginCredentials: {
+    ...en.pluginCredentials,
+    add: "추가",
+    cancel: "취소",
+    remove: "삭제",
+    addFailed: "계정을 추가하지 못했습니다. 모든 항목을 확인하세요.",
+    removeFailed: "계정을 삭제하지 못했습니다. 나중에 다시 시도하세요.",
+    limitReached: "허용된 {{max}}개 계정이 모두 설정되었습니다.",
+    instanceCount: "계정 {{count}}/{{max}}개",
+    instanceFallback: "계정 {{index}}",
+    noInstances: "아직 설정된 계정이 없습니다.",
+    selectPlaceholder: "옵션 선택",
+    confirmRemove: "계정 삭제",
+    dialogTitleAdd: "{{plugin}}이(가) 계정 추가를 요청합니다",
+    dialogTitleRemove: "{{plugin}}이(가) 계정 삭제를 요청합니다",
+    dialogHintAdd: "여기에서 입력하며 {{plugin}}은(는) 입력 내용을 볼 수 없습니다.",
+    dialogHintRemove: "“{{label}}” 삭제는 되돌릴 수 없습니다.",
+  },
   sidebarPluginView: {
     back: "대화로 돌아가기",
   },

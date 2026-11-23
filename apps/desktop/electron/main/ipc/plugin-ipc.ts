@@ -58,7 +58,12 @@ export function registerPluginIpc({
   getUpdaterLocale,
   confirmInterruption,
 }: PluginIpcDependencies): void {
-  registerPluginCredentialIpc(registrar, getHost);
+  registerPluginCredentialIpc(
+    registrar,
+    getHost,
+    (pluginId, slotId) => plugins.notifyCredentialsChanged(pluginId, slotId),
+    (requestId, answer) => plugins.answerCredentialDialog(requestId, answer),
+  );
   registerPluginSchedulerIpc({ registrar, plugins, getHost, locale: getUpdaterLocale });
   let host: HostProcess | null = null;
   const handle = (channel: string, fn: (...args: any[]) => Promise<any>) => {

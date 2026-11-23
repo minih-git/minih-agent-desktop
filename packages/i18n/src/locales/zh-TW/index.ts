@@ -1,7 +1,24 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhTW = {
-  pluginCredentials: en.pluginCredentials,
+  pluginCredentials: {
+    ...en.pluginCredentials,
+    add: "新增",
+    cancel: "取消",
+    remove: "刪除",
+    addFailed: "無法新增此帳號，請檢查全部欄位後再試一次。",
+    removeFailed: "無法刪除此帳號，請稍後再試一次。",
+    limitReached: "此處最多允許 {{max}} 個帳號，已全部設定。",
+    instanceCount: "已設定 {{count}}/{{max}} 個帳號",
+    instanceFallback: "帳號 {{index}}",
+    noInstances: "尚未設定帳號。",
+    selectPlaceholder: "請選擇",
+    confirmRemove: "刪除帳號",
+    dialogTitleAdd: "{{plugin}} 要求新增帳號",
+    dialogTitleRemove: "{{plugin}} 要求刪除帳號",
+    dialogHintAdd: "請在此填寫，{{plugin}} 看不到你輸入的內容。",
+    dialogHintRemove: "刪除「{{label}}」後無法復原。",
+  },
   sidebarPluginView: {
     back: "返回對話",
   },

@@ -16,12 +16,23 @@ const { IPC } = await import("../../../packages/shared/src/protocol.ts");
 
 function harness(host) {
   const handlers = new Map();
+  const changed = [];
+  const answered = [];
   const registrar = {
     handleWithEvent(channel, handler) { handlers.set(channel, handler); },
     assertMainWindowSender(event) { if (!event.main) throw new Error("unauthorized sender"); },
   };
-  registerPluginCredentialIpc(registrar, () => host);
-  return (channel, input, main = true) => handlers.get(channel)({ main }, input);
+  registerPluginCredentialIpc(
+    registrar,
+    () => host,
+    (pluginId, slotId) => changed.push({ pluginId, slotId }),
+    (requestId, answer) => {
+      answered.push({ requestId, answer });
+      return true;
+    },
+  );
+  const call = (channel, input, main = true) => handlers.get(channel)({ main }, input);
+  return Object.assign(call, { changed, answered });
 }
 
 test("credential IPC returns only declared metadata and state, never stored values", async () => {
@@ -49,7 +60,8 @@ test("saving credentials never returns a host result or exposes host errors", as
     return { value: secret };
   } });
   const input = { pluginId: "demo.mail", slotId: "mail", fields: { token: secret } };
-  assert.equal(await call(IPC.invoke.pluginCredentialsSet, input), undefined);
+  // The IPC answers whether an instance was created, and never a stored value.
+  assert.deepEqual(await call(IPC.invoke.pluginCredentialsSet, input), {});
   assert.equal(requests[0].method, "plugins.credentials.set");
   fail = true;
   await assert.rejects(call(IPC.invoke.pluginCredentialsSet, input), (error) => !error.message.includes(secret) && /save plugin credentials/i.test(error.message));

@@ -44,6 +44,7 @@ import {
   listPluginCredentialSlots,
   resolvePluginCredential,
 } from "../plugin-credential-slots";
+import { createPluginCredentialDialog } from "../plugin-credential-dialog";
 import {
   EMBEDDINGS_TIMEOUT_MS,
   buildEmbeddingsRequest,
@@ -278,17 +279,51 @@ export function createPluginServices({
       data: { error: String(error) },
     }),
   });
+  /**
+   * The host-owned credential form. Created before the runtime and given the
+   * runtime afterwards through `setServices`, because the dialog reports back to
+   * the plugin that asked and the runtime is what delivers that event.
+   */
+  const credentialDialogs = createPluginCredentialDialog({
+    send: (channel, payload) => sendToRenderer(channel, payload),
+    isWindowFocused: () => getMainWindow()?.isFocused() === true,
+    setCredential: async (pluginId, slotId, fields) => {
+      const answer = await callPluginCredentialHost("plugins.credentials.set", {
+        pluginId,
+        slotId,
+        fields,
+      });
+      const instanceId = (answer as { instanceId?: unknown } | null)?.instanceId;
+      plugins.notifyCredentialsChanged(pluginId, slotId);
+      return typeof instanceId === "string" ? instanceId : undefined;
+    },
+    clearCredential: async (pluginId, slotId, instanceId) => {
+      await callPluginCredentialHost("plugins.credentials.clear", {
+        pluginId,
+        slotId,
+        instanceId,
+      });
+      plugins.notifyCredentialsChanged(pluginId, slotId);
+      return true;
+    },
+  });
   const plugins: PluginRuntime = new PluginRuntime({
     pluginTasks,
     pluginShortcuts,
     pluginSockets,
     pluginTcp,
     getWebhookReceivers: async (pluginId) => (await webhooks.list(pluginId)).receivers,
-    onPluginRuntimeDispose: () => webhooks.dispose(),
+    // Shutdown closes whatever form a plugin still has open: nobody is left to
+    // answer it, and the window is going away.
+    onPluginRuntimeDispose: async () => {
+      credentialDialogs.cancelAll();
+      webhooks.dispose();
+    },
     resolvePluginCredential: (pluginId, slotId) =>
       resolvePluginCredential(callPluginCredentialHost, pluginId, slotId),
     listPluginCredentialSlots: (pluginId) =>
       listPluginCredentialSlots(callPluginCredentialHost, pluginId),
+    credentialDialogs,
     updatePluginSettings: async (pluginId, patch) => {
       const host = getHost();
       if (!host) throw new Error("host unavailable");
@@ -958,6 +993,7 @@ export function createPluginServices({
   });
   return {
     plugins,
+    credentialDialogs,
     webhooks,
     disposePluginScheduler: schedulerService.dispose,
     userMcp,

@@ -7,27 +7,28 @@ import {
   useState,
 } from "react";
 import { ConversationTopbar } from "../../components/ConversationTopbar";
-import { DeviceRequestHost } from "../../components/settings/DeviceRequestHost";
 import { ExtensionPromptHost } from "../../components/ExtensionPromptDialog";
-import { PluginRendererHost } from "../../plugins/renderer-host/PluginRendererHost";
 import {
   IconNewSession,
   IconPanel,
   IconPanelOpen,
 } from "../../components/icons";
 import { ProjectCreateDialog } from "../../components/ProjectCreateDialog";
+import { PluginCredentialDialog } from "../../components/plugins/PluginCredentialDialog";
 import { SearchDialog } from "../../components/SearchDialog";
 import { Sidebar } from "../../components/Sidebar";
 import { StartupRecovery } from "../../components/StartupRecovery";
+import { DeviceRequestHost } from "../../components/settings/DeviceRequestHost";
 import { ToastHost } from "../../components/Toast";
 import { UpdateBanner } from "../../components/UpdateBanner";
 import { cx, TooltipButton } from "../../components/ui";
 import { WindowControls } from "../../components/WindowControls";
 import { useCopyTex } from "../../hooks/use-copy-tex";
-import { useAppStore } from "../../stores/app-store";
 import { api } from "../../lib/api";
 import { PortalVisibilityProvider } from "../../lib/portal-visibility";
 import { workPanelLayout } from "../../lib/work-panel-resize";
+import { PluginRendererHost } from "../../plugins/renderer-host/PluginRendererHost";
+import { useAppStore } from "../../stores/app-store";
 import { EmployeeTitlebar } from "../bots/EmployeeTitlebar";
 import { ActiveTaskWorkspaceBanner } from "../bots/TaskWorkspaceBanner";
 import { useBots } from "../bots/use-bots";
@@ -442,6 +443,9 @@ export function AppShell() {
         <WindowControls />
       ) : null}
       <ProjectCreateDialog />
+      {/* A plugin can ask for a credential from any page, so this host lives in
+          the shell rather than in the Plugins settings page. */}
+      <PluginCredentialDialog />
       {splash}
       {startupRecovery}
     </div>

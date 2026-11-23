@@ -30,10 +30,12 @@ import {
   mergeCredentialHeaders,
   requestFailure,
   requestedSlot,
+  slotHoldsInstances,
   socketFailure,
   type PluginCredentialGrant,
   type PluginCredentialHostPort,
   type PluginCredentialInjection,
+  type PluginCredentialRef,
   type PluginCredentialSlotState,
 } from "./plugin-credential-slots";
 import { pluginNetFetch, type PluginFetchTransport } from "./plugin-net-fetch";
@@ -44,6 +46,8 @@ export type {
   PluginCredentialFields,
   PluginCredentialHostCall,
   PluginCredentialInjection,
+  PluginCredentialInstanceState,
+  PluginCredentialRef,
   PluginCredentialSlotState,
 } from "./plugin-credential-slots";
 export { PluginCredentialError } from "./plugin-credential-slots";
@@ -96,7 +100,14 @@ export class PluginCredentialBroker {
     this.port = port;
   }
 
-  /** What `credentials.list` answers: declared slots, configured or not. */
+  /**
+   * What `credentials.list` answers: declared slots, configured or not.
+   *
+   * A single-instance slot answers `{id, configured}` exactly as released. A slot
+   * that declares `multiple` adds its instances — ids, labels and non-secret
+   * field values — because that is how a plugin addresses one of its accounts;
+   * no secret field is ever part of the answer.
+   */
   async list(grant: PluginCredentialGrant): Promise<PluginCredentialSlotStatus[]> {
     const slots = declaredSlots(grant.slots);
     if (!slots.length) return [];
@@ -108,10 +119,28 @@ export class PluginCredentialBroker {
     } catch {
       throw new PluginCredentialError("CREDENTIAL_UNAVAILABLE", "the credential store is unavailable");
     }
-    const configured = new Set(states.filter((state) => state.configured).map((state) => state.id));
-    // Only the declared slots, and only these two fields: the host may know
-    // when a slot was last used, but the plugin has no use for it.
-    return slots.map((slot) => ({ id: slot.id, configured: configured.has(slot.id) }));
+    const byId = new Map(states.map((state) => [state.id, state]));
+    // Only the declared slots, and only these fields: the host may know when a
+    // slot was last used, but the plugin has no use for it.
+    return slots.map((slot) => {
+      const state = byId.get(slot.id);
+      if (!slotHoldsInstances(slot)) {
+        return { id: slot.id, configured: state?.configured === true };
+      }
+      const instances = (state?.instances ?? []).map((instance) => ({
+        instanceId: instance.instanceId,
+        label: instance.label,
+        publicFields: { ...instance.publicFields },
+        configured: true as const,
+      }));
+      return {
+        id: slot.id,
+        configured: instances.length > 0,
+        multiple: true as const,
+        max: state?.max ?? slot.multipleMax ?? 0,
+        instances,
+      };
+    });
   }
 
   /**
@@ -120,14 +149,28 @@ export class PluginCredentialBroker {
    */
   async injection(
     grant: PluginCredentialGrant,
-    slotId: string,
+    ref: PluginCredentialRef,
     url: string,
   ): Promise<PluginCredentialInjection> {
-    const slot = declaredSlots(grant.slots).find((entry) => entry.id === slotId);
+    const slot = declaredSlots(grant.slots).find((entry) => entry.id === ref.slotId);
     if (!slot) {
       throw new PluginCredentialError(
         "INVALID_ARGUMENT",
-        `credential slot is not declared: ${slotId}`,
+        `credential slot is not declared: ${ref.slotId}`,
+      );
+    }
+    // Decided before the store is read: a multi-instance slot needs one of its
+    // instances named, and a single-instance slot cannot take one.
+    if (slotHoldsInstances(slot) && !ref.instanceId) {
+      throw new PluginCredentialError(
+        "CREDENTIAL_INSTANCE_REQUIRED",
+        `credential slot ${slot.id} holds several instances; name one as ${slot.id}#instance`,
+      );
+    }
+    if (!slotHoldsInstances(slot) && ref.instanceId) {
+      throw new PluginCredentialError(
+        "INVALID_ARGUMENT",
+        `credential slot ${slot.id} holds a single value`,
       );
     }
     if (slot.kind === "imap") {
@@ -139,7 +182,7 @@ export class PluginCredentialBroker {
     // The slot's own scope *and* the manifest allowlist, decided in the slot
     // half: the install-time `net.anyHost` grant lifts egress, not an injection.
     assertSlotAdmits(slot, grant, url);
-    const pending = this.port.resolve?.(grant.pluginId, slot.id);
+    const pending = this.port.resolve?.(grant.pluginId, ref.raw);
     if (!pending) {
       throw new PluginCredentialError(
         "CREDENTIAL_UNAVAILABLE",
@@ -149,6 +192,7 @@ export class PluginCredentialBroker {
     const header = credentialHeader(slot, await pending);
     return {
       slotId: slot.id,
+      ...(ref.instanceId ? { instanceId: ref.instanceId } : {}),
       headers: { [header.name]: header.value },
       stripResponseHeaders: [header.name, "Authorization", "Proxy-Authorization"],
     };
@@ -193,6 +237,7 @@ export class PluginCredentialBroker {
         scheme,
         status: result.status,
         credential: injection.slotId,
+        ...(injection.instanceId ? { credentialInstance: injection.instanceId } : {}),
       });
       return result;
     } catch (error) {
@@ -207,7 +252,12 @@ export class PluginCredentialBroker {
         ts: Date.now(),
         url,
         scheme,
-        ...(injection ? { credential: injection.slotId } : {}),
+        ...(injection
+          ? {
+              credential: injection.slotId,
+              ...(injection.instanceId ? { credentialInstance: injection.instanceId } : {}),
+            }
+          : {}),
       });
       throw failure;
     }
@@ -260,6 +310,7 @@ export class PluginCredentialBroker {
         scheme,
         socketId: result.socketId,
         credential: injection.slotId,
+        ...(injection.instanceId ? { credentialInstance: injection.instanceId } : {}),
       });
       return result;
     } catch (error) {
@@ -273,6 +324,7 @@ export class PluginCredentialBroker {
         url,
         scheme,
         credential: injection.slotId,
+        ...(injection.instanceId ? { credentialInstance: injection.instanceId } : {}),
       });
       throw failure;
     }

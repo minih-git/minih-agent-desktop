@@ -1454,9 +1454,34 @@ export const api = {
   getPluginCredentials: (pluginId: string) =>
     invoke<{ slots: import("@minih-agent/shared").PluginCredentialStatus[] }>(IPC.invoke.pluginCredentialsStatus, { pluginId }),
   setPluginCredential: (pluginId: string, slotId: string, fields: Record<string, string>) =>
-    invoke<void>(IPC.invoke.pluginCredentialsSet, { pluginId, slotId, fields }),
-  clearPluginCredential: (pluginId: string, slotId: string) =>
-    invoke<void>(IPC.invoke.pluginCredentialsClear, { pluginId, slotId }),
+    invoke<{ instanceId?: string }>(IPC.invoke.pluginCredentialsSet, { pluginId, slotId, fields }),
+  clearPluginCredential: (pluginId: string, slotId: string, instanceId?: string) =>
+    invoke<void>(IPC.invoke.pluginCredentialsClear, {
+      pluginId,
+      slotId,
+      ...(instanceId ? { instanceId } : {}),
+    }),
+  /**
+   * One host-owned credential dialog a plugin asked for. The modal answers on
+   * the same channel Main is waiting on, so the value the user types goes
+   * renderer → main → host-core and never reaches the plugin.
+   */
+  onPluginCredentialDialog: (
+    listener: (request: import("@minih-agent/shared").PluginCredentialDialogRequest) => void,
+  ) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.pluginCredentialDialog, (payload) =>
+      listener(payload as import("@minih-agent/shared").PluginCredentialDialogRequest),
+    );
+  },
+  answerPluginCredentialDialog: (
+    requestId: string,
+    answer: import("@minih-agent/shared").PluginCredentialDialogAnswer,
+  ) =>
+    invoke<{ accepted: boolean }>(IPC.invoke.pluginCredentialDialogAnswer, {
+      requestId,
+      answer,
+    }),
   runPluginComposerTransform: (input: {
     pluginId: string;
     id: string;

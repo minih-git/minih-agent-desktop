@@ -11,13 +11,17 @@
  * The model list arrives as data so this file stays testable without Electron
  * or a provider registry.
  */
-import type { PluginModelInfo, PluginSettingContrib, PluginSettingOption } from "@minih-agent/plugin-sdk";
+import {
+  resolvePluginLocalizedString,
+  type PluginModelInfo,
+  type PluginSettingContrib,
+} from "@minih-agent/plugin-sdk";
 import type { PluginSettingDefinition } from "@minih-agent/shared";
 
 /** One row per ready model; the value is the key `agent.complete` accepts. */
 export function modelSettingOptions(
   models: readonly PluginModelInfo[] = [],
-): PluginSettingOption[] {
+): Array<{ label: string; value: string }> {
   return models.map((model) => ({
     // The alias is what the user typed in Settings; without it the host's own
     // `model (provider)` label is the most specific thing there is.
@@ -38,19 +42,34 @@ export function defaultModelLabel(models: readonly PluginModelInfo[] = []): stri
 /**
  * One definition per declared field, in declaration order. A `model` field
  * carries the live options; every other type passes through untouched.
+ *
+ * `title`, `description`, and an option's `label` may be a `{ en, "zh-CN" }` map,
+ * which is resolved to the app language here (ADR 0340) — the same fallback order
+ * every other localized plugin label uses, and a plain string is returned as the
+ * author wrote it.
  */
 export function pluginSettingsView(
   definitions: readonly PluginSettingContrib[] | undefined,
   values: Record<string, unknown>,
   models: readonly PluginModelInfo[] = [],
+  locale?: string,
 ): PluginSettingDefinition[] {
   return (definitions ?? []).map((setting) => ({
     key: setting.key,
-    title: setting.title,
-    ...(setting.description ? { description: setting.description } : {}),
+    title: resolvePluginLocalizedString(setting.title, locale),
+    ...(setting.description
+      ? { description: resolvePluginLocalizedString(setting.description, locale) }
+      : {}),
     type: setting.type as PluginSettingDefinition["type"],
     ...(setting.default === undefined ? {} : { default: setting.default }),
-    ...(setting.enum ? { enum: setting.enum as PluginSettingOption[] } : {}),
+    ...(setting.enum
+      ? {
+          enum: setting.enum.map((option) => ({
+            ...option,
+            label: resolvePluginLocalizedString(option.label, locale),
+          })),
+        }
+      : {}),
     ...(setting.command ? { command: setting.command } : {}),
     ...(setting.type === "model"
       ? { enum: modelSettingOptions(models), defaultModelLabel: defaultModelLabel(models) }

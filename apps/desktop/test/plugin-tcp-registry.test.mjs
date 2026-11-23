@@ -228,7 +228,7 @@ function localDayKey(ms) {
 // --- the published bounds --------------------------------------------------
 
 test("the bounds are the ones the spec promises", () => {
-  assert.equal(MAX_CONNECTIONS_PER_PLUGIN, 4);
+  assert.equal(MAX_CONNECTIONS_PER_PLUGIN, 8);
   assert.equal(DEFAULT_CONNECT_TIMEOUT_MS, 15_000);
   assert.equal(MAX_CONNECT_TIMEOUT_MS, 60_000);
   assert.equal(MAX_WRITE_BUFFER_BYTES, 1024 * 1024);
@@ -459,7 +459,7 @@ test("an endpoint the registry cannot dial is refused before a socket exists", a
   assert.deepEqual(registry.list(PLUGIN_ID), []);
 });
 
-test("four connections per plugin, and a connect in flight spends one", async (t) => {
+test("one budget per plugin, and a connect in flight spends one", async (t) => {
   const silent = await silentServer(t);
   const { onEvent } = recorder();
   const registry = registryOf(t, { onEvent, connectTimeoutMs: SLOW_TIMEOUT });
@@ -476,7 +476,9 @@ test("four connections per plugin, and a connect in flight spends one", async (t
     );
   }
   await waitFor(
-    () => registry.list(PLUGIN_ID).filter((entry) => entry.state === "connecting").length === 4,
+    () =>
+      registry.list(PLUGIN_ID).filter((entry) => entry.state === "connecting").length ===
+      MAX_CONNECTIONS_PER_PLUGIN,
   );
   await assert.rejects(
     registry.connect({ pluginId: PLUGIN_ID, endpoint: endpointOf(silent.port, { tls: true }) }),
@@ -758,12 +760,12 @@ test("a half-closed connection is still owned, still counted, and destroyed on r
   // The peer never finishes, so every socket is still open and still ours.
   assert.deepEqual(
     registry.list(PLUGIN_ID).map((entry) => entry.state),
-    ["closing", "closing", "closing", "closing"],
+    Array.from({ length: MAX_CONNECTIONS_PER_PLUGIN }, () => "closing"),
   );
   await assert.rejects(
     registry.connect({ pluginId: PLUGIN_ID, endpoint: endpointOf(peer.port) }),
     (error) => error.code === "LIMIT_EXCEEDED",
-    "four half-closed sockets do not buy a fifth connection",
+    "every half-closed socket still counts against the limit",
   );
   refusal(
     () => registry.send({ pluginId: PLUGIN_ID, connectionId: closed[0], data: "x" }),

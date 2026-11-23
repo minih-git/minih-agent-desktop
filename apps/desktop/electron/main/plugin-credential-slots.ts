@@ -26,7 +26,11 @@ export type PluginCredentialCode =
   | "INVALID_ARGUMENT"
   | "PERMISSION_DENIED"
   | "CREDENTIAL_NOT_CONFIGURED"
-  | "CREDENTIAL_UNAVAILABLE";
+  | "CREDENTIAL_UNAVAILABLE"
+  | "CREDENTIAL_INSTANCE_REQUIRED"
+  | "CREDENTIAL_LIMIT"
+  | "CREDENTIAL_DIALOG_BUSY"
+  | "CREDENTIAL_DIALOG_UNAVAILABLE";
 
 /** A coded refusal whose message is safe to hand to a plugin. */
 export class PluginCredentialError extends Error {
@@ -42,16 +46,36 @@ export class PluginCredentialError extends Error {
 /** Fields the user filled for one slot, keyed by the declared field key. */
 export type PluginCredentialFields = Record<string, unknown>;
 
+/** One instance of a multi-instance slot, as the host reports it. */
+export type PluginCredentialInstanceState = {
+  instanceId: string;
+  /** The `labelField` value, so a plugin can name the account. */
+  label: string;
+  /** Non-secret field values only. */
+  publicFields: Record<string, string>;
+  configured: boolean;
+};
+
 /** One slot as the host reports it. `lastUsedAt` never leaves the host. */
 export type PluginCredentialSlotState = {
   id: string;
   configured: boolean;
   lastUsedAt?: string;
+  /** Present only for a slot that declares `multiple`. */
+  multiple?: true;
+  max?: number;
+  instances?: PluginCredentialInstanceState[];
+  /** Field whose value names an instance. */
+  labelField?: string;
 };
 
 /** The host RPC surface: the only path that reads a stored secret. */
 export type PluginCredentialHostPort = {
-  /** Absent when the host transport was not wired; the caller then refuses. */
+  /**
+   * `slotId` is the whole reference — `<slotId>`, or `<slotId>#<instanceId>` for
+   * a multi-instance slot — because the host store is what resolves it. Absent
+   * when the host transport was not wired; the caller then refuses.
+   */
   resolve?: (pluginId: string, slotId: string) => Promise<PluginCredentialFields> | undefined;
   status?: (pluginId: string) => Promise<PluginCredentialSlotState[]> | undefined;
 };
@@ -65,6 +89,8 @@ export type PluginCredentialHostCall = (
 /** What one injection adds to an outbound request. */
 export type PluginCredentialInjection = {
   slotId: string;
+  /** Set when the reference named one instance of a multi-instance slot. */
+  instanceId?: string;
   /** Headers to send; these win over any caller-supplied header of the name. */
   headers: Record<string, string>;
   /** Response header names that must not reach the plugin. */
@@ -84,6 +110,20 @@ export type DeclaredSlot = {
   id: string;
   kind: PluginCredentialKind;
   scope: { domains?: unknown };
+  /** `multiple.max`; absent keeps the released single-value slot. */
+  multipleMax?: number;
+  /** Field whose value names an instance; never a secret field. */
+  labelField?: string;
+};
+
+/**
+ * What a `credentialRef` names: a slot, and for a multi-instance slot one of its
+ * instances. `raw` is the spelling to hand back to the host resolver.
+ */
+export type PluginCredentialRef = {
+  slotId: string;
+  instanceId?: string;
+  raw: string;
 };
 
 /** RFC 7230 token; a header credential may not invent a name outside it. */
@@ -114,6 +154,8 @@ const SOCKET_MESSAGES: Record<string, string> = {
   INVALID_ARGUMENT: "the credential socket request is not valid",
   PERMISSION_DENIED: "the credential socket request was refused",
   CREDENTIAL_NOT_CONFIGURED: "the credential slot is not configured",
+  CREDENTIAL_INSTANCE_REQUIRED: "the credential slot holds several instances; name one",
+  CREDENTIAL_LIMIT: "the credential slot holds as many instances as its manifest allows",
   LIMIT_EXCEEDED: "the socket limit or frame bound was reached",
   NOT_FOUND: "no open socket for this plugin",
   CONNECT_FAILED: "the connection failed",
@@ -147,6 +189,27 @@ export function requestFailure(error: unknown): Error & { code: string } {
   if (code === "CREDENTIAL_NOT_CONFIGURED") return refusal(code, NOT_CONFIGURED_MESSAGE);
   if (REQUEST_MESSAGES[code]) return refusal(code, REQUEST_MESSAGES[code]);
   return refusal("UNAVAILABLE", REQUEST_MESSAGES.UNAVAILABLE);
+}
+
+/**
+ * Dialog-path refusals: what `credentials.requestAdd` / `requestRemove` hand the
+ * plugin when host-core refused the change. Constant text per code, so neither a
+ * field value nor a store message can be echoed back.
+ */
+const DIALOG_MESSAGES: Record<string, string> = {
+  CREDENTIAL_INVALID: "the credential values are not valid for this slot",
+  CREDENTIAL_LIMIT: "the credential slot holds as many instances as its manifest allows",
+  CREDENTIAL_NOT_CONFIGURED: NOT_CONFIGURED_MESSAGE,
+  CREDENTIAL_INSTANCE_REQUIRED: "the credential slot holds several instances; name one",
+  PERMISSION_DENIED: "the credential change was refused",
+  INVALID_ARGUMENT: "the credential change is not valid",
+  PLUGIN_INVALID: "the plugin's credential declaration cannot be used",
+};
+
+export function dialogFailure(error: unknown): Error & { code: string } {
+  if (error instanceof PluginCredentialError) return refusal(error.code, error.message);
+  const code = hostErrorCode(error);
+  return refusal(code || "UNAVAILABLE", DIALOG_MESSAGES[code] ?? STORE_UNAVAILABLE_MESSAGE);
 }
 
 /** Socket-path refusals: a credential socket never reports a remote message. */
@@ -189,6 +252,36 @@ export async function resolvePluginCredential(
   return fields as PluginCredentialFields;
 }
 
+/**
+ * The instance list of one slot as the host reported it: ids, labels and public
+ * fields only. Anything shaped differently is dropped rather than guessed at.
+ */
+function credentialInstances(entry: unknown): PluginCredentialInstanceState[] {
+  const raw = (entry as { instances?: unknown } | null | undefined)?.instances;
+  if (!Array.isArray(raw)) return [];
+  const instances: PluginCredentialInstanceState[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const instanceId = (item as { instanceId?: unknown }).instanceId;
+    if (typeof instanceId !== "string" || !instanceId) continue;
+    const label = (item as { label?: unknown }).label;
+    const publicFields = (item as { publicFields?: unknown }).publicFields;
+    const fields: Record<string, string> = {};
+    if (publicFields && typeof publicFields === "object" && !Array.isArray(publicFields)) {
+      for (const [key, value] of Object.entries(publicFields)) {
+        if (typeof value === "string") fields[key] = value;
+      }
+    }
+    instances.push({
+      instanceId,
+      label: typeof label === "string" ? label : "",
+      publicFields: fields,
+      configured: (item as { configured?: unknown }).configured === true,
+    });
+  }
+  return instances;
+}
+
 /** Read the configured state of every slot (`plugins.credentials.status`). */
 export async function listPluginCredentialSlots(
   call: PluginCredentialHostCall,
@@ -208,10 +301,16 @@ export async function listPluginCredentialSlots(
     const id = (entry as { id?: unknown }).id;
     if (typeof id !== "string" || !id) continue;
     const lastUsedAt = (entry as { lastUsedAt?: unknown }).lastUsedAt;
+    const max = (entry as { max?: unknown }).max;
+    const labelField = (entry as { labelField?: unknown }).labelField;
+    const multiple = (entry as { multiple?: unknown }).multiple === true;
     states.push({
       id,
       configured: (entry as { configured?: unknown }).configured === true,
       ...(typeof lastUsedAt === "string" ? { lastUsedAt } : {}),
+      ...(multiple && typeof max === "number" ? { multiple: true as const, max } : {}),
+      ...(multiple ? { instances: credentialInstances(entry) } : {}),
+      ...(typeof labelField === "string" ? { labelField } : {}),
     });
   }
   return states;
@@ -250,7 +349,21 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
       slot.scope && typeof slot.scope === "object" && !Array.isArray(slot.scope)
         ? { domains: (slot.scope as { domains?: unknown }).domains }
         : {};
-    slots.push({ id: slot.id, kind: slot.kind as PluginCredentialKind, scope });
+    // `multiple` is either a usable bound or absent: a manifest that declares a
+    // half-shaped one was refused at install, so an unusable value here is read
+    // as the released single-value slot instead of a slot nothing can inject.
+    const max = slot.multiple?.max;
+    const multipleMax =
+      typeof max === "number" && Number.isInteger(max) && max >= 1 ? max : undefined;
+    slots.push({
+      id: slot.id,
+      kind: slot.kind as PluginCredentialKind,
+      scope,
+      ...(multipleMax === undefined ? {} : { multipleMax }),
+      ...(typeof slot.labelField === "string" && slot.labelField
+        ? { labelField: slot.labelField }
+        : {}),
+    });
   }
   return slots;
 }
@@ -307,16 +420,35 @@ export function assertSlotAdmits(
   }
 }
 
-/** The slot id a `credentialRef` names, or a refusal. */
-export function requestedSlot(rawRef: unknown): string {
-  const slotId = typeof rawRef === "string" ? rawRef.trim() : "";
-  if (!slotId) {
+/**
+ * What a `credentialRef` names: a declared slot, and for a multi-instance slot one
+ * of its instances (`slot#instance`). A slot id is a contribution id, so the `#`
+ * separator is unambiguous.
+ */
+export function requestedSlot(rawRef: unknown): PluginCredentialRef {
+  const raw = typeof rawRef === "string" ? rawRef.trim() : "";
+  if (!raw) {
     throw new PluginCredentialError(
       "INVALID_ARGUMENT",
       "credentialRef must be a declared slot id",
     );
   }
-  return slotId;
+  const separator = raw.indexOf("#");
+  if (separator < 0) return { slotId: raw, raw };
+  const slotId = raw.slice(0, separator).trim();
+  const instanceId = raw.slice(separator + 1).trim();
+  if (!slotId || !instanceId) {
+    throw new PluginCredentialError(
+      "INVALID_ARGUMENT",
+      "credentialRef must be a declared slot id, or slot#instance",
+    );
+  }
+  return { slotId, instanceId, raw };
+}
+
+/** Whether a slot holds instances, so a reference must name one. */
+export function slotHoldsInstances(slot: DeclaredSlot): boolean {
+  return slot.multipleMax !== undefined;
 }
 
 function fieldValue(fields: PluginCredentialFields, key: string): string {

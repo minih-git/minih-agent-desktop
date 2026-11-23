@@ -1,7 +1,24 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const de = {
-  pluginCredentials: en.pluginCredentials,
+  pluginCredentials: {
+    ...en.pluginCredentials,
+    add: "Hinzufügen",
+    cancel: "Abbrechen",
+    remove: "Entfernen",
+    addFailed: "Das Konto konnte nicht hinzugefügt werden. Prüfe alle Felder.",
+    removeFailed: "Das Konto konnte nicht entfernt werden. Versuche es später erneut.",
+    limitReached: "Alle {{max}} erlaubten Konten sind eingerichtet.",
+    instanceCount: "{{count}} von {{max}} Konten",
+    instanceFallback: "Konto {{index}}",
+    noInstances: "Noch kein Konto eingerichtet.",
+    selectPlaceholder: "Option wählen",
+    confirmRemove: "Konto entfernen",
+    dialogTitleAdd: "{{plugin}} möchte ein Konto hinzufügen",
+    dialogTitleRemove: "{{plugin}} möchte ein Konto entfernen",
+    dialogHintAdd: "Du gibst es hier ein; {{plugin}} sieht deine Eingabe nie.",
+    dialogHintRemove: "„{{label}}“ kann nicht wiederhergestellt werden.",
+  },
   sidebarPluginView: {
     back: "Zurück zum Gespräch",
   },
