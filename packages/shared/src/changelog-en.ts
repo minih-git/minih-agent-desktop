@@ -2,6 +2,21 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.9.0",
+    date: "2026-11-24",
+    highlights: [
+      "A plugin's account slot can hold several accounts now, up to five — one per mailbox, for instance — and adding or removing one happens in the app's own dialog, so the plugin never sees what you type. A plugin's own setting titles, descriptions and option labels follow the app language too.",
+      "Settings no longer has an employee (Super Agent) section. The sidebar employee group, each employee's workbench and the task cards keep working, the employees, lessons and team norms you saved stay where they are, and a task turn no longer appends the team norms.",
+      "A session records where it came from — you, an agent, a plugin, an employee or a scheduled task. The sidebar marks the source before the title and the view menu filters which sources are listed; the database moves to v46, which also gives existing sessions their source during the upgrade and records the role a dispatched session was given.",
+      "When the assistant hands work to a new session, it can pick that session's model and role. The model must be one you allowed for AI delegation, and the session list shows the role beside the source tag.",
+      "Session titles are no longer composed by the app: a new session takes its label from the first prompt, and model-written titles come from the optional Session Titles plugin, installed from the marketplace.",
+      "The compaction summary can be written by a model you choose — keep following the conversation model, keep the model you switched away from, or name one. After a switch, requests no longer carry the previous model's reasoning; requests to Minih Router are compressed before they are sent; and a Minih Router row follows the model profile the gateway publishes, item by item, until you edit a field yourself, with one click to follow again.",
+      "Fixed: a completion notice handed to a session that was busy mid-turn was delivered a second time later, so another session's finished work showed up twice. It now lands once and, when it arrives as steering input into a running turn, shows as a card instead of raw text.",
+      "Fixed: a skill folder too large for one sync package failed the whole sync. The sync page now asks what to send for each oversized folder — its documents only, or nothing at all — and the rest of the sync continues.",
+    ],
+  },
+
+  {
     version: "1.8.0",
     date: "2026-11-20",
     highlights: [
