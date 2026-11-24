@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
  *
  * Everything else about these surfaces is proven by operating them in a real
  * renderer — `task-card-dock-user-path.test.mjs` and
- * `bots-settings-user-path.test.mjs` — so this file does not restate their
+ * `employee-profile-form.test.mjs` — so this file does not restate their
  * behaviour as source text.
  */
 

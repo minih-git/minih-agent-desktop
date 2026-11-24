@@ -40,7 +40,7 @@ const EXPECTED = {
   general: ["general", "habits", "shortcuts"],
   ai: ["ai", "execution", "instructions", "voice"],
   models: ["agent"],
-  capabilities: ["skills", "mcp", "subagents", "employees"],
+  capabilities: ["skills", "mcp", "subagents"],
   accounts: ["accounts", "devices", "sync", "advanced"],
   projects: ["projects"],
   system: ["network", "storage", "about"],
@@ -108,6 +108,10 @@ test("stale destinations resolve to the page that owns the surface", () => {
   assert.equal(normalizeSettingsTabId("remoteGateway"), "accounts");
   assert.equal(normalizeSettingsTabId("remoteHosts"), "advanced");
   assert.equal(normalizeSettingsTabId("not-a-destination"), "general");
+  // The employee section is gone, but a stored selection, a recent-settings
+  // entry, or a deep link can still name it: it lands on the default page
+  // instead of an empty pane.
+  assert.equal(normalizeSettingsTabId("employees"), "general");
   for (const entry of SETTINGS_NAV) {
     assert.equal(normalizeSettingsTabId(entry.id), entry.id);
   }

@@ -11,8 +11,7 @@ import { createServer } from "vite";
 
 /*
  * The employee surfaces as a person meets them (ADR bot-sessions-and-steward
- * §5): the sidebar group's status dots, and the settings page's list, seeding
- * and dismiss rules.
+ * §5): the sidebar group's status dots, and the profile form's locked actions.
  *
  * The components are the production ones and i18n is the real catalog. Server
  * rendering runs no effects, so a surface reads its roster through the `bots`
@@ -178,80 +177,19 @@ test("the sidebar group renders nothing while there are no employees", async (t)
   );
 });
 
-test("the settings page shows each employee's name, duty, home, level and definition", async (t) => {
-  const h = await harness(t);
-  const { BotsSettingsPage } = await h.server.ssrLoadModule(
-    "/src/features/bots/BotsSettingsPage.tsx",
-  );
-  const html = h.render(
-    createElement(BotsSettingsPage, {
-      bots: [
-        bot({
-          name: "Router 后端",
-          profile: {
-            duty: "Dispatch work",
-            observe: false,
-            permissionMode: "accept-edits",
-            definition: "backend",
-          },
-        }),
-      ],
-    }),
-  );
-
-  assert.match(html, /Router 后端/);
-  assert.match(html, /Dispatch work/);
-  // No cross-host routing yet, so home reads as this computer.
-  assert.match(html, /This computer/);
-  assert.match(html, /Accept edits/);
-  // The bound definition is named on the row. With no definition catalog read
-  // back (this page takes the list from the host), the handle itself is shown.
-  assert.match(html, /backend/);
-});
-
-test("opening the settings page never creates an employee by itself", async (t) => {
-  const h = await harness(t);
-  const { BotsSettingsPage } = await h.server.ssrLoadModule(
-    "/src/features/bots/BotsSettingsPage.tsx",
-  );
-  const html = h.render(createElement(BotsSettingsPage, { bots: [] }));
-
-  // Hiring offers jobs as templates; nothing is created until the person saves
-  // the form a template (or a one-sentence draft) prefilled.
-  assert.match(html, /data-template-id="review"/);
-  assert.match(html, /data-template-id="research"/);
-  assert.doesNotMatch(html, /Create the default crew/);
-  // …and mounting the page asks the host for nothing but its lists.
-  assert.equal(h.callsTo(IPC.invoke.botSeedDefaults).length, 0);
-  assert.equal(h.callsTo(IPC.invoke.botCreate).length, 0);
-  assert.equal(h.callsTo(IPC.invoke.botDraftHire).length, 0);
-});
-
-test("dismissing an employee is not the first click", async (t) => {
-  const h = await harness(t);
-  const { BotsSettingsPage } = await h.server.ssrLoadModule(
-    "/src/features/bots/BotsSettingsPage.tsx",
-  );
-  const html = h.render(
-    createElement(BotsSettingsPage, { bots: [bot({ sessionId: "s-1", name: "Router 后端" })] }),
-  );
-
-  // The row offers a dismiss control, and the confirmation — which states that
-  // the conversation is kept — only appears after arming it.
-  assert.match(html, /aria-label="Dismiss employee"/);
-  assert.doesNotMatch(html, /becomes an ordinary session again/);
-  assert.equal(h.callsTo(IPC.invoke.botDismiss).length, 0);
-});
-
-test("the new-employee form locks the three always-asked actions", async (t) => {
+test("the employee form locks the three always-asked actions", async (t) => {
   const h = await harness(t);
   const { BotFormCard } = await h.server.ssrLoadModule("/src/features/bots/BotFormCard.tsx");
-  const { EMPTY_BOT_DRAFT } = await h.server.ssrLoadModule("/src/features/bots/bot-draft.ts");
+  const { draftFromBot } = await h.server.ssrLoadModule("/src/features/bots/bot-draft.ts");
   const html = h.render(
     createElement(BotFormCard, {
-      initial: EMPTY_BOT_DRAFT,
+      // A profile stored before the three were shown on the form: the control has
+      // to show the truth, not the stored omission.
+      initial: draftFromBot(
+        bot({ sessionId: "s-1", name: "Router 后端", profile: { mustAsk: [] } }),
+      ),
       definitions: [{ id: "steward", label: "steward · Steward" }],
-      title: "New employee",
+      title: "Edit employee",
       busy: false,
       error: null,
       onCancel: () => undefined,

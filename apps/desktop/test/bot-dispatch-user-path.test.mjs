@@ -35,12 +35,8 @@ function load(relative, imports) {
 
 const shared = await import("@minih-agent/shared");
 // The task board's pure derivations: host rows in, briefing text out.
-const teamNorms = load("../electron/main/services/team-norms.ts", {
-  "@minih-agent/shared": shared,
-});
 const taskStatus = load("../electron/main/services/task-status.ts", {
   "@minih-agent/shared": shared,
-  "./team-norms": teamNorms,
 });
 const { createSessionCollaborationService } = load(
   "../electron/main/services/session-collaboration.ts",
@@ -213,7 +209,6 @@ function harness({ startTurnError } = {}) {
     sendToRenderer: (channel, payload) => emitted.push({ channel, payload }),
     sessionCollaboration: service,
     tasks: taskChanges,
-    draftHire: async () => ({ ok: false, code: "HIRE_DRAFT_NO_MODEL", message: "no model" }),
   });
   return {
     emitted,
@@ -275,7 +270,6 @@ test("the workbench's own task is created in one host call and announced once", 
       getHost: () => host,
       log: () => undefined,
     }),
-    draftHire: async () => ({ ok: false, code: "HIRE_DRAFT_NO_MODEL", message: "no model" }),
   });
 
   await handlers.get(shared.IPC.invoke.taskCreate)({

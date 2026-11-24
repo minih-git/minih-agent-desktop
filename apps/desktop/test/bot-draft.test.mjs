@@ -10,7 +10,6 @@ import test from "node:test";
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const {
-  EMPTY_BOT_DRAFT,
   botProfileInput,
   draftFromBot,
   draftIsValid,
@@ -19,15 +18,27 @@ const {
   toggleMustAsk,
 } = await import("../src/features/bots/bot-draft.ts");
 
-test("a new employee asks, records, and cannot be less careful than the host", () => {
-  assert.equal(EMPTY_BOT_DRAFT.observe, true);
-  assert.equal(EMPTY_BOT_DRAFT.permissionMode, "ask");
+/**
+ * The draft an employee with nothing stored but its name yields: what the form
+ * opens with for an employee that was never configured.
+ */
+const BASE = draftFromBot({
+  sessionId: "s0",
+  title: "阿福",
+  profile: { name: "阿福", permissionMode: "ask", mustAsk: [], observe: true },
+  status: { kind: "idle" },
+  updatedAt: "2026-11-11T00:00:00.000Z",
+  createdAt: "2026-11-11T00:00:00.000Z",
+});
+
+test("a draft asks, records, and cannot be less careful than the host", () => {
+  assert.equal(BASE.observe, true);
+  assert.equal(BASE.permissionMode, "ask");
   // Stored in `BOT_MUST_ASK` order: push, merge, deploy, delete, spend, criteria-change.
-  assert.deepEqual(EMPTY_BOT_DRAFT.mustAsk, ["deploy", "delete", "spend"]);
-  // Nothing about a fresh draft is valid until it has a name.
-  assert.equal(draftIsValid(EMPTY_BOT_DRAFT), false);
-  assert.equal(draftIsValid({ ...EMPTY_BOT_DRAFT, name: "  " }), false);
-  assert.equal(draftIsValid({ ...EMPTY_BOT_DRAFT, name: "阿福" }), true);
+  assert.deepEqual(BASE.mustAsk, ["deploy", "delete", "spend"]);
+  // Nothing about a blank draft is valid until it has a name.
+  assert.equal(draftIsValid({ ...BASE, name: "  " }), false);
+  assert.equal(draftIsValid({ ...BASE, name: "阿福" }), true);
 });
 
 test("deploy, delete and spend are locked and always selected", () => {
@@ -86,7 +97,7 @@ test("editing an employee keeps what it stored, except the session-only mode", (
 
 test("the payload trims the name and omits an empty duty or definition", () => {
   assert.deepEqual(
-    botProfileInput({ ...EMPTY_BOT_DRAFT, name: " 阿福 ", duty: "  ", definition: "" }),
+    botProfileInput({ ...BASE, name: " 阿福 ", duty: "  ", definition: "" }),
     {
       name: "阿福",
       permissionMode: "ask",
@@ -95,7 +106,7 @@ test("the payload trims the name and omits an empty duty or definition", () => {
     },
   );
   assert.deepEqual(
-    botProfileInput({ ...EMPTY_BOT_DRAFT, name: "阿福", duty: "派活", definition: "backend" }),
+    botProfileInput({ ...BASE, name: "阿福", duty: "派活", definition: "backend" }),
     {
       name: "阿福",
       duty: "派活",

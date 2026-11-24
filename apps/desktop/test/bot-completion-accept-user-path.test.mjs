@@ -7,19 +7,12 @@ import test from "node:test";
 import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
 
 /*
- * Employee mode 0.5 slice 5, through real clicks (the follow-up that the slice
- * shipped without).
+ * Accepting finished work, through a real click (employee mode 0.5 slice 4b).
  *
- * Two things the person does, and the two things the host must therefore see:
- *
- * - **Deleting a lesson** from settings → employees. The row has to leave the
- *   list, the host has to be asked exactly once with that lesson's id, and a
- *   fresh read must not bring it back — a deleted lesson that returns is worse
- *   than one that could not be deleted.
- * - **Accepting finished work** on the completion card. An employee whose only
- *   task was `person/accept` is the loudest row in the sidebar; after the one
- *   click that ends the wait it must go quiet — no orange row, no red dot, one
- *   fewer thing in 「等你 N 件」 — while its task row says 「已接受，待合并」.
+ * An employee whose only task is `person/accept` is the loudest row in the
+ * sidebar; after the one click that ends the wait it must go quiet — no orange
+ * row, no red dot, one fewer thing in 「等你 N 件」 — while its task row says
+ * 「已接受，待合并」.
  *
  * The renderer is the real one: the shipped components, the same hooks, the
  * same IPC bridge shape the preload exposes. The host is scripted because this
@@ -38,7 +31,6 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
-import { BotsSettingsPage } from "../../apps/desktop/src/features/bots/BotsSettingsPage";
 import { BotSidebarGroup } from "../../apps/desktop/src/features/bots/BotSidebarGroup";
 import { TaskCompletionCardForSession } from "../../apps/desktop/src/features/bots/TaskWaitingDock";
 
@@ -59,20 +51,6 @@ const router = {
   updatedAt: "2026-11-13T02:00:00.000Z", createdAt: "2026-11-01T00:00:00.000Z",
 };
 const bots = [steward, router];
-
-/** One lesson, with the citation the section promises: the task it came from. */
-function lesson(id, content, shortId) {
-  return {
-    id, scopeKind: "bot", scopeKey: "router", kind: "fact", content,
-    status: "active", origin: "extracted", evidence: "verified",
-    sourceSessionId: "sess-task-" + shortId, sourceMessageIds: [], fingerprint: "fp-" + id,
-    revision: 1, createdAt: 1763000000000, updatedAt: 1763000000000, useCount: 0,
-    sourceTaskId: "task-" + shortId, sourceTaskShortId: shortId,
-    sourceTaskTitle: "把设置页的滚动问题修掉", sourceTaskArchivedAt: "2026-11-13T03:00:00.000Z",
-  };
-}
-const kept = lesson("lesson-kept", "合并前先跑一遍迁移脚本。", "3f8a11");
-const doomed = lesson("lesson-doomed", "截图要在真实外壳里拍，不要只截组件。", "77b0c2");
 
 const result = {
   status: "ready",
@@ -95,16 +73,7 @@ const checks = {
     elapsedMs: 40 * 60_000 },
 };
 
-const state = {
-  // The host's rows: deleting one takes it out of what the next read returns,
-  // which is what a tombstone does.
-  lessons: { router: [kept, doomed], steward: [] },
-  deleted: [],
-  tasks: [task],
-  acceptCalls: [],
-  settingsReads: 0,
-  experienceReads: 0,
-};
+const state = { tasks: [task], acceptCalls: [] };
 const listeners = new Map();
 
 window.minihAgent = {
@@ -119,28 +88,7 @@ window.minihAgent = {
     };
   },
   async invoke(channel, input) {
-    if (channel === IPC.invoke.settingsGet) {
-      state.settingsReads += 1;
-      return { ok: true, data: { learnedMemory: { learn: true } } };
-    }
     if (channel === IPC.invoke.botList) return { ok: true, data: { bots } };
-    if (channel === IPC.invoke.taskExperienceList) {
-      state.experienceReads += 1;
-      return { ok: true, data: { entries: state.lessons[input.employeeSessionId] ?? [] } };
-    }
-    if (channel === IPC.invoke.memoryDelete) {
-      state.deleted.push(input.id);
-      for (const sessionId of Object.keys(state.lessons)) {
-        state.lessons[sessionId] = state.lessons[sessionId].filter((entry) => entry.id !== input.id);
-      }
-      return { ok: true, data: { ok: true } };
-    }
-    // Settings → employees reads a few things the experience section does not
-    // depend on; each answer is the cheapest true one, so the page renders its
-    // own rows instead of its error lines.
-    if (channel === IPC.invoke.subagentCatalog) return { ok: true, data: { subagents: [], builtins: [] } };
-    if (channel === IPC.invoke.projectList) return { ok: true, data: { projects: [] } };
-    if (channel === IPC.invoke.providersList) return { ok: true, data: { providers: [] } };
     if (channel === IPC.invoke.taskList) return { ok: true, data: { tasks: state.tasks } };
     if (channel === IPC.invoke.taskCardList) return { ok: true, data: { drafts: [] } };
     if (channel === IPC.invoke.taskDeliveryCheck) {
@@ -167,11 +115,6 @@ async function until(predicate, label) {
   }
   throw new Error("timed out waiting for " + label + ": " + document.body.textContent);
 }
-function click(selector) {
-  const node = document.querySelector(selector);
-  if (!node) throw new Error("no element for " + selector + " in " + document.body.innerHTML.slice(0, 600));
-  flushSync(() => node.click());
-}
 
 let rootNode = null;
 function mount(element) {
@@ -180,19 +123,6 @@ function mount(element) {
   container.innerHTML = "";
   rootNode = createRoot(container);
   flushSync(() => rootNode.render(element));
-}
-
-/** The lesson rows of the settings page, by their visible text. */
-function lessonTexts() {
-  return Array.from(document.querySelectorAll(".bot-experience-content")).map((node) => node.textContent);
-}
-
-async function openEmployees() {
-  mount(React.createElement("div", { className: "settings-page" },
-    React.createElement("div", { className: "settings-content" },
-      React.createElement(BotsSettingsPage, null))));
-  await until(() => document.body.textContent.indexOf("经验") >= 0, "the experience card");
-  await until(() => lessonTexts().length === 2, "both lessons");
 }
 
 function sidebarShell() {
@@ -224,51 +154,6 @@ async function hostChanged() {
 }
 
 window.shot = {
-  /**
-   * Delete one lesson from settings → employees, then read the page again the
-   * way the person would: close it and open it.
-   */
-  async deleteLesson() {
-    try {
-      state.deleted = [];
-      state.lessons = { router: [kept, doomed], steward: [] };
-      await openEmployees();
-      if (document.body.textContent.indexOf("任务 #3f8a11") < 0) {
-        throw new Error("the lesson does not name the task it came from");
-      }
-      const rows = Array.from(document.querySelectorAll(".bot-experience-row"));
-      const row = rows.find((node) => node.textContent.indexOf(doomed.content) >= 0);
-      if (!row) throw new Error("the lesson to delete is not in the list");
-      const button = row.querySelector("button[aria-label='" + i18n.t("bots.experience.deleteLabel") + "']");
-      if (!button) throw new Error("the row has no delete button");
-      flushSync(() => button.click());
-      await until(() => lessonTexts().indexOf(doomed.content) < 0, "the deleted lesson to leave the list");
-      await settle(3);
-      const expected = [doomed.id];
-      if (JSON.stringify(state.deleted) !== JSON.stringify(expected)) {
-        throw new Error("the host was asked to delete " + JSON.stringify(state.deleted));
-      }
-      if (lessonTexts().indexOf(kept.content) < 0) {
-        throw new Error("the other lesson was removed as well");
-      }
-      // A fresh read: the host's list no longer holds it, so reopening the page
-      // must not bring it back.
-      const readsBefore = state.experienceReads;
-      mount(React.createElement("div", { className: "settings-page" },
-        React.createElement("div", { className: "settings-content" },
-          React.createElement(BotsSettingsPage, null))));
-      await until(() => state.experienceReads > readsBefore, "the page to read the lessons again");
-      await until(() => lessonTexts().length === 1, "the surviving lesson after the re-read");
-      await settle(3);
-      if (lessonTexts().indexOf(doomed.content) >= 0) {
-        throw new Error("the deleted lesson came back after a re-read");
-      }
-      return { ok: true, deleted: state.deleted };
-    } catch (error) {
-      return { ok: false, error: String((error && error.message) || error) };
-    }
-  },
-
   /**
    * Accept finished work and watch the employee go quiet: the whole point of
    * slice 4b, clicked once.
@@ -330,7 +215,7 @@ function spawnProcess(binary, args) {
 
 /** Boot one window on the fixture, run `action`, and fail with its own words. */
 async function runAction(action) {
-  const workDir = await mkdtemp(join(tmpdir(), "pi-bot-experience-path-"));
+  const workDir = await mkdtemp(join(tmpdir(), "pi-bot-completion-path-"));
   const workletStub = join(workDir, "pcm-worklet-stub.js");
   await writeFile(workletStub, 'export default "";\n');
   await bundle({
@@ -399,14 +284,6 @@ app.whenReady().then(async () => {
   const code = await spawnProcess(resolveElectronBinary(root).electronBinary, [join(workDir, "main.cjs")]);
   assert.equal(code, 0, `${action} failed in the renderer; see the output above`);
 }
-
-test(
-  "employees: deleting a lesson removes it once, and a re-read does not bring it back",
-  { skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false, timeout: 300_000 },
-  async () => {
-    await runAction("deleteLesson");
-  },
-);
 
 test(
   "employees: accepting finished work clears the attention dot, the red row and the waiting count",

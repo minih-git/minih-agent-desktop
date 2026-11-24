@@ -41,14 +41,9 @@ const shared = {
   isImageGenerationModel,
 };
 
-// The steward's task board (employee mode 0.5 slice 3): pure derivations over
-// `task.list` + `bot.list`, so it loads with no host at all.
-const teamNorms = load("../electron/main/services/team-norms.ts", {
-  "@minih-agent/shared": shared,
-});
+// The task board's pure derivations: host rows in, briefing text out.
 const taskStatus = load("../electron/main/services/task-status.ts", {
   "@minih-agent/shared": shared,
-  "./team-norms": teamNorms,
 });
 const collaboration = load("../electron/main/services/session-collaboration.ts", {
   "node:crypto": crypto,

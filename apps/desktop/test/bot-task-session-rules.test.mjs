@@ -55,19 +55,17 @@ test("the rules are attached as this turn's briefing and never appended to the t
   const at = source.lastIndexOf('session.role === "task"');
   assert.ok(at > 0, "a task session no longer gets its own rules");
   const near = source.slice(at, at + 300);
-  // Slice 6 moved the text behind one builder, which now returns the rules plus
-  // whatever team norms the person wrote.
+  // The text lives behind one builder: the rules, plus the task's place in its
+  // relay chain when it has one.
   assert.match(near, /buildTaskSessionBriefing/);
   // The task branch is the only branch that builds a briefing: no employee in
   // 1.7.0 needs one, so the ternary has no other arm to reach.
   assert.match(source, /const turnBriefing =\s*session\.role === "task"/);
   assert.doesNotMatch(source, /isSteward/);
-  // A persisted copy would be the bug: neither the rules nor the norms may go
-  // through the transcript path.
+  // A persisted copy would be the bug: the rules may not go through the
+  // transcript path.
   const appendedRules = source.match(/appendMessage[\s\S]{0,200}TASK_SESSION_BRIEFING/);
   assert.equal(appendedRules, null, "the rules are being written to the transcript");
-  const appendedNorms = source.match(/appendMessage[\s\S]{0,200}teamNormsBriefing/);
-  assert.equal(appendedNorms, null, "the norms are being written to the transcript");
   // Both ride in the per-turn field only, which the sidecar injects into this
   // request and nothing else reads.
   assert.match(source, /\.\.\.\(turnBriefing \? \{ turnBriefing \} : \{\}\)/);

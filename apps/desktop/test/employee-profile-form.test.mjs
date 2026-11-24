@@ -8,16 +8,12 @@ import test from "node:test";
 import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
 
 /*
- * The employee settings page as a person operates it (ADR
- * bot-sessions-and-steward §1/§5), in a real Electron renderer with real
- * clicks.
+ * The employee profile form as a person operates it (ADR
+ * bot-sessions-and-steward §1), in a real Electron renderer with real clicks.
  *
- * Three promises are tested, and none of them can be shown by rendering HTML:
- *
- * - opening the page creates nothing;
- * - one click on dismiss only asks; `bot.dismiss` is called after the second;
- * - deploy, delete and spend stay checked when they are clicked, because the
- *   executing side adds them regardless.
+ * One promise is tested, and it cannot be shown by rendering HTML: deploy,
+ * delete and spend stay checked when they are clicked, because the executing
+ * side adds them regardless of what the control says.
  */
 
 const root = repositoryRoot();
@@ -30,110 +26,33 @@ import { flushSync } from "react-dom";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
-import { IPC } from "@minih-agent/shared";
-import { BotsSettingsPage } from "../../apps/desktop/src/features/bots/BotsSettingsPage";
 import { BotFormCard } from "../../apps/desktop/src/features/bots/BotFormCard";
-import { EMPTY_BOT_DRAFT } from "../../apps/desktop/src/features/bots/bot-draft";
+import { draftFromBot } from "../../apps/desktop/src/features/bots/bot-draft";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
   resources: { en: { translation: flattenCatalog(catalogs.en) } },
   interpolation: { escapeValue: false } });
 
-const calls = [];
-let bots = [];
-window.minihAgent = {
-  platform: "darwin",
-  on() { return () => {}; },
-  async invoke(channel, input) {
-    calls.push({ channel, input });
-    if (channel === IPC.invoke.botList) return { ok: true, data: { bots } };
-    if (channel === IPC.invoke.subagentCatalog) {
-      return { ok: true, data: { subagents: [], builtins: [], diagnostics: [], projectPath: null } };
-    }
-    if (channel === IPC.invoke.botSeedDefaults) {
-      bots = [employee("steward-seeded", "Steward")];
-      return { ok: true, data: { created: [{ sessionId: "steward-seeded", name: "Steward" }], skipped: [] } };
-    }
-    if (channel === IPC.invoke.botDismiss) {
-      bots = [];
-      return { ok: true, data: { session: {} } };
-    }
-    return { ok: true, data: undefined };
-  },
+// A stored profile that carries none of the three: the form has to show them
+// checked anyway, because the host adds them to every card.
+const stored = {
+  sessionId: "s-1", title: "Router 后端",
+  profile: { name: "Router 后端", permissionMode: "ask", mustAsk: [], observe: true },
+  status: { kind: "idle" },
+  updatedAt: "2026-11-11T00:00:00.000Z", createdAt: "2026-11-11T00:00:00.000Z",
 };
-
-function employee(sessionId, name) {
-  return {
-    sessionId, title: name,
-    profile: { name, permissionMode: "ask", mustAsk: ["deploy", "delete", "spend"], observe: true },
-    status: { kind: "idle" },
-    updatedAt: "2026-11-11T00:00:00.000Z", createdAt: "2026-11-11T00:00:00.000Z",
-  };
-}
 
 const rootNode = createRoot(document.getElementById("root"));
 const frame = () => new Promise(requestAnimationFrame);
 async function settle() { await frame(); await frame(); }
 function check(condition, message) { if (!condition) throw new Error(message); }
-async function until(predicate, label) {
-  for (let n = 0; n < 180; n += 1) {
-    if (predicate()) return;
-    await frame();
-  }
-  throw new Error("timed out waiting for " + label + " body=" + document.body.textContent);
-}
-const button = (label) => [...document.querySelectorAll("button")]
-  .find((node) => node.textContent.replace(/\s+/g, " ").trim() === label);
-const ariaButton = (label) => document.querySelector('button[aria-label="' + label + '"]');
-const callsTo = (channel) => calls.filter((call) => call.channel === channel);
-const clearCalls = () => { calls.length = 0; };
 
-window.botsSettingsProbe = async () => {
-  const report = {};
-
-  // 1. Hiring, not a fixed crew: the page offers a blank form and the template
-  //    jobs, and mounting it creates nothing.
-  bots = [];
-  flushSync(() => rootNode.render(React.createElement(BotsSettingsPage, { bots: [] })));
-  await settle();
-  check(button("Start from blank"), "hiring lost its blank path");
-  check(!button("Create the default crew"), "the fixed crew button is back");
-  check(callsTo(IPC.invoke.botSeedDefaults).length === 0, "mounting the page seeded an employee");
-
-  // 2. Dismiss asks first: the first click issues no dismiss call.
-  bots = [employee("s-1", "Router 后端")];
-  clearCalls();
-  flushSync(() => rootNode.render(React.createElement(BotsSettingsPage, { bots })));
-  await settle();
-  check(ariaButton("Dismiss employee"), "the dismiss control was not offered");
-  flushSync(() => ariaButton("Dismiss employee").click());
-  await settle();
-  check(document.querySelector("[role='alertdialog']"), "no confirmation was asked");
-  check(/becomes an ordinary session again/.test(document.body.textContent),
-    "the confirmation does not say the conversation is kept");
-  check(callsTo(IPC.invoke.botDismiss).length === 0, "one click already dismissed the employee");
-  report.dismissAfterFirstClick = callsTo(IPC.invoke.botDismiss).length;
-  // 3. Confirming dismisses exactly once.
-  const confirm = [...document.querySelectorAll("[role='alertdialog'] button")]
-    .find((node) => node.textContent.trim() === "Dismiss");
-  flushSync(() => confirm.click());
-  await until(() => callsTo(IPC.invoke.botDismiss).length === 1, "the dismiss call");
-  await settle();
-  check(callsTo(IPC.invoke.botDismiss)[0].input.sessionId === "s-1", "dismiss sent the wrong session");
-  check(callsTo(IPC.invoke.botDismiss).length === 1, "dismiss ran more than once");
-  report.dismissAfterConfirm = callsTo(IPC.invoke.botDismiss).length;
-
-  flushSync(() => rootNode.unmount());
-  report.passed = true;
-  return report;
-};
-
-window.botsFormProbe = async () => {
+window.employeeFormProbe = async () => {
   const report = {};
   flushSync(() => rootNode.render(React.createElement(BotFormCard, {
-    initial: EMPTY_BOT_DRAFT,
+    initial: draftFromBot(stored),
     definitions: [{ id: "steward", label: "steward" }],
-    title: "New employee", busy: false, error: null,
+    title: "Edit employee", busy: false, error: null,
     onCancel() {}, onSubmit() {},
   })));
   await settle();
@@ -170,20 +89,10 @@ window.botsFormProbe = async () => {
 };
 `;
 
-test("employee settings: dismissing needs two clicks", {
-  skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false,
-}, async () => {
-  await runProbe("BOTS_SETTINGS_PROBE", "window.botsSettingsProbe()", (report) => {
-    assert.equal(report.passed, true);
-    assert.equal(report.dismissAfterFirstClick, 0);
-    assert.equal(report.dismissAfterConfirm, 1);
-  });
-});
-
 test("employee form: deploy, delete and spend cannot be un-asked", {
   skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false,
 }, async () => {
-  await runProbe("BOTS_FORM_PROBE", "window.botsFormProbe()", (report) => {
+  await runProbe("EMPLOYEE_FORM_PROBE", "window.employeeFormProbe()", (report) => {
     assert.equal(report.passed, true);
     assert.deepEqual(report.beforeClick, [true, true, true]);
     assert.deepEqual(report.afterClick, [true, true, true]);
@@ -193,7 +102,7 @@ test("employee form: deploy, delete and spend cannot be un-asked", {
 });
 
 async function runProbe(marker, expression, expect) {
-  const temp = await mkdtemp(join(tmpdir(), "pi-bots-settings-ui-"));
+  const temp = await mkdtemp(join(tmpdir(), "pi-employee-form-ui-"));
   try {
     await build({
       stdin: { contents: fixture, resolveDir: join(root, "scripts/e2e"), loader: "tsx" },
