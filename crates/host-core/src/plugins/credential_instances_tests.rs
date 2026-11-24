@@ -705,7 +705,7 @@ fn a_manifest_with_an_unusable_instance_declaration_is_refused() {
     let cases = [
         json!({ "id": "mailbox", "title": "M", "kind": "imap",
                 "fields": [field("username", "U", false)],
-                "multiple": { "max": 6 } }),
+                "multiple": { "max": 101 } }),
         json!({ "id": "mailbox", "title": "M", "kind": "imap",
                 "fields": [field("username", "U", false)],
                 "multiple": { "max": 0 } }),
