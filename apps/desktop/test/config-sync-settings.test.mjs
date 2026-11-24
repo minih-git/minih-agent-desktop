@@ -246,3 +246,35 @@ test("the sync alert paints its surface from theme tokens", () => {
     /\.settings-storage-message\.error \{\n  color: var\(--ds-error\);/,
   );
 });
+
+test("a skill too large to sync waits for the user's answer", () => {
+  // Nothing of an oversized skill leaves the device until the user decides, so
+  // the page has to ask: one card, one translated line per skill, and the two
+  // answers with the stored one marked as pressed.
+  assert.match(syncPage, /\{state\?\.skippedPackages\?\.length \? \(/);
+  assert.match(
+    syncPage,
+    /<SettingsCard title=\{t\("settings\.configSync\.skippedPackagesTitle"\)\}>/,
+  );
+  assert.match(
+    syncPage,
+    /t\("settings\.configSync\.skippedPackagesDescription"\)/,
+  );
+  assert.match(syncPage, /state\.skippedPackages\.map\(\(item\) => \(/);
+  assert.match(
+    syncPage,
+    /t\(skippedPackageMessageKey\(item\.reason\), \{\n\s*name: item\.name,\n\s*actual: item\.actual,\n\s*limit: item\.limit,/,
+  );
+  assert.match(
+    syncPage,
+    /\(\["document", "skip"\] as const\)\.map\(\(choice\) => \(/,
+  );
+  assert.match(syncPage, /aria-pressed=\{item\.choice === choice\}/);
+  assert.match(syncPage, /decideSkillPackage\(item\.id, choice\)/);
+  assert.match(
+    syncPage,
+    /api\.configSyncSetSkillChoice\(\{ skillId, choice \}\)/,
+  );
+  // The answer goes through its own IPC channel, not through a settings write.
+  assert.match(syncIpc, /callHost\("configSync\.setSkillChoice"/);
+});

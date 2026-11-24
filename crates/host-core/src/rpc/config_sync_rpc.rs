@@ -23,6 +23,7 @@ pub(crate) async fn handle(
                 .unwrap_or(true);
             engine::pause(state, paused).await
         }
+        "configSync.setSkillChoice" => engine::set_skill_choice(state, params).await,
         "configSync.unlock" => engine::unlock(state, params).await,
         "configSync.approve" => engine::approve(state, params, tx).await,
         "configSync.reject" => engine::reject(state, params, tx).await,

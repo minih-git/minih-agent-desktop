@@ -284,15 +284,24 @@ fn apply_entity(
             .level
             .as_deref()
             .and_then(|value| CapabilityLevel::parse(Some(value)).ok());
-        let expected_package_files = if entity.deleted {
-            Vec::new()
-        } else {
-            st.user_skills.package_files(
-                &id,
-                level.unwrap_or(CapabilityLevel::Global),
-                package_project_path.as_deref(),
-            )?
-        };
+        // Two ways a skill's package legitimately stays untouched here: the
+        // captured payload says its resources did not travel at all, or this
+        // device's own copy is larger than one package. Writing the document
+        // while leaving those resources alone keeps a copy that fits elsewhere
+        // from being reduced to its document (ADR 0303 amendment 2).
+        let expected_package_files =
+            if entity.deleted || entity.payload.get("packageSkipped").is_some() {
+                None
+            } else {
+                match st.user_skills.package_files(
+                    &id,
+                    level.unwrap_or(CapabilityLevel::Global),
+                    package_project_path.as_deref(),
+                )? {
+                    crate::user_skills::SkillPackageFiles::Complete(files) => Some(files),
+                    crate::user_skills::SkillPackageFiles::OverLimit(_) => None,
+                }
+            };
         if entity.deleted {
             if !id.is_empty() {
                 st.user_skills
@@ -301,7 +310,7 @@ fn apply_entity(
         } else if st.user_skills.update(&id, input.clone())?.is_none() {
             st.user_skills.create(input)?;
         }
-        if !entity.deleted {
+        if let Some(expected_package_files) = expected_package_files {
             st.user_skills.replace_package_files(
                 &id,
                 level.unwrap_or(CapabilityLevel::Global),
@@ -656,6 +665,7 @@ fn apply_bundle_locked(
             &selection(config),
             config.include_secrets,
             &config.plugin_intents,
+            &config.oversized_skills,
         )?;
         let current_map = logical_manifest_map(Some(&current.manifest));
         if let Some(before) = local_map.get(&logical_key) {
@@ -714,6 +724,7 @@ fn apply_bundle_locked(
         &selection(config),
         config.include_secrets,
         &config.plugin_intents,
+        &config.oversized_skills,
     )?;
     let previous = baseline::load(st, key)?;
     let applied_logical = bundle

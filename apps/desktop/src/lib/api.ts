@@ -170,6 +170,7 @@ import type {
   ConfigSyncChangePasswordInput,
   ConfigSyncHistoryEntry,
   ConfigSyncMapProjectInput,
+  ConfigSyncSetSkillChoiceInput,
   ConfigSyncConfigureInput,
   ConfigSyncRestoreInput,
   ConfigSyncProgress,
@@ -953,6 +954,8 @@ export const api = {
     invoke<ConfigSyncState>(IPC.invoke.configSyncReject, input),
   configSyncMapProject: (input: ConfigSyncMapProjectInput) =>
     invoke<ConfigSyncState>(IPC.invoke.configSyncMapProject, input),
+  configSyncSetSkillChoice: (input: ConfigSyncSetSkillChoiceInput) =>
+    invoke<ConfigSyncState>(IPC.invoke.configSyncSetSkillChoice, input),
   configSyncListHistory: () =>
     invoke<ConfigSyncHistoryEntry[]>(IPC.invoke.configSyncListHistory),
   configSyncRestore: (input: ConfigSyncRestoreInput) =>

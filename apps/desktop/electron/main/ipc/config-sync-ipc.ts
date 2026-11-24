@@ -54,6 +54,9 @@ export function registerConfigSyncIpc({
   handle(IPC.invoke.configSyncMapProject, (input: unknown) =>
     callHost("configSync.mapProject", input),
   );
+  handle(IPC.invoke.configSyncSetSkillChoice, (input: unknown) =>
+    callHost("configSync.setSkillChoice", input),
+  );
   handle(IPC.invoke.configSyncListHistory, () => callHost("configSync.listHistory"));
   handle(IPC.invoke.configSyncRestore, (input: unknown) =>
     callHost("configSync.restore", input),

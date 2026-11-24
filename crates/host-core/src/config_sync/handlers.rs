@@ -226,6 +226,7 @@ pub(crate) async fn approve(
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
+            &config.oversized_skills,
         )?
     };
     apply_bundle(
@@ -368,6 +369,50 @@ pub(crate) async fn map_project(state: Arc<Mutex<AppState>>, params: Value) -> R
             .project_mappings
             .insert(logical_id.to_string(), paths[0].clone());
     }
+    save_config(&st, &config)?;
+    public_state(&mut st)
+}
+
+/// Record what this device does with a skill folder that is larger than one
+/// portable package: sync its document alone, or leave it out of the synced set.
+/// The answer is local policy stored beside the sync configuration, so it takes
+/// effect on the next capture (ADR 0303 amendment 2).
+pub(crate) async fn set_skill_choice(state: Arc<Mutex<AppState>>, params: Value) -> Result<Value> {
+    let sync_lock = {
+        let st = state.lock().await;
+        st.config_sync_lock.clone()
+    };
+    let _sync_guard = sync_lock.lock().await;
+    let skill_id = params
+        .get("skillId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.len() <= 256)
+        .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: a skill id is required"))?
+        .to_string();
+    let choice = params
+        .get("choice")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: a skill package choice is required"))?;
+    if !matches!(
+        choice,
+        crate::config_sync::domains::SKILL_PACKAGE_CHOICE_DOCUMENT
+            | crate::config_sync::domains::SKILL_PACKAGE_CHOICE_SKIP
+    ) {
+        bail!("CONFIG_SYNC_INVALID: unsupported skill package choice");
+    }
+    let mut st = state.lock().await;
+    let known = st
+        .user_skills
+        .list(crate::agent_capabilities::CapabilityLevel::Global, None)?
+        .iter()
+        .any(|record| record.id == skill_id);
+    if !known {
+        bail!("CONFIG_SYNC_INVALID: skill was not found");
+    }
+    let mut config =
+        load_config(&st)?.ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: sync is not configured"))?;
+    config.oversized_skills.insert(skill_id, choice.to_string());
     save_config(&st, &config)?;
     public_state(&mut st)
 }

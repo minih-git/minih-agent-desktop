@@ -1,6 +1,20 @@
 use super::*;
 use tempfile::tempdir;
 
+/// The overflow a fixture must report, so a package that starts fitting again
+/// fails the test as a changed bound rather than passing quietly.
+fn over_limit(files: SkillPackageFiles) -> SkillPackageOverflow {
+    match files {
+        SkillPackageFiles::OverLimit(overflow) => overflow,
+        SkillPackageFiles::Complete(files) => {
+            panic!(
+                "expected an over-limit package, got {} resources",
+                files.len()
+            )
+        }
+    }
+}
+
 /// Builds a directory-shaped skill and returns its registry, id, and on-disk
 /// package root, so package-limit tests only state what they assert.
 fn packaged_skill(app: &tempfile::TempDir) -> (UserSkillRegistry, String, PathBuf) {
@@ -42,7 +56,8 @@ fn directory_skill_package_accepts_resources_above_the_document_limit() {
         .unwrap();
     let files = registry
         .package_files(&id, CapabilityLevel::Project, project_path)
-        .unwrap();
+        .unwrap()
+        .complete();
     assert_eq!(files, vec![("data/fonts.csv".into(), big)]);
 }
 
@@ -74,7 +89,8 @@ fn directory_skill_package_accepts_a_data_shaped_package() {
     let expected_total = LARGEST + SMALLEST * SMALLEST_COUNT;
     let files = registry
         .package_files(&id, CapabilityLevel::Project, project_path)
-        .unwrap();
+        .unwrap()
+        .complete();
     assert!(
         LARGEST > MAX_SKILL_BYTES && files.len() > 64,
         "fixture must exceed the document and file-count bounds this replaces"
@@ -87,11 +103,13 @@ fn directory_skill_package_accepts_a_data_shaped_package() {
 }
 
 #[test]
-fn directory_skill_package_rejects_a_resource_above_the_resource_limit() {
+fn directory_skill_package_reports_a_resource_above_the_resource_limit() {
     let app = tempdir().unwrap();
     let (mut registry, id, root) = packaged_skill(&app);
     let project = app.path().join("project");
     let project_path = Some(project.to_str().unwrap());
+    // The approved-write path still refuses the bytes themselves; the package
+    // listing reports the bound as data instead of failing the whole capture.
     let error = registry
         .write_package_files(
             &id,
@@ -105,26 +123,24 @@ fn directory_skill_package_rejects_a_resource_above_the_resource_limit() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("SKILL_LIMIT_EXCEEDED"), "error = {error}");
-    // A resource already on disk is refused on capture at the same bound.
     fs::create_dir_all(root.join("data")).unwrap();
     fs::write(
         root.join("data/huge.json"),
         vec![b'x'; MAX_SKILL_RESOURCE_BYTES + 1],
     )
     .unwrap();
-    let error = registry
-        .package_files(&id, CapabilityLevel::Project, project_path)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("SKILL_LIMIT_EXCEEDED"), "error = {error}");
-    assert!(
-        error.contains("`packaged`") && error.contains("`data/huge.json`"),
-        "the refusal names the skill and the resource: {error}"
+    let overflow = over_limit(
+        registry
+            .package_files(&id, CapabilityLevel::Project, project_path)
+            .unwrap(),
     );
+    assert_eq!(overflow.reason, SkillPackageOverflowReason::ResourceBytes);
+    assert_eq!(overflow.actual, (MAX_SKILL_RESOURCE_BYTES + 1) as u64);
+    assert_eq!(overflow.limit, MAX_SKILL_RESOURCE_BYTES as u64);
 }
 
 #[test]
-fn directory_skill_package_rejects_more_files_than_the_limit() {
+fn directory_skill_package_reports_more_files_than_the_limit() {
     let app = tempdir().unwrap();
     let (mut registry, id, root) = packaged_skill(&app);
     let project = app.path().join("project");
@@ -137,20 +153,22 @@ fn directory_skill_package_rejects_more_files_than_the_limit() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("SKILL_LIMIT_EXCEEDED"), "error = {error}");
-    // Capture refuses the same package found on disk.
     fs::create_dir_all(root.join("data")).unwrap();
     for (relative, bytes) in &files {
         fs::write(root.join(relative), bytes).unwrap();
     }
-    let error = registry
-        .package_files(&id, CapabilityLevel::Project, project_path)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("SKILL_LIMIT_EXCEEDED"), "error = {error}");
+    let overflow = over_limit(
+        registry
+            .package_files(&id, CapabilityLevel::Project, project_path)
+            .unwrap(),
+    );
+    assert_eq!(overflow.reason, SkillPackageOverflowReason::Files);
+    assert_eq!(overflow.actual, (MAX_SKILL_PACKAGE_FILES + 1) as u64);
+    assert_eq!(overflow.limit, MAX_SKILL_PACKAGE_FILES as u64);
 }
 
 #[test]
-fn directory_skill_package_rejects_a_package_above_the_total_limit() {
+fn directory_skill_package_reports_a_package_above_the_total_limit() {
     let app = tempdir().unwrap();
     let (mut registry, id, root) = packaged_skill(&app);
     let project = app.path().join("project");
@@ -166,11 +184,14 @@ fn directory_skill_package_rejects_a_package_above_the_total_limit() {
         let file = fs::File::create(root.join(format!("data/{index}.bin"))).unwrap();
         file.set_len(MAX_SKILL_RESOURCE_BYTES as u64).unwrap();
     }
-    let error = registry
-        .package_files(&id, CapabilityLevel::Project, project_path)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("SKILL_LIMIT_EXCEEDED"), "error = {error}");
+    let overflow = over_limit(
+        registry
+            .package_files(&id, CapabilityLevel::Project, project_path)
+            .unwrap(),
+    );
+    assert_eq!(overflow.reason, SkillPackageOverflowReason::PackageBytes);
+    assert_eq!(overflow.actual, (count * MAX_SKILL_RESOURCE_BYTES) as u64);
+    assert_eq!(overflow.limit, MAX_SKILL_PACKAGE_BYTES as u64);
 }
 
 #[test]
@@ -252,7 +273,8 @@ fn directory_skill_package_skips_git_metadata_at_any_depth() {
     assert_eq!(
         registry
             .package_files(&id, CapabilityLevel::Project, project_path)
-            .unwrap(),
+            .unwrap()
+            .complete(),
         vec![
             (".hidden.txt".into(), b"hidden".to_vec()),
             ("data/notes.md".into(), b"notes".to_vec()),
@@ -279,7 +301,8 @@ fn directory_skill_package_skips_a_git_pointer_file() {
     assert_eq!(
         registry
             .package_files(&id, CapabilityLevel::Project, project_path)
-            .unwrap(),
+            .unwrap()
+            .complete(),
         vec![("data/notes.md".into(), b"notes".to_vec())]
     );
     assert_eq!(fs::read(root.join(".git")).unwrap(), pointer);
@@ -307,6 +330,7 @@ fn directory_skill_package_skips_a_git_symlink_and_still_refuses_other_symlinks(
     assert!(registry
         .package_files(&id, CapabilityLevel::Project, project_path)
         .unwrap()
+        .complete()
         .is_empty());
 }
 

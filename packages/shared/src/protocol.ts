@@ -259,6 +259,7 @@ export const IPC = {
     configSyncApprove: "minih-agent-desktop/configSync/approve",
     configSyncReject: "minih-agent-desktop/configSync/reject",
     configSyncMapProject: "minih-agent-desktop/configSync/mapProject",
+    configSyncSetSkillChoice: "minih-agent-desktop/configSync/setSkillChoice",
     configSyncListHistory: "minih-agent-desktop/configSync/listHistory",
     configSyncRestore: "minih-agent-desktop/configSync/restore",
     configSyncChangePassword: "minih-agent-desktop/configSync/changePassword",

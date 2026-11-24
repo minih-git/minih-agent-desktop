@@ -561,6 +561,7 @@ async fn legacy_project_revision_sync_and_restore_preserve_local_projects() -> R
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
+            &config.oversized_skills,
         )?;
         snapshot.manifest.entities.extend([
             legacy_project("project:existing", json!({"logicalId":"existing","name":"Remote name","pinned":true}), false),
@@ -659,6 +660,7 @@ async fn legacy_project_config_and_pending_approval_do_not_block_sync() -> Resul
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
+            &config.oversized_skills,
         )?;
         let entity = legacy_project("project:obsolete", json!({"logicalId":"obsolete"}), false);
         let mut manifest = snapshot.manifest;
@@ -771,6 +773,7 @@ async fn project_records_are_not_captured_for_the_cloud_copy() -> Result<()> {
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
+            &config.oversized_skills,
         )?
         .manifest
         .entities

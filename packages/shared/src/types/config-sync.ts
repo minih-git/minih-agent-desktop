@@ -97,7 +97,34 @@ export type ConfigSyncPreview = {
     mappingRequired: number;
   }>;
 };
+/**
+ * What this device does with a skill folder larger than one portable package:
+ * sync its `SKILL.md` alone, or leave the skill out of the synced set.
+ */
+export type ConfigSyncSkillPackageChoice = "document" | "skip";
 
+
+/**
+ * A skill whose resources did not travel because its folder is larger than one
+ * portable package (ADR 0303 amendment 2). The document still syncs; the
+ * interface names the skill and the bound so a partial sync never looks whole.
+ */
+export type ConfigSyncSkippedPackage = {
+  /** The local skill the decision belongs to. */
+  id: string;
+  name: string;
+  /** `files`, `resourceBytes` or `packageBytes`; the interface localizes it. */
+  reason: string;
+  /** The measured value: a resource count for `files`, bytes otherwise. */
+  actual: number;
+  limit: number;
+  /**
+   * `document` syncs the skill's `SKILL.md` alone, `skip` leaves the skill out
+   * of the synced set. Absent while the user has not decided, which syncs
+   * nothing of it.
+   */
+  choice?: ConfigSyncSkillPackageChoice;
+};
 export type ConfigSyncPendingApproval = {
   id: string;
   domain: ConfigSyncDomain;
@@ -152,6 +179,8 @@ export type ConfigSyncState = {
   pendingApprovals: ConfigSyncPendingApproval[];
   mappings: ConfigSyncProjectMapping[];
   preview?: ConfigSyncPreview;
+  /** Skills whose resources stayed on the device that captured them. */
+  skippedPackages?: ConfigSyncSkippedPackage[];
 };
 
 export type ConfigSyncConfigureInput = {
@@ -176,6 +205,11 @@ export type ConfigSyncMapProjectInput = {
   logicalId: string;
   path?: string;
   paths?: string[];
+};
+
+export type ConfigSyncSetSkillChoiceInput = {
+  skillId: string;
+  choice: ConfigSyncSkillPackageChoice;
 };
 
 export type ConfigSyncChangePasswordInput = {
