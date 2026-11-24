@@ -21717,13 +21717,14 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
 
 - **Preconditions**: An employee exists; `learnedMemory.learn` is on with a model
   and a daily budget. Task A ran in repository R and was archived by the person.
-- **Steps**: 1) Open Settings → Employees and read the employee's 经验 section.
-  2) Archive a second task (or merge it, which archives as cleanup). 3) Open a new
-  task of the same employee in R and read its system prompt before the first
-  turn. 4) Delete one lesson from the settings section, then run another task of
-  the same kind.
-- **Expected**: Step 1 lists at most three lessons per task, each with its source
-  「任务 #短号 · 日期」; clicking the source opens that task's session. Step 2
+- **Steps**: 1) Read the employee's lessons through the host
+  (`task.experience.list`). 2) Archive a second task (or merge it, which archives
+  as cleanup). 3) Open a new task of the same employee in R and read its system
+  prompt before the first turn. 4) Delete one lesson through the host
+  (`memory.delete`), then run another task of the same kind.
+- **Expected**: Step 1 answers at most three lessons per task, each naming its
+  source task. The settings section that used to render them is gone (ADR 0341,
+  D692), so the host answer is the whole contract now. Step 2
   produces exactly one extraction for that task (`experience_json` goes
   `pending` → `done`), and a second drain writes nothing. Step 3 shows a
   「Lessons from this employee's earlier tasks」 section under the dated notes,
@@ -21739,7 +21740,9 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   `03-runtime/04-data-storage.md` (schema v39)
 - **Acceptance**: F (persistence), Quality
 - **Milestone**: Employee mode 0.5, slice 5
-- **Status**: Partial. The host half is proven by
+- **Status**: Partial, and the section it used to be read from is withdrawn (ADR
+  0341, D692): lessons are still extracted and injected, but no settings surface
+  lists or deletes them. The host half is proven by
   `crates/host-core/src/memory/experience_tests.rs` (stamp once, `done` terminal,
   skip, three-attempt cap, tombstone, input tail) and
   `crates/host-core/src/memory/bot_scope_tests.rs` (who reads the scope, the
@@ -21747,12 +21750,10 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   `apps/desktop/test/task-experience-extraction.test.mjs` (one extraction per
   archive, switch off costs nothing, restart resumes, failure keeps the task
   archived) and `apps/desktop/test/learned-memory-launch.test.mjs` (the index read
-  names the session; lessons alone compose the section). Step 4's delete is now
-  a real click: `apps/desktop/test/bot-experience-user-path.test.mjs` opens
-  Settings → Employees in a real Electron window, clicks the row's delete
-  button, and asserts the row leaves the list, that the host received exactly one
-  `memory.delete` carrying that lesson's id, and that a fresh read of the section
-  does not bring it back; the same file fails when the delete call is removed.
+  names the session; lessons alone compose the section). Step 4's delete is
+  covered at host level (`experience_tests.rs` tombstone): the renderer path
+  through the removed settings section no longer exists, so the person-facing
+  delete is a gap until the Super Agent plugin owns employee surfaces again.
   The rest of the path (extraction, the next task's prompt) is still covered at
   module level only, and the system notification in this scenario has not been
   exercised in a real window.
@@ -21811,10 +21812,10 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   running as their role" §2-§3), `03-runtime/06-host-rpc-protocol.md` (`bot.create`)
 - **Acceptance**: A (function), Quality
 - **Milestone**: Employee mode 0.5, slice 6
-- **Status**: Covered. `apps/desktop/test/bot-hiring-user-path.test.mjs` drives the
-  real renderer (template click → prefilled form → save → the created profile and
-  the sidebar row); `apps/desktop/test/bot-hiring.test.mjs` pins the template data
-  and the definition resolution; `slice6_tests.rs` covers the roster field.
+- **Status**: Withdrawn. The employee settings section and the hiring templates are
+  removed (ADR 0341, D692): the app has no template list, no employee form and no
+  `bot.create` entry point any more, so there is nothing left to drive. The
+  `bot.create` RPC stays in the host for a future Super Agent plugin.
 
 #### E2E-BOT-draft-hire-from-one-sentence: One sentence drafts a profile, and cancelling creates nothing
 
@@ -21835,33 +21836,32 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   `03-runtime/06-host-rpc-protocol.md` (`bot.draftHire`)
 - **Acceptance**: A (function), Quality
 - **Milestone**: Employee mode 0.5, slice 6
-- **Status**: Covered. `bot-hiring.test.mjs` covers the draft parser against a fake
-  one-shot completion (fenced JSON, unknown template, `auto` narrowed,
-  over-long fields, a hint that matches nothing, no model configured), and
-  `bot-hiring-user-path.test.mjs` covers the click path and the cancel.
+- **Status**: Withdrawn. The one-sentence drafter, its `bot.draftHire` channel and
+  the form it filled are removed (ADR 0341, D692); the hiring templates it narrowed
+  against are gone from `packages/shared` too.
 
-#### E2E-BOT-task-runs-as-its-role: A task runs under the role that owns it, with the team's rules
+#### E2E-BOT-task-runs-as-its-role: A task runs under the role that owns it
 
-- **Preconditions**: An employee hired from the 审查 template (`code-reviewer`,
-  `ask`), and team norms written in all three sections.
+- **Preconditions**: An employee whose profile names `code-reviewer` at the `ask`
+  ceiling. A stored team-norms row is present and must not be injected (D692).
 - **Steps**: 1) Start one task under that employee. 2) Ask it to change a file.
   3) End the turn and inspect the transcript.
 - **Expected**: Step 1 launches the task's session with the employee's definition:
   the reviewer's tools plus `TaskReport` and `asktool`, and no `Write`, `Edit` or
   `Bash` — the same ceiling the employee's container has, not the app's full
   catalog. Step 2 is refused with the persona denial, which names the reason. Step
-  3 shows the task rules **and** the team norms in the per-turn brief and no
-  trace of either in the stored transcript; clearing the norms stops them being
-  injected on the next turn.
-- **Specs linked**: ADR `bot-sessions-and-steward` §1, §4,
-  `03-runtime/06-host-rpc-protocol.md` (`bot.forTaskSession`, `team.norms.*`)
+  3 shows the task rules in the per-turn brief and no trace of them in the stored
+  transcript, and the stored team norms do not appear there either: the section
+  that wrote them is gone, so no turn carries them (D692).
+- **Specs linked**: ADR `bot-sessions-and-steward` §1, §4, ADR 0341,
+  `03-runtime/06-host-rpc-protocol.md` (`bot.forTaskSession`)
 - **Acceptance**: A (function), Security, Quality
 - **Milestone**: Employee mode 0.5, slice 6
 - **Status**: Partial. `packages/agent-runtime/src/runtime.test.ts` covers the tool
   ceiling both ways (a reviewer's task has no editing tool and does have
   `TaskReport`/`asktool`; the employee's container has no `TaskReport`), a missing
-  definition fails the turn, and `bot-hiring.test.mjs` covers the briefing text and
-  its per-turn composition. The launch path itself (`bot.forTaskSession` →
+  definition fails the turn, and `bot-task-briefing.test.mjs` covers the briefing
+  text, its per-turn composition and the absence of team norms. The launch path itself (`bot.forTaskSession` →
   `resolveTaskPersona` in `session-launch.ts`) is covered by domain tests and a
   source anchor, **not** by an end-to-end turn against a running host.
 

@@ -1269,17 +1269,17 @@ explicitly: research, reading and review go to a researcher or a reviewer with
 | --- | --- | --- |
 | A task runs as its employee's role | **Yes** — `bot.forTaskSession` drives `resolveTaskPersona` | `runtime/session-launch.ts`, `runtime/bot-persona.ts` |
 | A task keeps `TaskReport` and `asktool`, and nothing wider | **Yes** — a fixed `TASK_SESSION_PERSONA_TOOLS` set behind a `taskSession` flag | `task-report.ts`, `runtime.ts`, `runtime.test.ts` |
-| A missing role refuses the launch | **Yes** — `BOT_DEFINITION_MISSING` | `runtime.ts`, `bot-hiring.test.mjs` |
-| The steward is not a task's role | **Yes** — `resolveTaskPersona` returns `none` | `runtime/bot-persona.ts`, `bot-hiring.test.mjs` |
-| A template is data and creates nothing | **Yes** — no host or model call in `bot-hiring.ts` | `packages/shared/src/bot-hiring.ts` |
-| A draft never widens its template | **Yes** — `narrowPermission` + template `mustAsk` | `services/hire-draft.ts`, `bot-hiring.test.mjs` |
-| A draft cannot create a project | **Yes** — `projectFromHint` matches only existing projects | `services/hire-draft.ts` |
-| `seedDefaults` creates only the steward | **Yes** — single-row seed; existing crew compared byte-for-byte | `session_collaboration/bots.rs`, `slice6_tests.rs` |
+| A missing role refuses the launch | **Yes** — `BOT_DEFINITION_MISSING` | `runtime.ts`, `bot-task-briefing.test.mjs` |
+| The steward is not a task's role | **Yes** — `resolveTaskPersona` returns `none` | `runtime/bot-persona.ts`, `bot-task-briefing.test.mjs` |
+| A template is data and creates nothing | **Withdrawn** (D692) — the templates are deleted | — |
+| A draft never widens its template | **Withdrawn** (D692) — no draft path exists | — |
+| A draft cannot create a project | **Withdrawn** (D692) — no draft path exists | — |
+| `seedDefaults` creates only the steward | **Withdrawn** (D689, D692) — no seeding path in the app; the RPC stays | — |
 | Team norms are bounded and versioned | **Yes** — `LIMIT_EXCEEDED` before the write; `version` in the row | `session_collaboration/norms.rs`, `slice6_tests.rs` |
-| Every task turn carries the norms | **Yes** — `buildTaskSessionBriefing` | `services/task-status.ts`, `ipc/agent-ipc.ts` |
-| The norms never enter the transcript | **Yes** — per-turn `turnBriefing` only; a source test pins it | `ipc/agent-ipc.ts`, `bot-task-session-rules.test.mjs` |
-| The norms cannot act as a permission | **Yes** — the block says so; the ceiling stays `min(card, employee)` | `services/team-norms.ts` |
-| The roster names the job | **Yes** — `definition` per row, worded by `roleWordForDefinition` | `bots.rs::roster`, `session-messaging-tools.ts` |
+| Every task turn carries the norms | **No longer** (D692) — the briefing is the rules plus the relay step | `services/task-status.ts`, `bot-task-briefing.test.mjs` |
+| The norms never enter the transcript | **Withdrawn** (D692) — nothing injects them | — |
+| The norms cannot act as a permission | **Withdrawn** (D692) — nothing injects them | — |
+| The roster names the job | **Withdrawn** (D689) — the steward and its roster are gone | — |
 
 ## Relay between roles (employee mode 0.5, slice 7, schema v40)
 
@@ -1535,3 +1535,32 @@ a task may do; the delegate tool scope and the `mustAsk` gate stay the boundary.
 | The inspection writes one row per finding and nothing when all is well | **Yes** — keyed by `(task, condition, batch)` | `notices::inspection`, `task_inspection.rs` |
 | Reassigning creates a task under the new employee and leaves the old one alone | **Yes** — one transaction, `origin = direct`, no archive | `task_stage::reassign` |
 | A v41 file upgrades without losing a session or its profile | **Yes** — one UPDATE, FK delta check, v42 stamp | `db/steward_profile_migration.rs` |
+
+## Removing the employee settings section (2026-11, D692)
+
+The settings destination this ADR introduced (`employees`, shown as
+设置 → 能力 → 「Super Agent」) is removed, together with its hiring area, its
+team-norms editor, its employee list and the per-employee lessons section. The
+full record, the alternatives and the enforcement table are in
+[ADR 0341](0341-remove-employee-settings-section.md); what matters here is which
+sentences of this ADR no longer hold:
+
+- **"Hiring, team norms and tasks running as their role" §2 (a template is pure
+  data)** — superseded. `packages/shared/src/bot-hiring.ts` and the six templates
+  are deleted; nothing offers a job to hire for.
+- **§4 (team norms: three sections, one versioned row, two injection points)** —
+  the storage half stands, the injection half does not. `team.norms.get` /
+  `team.norms.set` stay in the host RPC and the `kv` row is untouched, but no
+  desktop surface writes it and no task turn reads it: `buildTaskSessionBriefing`
+  returns the task rules plus the relay-step rule only.
+- **The employee list and its two-step dismiss (§5 of the slice-6 notes)** — gone
+  with the page. `bot.create` / `bot.dismiss` remain host RPCs for the Super Agent
+  plugin.
+- **Employee experience** — extraction, the `bot` memory scope and the injection
+  into a task's prompt are unchanged; only the settings list and its delete
+  button are gone, so the person-facing half of that section is a gap until the
+  plugin owns it.
+
+Everything else in this ADR — identity, the Mandate, the stage vocabulary, the
+waiting channel, the completion card, accept-and-merge, the relay, the sidebar
+group, the workbench and the permission ceiling — is unaffected.

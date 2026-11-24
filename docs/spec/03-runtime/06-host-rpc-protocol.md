@@ -808,8 +808,10 @@ or general MCP operations:
   Each edits a session's `role` and `bot_profile_json`; `bot.list` also answers
   the status point, derived from the session's latest delivery stage. Dismissing
   sets the role back to `user` and keeps the conversation. `bot.create` accepts
-  an optional `modelKey` (`providerId/modelId`), which is how a hire's suggested
-  model becomes the session the employee's tasks inherit. `bot.update` writes the
+  an optional `modelKey` (`providerId/modelId`), which is the model the employee's
+  tasks inherit. Since ADR 0341 no desktop surface creates or dismisses an
+  employee; the methods stay for the plugin host and for the Super Agent plugin
+  that will own them. `bot.update` writes the
   profile and the session title together, so a rename is one fact. It announces
   both `botsChanged` and `sessionsChanged`, because the renderer keeps the roster
   and the session list in separate stores and the conversation topbar reads the
@@ -818,12 +820,14 @@ or general MCP operations:
   `{ employee: { sessionId, profile } }`, resolved through `tasks.session_id`, or
   `{ employee: null }` when the session is not a task's own. Main reads it per
   launch so a task runs under its role's definition.
-- `team.norms.get` / `team.norms.set` — the team norms the person writes
-  (slice 6), one versioned row in the local `kv` table (`team`/`norms`). Three
-  sections (`communication`, `scope`, `delivery`), each ≤ 1 000 characters and
-  ≤ 2 500 in total; an over-long write is refused with `LIMIT_EXCEEDED`, and an
-  all-blank write deletes the row. `{ norms: null }`-equivalent (empty sections)
-  means "the person wrote none".
+- `team.norms.get` / `team.norms.set` — the team norms (slice 6), one versioned
+  row in the local `kv` table (`team`/`norms`). Three sections
+  (`communication`, `scope`, `delivery`), each ≤ 1 000 characters and ≤ 2 500 in
+  total; an over-long write is refused with `LIMIT_EXCEEDED`, and an all-blank
+  write deletes the row. `{ norms: null }`-equivalent (empty sections) means
+  "none written". Since ADR 0341 the desktop writes nothing here and no turn
+  injects the norms: the row is kept untouched for the Super Agent plugin, which
+  will decide what a turn does with it.
 - `task.restart` — start a task again after the startup fence interrupted it. The
   host writes one new delivery from the same sender with the same Mandate,
   re-points `tasks.delivery_id` at it and leaves it `queued`; the operation is
