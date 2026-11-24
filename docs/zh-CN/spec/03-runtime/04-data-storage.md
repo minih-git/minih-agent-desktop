@@ -2,6 +2,14 @@
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/03-runtime/04-data-storage) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
+Offline data relocation uses the same canonical project identity as repository
+lookups for project records, pinned memory/instructions and learned-memory
+scope keys. Existing directory aliases resolve before separator normalization;
+unavailable directories keep lexical normalization. Ordinary file paths retain
+the selected destination spelling. Source profiles, external projects and note
+contents remain unchanged; no schema upgrade or user-data repair is implied.
+See the [canonical storage contract](/spec/03-runtime/04-data-storage).
+
 
 ### 原生项目路径别名（v29 到 v30）
 

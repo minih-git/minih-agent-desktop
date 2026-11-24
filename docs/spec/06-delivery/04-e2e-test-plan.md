@@ -672,6 +672,16 @@
   survive migration/restart. Cache cleanup preserves durable state; backup cleanup
   retains active data and the stable bootstrap pointer. Filesystem regression tests
   reject unsafe targets, redirecting links, wrong ownership and active-root overlap.
+- **Project identity aliases:** Seed pinned project memory, instructions,
+  learned-memory entries/tombstones and an extraction cursor. Copy and relocate
+  through a parent-directory alias, reopen the repository and read the same
+  project via its new path. All project identity keys must match the repository's
+  canonical spelling; note contents, extraction cursor and the original profile
+  remain unchanged. The Unix regression creates an explicit directory alias, so
+  it also exercises macOS `/var`/`/private/var` behavior on Linux. Unavailable
+  directories keep lexical normalization; traversal and prefix neighbors remain
+  outside relocation. Covered by Rust `data_relocation::tests` and offline CLI
+  verification with isolated synthetic SQLite state.
 - **Missing default root recovery:** Run `node scripts/e2e-storage-bootstrap.mjs`
   with the managed default data root absent. Stub the native choice and folder
   dialogs at the Electron API boundary, then exercise both decisions in isolated

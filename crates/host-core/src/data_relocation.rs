@@ -46,6 +46,14 @@ impl Roots {
         Some(self.destination.join(suffix).to_string_lossy().into_owned())
     }
 
+    // Project repositories resolve existing directory aliases before lookup.
+    // Preserve that identity after relocation, with the repository's lexical
+    // fallback for projects whose directories are currently unavailable.
+    fn remap_project(&self, text: &str) -> Option<String> {
+        self.remap(text)
+            .and_then(|path| crate::db::canonical_project_path(&path))
+    }
+
     fn string(&self, value: &mut Value) -> bool {
         let Some(next) = value.as_str().and_then(|text| self.remap(text)) else {
             return false;
@@ -422,13 +430,14 @@ fn relocate_database(roots: &Roots) -> Result<()> {
                     serde_json::from_str(&text).context("parse relocation database metadata")?;
                 roots.structured(&mut value).then(|| value.to_string())
             } else {
-                roots.remap(&text).map(|path| {
-                    if table == "projects" {
-                        crate::db::normalize_project_path(&path).unwrap_or(path)
-                    } else {
-                        path
-                    }
-                })
+                if matches!(
+                    table,
+                    "projects" | "memory_entries" | "memory_tombstones" | "memory_session_state"
+                ) {
+                    roots.remap_project(&text)
+                } else {
+                    roots.remap(&text)
+                }
             };
             if let Some(next) = next {
                 transaction.execute(
@@ -455,10 +464,7 @@ fn relocate_database(roots: &Roots) -> Result<()> {
         for (namespace, key, text) in rows {
             let next_key = if matches!(namespace.as_str(), "projectMemory" | "projectInstructions")
             {
-                roots
-                    .remap(&key)
-                    .map(|path| crate::db::normalize_project_path(&path).unwrap_or(path))
-                    .unwrap_or_else(|| key.clone())
+                roots.remap_project(&key).unwrap_or_else(|| key.clone())
             } else {
                 key.clone()
             };

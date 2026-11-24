@@ -168,10 +168,14 @@ narrative text, commands, source code, secrets, and arbitrary plugin-private for
 are preserved. Credentials and their machine key migrate as bytes with their
 permissions. SQLite ownership stays exclusively in Rust.
 
-Relocated project database paths and project-memory/instruction keys retain the
-repository's normalized project-path spelling. In particular, Windows migration
-must not turn slash-normalized lookup keys into mixed-separator keys that make
-existing project memory appear empty after reopening the Host.
+Relocated project database paths, project-memory/instruction keys and path-keyed
+learned-memory scopes use the repository's canonical project identity: resolve
+existing directory aliases, then normalize separators and trailing slashes.
+This includes macOS `/var` versus `/private/var` aliases and Windows verbatim
+prefixes. If a project directory is unavailable, retain the repository's lexical
+normalization fallback. Ordinary file paths are not project identity keys and
+keep the selected destination spelling. External project identities and memory
+contents remain unchanged. The source profile is never re-keyed.
 
 Only after validation/relocation succeeds is the flushed bootstrap pointer
 atomically replaced. Errors keep the old profile active and visible in settings;
