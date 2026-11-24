@@ -21,28 +21,39 @@ import {
 } from "../src/components/settings/models-page-state.ts";
 
 /** One `/api/models` entry that declares the whole profile. */
-const gatewayModel = (overrides = {}) => ({
-  id: "claude-sonnet-4.5",
-  upstreamIds: [],
-  vendor: "Anthropic",
-  category: "chat",
-  protocols: ["anthropic-messages"],
-  price: { input: "3", output: "15", cacheRead: null, cacheWrite: null },
-  multiplePrices: false,
-  tieredPricing: false,
-  contextWindow: 200_000,
-  maxOutput: 64_000,
-  displayName: "Claude Sonnet 4.5",
-  inputModalities: ["text", "image", "pdf"],
-  reasoningLevels: ["none", "low", "medium", "high"],
-  defaultReasoningLevel: "medium",
-  thinkingProtocol: "adaptive",
-  apiStyle: "anthropic_messages",
-  kind: "chat",
-  nativeWebSearch: true,
-  systemPrompt: "Answer in the user's language.",
-  ...overrides,
-});
+const gatewayModel = (overrides = {}) => {
+  const base = {
+    id: "claude-sonnet-4.5",
+    upstreamIds: [],
+    vendor: "Anthropic",
+    category: "chat",
+    protocols: ["anthropic-messages"],
+    price: { input: "3", output: "15", cacheRead: null, cacheWrite: null },
+    multiplePrices: false,
+    tieredPricing: false,
+    contextWindow: 200_000,
+    maxOutput: 64_000,
+    displayName: "Claude Sonnet 4.5",
+    inputModalities: ["text", "image", "pdf"],
+    reasoningLevels: ["none", "low", "medium", "high"],
+    defaultReasoningLevel: "medium",
+    thinkingProtocol: "adaptive",
+    apiStyle: "anthropic_messages",
+    kind: "chat",
+    nativeWebSearch: true,
+    systemPrompt: "Answer in the user's language.",
+    ...overrides,
+  };
+  // A real gateway splits the effective values (display, catalog fallback) from
+  // what it declares. `declaredProfile: {}` in a test means "an older gateway".
+  if (overrides.declaredProfile !== undefined) return base;
+  const declared = {
+    ...(base.contextWindow === null ? {} : { contextWindow: base.contextWindow }),
+    ...(base.maxOutput === null ? {} : { maxOutput: base.maxOutput }),
+    ...(base.inputModalities?.length ? { inputModalities: base.inputModalities } : {}),
+  };
+  return Object.keys(declared).length > 0 ? { ...base, declaredProfile: declared } : base;
+};
 
 /** A binding as it was stored before the gateway profile existed. */
 const legacyBinding = () => ({
@@ -185,6 +196,34 @@ test("a gateway that says nothing about a model leaves the row alone", () => {
   const stale = planCatalogSync([legacyBinding()], [], []);
   assert.equal(stale, null);
 });
+test("a gateway that only copied catalog values leaves limits and capabilities alone", () => {
+  // No top-level profile keys at all: what the plaza shows here came out of the
+  // upstream catalog reference, and writing that onto the row would freeze a
+  // number the operator never configured (and lose models.dev for good).
+  const copiedOnly = gatewayModel({
+    declaredProfile: {},
+    contextWindow: 200_000,
+    maxOutput: 64_000,
+    inputModalities: ["text", "image"],
+    displayName: undefined,
+    thinkingProtocol: undefined,
+    apiStyle: undefined,
+    kind: undefined,
+    nativeWebSearch: undefined,
+    systemPrompt: undefined,
+  });
+  const next = planCatalogSync([legacyBinding()], [copiedOnly], []);
+  // What it does declare — the reasoning ladder — still follows, so a write happens.
+  assert.ok(next);
+  assert.equal(next[0].contextWindow, 128_000);
+  assert.equal(next[0].contextWindowSource, "catalog");
+  assert.equal(next[0].maxTokens, 8_192);
+  assert.equal(next[0].supportsImages, null);
+  assert.equal(next[0].supportsDocuments, null);
+  assert.equal(next[0].profileSources.contextWindow, undefined);
+  assert.deepEqual(next[0].thinkingLevels, ["off", "low", "medium", "high"]);
+});
+
 
 test("an image model the gateway publishes becomes usable, and stays un-designated once removed", () => {
   const image = gatewayModel({ id: "gpt-image-2", outputModalities: ["image"] });

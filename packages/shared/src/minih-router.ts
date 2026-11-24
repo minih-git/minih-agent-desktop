@@ -180,6 +180,22 @@ export const MINIH_ROUTER_MODEL_API_STYLES = [
 ] as const;
 export type MinihRouterModelApiStyle = (typeof MINIH_ROUTER_MODEL_API_STYLES)[number];
 
+/**
+ * The fields of a model's configuration the gateway itself declares.
+ *
+ * Only top-level `/api/models` keys land here. The catalog-reference fallbacks
+ * a gateway uses for display are deliberately excluded: an operator who never
+ * set a window must not have one written onto every client's row.
+ */
+export type MinihRouterDeclaredProfile = {
+  /** Top-level `context_window`, or absent. */
+  contextWindow?: number;
+  /** Top-level `max_output_tokens`, or absent. */
+  maxOutput?: number;
+  /** Top-level `input_modalities`, when it lists anything. */
+  inputModalities?: string[];
+};
+
 export type MinihRouterModel = {
   /** The model id a client sends. */
   id: string;
@@ -204,27 +220,34 @@ export type MinihRouterModel = {
    */
   displayName?: string;
   /**
-   * Effective context window in tokens.
+   * Effective context window in tokens, for display and for seeding a new
+   * binding.
    *
-   * Read from the gateway's `context_window` when the item carries it, and
-   * otherwise derived from the upstream catalog references' `limits.context`.
-   * `null` means neither source published a number.
+   * The gateway's own `context_window` when the item carries it, otherwise the
+   * upstream catalog references' `limits.context`. This is the best number a
+   * client knows, not a declaration: only `declaredProfile.contextWindow` is
+   * the gateway speaking about *this* row's configuration.
    */
   contextWindow: number | null;
-  /**
-   * Effective output cap (`max_output_tokens`), falling back to the upstream
-   * catalog references' `limits.output`. `null` when nothing published one.
-   */
+  /** Effective output cap for display and seeding; see `contextWindow`. */
   maxOutput: number | null;
   /**
-   * Input modalities the gateway declares for this model (`input_modalities`).
+   * Effective input modalities, for display.
    *
-   * A non-empty array is the operator's own declaration and is authoritative
-   * for image and document input. `undefined` means nothing was asserted — a
-   * gateway too old to send the field, or empty upstream references — which is
-   * not a declaration that the model accepts nothing.
+   * The gateway's own `input_modalities` when it lists anything, otherwise the
+   * upstream catalog references. As with the limits, this is knowledge, not a
+   * declaration; see `declaredProfile.inputModalities`.
    */
   inputModalities?: string[];
+  /**
+   * The profile values the gateway itself declares on the item.
+   *
+   * Only the top-level keys appear here — never a catalog-reference fallback.
+   * That distinction is the whole contract: a key the gateway omits means it
+   * has no opinion, and a client must leave its own value alone, while the
+   * fallbacks above only describe what the model *is* for display and seeding.
+   */
+  declaredProfile?: MinihRouterDeclaredProfile;
   /**
    * What the model produces, e.g. `["text"]`, `["image"]`, or both (`text`
    * first). `["image"]` alone is legal: a pure image model.

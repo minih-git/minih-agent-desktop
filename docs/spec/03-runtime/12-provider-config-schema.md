@@ -1007,6 +1007,16 @@ opinion on, never a value to write over the client's own.
 | `native_web_search` | `nativeWebSearch` | `false` stores absence, the same off state. |
 | `system_prompt` | `systemPrompt` | Trimmed, capped at 8,000 characters. |
 
+Only a top-level key counts as a declaration. `context_window`,
+`max_output_tokens` and `input_modalities` also describe the model for display
+and for seeding a newly added binding, where a gateway fills in the upstream
+catalog reference — that fallback is knowledge about the model, not the
+operator's answer for this row, and a client must never write it onto an
+existing binding or mark it as the gateway's. The parsed model keeps the two
+apart (`declaredProfile` versus the effective `contextWindow` / `maxOutput` /
+`inputModalities`), so an older gateway that only copies catalog values leaves
+every stored limit and capability alone.
+
 Deliberately absent: `availableForSubagents` is a personal choice about this
 machine and stays local.
 

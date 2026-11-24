@@ -49,24 +49,23 @@ const provider = (overrides = {}) => ({
   ...overrides,
 });
 
-test("a plaza row seeds a binding whose limits follow the gateway", () => {
+test("a plaza row seeds a binding that still follows the catalog", () => {
   const seeded = bindingFromRouterModel(plazaModel("gpt-4.1", 1_047_576));
   assert.equal(seeded.id, "gpt-4.1");
   assert.equal(seeded.contextWindow, 1_047_576);
-  // The gateway resolved this window for its own route, so it is recorded as
-  // the gateway's number: neither a models.dev correction nor a later edit here
-  // may quietly replace it.
-  assert.equal(seeded.contextWindowSource, "gateway");
+  // The seed is a snapshot, not a pin: a later models.dev correction still
+  // reaches the binding, exactly as before the gateway profile existed.
+  assert.equal(seeded.contextWindowSource, "catalog");
   assert.equal(seeded.apiStyle, undefined);
 
-  // Without a declared window the generic seed stands, so models.dev can still
+  // Without a published window the generic seed stands, so models.dev can still
   // take the limits over later.
   const unknown = bindingFromRouterModel(plazaModel("mystery"));
   assert.equal(unknown.contextWindowSource, "catalog");
   assert.equal(unknown.apiStyle, undefined);
 });
 
-test("a published models.dev record fills in what the gateway leaves unsaid", () => {
+test("a published models.dev record auto-configures the added binding", () => {
   const info = {
     modelId: "gpt-4.1",
     displayName: "gpt-4.1",
@@ -76,12 +75,11 @@ test("a published models.dev record fills in what the gateway leaves unsaid", ()
     modalities: { input: ["text", "image"] },
     limit: { context: 400_000, output: 16_384 },
   };
-  // The plaza row declares a window of its own and no reasoning ladder.
   const seeded = bindingFromRouterModel(plazaModel("gpt-4.1", 1_047_576), info);
-  // The gateway's own limit wins where it speaks; the catalog's ladder and
-  // capabilities arrive for the fields the profile says nothing about.
-  assert.equal(seeded.contextWindow, 1_047_576);
-  assert.equal(seeded.contextWindowSource, "gateway");
+  // The catalog's numbers and thinking ladder arrive configured, and the
+  // capabilities follow the published record instead of defaulting to off.
+  assert.equal(seeded.contextWindow, 400_000);
+  assert.equal(seeded.contextWindowSource, "catalog");
   assert.deepEqual(seeded.thinkingLevels, ["minimal", "low", "high"]);
   // No published "medium": the default is the ladder's first enabled level.
   assert.equal(seeded.defaultThinkingLevel, "minimal");
@@ -93,6 +91,7 @@ test("a published models.dev record fills in what the gateway leaves unsaid", ()
   const fallback = bindingFromRouterModel(plazaModel("gpt-4.1", 1_047_576), sparse);
   assert.equal(fallback.contextWindow, 1_047_576);
 });
+
 test("adding models appends the new ones once, keeping the saved order", () => {
   const current = [bindingFromRouterModel(plazaModel("a")), bindingFromRouterModel(plazaModel("b"))];
   const next = mergeAddedBindings(current, [
@@ -263,10 +262,10 @@ test("the mirror seeds only the models it appends from the catalog", () => {
   // models.dev is asked only about what the row is about to gain.
   assert.deepEqual(asked, ["fresh"]);
   assert.deepEqual(next?.map((binding) => binding.id), ["known", "fresh"]);
-  // The gateway publishes this model's own window, and its profile outranks the
-  // catalog record for the field it declares.
-  assert.equal(next?.[1]?.contextWindow, 400_000);
-  assert.equal(next?.[1]?.contextWindowSource, "gateway");
+  // The seeded binding is a catalog snapshot, not a pin: models.dev's number
+  // for this model is what the append writes.
+  assert.equal(next?.[1]?.contextWindow, 1_000_000);
+  assert.equal(next?.[1]?.contextWindowSource, "catalog");
 });
 
 test("removing the model the app default names moves that default on", () => {

@@ -19,28 +19,40 @@ import type { MinihRouterModel } from "./minih-router.js";
 import type { ModelBinding } from "./types/models.js";
 
 /** One `/api/models` entry that declares the whole profile. */
-const profileModel = (overrides: Partial<MinihRouterModel> = {}): MinihRouterModel => ({
-  id: "claude-sonnet-4.5",
-  upstreamIds: [],
-  vendor: "Anthropic",
-  category: "chat",
-  protocols: [],
-  price: { input: null, output: null, cacheRead: null, cacheWrite: null },
-  multiplePrices: false,
-  tieredPricing: false,
-  contextWindow: 200000,
-  maxOutput: 64000,
-  displayName: "Claude Sonnet 4.5",
-  inputModalities: ["text", "image", "pdf"],
-  reasoningLevels: ["none", "low", "medium", "high"],
-  defaultReasoningLevel: "medium",
-  thinkingProtocol: "adaptive",
-  apiStyle: "anthropic_messages",
-  kind: "chat",
-  nativeWebSearch: true,
-  systemPrompt: "Answer in the user's language.",
-  ...overrides,
-});
+const profileModel = (overrides: Partial<MinihRouterModel> = {}): MinihRouterModel => {
+  const base: MinihRouterModel = {
+    id: "claude-sonnet-4.5",
+    upstreamIds: [],
+    vendor: "Anthropic",
+    category: "chat",
+    protocols: [],
+    price: { input: null, output: null, cacheRead: null, cacheWrite: null },
+    multiplePrices: false,
+    tieredPricing: false,
+    contextWindow: 200000,
+    maxOutput: 64000,
+    displayName: "Claude Sonnet 4.5",
+    inputModalities: ["text", "image", "pdf"],
+    reasoningLevels: ["none", "low", "medium", "high"],
+    defaultReasoningLevel: "medium",
+    thinkingProtocol: "adaptive",
+    apiStyle: "anthropic_messages",
+    kind: "chat",
+    nativeWebSearch: true,
+    systemPrompt: "Answer in the user's language.",
+    ...overrides,
+  };
+  // Only what a gateway declares reaches `declaredProfile`; the display values
+  // above also fall back to the upstream catalog in production. A test that
+  // wants "known but not declared" passes `declaredProfile: {}`.
+  if (overrides.declaredProfile !== undefined) return base;
+  const declared = {
+    ...(base.contextWindow === null ? {} : { contextWindow: base.contextWindow }),
+    ...(base.maxOutput === null ? {} : { maxOutput: base.maxOutput }),
+    ...(base.inputModalities?.length ? { inputModalities: base.inputModalities } : {}),
+  };
+  return Object.keys(declared).length > 0 ? { ...base, declaredProfile: declared } : base;
+};
 
 /** A binding as a model picked from the catalog is seeded. */
 const binding = (overrides: Partial<ModelBinding> = {}): ModelBinding => ({
@@ -146,6 +158,47 @@ describe("mergeRouterModelProfile", () => {
     });
     // Nothing declared means nothing written, including the ownership markers.
     expect(mergeRouterModelProfile(seeded, oldGateway)).toBeNull();
+  });
+
+  it("treats a limit or modality the gateway only copied from the catalog as no opinion", () => {
+    // An older gateway: none of the profile keys exist, so what the plaza shows
+    // comes from the upstream catalog reference. That is knowledge about the
+    // model, not a configuration for this row — the reasoning ladder it does
+    // send is the one thing that follows.
+    const oldGateway = profileModel({
+      declaredProfile: {},
+      contextWindow: 200_000,
+      maxOutput: 64_000,
+      inputModalities: ["text", "image"],
+      displayName: undefined,
+      thinkingProtocol: undefined,
+      apiStyle: undefined,
+      kind: undefined,
+      nativeWebSearch: undefined,
+      systemPrompt: undefined,
+    });
+    const stored = binding({
+      contextWindow: 96_000,
+      contextWindowSource: "user",
+      maxTokens: 4_096,
+      maxTokensSource: "catalog",
+    });
+    const merged = mergeRouterModelProfile(stored, oldGateway);
+    expect(merged!.contextWindow).toBe(96_000);
+    expect(merged!.contextWindowSource).toBe("user");
+    expect(merged!.maxTokens).toBe(4_096);
+    expect(merged!.maxTokensSource).toBe("catalog");
+    expect(merged!.supportsImages).toBeNull();
+    expect(merged!.supportsDocuments).toBeNull();
+    // No marker is written for a field the gateway never declared, so a later
+    // models.dev correction still reaches these limits.
+    expect(merged!.profileSources?.contextWindow).toBeUndefined();
+    expect(merged!.profileSources?.maxTokens).toBeUndefined();
+    expect(merged!.profileSources?.supportsImages).toBeUndefined();
+    expect(merged!.profileSources?.supportsDocuments).toBeUndefined();
+    // What the gateway does declare still follows.
+    expect(merged!.thinkingLevels).toEqual(["off", "low", "medium", "high"]);
+    expect(merged!.profileSources?.thinkingLevels).toBe("gateway");
   });
 
   it("maps the gateway's own vocabulary onto the desktop ladder", () => {

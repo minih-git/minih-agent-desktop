@@ -310,9 +310,9 @@ window.accountsProbe = async ({ width, height }) => {
     modelId: mirroredGpt.id,
     // A seeded binding keeps no protocol pin.
     protocolPinLeftToGlobal: !("apiStyle" in mirroredGpt) || !mirroredGpt.apiStyle,
-    // The published record fills in what the gateway profile leaves unsaid —
-    // the thinking ladder and the capabilities — while the gateway's own
-    // context window (published per model by the models endpoint) stays in force.
+    // The published record auto-configured the binding: the catalog's window
+    // (400k) replaced the gateway's own number, and the thinking ladder and
+    // image capability follow models.dev instead of defaulting off.
     autoConfigured: {
       contextWindow: mirroredGpt.contextWindow,
       contextWindowSource: mirroredGpt.contextWindowSource,
@@ -856,8 +856,8 @@ app.whenReady().then(async () => {
         modelId: "gpt-4.1",
         protocolPinLeftToGlobal: true,
         autoConfigured: {
-          contextWindow: 1047576,
-          contextWindowSource: "gateway",
+          contextWindow: 400000,
+          contextWindowSource: "catalog",
           thinkingLevels: ["low", "medium", "high"],
           defaultThinkingLevel: "medium",
           followsPublishedCapabilities: true,

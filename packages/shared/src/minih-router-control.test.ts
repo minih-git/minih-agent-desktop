@@ -328,6 +328,12 @@ describe("parseMinihRouterModelPage", () => {
     expect(model.kind).toBe("chat");
     expect(model.nativeWebSearch).toBe(true);
     expect(model.systemPrompt).toBe("Answer in the user's language.");
+    // Exactly the keys the gateway sent, and nothing the catalog supplied.
+    expect(model.declaredProfile).toEqual({
+      contextWindow: 200000,
+      maxOutput: 64000,
+      inputModalities: ["text", "image", "pdf"],
+    });
     expect(parsed.items[1]?.kind).toBe("embedding");
   });
 
@@ -368,6 +374,9 @@ describe("parseMinihRouterModelPage", () => {
     expect(old.contextWindow).toBe(128000);
     expect(old.maxOutput).toBe(8192);
     expect(old.inputModalities).toEqual(["text", "image"]);
+    // The catalog reference describes the model; it is not the gateway
+    // configuring this row, so no declaration is recorded for it.
+    expect(parsed.items[0]?.declaredProfile).toBeUndefined();
     expect(old.displayName).toBeUndefined();
     expect(old.kind).toBeUndefined();
     expect(old.nativeWebSearch).toBeUndefined();
@@ -382,6 +391,7 @@ describe("parseMinihRouterModelPage", () => {
     expect(junk.kind).toBeUndefined();
     expect(junk.nativeWebSearch).toBeUndefined();
     expect(junk.systemPrompt).toBeUndefined();
+    expect(junk.declaredProfile).toBeUndefined();
   });
 
   it("keeps pagination as the gateway reported it", () => {

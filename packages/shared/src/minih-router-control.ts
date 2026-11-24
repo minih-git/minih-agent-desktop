@@ -14,6 +14,7 @@ import {
   MINIH_ROUTER_MODEL_API_STYLES,
   MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
   MINIH_ROUTER_REASONING_LEVELS,
+  type MinihRouterDeclaredProfile,
   type MinihRouterModel,
   type MinihRouterModelApiStyle,
   type MinihRouterModelCategory,
@@ -138,7 +139,8 @@ function parseModel(value: unknown): MinihRouterModel | null {
    * it lists anything, is authoritative for image and document input. An empty
    * or missing list asserts nothing, so the upstream catalog references are
    * consulted instead — the same "empty is not a claim" rule `output_modalities`
-   * follows.
+   * follows. Only the declared list reaches `declaredProfile`: the catalog value
+   * describes the model, it is not the gateway configuring this row.
    */
   const declaredInputModalities = Array.from(
     new Set(list(row.input_modalities).map(text).filter(Boolean)),
@@ -205,15 +207,17 @@ function parseModel(value: unknown): MinihRouterModel | null {
       ? declaredDefaultReasoning
       : undefined;
   /**
-   * Effective limits.
+   * Limits.
    *
-   * The gateway resolves its own `context_window` / `max_output_tokens` from the
-   * operator's profile and the upstream catalog, so a value on the item is the
-   * effective one; the catalog references stay the fallback for a gateway that
-   * does not send them.
+   * `context_window` / `max_output_tokens` are what the gateway's own profile
+   * resolved; the upstream catalog reference is the fallback a gateway uses so
+   * the plaza can still show a number. The two must not be confused: the
+   * fallback describes the model, while `declaredProfile` below is the gateway
+   * configuring this row, and only that may overwrite a client's setting.
    */
+  const declaredContextWindow = positiveInteger(row.context_window);
   const contextWindow =
-    positiveInteger(row.context_window) ??
+    declaredContextWindow ??
     catalogs
       .map((model) => positiveInteger(record(model.limits).context))
       .find((limit): limit is number => limit !== null) ??
@@ -234,8 +238,9 @@ function parseModel(value: unknown): MinihRouterModel | null {
    * chat list the day this shipped. Absent therefore stays `undefined`.
    */
   const mobileChat = typeof row.mobile_chat === "boolean" ? row.mobile_chat : undefined;
+  const declaredMaxOutput = positiveInteger(row.max_output_tokens);
   const maxOutput =
-    positiveInteger(row.max_output_tokens) ??
+    declaredMaxOutput ??
     catalogs
       .map((model) => positiveInteger(record(model.limits).output))
       .find((limit): limit is number => limit !== null) ??
@@ -254,6 +259,23 @@ function parseModel(value: unknown): MinihRouterModel | null {
   const nativeWebSearch =
     typeof row.native_web_search === "boolean" ? row.native_web_search : undefined;
   const systemPrompt = text(row.system_prompt).trim() || undefined;
+  /**
+   * What the gateway itself declares, which is what a row may follow.
+   *
+   * Built from the top-level keys only: a value the gateway merely copied out
+   * of the upstream catalog is knowledge about the model, not a configuration
+   * for this row, and writing it onto every client would freeze a number the
+   * operator never chose.
+   */
+  const declaredProfileValues: MinihRouterDeclaredProfile = {
+    ...(declaredContextWindow === null ? {} : { contextWindow: declaredContextWindow }),
+    ...(declaredMaxOutput === null ? {} : { maxOutput: declaredMaxOutput }),
+    ...(declaredInputModalities.length === 0
+      ? {}
+      : { inputModalities: declaredInputModalities }),
+  };
+  const declaredProfile =
+    Object.keys(declaredProfileValues).length > 0 ? declaredProfileValues : undefined;
   const price: MinihRouterModelPrice = {
     input: lowest(inputs),
     output: lowest(outputs),
@@ -280,6 +302,7 @@ function parseModel(value: unknown): MinihRouterModel | null {
     maxOutput,
     inputModalities: inputModalities.length > 0 ? inputModalities : undefined,
     outputModalities: outputModalities.length > 0 ? outputModalities : undefined,
+    ...(declaredProfile ? { declaredProfile } : {}),
     ...(reasoningLevels.length > 0 ? { reasoningLevels } : {}),
     ...(defaultReasoningLevel ? { defaultReasoningLevel } : {}),
     ...(mobileChat === undefined ? {} : { mobileChat }),

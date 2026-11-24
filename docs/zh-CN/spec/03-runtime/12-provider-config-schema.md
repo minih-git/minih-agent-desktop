@@ -621,6 +621,13 @@ Minih Router 行的逐模型配置只在网关维护一次，行按字段跟随�
 | `native_web_search` | `nativeWebSearch` | `false` 存为缺省，即同一个“关闭”状态。 |
 | `system_prompt` | `systemPrompt` | 去首尾空白，最长 8,000 字符。 |
 
+只有条目顶层的键才算“声明”。`context_window`、`max_output_tokens` 与
+`input_modalities` 也会用于广场展示和新加模型的初始种子，那时网关可能回填
+`upstream_models[].catalog_reference` 里的目录值——那份兜底是“这个模型是什么”，
+不是运营者对本行的答复，客户端绝不能把它写进已有绑定、更不能标记为网关所有。
+解析结果把两者分开保存（`declaredProfile` 与生效的 `contextWindow` / `maxOutput` /
+`inputModalities`），所以只回填目录值的旧网关不会改动任何已存限额与能力。
+
 刻意不包含：`availableForSubagents`（可供 AI 自动调度）是本机个人选择，保持本地。
 
 归属逐字段判定。网关声明了的字段，只要仍在跟随就会被写入（`profileSources[field] =

@@ -238,13 +238,17 @@ export function ModelsPage() {
       if (!routerProvider) return;
       setSaving(true);
       try {
-        // Re-read settings: another window or agent may have moved defaults.
+        // Re-read both: another window or agent may have moved defaults, and
+        // the row's own list is what a save rewrites wholesale.
         const current = await api.getSettings();
+        const latestProviders = useAppStore.getState().providers;
+        const latestRow =
+          latestProviders.find((row) => row.id === routerProvider.id) ?? routerProvider;
         const plan = planModelsSave(
-          routerProvider,
-          models ?? routerProvider.models,
+          latestRow,
+          models ?? latestRow.models,
           current,
-          providers,
+          latestProviders,
           imageModelIds,
         );
         if (models) await api.updateProvider(plan.provider);
@@ -329,13 +333,20 @@ export function ModelsPage() {
           }),
         );
         const infoById = new Map(entries);
+        if (!alive) return;
+        // The row and the settings may both have moved while the lookups ran
+        // (the configure dialog, another window, an agent). Plan against what is
+        // stored now: this write replaces the row's whole list and the row's own
+        // image designation.
+        const state = useAppStore.getState();
+        const latestRow =
+          state.providers.find((row) => row.id === routerProvider.id) ?? routerProvider;
         const nextModels = planCatalogSync(
-          routerProvider.models,
+          latestRow.models,
           listed,
           hiddenIds,
           (model) => infoById.get(model.id.toLowerCase()),
         );
-        if (!alive) return;
         if (infoById.size > 0) {
           setPublishedInfoById((current) => {
             const next = new Map(current);
@@ -346,9 +357,12 @@ export function ModelsPage() {
         // A model the gateway publishes as image output is designated in the
         // same pass, so `GenerateImages` works without a separate trip to the
         // checkbox. The list is this row's own entries; other rows keep theirs.
+        const latestImageIds = (state.settings?.imageGenerationModels ?? [])
+          .filter((entry) => entry.providerId === latestRow.id)
+          .map((entry) => entry.modelId);
         const nextImageIds = planCatalogImageModels(
-          currentImageIds,
-          nextModels ?? routerProvider.models,
+          latestImageIds,
+          nextModels ?? latestRow.models,
           listed,
         );
         if (!nextModels && !nextImageIds) return;

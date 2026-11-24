@@ -106,14 +106,18 @@ export function profileFollowsGateway(
   return true;
 }
 
-/** How a declared input-modality list answers one capability question. */
+/**
+ * How a declared input-modality list answers one capability question.
+ *
+ * Read from `declaredProfile` only: a modality the gateway merely copied out of
+ * the upstream catalog describes the model, and a client that wrote it onto its
+ * own binding would freeze a capability the operator never configured.
+ */
 function declaredModality(
   model: MinihRouterModel,
   modality: "image" | "pdf",
 ): boolean | undefined {
-  const declared = model.inputModalities;
-  // An empty or missing list is the gateway asserting nothing; only a list it
-  // actually sent can tell us the model does *not* take an input.
+  const declared = model.declaredProfile?.inputModalities;
   if (!declared || declared.length === 0) return undefined;
   return declared.includes(modality);
 }
@@ -165,9 +169,10 @@ export function mergeRouterModelProfile(
     }
   };
 
-  if (model.contextWindow !== null && follows("contextWindow")) {
-    if (next.contextWindow !== model.contextWindow) {
-      next.contextWindow = model.contextWindow;
+  const declared = model.declaredProfile;
+  if (declared?.contextWindow !== undefined && follows("contextWindow")) {
+    if (next.contextWindow !== declared.contextWindow) {
+      next.contextWindow = declared.contextWindow;
       changed = true;
     }
     // `gateway` rather than `catalog`: models.dev must not replace the number
@@ -177,9 +182,9 @@ export function mergeRouterModelProfile(
       changed = true;
     }
   }
-  if (model.maxOutput !== null && follows("maxTokens")) {
-    if (next.maxTokens !== model.maxOutput) {
-      next.maxTokens = model.maxOutput;
+  if (declared?.maxOutput !== undefined && follows("maxTokens")) {
+    if (next.maxTokens !== declared.maxOutput) {
+      next.maxTokens = declared.maxOutput;
       changed = true;
     }
     if (next.maxTokensSource !== "gateway") {
@@ -256,8 +261,8 @@ function clampAlias(value: string): string {
  */
 export function declaredProfileFields(model: MinihRouterModel): BindingProfileField[] {
   const fields: BindingProfileField[] = [];
-  if (model.contextWindow !== null) fields.push("contextWindow");
-  if (model.maxOutput !== null) fields.push("maxTokens");
+  if (model.declaredProfile?.contextWindow !== undefined) fields.push("contextWindow");
+  if (model.declaredProfile?.maxOutput !== undefined) fields.push("maxTokens");
   const levels = bindingThinkingLevelsFromRouterModel(model);
   if (levels.length > 0) fields.push("thinkingLevels");
   const declaredDefault = bindingDefaultThinkingLevelFromRouterModel(model);
