@@ -722,15 +722,17 @@ fn a_manifest_with_an_unusable_instance_declaration_is_refused() {
                 "fields": [{ "key": "pick", "label": "P", "type": "select" }] }),
     ];
     for (position, slot) in cases.into_iter().enumerate() {
-        let (_plugins, plugin, _root) = install(
-            dir.path(),
-            &format!("demo.bad-{position}"),
-            json!({ "credentials": [slot] }),
-        );
-        let secrets = SecretStore::open(dir.path()).unwrap();
-        let error = status(&secrets, &plugin, "en", None).unwrap_err();
+        let id = format!("demo.bad-{position}");
+        let root = dir.path().join(&id);
+        write_manifest(&root, manifest(&id, json!({ "credentials": [slot] })));
+        // Refused at install, so nothing can reach a slot whose declaration the
+        // host would have to guess at.
+        let error = crate::plugins::PluginManager::read_manifest(&root)
+            .err()
+            .unwrap_or_else(|| panic!("case {position} should be refused"))
+            .to_string();
         assert!(
-            error.to_string().starts_with("PLUGIN_INVALID"),
+            error.starts_with("PLUGIN_INVALID"),
             "case {position}: {error}"
         );
     }
