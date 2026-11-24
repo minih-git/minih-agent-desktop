@@ -390,6 +390,15 @@ export class RuntimeService implements RuntimePort {
       const host = this.requireHost();
       const sidecar = this.requireSidecar();
       await sidecar.call("agent.steeringContext", { sessionId, expectedTurnId: request.turnId });
+      // Provenance comes only from the Host ledger, exactly as a prompt
+      // resolves it: a delivery folded into this turn then reads as the delivery
+      // it is instead of as its raw body.
+      const sessionMessage = await resolveSessionMessageInput(host, {
+        sessionId,
+        ...(request.sessionMessageId !== undefined
+          ? { sessionMessageId: request.sessionMessageId }
+          : {}),
+      });
       const detail = await host.call<{ session?: { messages?: UiMessage[] } }>("session.get", {
         id: sessionId,
         messageLimit: 1,
@@ -397,16 +406,17 @@ export class RuntimeService implements RuntimePort {
       const message: UiMessage = {
         id: durableUserMessageId(request.sessionMessageId, detail.session?.messages ?? []),
         role: "user",
-        content: request.content,
+        content: sessionMessage?.content ?? request.content,
         status: "complete",
         createdAt: new Date(this.now()).toISOString(),
         steering: true,
+        ...(sessionMessage ? { sessionMessage: sessionMessage.origin } : {}),
       };
       const result = await sidecar.call<{ accepted?: boolean }>("agent.steer", {
         sessionId,
         expectedTurnId: request.turnId,
         message,
-        content: request.content,
+        content: sessionMessage?.content ?? request.content,
         attachments: [],
       });
       return { accepted: result?.accepted !== false };

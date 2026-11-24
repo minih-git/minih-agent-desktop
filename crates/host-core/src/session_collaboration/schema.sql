@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS session_collaboration_messages (
   status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted')),
   notify_on_completion INTEGER NOT NULL DEFAULT 0,
   turn_id TEXT REFERENCES turns(id) ON DELETE SET NULL,
+  -- The already running turn that accepted this delivery as steering input
+  -- (schema v46). Such a delivery never gets a turn of its own: `turn_id` stays
+  -- NULL and this column names the turn whose settlement closes the row.
+  host_turn_id TEXT,
   reply_to_message_id TEXT,
   idempotency_key TEXT NOT NULL,
   remaining_hops INTEGER NOT NULL,
@@ -43,5 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_session_collaboration_source
   ON session_collaboration_messages(source_session_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_session_collaboration_turn
   ON session_collaboration_messages(turn_id) WHERE turn_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_session_collaboration_host_turn
+  ON session_collaboration_messages(host_turn_id) WHERE host_turn_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_session_collaboration_receipt
   ON session_collaboration_messages(reply_to_message_id) WHERE kind = 'completion';

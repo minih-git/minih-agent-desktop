@@ -204,6 +204,7 @@ fn send_record_on(
         status: "queued".into(),
         notify_on_completion: notify,
         turn_id: None,
+        host_turn_id: None,
         reply_to_message_id: None,
         result: None,
         error: None,
@@ -439,6 +440,17 @@ pub fn handle(db: &Database, method: &str, input: &Value) -> Result<Value> {
             Ok(json!({"callback":settle_turn(db,string(input,"turnId",256)?)?}))
         }
         "session.collaboration.cancel" => settlement::cancel(db, input),
+        // A delivery that a turn which was already running accepted as steering
+        // input (`send now`, ADR 0265). Its content is in the transcript, so the
+        // ledger must stop calling it queued: otherwise the next drain starts a
+        // second turn for work that has already been delivered.
+        "session.collaboration.steered" => Ok(json!({"message":
+            settlement::claim_steered(
+                db,
+                string(input, "messageId", 256)?,
+                string(input, "sessionId", 256)?,
+                string(input, "turnId", 256)?,
+            )?})),
         // The employee surface (ADR bot-sessions-and-steward §5): every row is a
         // session with a role and a profile, so there is no second lifecycle.
         "bot.list" => bots::list(db),
@@ -485,3 +497,8 @@ mod tests;
 /// Slice 6: hiring, team norms, and the employee behind a task session.
 #[cfg(test)]
 mod slice6_tests;
+
+/// The steered-delivery ledger: the claim, the settlement it joins, and the
+/// provenance that follows the carrying turn.
+#[cfg(test)]
+mod steered_tests;

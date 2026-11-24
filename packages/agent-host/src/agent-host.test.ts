@@ -155,6 +155,11 @@ function build(
     allowRemoteSessionGrants?: boolean;
     onNotifyEvent?: (event: NotifyEvent) => void;
     onInteractiveResolved?: (event: { sessionId: string; requestId: string }) => void;
+    onDeliverySteered?: (input: {
+      sessionId: string;
+      turnId: string;
+      sessionMessageId: string;
+    }) => Promise<void>;
   } = {},
 ) {
   const runtime = new FakeRuntime();
@@ -175,6 +180,7 @@ function build(
     ...(options.onInteractiveResolved
       ? { onInteractiveResolved: options.onInteractiveResolved }
       : {}),
+    ...(options.onDeliverySteered ? { onDeliverySteered: options.onDeliverySteered } : {}),
   });
   const received: RacpEventEnvelope[] = [];
   const sub = host.subscribe(viewer, { scope: "session", sessionId: "s1" }, { deliver: (event) => received.push(event), close: () => {} });
@@ -601,6 +607,68 @@ describe("AgentHost turns", () => {
 
     host.endTurn("s1", "rt_1", "completed");
     await vi.waitFor(() => expect(runtime.prompts.map((entry) => entry.content)).toEqual(["original task", "ordinary follow-up"]));
+    expect(runtime.steers).toHaveLength(1);
+  });
+
+  it("claims the ledger row of a delivery it folds into the running turn", async () => {
+    const claims: Array<{ sessionId: string; turnId: string; sessionMessageId: string }> = [];
+    const { host, runtime } = build({
+      onDeliverySteered: async (input) => {
+        claims.push(input);
+      },
+    });
+    const first = await host.startTurn(owner, { sessionId: "s1", input: { text: "original task" }, context: { requestId: "initial" } });
+    host.ingest(envelope("s1", first.turn.id, { type: "agent_start" }));
+    // A completion receipt arrives while the session is busy: it is queued as a
+    // turn of its own, then `send now` folds it into the running turn.
+    const delivery = await host.startTurn(owner, {
+      sessionId: "s1",
+      admission: "queue",
+      input: { text: "the task finished", sessionMessageId: "receipt-1" },
+      context: { requestId: "receipt" },
+    });
+    expect(claims).toEqual([]);
+
+    await host.prioritizeTurn(owner, delivery.turn.id);
+
+    expect(runtime.steers).toEqual([
+      expect.objectContaining({ turnId: "rt_1", sessionMessageId: "receipt-1" }),
+    ]);
+    // The host turn that took the input is the turn the ledger must record, or
+    // the row stays queued and the next drain delivers it a second time.
+    expect(claims).toEqual([
+      { sessionId: "s1", turnId: first.turn.id, sessionMessageId: "receipt-1" },
+    ]);
+  });
+
+  it("claims a folded delivery only after the runtime accepted it", async () => {
+    const order: string[] = [];
+    const { host, runtime } = build({
+      onDeliverySteered: async (input) => {
+        order.push(`claim:${input.sessionMessageId}`);
+      },
+    });
+    const first = await host.startTurn(owner, { sessionId: "s1", input: { text: "original task" }, context: { requestId: "initial" } });
+    host.ingest(envelope("s1", first.turn.id, { type: "agent_start" }));
+    const delivery = await host.startTurn(owner, {
+      sessionId: "s1",
+      admission: "queue",
+      input: { text: "the task finished", sessionMessageId: "receipt-1" },
+      context: { requestId: "receipt" },
+    });
+    const steer = runtime.steer.bind(runtime);
+    runtime.steer = async (request) => {
+      order.push(`steer:${request.sessionMessageId}`);
+      return steer(request);
+    };
+
+    await host.prioritizeTurn(owner, delivery.turn.id);
+
+    // Acceptance first, claim second: claiming input the turn refused would
+    // settle a delivery that still has to run in its own turn. Whether a later
+    // drain re-delivers it is the ledger's business (`pendingDispatch`, covered
+    // by the host-core tests), not this module's queue.
+    expect(order).toEqual(["steer:receipt-1", "claim:receipt-1"]);
     expect(runtime.steers).toHaveLength(1);
   });
 

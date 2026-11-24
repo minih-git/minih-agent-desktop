@@ -1,6 +1,7 @@
 import {
   AgentHost,
   RacpError,
+  claimSteeredDelivery,
   type ApprovalPort,
   type Principal,
   type NotifyEvent,
@@ -195,6 +196,11 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
             ...((request.userMessageId ?? request.sessionMessageId)
               ? { messageId: request.userMessageId ?? request.sessionMessageId }
               : {}),
+            // The ledger row this input carries, kept apart from the transcript
+            // message id: only the ledger may supply the delivery's provenance.
+            ...(request.sessionMessageId
+              ? { sessionMessageId: request.sessionMessageId }
+              : {}),
             ...(request.voiceOrigin ? { voiceOrigin: request.voiceOrigin } : {}),
             ...(request.attachments ? { attachments: request.attachments } : {}),
           },
@@ -281,6 +287,21 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
     sessions,
     approvals,
     queueStore,
+    // A delivery `send now` folded into the running turn is already in the
+    // transcript; claiming its row is what stops the next drain from starting a
+    // second turn for it. The helper logs and compensates on its own.
+    onDeliverySteered: async ({ sessionId, turnId, sessionMessageId }) => {
+      const host = options.getHost();
+      if (!host) {
+        options.log("warn", "steered delivery claim skipped: host unavailable", {
+          sessionId,
+          turnId,
+          messageId: sessionMessageId,
+        });
+        return;
+      }
+      await claimSteeredDelivery(host, { sessionId, turnId, sessionMessageId }, options.log);
+    },
     onQueueChange: (sessionId, entries) => {
       options.onQueueChange?.({ sessionId, entries: entries.map(toQueueSummary) });
     },

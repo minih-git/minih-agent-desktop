@@ -1,6 +1,6 @@
 use super::*;
 
-fn session(db: &Database, title: &str) -> String {
+pub(super) fn session(db: &Database, title: &str) -> String {
     sessions::create_session_with_options(
         db,
         sessions::SessionCreateOptions {
@@ -14,7 +14,7 @@ fn session(db: &Database, title: &str) -> String {
     .id
 }
 
-fn send(db: &Database, source: &str, target: &str, key: &str) -> Message {
+pub(super) fn send(db: &Database, source: &str, target: &str, key: &str) -> Message {
     send_record(
         db,
         &json!({"sourceSessionId":source,"pluginId":"pi.session-orchestrator",
@@ -25,7 +25,7 @@ fn send(db: &Database, source: &str, target: &str, key: &str) -> Message {
     .unwrap()
 }
 
-fn ui(role: &str, content: &str) -> sessions::UiMessage {
+pub(super) fn ui(role: &str, content: &str) -> sessions::UiMessage {
     serde_json::from_value(
         json!({"id":Uuid::new_v4().to_string(),"role":role,"content":content,
         "createdAt":ms_to_ts(now_ms())}),

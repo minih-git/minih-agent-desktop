@@ -20,6 +20,10 @@ pub struct Message {
     pub notify_on_completion: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
+    /// The already running turn that accepted this delivery as steering input
+    /// (schema v46). Set instead of `turn_id`, never together with it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_turn_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to_message_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -49,7 +53,7 @@ pub struct Message {
 pub(super) const SELECT: &str = "SELECT id,plugin_id,source_session_id,source_title,
  target_session_id,target_title,kind,content,status,notify_on_completion,turn_id,
  reply_to_message_id,result,error,created_at,updated_at,remaining_hops,permission_ceiling,
- mandate_json,stage,report_seq
+ mandate_json,stage,report_seq,host_turn_id
  FROM session_collaboration_messages";
 
 /// The Mandate is stored encoded and is returned as the object that was frozen,
@@ -92,6 +96,7 @@ pub(super) fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
         mandate_json: row.get(18)?,
         stage: row.get(19)?,
         report_seq: row.get(20)?,
+        host_turn_id: row.get(21)?,
     })
 }
 
