@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { isMinihRouterVendorKey, MINIH_ROUTER_NAME } from "@minih-agent/shared";
 import type { SettingsTabId } from "../lib/settings-search";
 import { portalToBody } from "../lib/portal-visibility";
+import { useBlockingOverlay } from "../lib/blocking-overlay";
 import { api } from "../lib/api";
 import { useAppStore } from "../stores/app-store";
 import { Button } from "./ui";
@@ -98,6 +99,9 @@ export function SidebarUserMenu({ onBeforeOpen }: { onBeforeOpen?: () => void })
     ? rememberedKeyName?.trim() || provider.oauthAccountLabel || provider.name
     : t("userMenu.localUser");
   const [open, setOpen] = useState(false);
+  // The popover is fixed and portaled, so it can extend over the pane where a
+  // plugin view draws; the trigger row stays unregistered.
+  useBlockingOverlay(open);
   const avatarGlyph = provider ? Array.from(name)[0]?.toLocaleUpperCase() : <IconUser size={16} />;
   const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);

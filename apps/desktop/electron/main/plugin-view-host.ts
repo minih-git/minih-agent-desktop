@@ -375,6 +375,11 @@ export class PluginViewHost {
       if (children.includes(entry.view)) {
         this.window.contentView.removeChildView(entry.view);
       }
+      if (entry.view.webContents.isFocused()) {
+        // The page keeps the keyboard otherwise, and the renderer overlay that
+        // replaced it never receives the Escape or Tab the user types next.
+        this.window.webContents.focus();
+      }
     }
     this.emitSurface();
   }

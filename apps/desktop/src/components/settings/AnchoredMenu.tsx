@@ -21,6 +21,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useBlockingOverlay } from "../../lib/blocking-overlay";
 
 const MARGIN = 8;
 const GAP = 6;
@@ -79,6 +80,10 @@ export function AnchoredMenu({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // The menu is a fixed layer portaled to the body, so it can sit over a
+  // native plugin view. Registering the open menu hides that view underneath
+  // instead of leaving the menu half painted.
+  useBlockingOverlay(open);
   const [position, setPosition] = useState<{
     top: number;
     left: number;

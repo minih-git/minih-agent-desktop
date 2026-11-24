@@ -29,6 +29,7 @@ import {
   type ReactNode,
 } from "react";
 import { portalToBody } from "../lib/portal-visibility";
+import { useBlockingOverlay } from "../lib/blocking-overlay";
 import { IconChevronRight } from "./icons";
 import {
   placeContextMenu,
@@ -199,6 +200,9 @@ export function ContextMenu({
   const submenuTriggerRef = useRef<HTMLButtonElement>(null);
   const [placement, setPlacement] = useState<ContextMenuPlacement | null>(null);
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
+  // The menu and its submenus are fixed layers on the body; the open root keeps
+  // the registration so a submenu does not need its own.
+  useBlockingOverlay(state !== null);
 
   const closeSubmenu = useCallback(() => setOpenSubmenuId(null), []);
 

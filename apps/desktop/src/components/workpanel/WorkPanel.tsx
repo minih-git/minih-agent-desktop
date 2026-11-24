@@ -11,7 +11,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useBlockingOverlayActive } from "../../lib/blocking-overlay";
 import {
   workPanelTabReorderScrollDelta,
   workPanelTabReorderInsertAfter,
@@ -217,7 +216,6 @@ function LocalWorkPanel({
   onToggleMaximize?: () => void;
 }) {
   const { t } = useTranslation();
-  const blockingOverlayActive = useBlockingOverlayActive();
   const rawTabs = useAppStore((s) => s.workPanelTabs);
   const tabs = rawTabs.filter(isKnownWorkPanelTab);
   const activeTabId = useAppStore((s) => s.activeWorkPanelTabId);
@@ -1063,8 +1061,9 @@ function LocalWorkPanel({
                     sessionId={activeSessionId ?? undefined}
                     location={activeTab.location}
                     tabId={activeTab.id}
-                    // Native WebContentsViews composite above renderer content.
-                    blocked={exiting || panelBlocked || blockingOverlayActive}
+                    // Overlay hiding lives inside the tab; these two reasons
+                    // belong to the dock.
+                    blocked={exiting || panelBlocked}
                   />
                 </div>
               );

@@ -20,6 +20,7 @@ import {
 import { Button, TooltipButton, cx } from "./ui";
 
 import { portalToBody } from "../lib/portal-visibility";
+import { useBlockingOverlay } from "../lib/blocking-overlay";
 import {
   placeSidebarFloatingMenuTop,
   SIDEBAR_FLOATING_MENU_MAX_HEIGHT,
@@ -339,6 +340,12 @@ export function Sidebar({
     anchorTop: number;
     anchorBottom: number;
   } | null>(null);
+  // A floating row/section/sort menu is fixed-positioned over the pane to the
+  // right of the sidebar, which is exactly where a sidebar-placement plugin
+  // view draws. Registering it hides that native view while the menu is open.
+  useBlockingOverlay(
+    Boolean(menuPosition) && Boolean(sessionMenu ?? projectMenu ?? sectionMenu ?? sortOpen),
+  );
   const {
     card: sessionHoverCard,
     show: revealSessionHoverCard,
