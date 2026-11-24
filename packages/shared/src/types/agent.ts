@@ -76,7 +76,7 @@ export type AgentPromptAttachment = {
 
 export type AgentSteerRequest = Pick<
   AgentPromptRequest,
-  "sessionId" | "content" | "attachments" | "messageId" | "voiceOrigin"
+  "sessionId" | "content" | "attachments" | "messageId" | "sessionMessageId" | "voiceOrigin"
 > & {
   expectedTurnId: string;
   /**

@@ -794,9 +794,20 @@ or general MCP operations:
 - `session.collaboration.pending` — list queued completion callbacks for the
   Electron drain; `fail` records a dispatch failure and creates the requested
   failure callback once; `settle` derives the result from the persisted turn
-  and creates at most one completion callback.
-- `session.collaboration.cancel` — cancel queued deliveries or interrupt their
+  failure callback once; `settle` derives the result from the persisted turn
+  and creates at most one completion callback — for the row that owns the turn
+  and for every delivery the turn carried as steering input (`host_turn_id`).
   exact currently-bound turns while retaining the target session and history.
+- `session.collaboration.steered` — claim a queued delivery that a turn which is
+  **already running** accepted as steering input (schema v46, ADR 0265). The
+  carrying turn must be the session's own running turn; a row that is already
+  claimed or settled answers `CONFLICT`, and repeating the same claim is a
+  no-op. A `completion` receipt is settled to `completed` in the same
+  transaction (a receipt never triggers another receipt); every other kind is
+  marked `running` with `host_turn_id` set and closes when that turn is
+  settled. Without the claim the row stays `queued` although its content is in
+  the transcript, and the next `pendingDispatch` drain starts a second turn for
+  it.
 - `session.collaboration.mandate` — attach the frozen task card (the Mandate of
   ADR `bot-sessions-and-steward`) to one queued delivery. Only before the
   delivery starts, and only once: the same card again is idempotent, a different

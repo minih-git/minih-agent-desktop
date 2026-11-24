@@ -431,6 +431,13 @@ impl Database {
             // Additive and idempotent, so a long-lived file keeps every row.
             super::session_agent_role_migration::migrate(&conn, path)?;
         }
+        if migrated_version <= 45 {
+            // The turn that carried a delivery folded into an already running
+            // turn (ADR 0265). One additive nullable column and a partial index,
+            // so a steered delivery stops looking queued and the next drain
+            // cannot deliver it a second time. No row is rewritten.
+            super::steered_delivery_migration::migrate(&conn, path)?;
+        }
         let db = Self { conn, data_dir };
         db.boot_maintenance()?;
         crate::session_collaboration::recover(&db)?;

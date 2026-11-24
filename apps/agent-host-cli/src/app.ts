@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { AgentHost, type ApprovalPort } from "@minih-agent/agent-host";
+import { AgentHost, claimSteeredDelivery, type ApprovalPort } from "@minih-agent/agent-host";
 import {
   AgentSidecar,
   HostProcess,
@@ -190,6 +190,21 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     approvals,
     queueStore: createHostQueueStore(getHost),
     localApprovalLifetimeMs: APPROVAL_REQUEST_TIMEOUT_MS,
+    // A delivery the running turn took as steering input is already in the
+    // transcript; claiming its ledger row is what keeps the next drain from
+    // starting a second turn for it (schema v46).
+    onDeliverySteered: async ({ sessionId, turnId, sessionMessageId }) => {
+      const host = getHost();
+      if (!host) {
+        log("warn", "steered delivery claim skipped: host unavailable", {
+          sessionId,
+          turnId,
+          messageId: sessionMessageId,
+        });
+        return;
+      }
+      await claimSteeredDelivery(host, { sessionId, turnId, sessionMessageId }, log);
+    },
     onNotifyEvent: (event) => {
       notifier.notify(event);
     },

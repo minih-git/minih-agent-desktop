@@ -108,6 +108,7 @@ pub fn restart(db: &Database, input: &Value) -> Result<Value> {
                 status: "queued".into(),
                 notify_on_completion: true,
                 turn_id: None,
+                host_turn_id: None,
                 reply_to_message_id: Some(delivery_id.clone()),
                 result: None,
                 error: None,

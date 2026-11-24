@@ -4,3 +4,4 @@ export * from "./event-log.js";
 export * from "./turn-queue.js";
 export * from "./approvals.js";
 export * from "./agent-host.js";
+export * from "./steered-delivery.js";

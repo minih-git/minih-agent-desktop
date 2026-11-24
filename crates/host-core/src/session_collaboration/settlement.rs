@@ -83,6 +83,7 @@ pub(super) fn callback(db: &Database, message: &Message) -> Result<Option<Messag
         status: "queued".into(),
         notify_on_completion: false,
         turn_id: None,
+        host_turn_id: None,
         reply_to_message_id: Some(message.id.clone()),
         result: None,
         error: None,
@@ -100,17 +101,102 @@ pub(super) fn callback(db: &Database, message: &Message) -> Result<Option<Messag
     Ok(Some(receipt))
 }
 
+/// Claim a queued delivery that a turn which is already running accepted as
+/// steering input (`send now` folds an ordinary queued message into the active
+/// turn, ADR 0265).
+///
+/// Without this the row stayed `queued` although its content had already been
+/// delivered, and the next drain started a second turn for that same content —
+/// the same completion, reported twice.
+///
+/// A `completion` receipt is settled here and now: it reports a result and never
+/// triggers a receipt of its own (`callback` excludes it). Every other kind is
+/// marked as carried by `turn_id` and closes when that turn settles
+/// (`settle_turn`). Claiming is once-only: a row that is already claimed or
+/// settled answers `CONFLICT`, and a repeat of the same claim is a no-op.
+pub(super) fn claim_steered(
+    db: &Database,
+    message_id: &str,
+    session_id: &str,
+    turn_id: &str,
+) -> Result<Message> {
+    let tx = db.conn().unchecked_transaction()?;
+    let message =
+        repository::get(db, message_id)?.ok_or_else(|| anyhow!("NOT_FOUND: session message"))?;
+    if message.target_session_id != session_id {
+        return Err(anyhow!(
+            "PERMISSION_DENIED: message belongs to another session"
+        ));
+    }
+    // The carrying turn must be this session's own running turn: a finished turn
+    // or a foreign one could not have accepted the input.
+    let active: bool = db.conn().query_row(
+        "SELECT EXISTS(SELECT 1 FROM turns WHERE id=?1 AND session_id=?2 AND status='running')",
+        params![turn_id, session_id],
+        |row| row.get(0),
+    )?;
+    if !active {
+        return Err(anyhow!(
+            "PERMISSION_DENIED: carrying turn is no longer active"
+        ));
+    }
+    if message.status != "queued" {
+        // Repeating the same claim is not a second delivery: the row is already
+        // carried by — or already settled with — this very turn. Any other turn
+        // would be delivering work that has happened somewhere else.
+        return if message.host_turn_id.as_deref() == Some(turn_id) {
+            Ok(message)
+        } else {
+            Err(anyhow!(
+                "CONFLICT: session message already claimed or settled"
+            ))
+        };
+    }
+    let status = if message.kind == "completion" {
+        "completed"
+    } else {
+        "running"
+    };
+    let claimed = db.conn().execute(
+        "UPDATE session_collaboration_messages SET status=?2,host_turn_id=?3,updated_at=?4
+         WHERE id=?1 AND status='queued'",
+        params![message_id, status, turn_id, now_ms()],
+    )?;
+    if claimed == 0 {
+        return Err(anyhow!(
+            "CONFLICT: session message already claimed or settled"
+        ));
+    }
+    let updated =
+        repository::get(db, message_id)?.ok_or_else(|| anyhow!("NOT_FOUND: claimed message"))?;
+    tx.commit()?;
+    Ok(updated)
+}
+
 /// Must be called after the transcript outbox and durable turn have settled.
 /// Repeated terminal notifications return the same receipt, never a new one.
+///
+/// Two kinds of row close with a turn: the delivery that owns it (`turn_id`) and
+/// every delivery the turn carried as steering input (`host_turn_id`). A carried
+/// delivery never got a turn of its own, so this is the only place its outcome
+/// is recorded — and the only place its receipt is written.
 pub fn settle_turn(db: &Database, turn_id: &str) -> Result<Option<Message>> {
     let original = db
         .conn()
         .prepare_cached(&format!("{} WHERE turn_id=?1", repository::SELECT))?
         .query_row(params![turn_id], repository::row)
         .optional()?;
-    let Some(message) = original else {
+    let carried = db
+        .conn()
+        .prepare_cached(&format!(
+            "{} WHERE host_turn_id=?1 AND status='running' ORDER BY created_at,rowid",
+            repository::SELECT
+        ))?
+        .query_map(params![turn_id], repository::row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if original.is_none() && carried.is_empty() {
         return Ok(None);
-    };
+    }
     let (status, error): (String, Option<String>) = db.conn().query_row(
         "SELECT status,error_code FROM turns WHERE id=?1",
         params![turn_id],
@@ -129,25 +215,36 @@ pub fn settle_turn(db: &Database, turn_id: &str) -> Result<Option<Message>> {
     } else {
         None
     };
+    // The row that owns the turn comes first: its receipt is the one this call
+    // has always returned.
+    let settled = original
+        .iter()
+        .chain(carried.iter())
+        .map(|message| message.id.clone())
+        .collect::<Vec<_>>();
+    let session_id = original
+        .as_ref()
+        .or_else(|| carried.first())
+        .map(|message| message.target_session_id.clone())
+        .ok_or_else(|| anyhow!("NOT_FOUND: settled message"))?;
     let tx = db.conn().unchecked_transaction()?;
-    db.conn().execute("UPDATE session_collaboration_messages SET status=?2,result=?3,error=?4,updated_at=?5 WHERE id=?1",
-        params![message.id,outcome,report,error.clone(),now_ms()])?;
+    for id in &settled {
+        db.conn().execute("UPDATE session_collaboration_messages SET status=?2,result=?3,error=?4,updated_at=?5 WHERE id=?1",
+            params![id,outcome,report.clone(),error.clone(),now_ms()])?;
+    }
     // A settled turn is the host's own evidence about the task's stage, and it
     // moves it through the same function a turn of a task session uses: a
     // completed turn is finished work waiting for the person, an error is the
     // machine's own failure, and a cancelled turn is a stop the task keeps as
     // "stuck". A report written during the turn wins, because the blocker it
     // left is what the person has to read.
-    crate::tasks::turn_ended(
-        db,
-        &tx,
-        &message.target_session_id,
-        &status,
-        error.as_deref(),
-    )?;
-    let updated =
-        repository::get(db, &message.id)?.ok_or_else(|| anyhow!("NOT_FOUND: settled message"))?;
-    let receipt = callback(db, &updated)?;
+    crate::tasks::turn_ended(db, &tx, &session_id, &status, error.as_deref())?;
+    let mut receipt = None;
+    for id in &settled {
+        let updated =
+            repository::get(db, id)?.ok_or_else(|| anyhow!("NOT_FOUND: settled message"))?;
+        receipt = receipt.or(callback(db, &updated)?);
+    }
     tx.commit()?;
     Ok(receipt)
 }

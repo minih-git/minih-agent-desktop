@@ -108,6 +108,20 @@ export type AgentHostOptions = {
    * would keep its task `person/answer` until the turn ended.
    */
   onInteractiveResolved?: (event: { sessionId: string; requestId: string }) => void;
+  /**
+   * Claim the durable ledger row of a delivery that a running turn accepted as
+   * steering input (schema v46). Without it the row stays `queued` although its
+   * content is already in the transcript, and the next drain delivers it again.
+   *
+   * The implementation owns its own failure handling: it logs and records the
+   * failure, and this module never turns a claim failure into a delivery
+   * failure, because the input itself was accepted.
+   */
+  onDeliverySteered?: (input: {
+    sessionId: string;
+    turnId: string;
+    sessionMessageId: string;
+  }) => Promise<void>;
 };
 
 /**
@@ -261,6 +275,11 @@ export class AgentHost {
     sessionId: string;
     requestId: string;
   }) => void;
+  private readonly onDeliverySteered?: (input: {
+    sessionId: string;
+    turnId: string;
+    sessionMessageId: string;
+  }) => Promise<void>;
   private readonly states = new Map<string, SessionState>();
   private readonly turnIndex = new Map<string, string>();
   private readonly runtimeAliases = new Map<string, string>();
@@ -297,6 +316,7 @@ export class AgentHost {
     this.onQueueChange = options.onQueueChange;
     this.onNotifyEvent = options.onNotifyEvent;
     this.onInteractiveResolved = options.onInteractiveResolved;
+    this.onDeliverySteered = options.onDeliverySteered;
     this.hub = new EventHub({ clock: this.clock, ids: this.ids, limits: this.limits });
     this.queue = new TurnQueue(options.queueStore ?? new MemoryQueueStore(), this.limits.maxQueuedTurnsPerSession);
     this.approvals = new ApprovalBroker(options.approvals, this.clock);
@@ -1399,6 +1419,13 @@ export class AgentHost {
         this.markDeliveredIntoAnotherTurn(state, head.id, runtimeTurnId);
         return this.removeDeliveredInput(state, head.id);
       });
+      if (accepted && head.sessionMessageId) {
+        // The transcript already holds this input, so the ledger must stop saying
+        // it is queued — otherwise the next drain starts a second turn for work
+        // that is already delivered (schema v46). Claimed after acceptance and
+        // before the drain below: a refused steer must leave the row claimable.
+        await this.claimSteeredDelivery(state.id, runtimeTurnId, head.sessionMessageId);
+      }
       // Completion may have tried to drain while this input was reserved.
       void this.drain(state.id);
       if (!cleaned) return;
@@ -1426,6 +1453,28 @@ export class AgentHost {
         },
       }, { turnId });
       return false;
+    }
+  }
+
+  /**
+   * Tell the host that this delivery's turn is the turn that just took it.
+   *
+   * A delivery folded into a running turn never gets a turn of its own, so
+   * without this claim its ledger row keeps saying `queued` and the next drain
+   * delivers it a second time. The hook owns logging and compensation; a
+   * rejection here must not undo an input the runtime already accepted.
+   */
+  private async claimSteeredDelivery(
+    sessionId: string,
+    turnId: string,
+    sessionMessageId: string,
+  ): Promise<void> {
+    if (!this.onDeliverySteered) return;
+    try {
+      await this.onDeliverySteered({ sessionId, turnId, sessionMessageId });
+    } catch {
+      // An implementation that throws instead of handling its own failure still
+      // must not fail the delivery that already happened.
     }
   }
 

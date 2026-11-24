@@ -21982,3 +21982,34 @@ disclosure. They do not introduce completion-prompt navigation or new turn-outco
   and dark themes for the review, task notification and permission card.
 - **Status**: Automated by `scripts/e2e-plugin-tasks.mjs`; candidate acceptance
   still requires a known tested commit and base.
+
+#### E2E-SESSION-steered-completion-is-not-redelivered: A completion folded into a running turn is reported once
+
+- **Preconditions**: A candidate commit has its own built host-core and runtime
+  sidecar. Two Agent sessions exist: a coordinator and a worker. The
+  coordinator is busy in a turn of its own when the worker finishes.
+- **Steps**: 1) Deliver a task from the coordinator to the worker and let the
+  worker finish, so its completion receipt is queued for the coordinator.
+  2) With the coordinator still running, `send now` the receipt so the Host
+  steers it into that turn, and confirm the transcript shows one collaboration
+  card for it (not its raw JSON body). 3) Let the coordinator's turn end and
+  trigger another drain (for example by finishing a second task). 4) Read the
+  coordinator transcript and the ledger row.
+- **Expected**: The receipt appears exactly once in the coordinator transcript,
+  rendered from its `sessionMessage` provenance. Its ledger row is no longer
+  `queued` (`completed` for a receipt, `running` with `host_turn_id` for other
+  kinds), so the second drain starts no turn for it. No duplicate completion
+  card, no second provider request for the same content, and no new turn in the
+  session. Steering into the turn also revokes the D446 silence exception for
+  that turn, exactly as any accepted user steering does.
+- **Specs linked**: `03-runtime/04-data-storage.md` (§4.6c, §4.19g),
+  `03-runtime/06-host-rpc-protocol.md` (session collaboration),
+  `03-runtime/02-agent-runtime.md` (§4.0), ADR 0265
+- **Acceptance**: C (conversation & stream), F (persistence), D (provenance)
+- **Milestone**: M6+
+- **Status**: Draft. Host-side coverage exists in
+  `crates/host-core/src/session_collaboration/tests.rs`
+  (`a_steered_completion_is_claimed_and_never_dispatched_again`,
+  `a_steered_delivery_settles_with_the_turn_that_carried_it`) and in
+  `packages/agent-host/src/agent-host.test.ts` (claim after acceptance);
+  the end-to-end desktop run still requires a known tested commit and base.

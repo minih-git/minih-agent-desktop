@@ -1062,6 +1062,13 @@ CREATE UNIQUE INDEX idx_session_collaboration_receipt
   Host validation prevents forged, stripped, edited, or regenerated
   collaboration input from becoming ordinary human input. This metadata is
   additive and does not require a column in `messages`.
+- A delivery that a turn which was **already running** accepted as steering input
+  (`send now`, ADR 0265) has no `turn_id` of its own. Since schema v46 it records
+  the carrying turn in `host_turn_id`, is claimed `running` by
+  `session.collaboration.steered` (a `completion` receipt settles to `completed`
+  immediately), and is closed by that turn's settlement. Nothing else may claim
+  it: the row leaves `queued` exactly once, so a drain can never deliver the same
+  content twice (§4.19g).
 ### 4.19 bot sessions and the task mandate (schema v31, ADR bot-sessions-and-steward)
 
 An employee is a durable session, so the identity is two nullable columns on
@@ -1485,6 +1492,37 @@ ALTER TABLE sessions ADD COLUMN agent_name TEXT;
   sidebar tooltip keeps naming the role.
 - `session.fork` does not copy it: a branch is the person's own conversation, the
   same rule the origin follows.
+
+### 4.19g session_collaboration_messages — the turn that carried a steered delivery (schema v46)
+
+`send now` folds a queued delivery into the turn that is already running (ADR
+0265). That turn is the delivery's turn, but it is not the delivery's own turn:
+`turn_id` references a turn the delivery started and is unique, so a carried
+delivery needs its own column.
+
+```sql
+ALTER TABLE session_collaboration_messages ADD COLUMN host_turn_id TEXT;
+CREATE INDEX idx_session_collaboration_host_turn
+  ON session_collaboration_messages(host_turn_id) WHERE host_turn_id IS NOT NULL;
+```
+
+- `host_turn_id` is written only by `session.collaboration.steered`, and only
+  for a row that is still `queued` and whose `target_session_id` owns the named
+  running turn. It is never set together with `turn_id`, and no unique index is
+  needed: several deliveries can ride one turn.
+- A `completion` receipt needs no later settlement — it reports a result and
+  never triggers a receipt of its own — so the claim closes it immediately as
+  `completed`. Every other kind becomes `running` and closes when the carrying
+  turn settles: `settle_turn` now closes the row that owns the turn and every
+  row that turn carried, and writes their callbacks in the same transaction.
+- `recover` needs no extra rule: a carried row is `running`, and the startup
+  fence already marks every `running` row `interrupted`.
+- There is no backfill. Before v46 a steered delivery was never recorded, and
+  the startup fence marks those rows `interrupted`, so guessing which of them
+  were steered would claim work nobody can verify.
+- **Schema v45 -> v46.** One additive nullable column plus one partial index, in
+  its own transactional step that stamps `user_version = 46` last. No row is
+  rewritten, so the step is idempotent and non-destructive.
 
 ### 4.7 messages — transcript index
 

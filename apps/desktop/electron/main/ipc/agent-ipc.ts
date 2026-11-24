@@ -168,22 +168,33 @@ export function registerAgentIpc({
     const session = await host.call<{ session?: { messages?: UiMessage[] } }>("session.get", {
       id: req.sessionId, messageLimit: 1,
     });
+    // Provenance comes only from the Host ledger — the same rule `agentPrompt`
+    // follows — so a delivery folded into a running turn reads as the delivery
+    // it is instead of as its raw body. `messageId` above keeps naming the
+    // transcript row; this names the ledger row and nothing else may.
+    const sessionMessage = req.sessionMessageId
+      ? await resolveSessionMessageInput(host, {
+          sessionId: req.sessionId,
+          sessionMessageId: req.sessionMessageId,
+        })
+      : undefined;
     const message: UiMessage = {
       id: durableUserMessageId(req.messageId, session.session?.messages ?? []),
       role: "user",
-      content: steerContent,
+      content: sessionMessage?.content ?? steerContent,
       ...(mcpExpansion ? { command: mcpExpansion.command } : {}),
       status: "complete",
       createdAt: new Date().toISOString(),
       steering: true,
       ...(prepared.length ? { attachments: prepared.map((attachment) => attachment.message) } : {}),
       ...(voiceOrigin ? { voiceOrigin } : {}),
+      ...(sessionMessage ? { sessionMessage: sessionMessage.origin } : {}),
     };
     // Revalidate inside the runtime after all file/host IO. A stale target must
     // never turn into a normal prompt or alter the next turn's configuration.
     return sidecar.call<{ accepted: boolean; turnId: string }>("agent.steer", {
       sessionId: req.sessionId, expectedTurnId: req.expectedTurnId, message,
-      content: appendPromptFallbackPaths(steerContent, prepared),
+      content: appendPromptFallbackPaths(sessionMessage?.content ?? steerContent, prepared),
       ...(mcpExpansion ? { mcpServerIds: mcpExpansion.mcpServerIds, mcpToolNames: mcpExpansion.mcpToolNames } : {}),
       attachments: prepared.filter((attachment) => attachment.inlineData).map((attachment) => ({
         path: attachment.message.ref, name: attachment.message.name, kind: attachment.message.kind,

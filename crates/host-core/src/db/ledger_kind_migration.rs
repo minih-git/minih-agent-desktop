@@ -330,7 +330,9 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(indexes, 4);
+        // target, source, the unique turn, the unique receipt, and the carrying
+        // turn a steered delivery records (schema v46).
+        assert_eq!(indexes, 5);
     }
 
     #[test]
