@@ -23,6 +23,7 @@
 import { isIP, type Socket } from "node:net";
 import { connect as tlsConnect, type TLSSocket } from "node:tls";
 import { PluginSocketError } from "./plugin-websocket";
+import { connectionMessage, tlsFailureCode } from "./plugin-tcp-errors";
 import type { LoginMachine } from "./plugin-tcp-login";
 import type { MailProtocol } from "./plugin-tcp-user-endpoint";
 import { MailLineReader } from "./plugin-tcp-mail-lines";
@@ -37,7 +38,7 @@ export function starttlsPhase(
 
 /** IMAP: capability, then `STARTTLS`, then the tagged agreement. */
 class ImapStarttls implements LoginMachine {
-  private readonly reader = new MailLineReader("STARTTLS_FAILED");
+  private readonly reader = new MailLineReader("TLS_FAILED");
   private readonly send: (data: Buffer) => void;
   private readonly capabilities = new Set<string>();
   private state: "greeting" | "capability" | "starttls" | "agreed" = "greeting";
@@ -64,7 +65,7 @@ class ImapStarttls implements LoginMachine {
     if (this.state === "greeting") {
       if (/^\* PREAUTH(?:\s|$)/i.test(line)) {
         throw new PluginSocketError(
-          "STARTTLS_FAILED",
+          "TLS_FAILED",
           "the server offered a plaintext pre-authenticated session",
         );
       }
@@ -93,14 +94,14 @@ class ImapStarttls implements LoginMachine {
       }
       if (/^MHA0\s+(?:NO|BAD)(?:\s|$)/i.test(line) || /^\* BYE(?:\s|$)/i.test(line)) {
         throw new PluginSocketError(
-          "STARTTLS_FAILED",
+          "STARTTLS_UNAVAILABLE",
           "the server did not answer the capability request",
         );
       }
       return;
     }
     if (!/^MHA0\s+OK(?:\s|$)/i.test(line)) {
-      throw new PluginSocketError("STARTTLS_FAILED", "the server refused the STARTTLS command");
+      throw new PluginSocketError("STARTTLS_UNAVAILABLE", "the server refused the STARTTLS command");
     }
     this.reader.assertEmpty();
     this.state = "agreed";
@@ -131,7 +132,7 @@ class ImapStarttls implements LoginMachine {
 
 /** POP3: `CAPA` must list `STLS`, then `STLS` must be answered `+OK`. */
 class Pop3Starttls implements LoginMachine {
-  private readonly reader = new MailLineReader("STARTTLS_FAILED");
+  private readonly reader = new MailLineReader("TLS_FAILED");
   private readonly send: (data: Buffer) => void;
   private readonly capabilities = new Set<string>();
   private state: "greeting" | "capa" | "stls" | "agreed" = "greeting";
@@ -187,7 +188,7 @@ class Pop3Starttls implements LoginMachine {
       return;
     }
     if (!/^\+OK(?:\s|$)/i.test(line)) {
-      throw new PluginSocketError("STARTTLS_FAILED", "the server refused the STLS command");
+      throw new PluginSocketError("STARTTLS_UNAVAILABLE", "the server refused the STLS command");
     }
     this.reader.assertEmpty();
     this.state = "agreed";
@@ -201,7 +202,7 @@ class Pop3Starttls implements LoginMachine {
 
 function injection(): PluginSocketError {
   return new PluginSocketError(
-    "STARTTLS_FAILED",
+    "TLS_FAILED",
     "the server sent data before the TLS handshake",
   );
 }
@@ -219,9 +220,12 @@ export function upgradeToTls(
   options: { host: string; ca?: string | Buffer | Array<string | Buffer> },
 ): Promise<TLSSocket> {
   return new Promise((resolve, reject) => {
-    const failed = () => {
+    const failed = (error?: unknown) => {
       secure.destroy();
-      reject(new PluginSocketError("TLS_FAILED", "the TLS handshake with the mail server failed"));
+      // A certificate the platform does not trust is a different message from a
+      // handshake that broke, so the classification happens here.
+      const code = tlsFailureCode(error);
+      reject(new PluginSocketError(code, connectionMessage(code)));
     };
     let secure: TLSSocket;
     try {
@@ -231,8 +235,9 @@ export function upgradeToTls(
         rejectUnauthorized: true,
         ...(options.ca === undefined ? {} : { ca: options.ca }),
       });
-    } catch {
-      reject(new PluginSocketError("TLS_FAILED", "the TLS handshake with the mail server failed"));
+    } catch (error) {
+      const code = tlsFailureCode(error);
+      reject(new PluginSocketError(code, connectionMessage(code)));
       return;
     }
     secure.once("secureConnect", () => {

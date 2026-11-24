@@ -1218,7 +1218,7 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   满足都在建立套接字之前返回 `PERMISSION_DENIED`；未声明的槽位，或缺少
   `username` / `password` 的槽位返回 `INVALID_ARGUMENT`，尚未填写的槽位按上文返回
   `CREDENTIAL_NOT_CONFIGURED`，登录无法编码的值（CR、LF、NUL）返回
-  `CREDENTIAL_UNSUPPORTED`。
+  `CREDENTIAL_REJECTED`。
   宿主只讲 IMAP，且只走隐式 TLS：清单条目必须带 `tls: true`，宿主从不发送
   `STARTTLS`，也从不升级明文连接，因此对 `tls: false` 端点传入 `credentialRef`
   返回 `PERMISSION_DENIED`。这里没有 SMTP 路径，除 PLAIN 与 `LOGIN` 命令外没有
@@ -1228,15 +1228,15 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   `AUTH=PLAIN` 与 `SASL-IR` 时以一行 SASL-IR 发送 `AUTHENTICATE PLAIN`；只声明
   `AUTH=PLAIN` 时发送 `AUTHENTICATE PLAIN` 并在续行发送 base64；否则改用
   `LOGIN "user" "pass"`。服务器声明 `LOGINDISABLED`，或只有 LOGIN 可用而用户名／
-  密码含非 ASCII 字符时返回 `CREDENTIAL_UNSUPPORTED`。
+  密码含非 ASCII 字符时返回 `CREDENTIAL_REJECTED`。
   `connect` 只在收到带标签的 `OK` 后 resolve，此时结果带 `authenticated: true`。
   登录由宿主独占：greeting、capability 应答和登录往返都不会作为 `data` 事件交给
   插件，宿主生成的事件、错误和审计也不带凭据值或登录记录。任一阶段的 `NO`、
   `BAD`、`BYE`、格式错误的 greeting，或超过 64 KiB 的登录行返回
-  `CREDENTIAL_REJECTED`，连接被丢弃而不是以半开状态交给插件；TLS 或套接字失败
-  返回固定文案的 `CONNECT_FAILED`，不带对端文本。同一个 `timeoutMs` 覆盖拨号、
-  TLS 握手和登录（默认 15 秒，最长 60 秒），超时返回 `TIMEOUT`。连接中的套接字
-  同样占用四条上限之一。登录往返的字节与插件流量一样计入按端点的每日总量，审计
+  `CREDENTIAL_REJECTED`，连接被丢弃而不是以半开状态交给插件；TLS 失败按证书与其它原因
+  分别返回 `TLS_CERTIFICATE`、`TLS_FAILED`，套接字失败返回 `CONNECT_FAILED`，都不带对端
+  文本。同一个 `timeoutMs` 覆盖拨号、TLS 握手和登录（默认 15 秒，最长 60 秒），超时返回
+  `CONNECT_FAILED`。连接中的套接字
   只记端点、槽位 id、`imaps` 协议和结果，绝不记值或登录记录。
   登录之后的 TCP 仍然是透明的：`connect` 一旦 resolve，插件的写入与服务端的字节
   原样转发、不做过滤，与没有凭据的连接完全相同。邮件服务器拿到了账号密码，因此
@@ -1247,12 +1247,21 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   账号一起保存，宿主只连那一台（02 §5.5.2）：`endpoint` 可以省略，插件若给出就必须与
   存下的主机和端口一致。`security: "tls"` 就是上面的流程；`security: "starttls"` 先连
   明文端口，读问候语，要求能力里有 `STARTTLS`（IMAP）或 `CAPA` 里有 `STLS`（POP3），
-  发出命令并要求对方同意，之后才带证书校验与 SNI 升级。服务器没有声明升级即
-  `STARTTLS_UNAVAILABLE`——宿主绝不回退到明文——升级达成之后才到的字节是
-  `STARTTLS_FAILED`。明文阶段的能力全部丢弃并在 TLS 上重读，敌意的升级前回答因此无法
+  发出命令并要求对方同意，之后才带证书校验与 SNI 升级。服务器没有声明升级，或声明之后
+  拒绝执行，都是 `STARTTLS_UNAVAILABLE`——宿主绝不回退到明文——升级达成之后才到的字节
+  是 `TLS_FAILED`。明文阶段的能力全部丢弃并在 TLS 上重读，敌意的升级前回答因此无法
   选中更弱的登录方式。POP3 在 `CAPA` 声明 `SASL PLAIN` 时用 `AUTH PLAIN`，否则用
   `USER`/`PASS`；两种协议对凭据被拒都回答 `CREDENTIAL_REJECTED`，用户自填服务器成功时
   `connect` 会带 `protocol: "imap" | "pop3"`。没有 `credentialRef` 的连接永远到不了它。
+  **失败码。** 请求已被接受、但连接失败的 `net.tcp.connect` 只用下面这五个名字、别无其它，
+  插件因此能为每种情况给一句提示：`CONNECT_FAILED`（TCP 连不上，或超时到期）、
+  `TLS_CERTIFICATE`（证书过期、不受信任，或名字不匹配）、`TLS_FAILED`（TLS 阶段因其它原因
+  失败，包括升级根本没有开始、以及握手之前到达的字节）、`STARTTLS_UNAVAILABLE`（服务器
+  没有声明升级，或声明之后拒绝执行；宿主绝不回退明文）、`CREDENTIAL_REJECTED`（服务器拒绝
+  了登录，或存下的值根本无法用于登录）。连接尝试之前就已决定的拒绝保留各自的码：
+  `INVALID_ARGUMENT`、`PERMISSION_DENIED`、`CREDENTIAL_NOT_CONFIGURED`、
+  `CREDENTIAL_INSTANCE_REQUIRED`、`CREDENTIAL_INVALID`、`CREDENTIAL_LIMIT`、
+  `LIMIT_EXCEEDED`、`NOT_FOUND`。
 - **入站 webhook 只投递，不回答。** 存在启用且获授权的接收器时，宿主监听 37124；
   端口占用时使用持久化的回退端口。绑定和来源过滤见
   [ADR plugin-webhook-listener-boundary](/zh-CN/adr/plugin-webhook-listener-boundary)。

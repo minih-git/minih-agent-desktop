@@ -527,6 +527,36 @@ test("a server without STARTTLS fails instead of falling back to plaintext", asy
   assert.ok(!server.sawCredential(), "no credential byte reached the server at all");
 });
 
+test("a server that advertises STARTTLS and then refuses it is still unavailable", async (t) => {
+  // The command refused after the capability promised it is a protocol lie, and
+  // it has to land on the same code as "never advertised": either way the user
+  // needs a different port or server, not another handshake attempt.
+  const server = await mailServer(t, {
+    greeting: "* OK ready",
+    respond: ({ line, reply }) => {
+      const tagged = /^(\S+) (CAPABILITY|STARTTLS)(?:\s|$)/i.exec(line);
+      if (!tagged) return;
+      if (/CAPABILITY/i.test(tagged[2])) {
+        reply("* CAPABILITY IMAP4rev1 STARTTLS");
+        reply(`${tagged[1]} OK CAPABILITY completed`);
+        return;
+      }
+      reply(`${tagged[1]} NO STARTTLS is disabled`);
+    },
+  });
+  const pluginId = "test.starttls-refused";
+  const { call, settings, host } = await harness(t, [{ id: pluginId }]);
+  await settings.save(pluginId, "mailbox", saved("localhost", String(server.port), "imap", "starttls"));
+
+  await refusal(
+    call(pluginId, "connect", { credentialRef: `mailbox#${await lastInstance(host, pluginId)}` }),
+    "STARTTLS_UNAVAILABLE",
+    /STARTTLS/,
+  );
+  assert.equal(server.upgraded(), 0, "nothing was upgraded");
+  assert.ok(!server.sawCredential(), "no credential byte reached the server at all");
+});
+
 test("a byte pushed right after the upgrade agreement aborts the connection", async (t) => {
   const server = await mailServer(t, {
     greeting: "* OK [CAPABILITY IMAP4rev1 STARTTLS] ready",
@@ -546,7 +576,7 @@ test("a byte pushed right after the upgrade agreement aborts the connection", as
 
   await refusal(
     call(pluginId, "connect", { credentialRef: `mailbox#${await lastInstance(host, pluginId)}` }),
-    "STARTTLS_FAILED",
+    "TLS_FAILED",
     /before the TLS handshake/,
   );
   assert.equal(server.plainCredential(), undefined, "the password never left in the clear");

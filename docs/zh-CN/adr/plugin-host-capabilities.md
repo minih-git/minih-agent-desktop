@@ -338,8 +338,9 @@ B2 实现入站 webhook；B4 实现 `pi.notify.center`；B6 实现插件定时�
 - `credentials.list` 把这四个端点值作为 `publicFields` 报出，插件可以按服务器区分账号
   而读不到密码。
 - 只有主动声明的槽位会多出这一段表单，其它槽位的渲染完全不变。
-- 插件多拿到两个失败码（`STARTTLS_UNAVAILABLE`，以及与凭据被拒区分的 TLS 失败），
-  提示因此能说清要修什么，而不是笼统的「连接失败」。
+- 用户自填服务器的连接用一组封闭的失败码报告失败（`CONNECT_FAILED`、
+  `TLS_CERTIFICATE`、`TLS_FAILED`、`STARTTLS_UNAVAILABLE`、`CREDENTIAL_REJECTED`），
+  提示因此能说清要修什么，而不是笼统的「连接失败」。升级阶段也不会多出第六个名字。
 
 ### 备选方案
 

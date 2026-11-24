@@ -154,6 +154,7 @@ import {
 } from "./plugin-websocket";
 import type { PluginTcpEndpoint, PluginTcpEvent, PluginTcpRegistry } from "./plugin-tcp";
 import { resolveTcpCredential } from "./plugin-tcp-credentials";
+import { tcpFailureCode } from "./plugin-tcp-errors";
 import type { PluginTcpLogin } from "./plugin-tcp-login";
 import { declaredSlots, slotHoldsInstances } from "./plugin-credential-slots";
 import type {
@@ -3344,7 +3345,10 @@ export class PluginRuntime {
           this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: true, ts: Date.now(), host: endpoint.host, port: endpoint.port, connectionId: result.connectionId, ...(hasCredential ? { ...(auditSlot ? { credential: auditSlot } : {}), ...(auditInstance ? { credentialInstance: auditInstance } : {}), scheme: auditScheme } : {}) });
           return userProtocol ? { ...result, protocol: userProtocol } : result;
         } catch (error) {
-          const code = (error as { code?: string }).code ?? "CONNECT_FAILED";
+          const reported = (error as { code?: string }).code ?? "CONNECT_FAILED";
+          // The plugin shows one message per case, so the transport family is
+          // folded here rather than exposed as Node's errno or the deadline.
+          const code = tcpFailureCode(reported);
           this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: false, errorCode: code, ...(auditPeer ? { host: auditPeer.host, port: auditPeer.port } : {}), ...(hasCredential ? { scheme: auditScheme, ...(auditSlot ? { credential: auditSlot } : {}), ...(auditInstance ? { credentialInstance: auditInstance } : {}) } : {}), ts: Date.now() });
           throw apiError(code, (error as Error).message);
         }
