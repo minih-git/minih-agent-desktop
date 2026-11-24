@@ -476,3 +476,55 @@ a stored password goes.
   that do not offer implicit TLS.
 - **Accept a self-signed certificate.** Rejected: it would make "the host
   verified the peer" mean nothing on the one path where a password travels.
+
+## 6. No mailbox limit (2026-11-24, 1.10.0)
+
+This section amends §4 point 1 and point 5. Everything else stands.
+
+### The problem
+
+`multiple: { max }` was bounded at 1..5 because a mailbox plugin was expected to
+hold one idle connection per account under a four-connection ceiling. The plugin
+now polls with short connections instead, so the connection ceiling no longer
+dictates the account count — but the host still refused the sixth account, which
+is a product limit invented by an implementation detail. The number a user needs
+is "as many mailboxes as I have".
+
+### Decision
+
+1. `multiple` may omit `max`. Omitting it means the plugin sets no limit of its
+   own; a declared `max` keeps exactly its released meaning, with the accepted
+   range widened to 1..100.
+2. The host keeps one internal ceiling of **100 instances per slot**. It is what
+   protects the encrypted store and the per-plugin credential index from one slot
+   growing without bound, and it is the count at which `CREDENTIAL_LIMIT` is
+   returned. It is reported separately as `limit`, so `max` stays "what the
+   manifest asked for" and a slot that declared none shows no "x of y".
+3. `MAX_CONNECTIONS_PER_PLUGIN` stays 8. Lifting the account limit does not lift
+   the concurrency ceiling: a plugin that opens a connection per account still
+   runs out, which is the plugin's business to schedule around (short, staggered
+   polls), not the host's to allow.
+4. Existing manifests with `max: 1..5` behave exactly as before: same storage
+   shape, same refusals, same `list` answer. A manifest that declared an invalid
+   `max` is refused at install rather than at first read.
+
+### Consequences
+
+- A user adds as many mailboxes as they have; the plugin cannot cap them by
+  declaration, and the host still cannot be made to hold an unbounded list.
+- `credentials.status` / `credentials.list` gain an optional `limit` next to the
+  optional `max`; a released plugin reading `max` sees the same number it
+  declared.
+- The Settings sheet shows a plain count for a slot with no declared limit and
+  still disables "Add" at the host ceiling.
+
+### Alternatives
+
+- **Keep 5.** Rejected: nothing about the host needs it any more, and it forced
+  users with six mailboxes to file a bug.
+- **No ceiling at all.** Rejected: an unbounded list is an unbounded encrypted
+  index and an unbounded settings page. 100 is far beyond a real user and still
+  bounded.
+- **Raise `MAX_CONNECTIONS_PER_PLUGIN` to match.** Rejected: the ceiling bounds
+  descriptors and buffers, and a plugin needs to schedule its own connections
+  rather than expect a socket per account.

@@ -15,6 +15,7 @@
  * controls.
  */
 import {
+  MAX_CREDENTIAL_INSTANCES,
   PLUGIN_MAIL_PROTOCOLS,
   isNetHostAllowed,
   parseNetDomains,
@@ -65,7 +66,10 @@ export type PluginCredentialSlotState = {
   lastUsedAt?: string;
   /** Present only for a slot that declares `multiple`. */
   multiple?: true;
+  /** The bound the manifest declared; absent when it declares none. */
   max?: number;
+  /** The host's own ceiling for one slot. */
+  limit?: number;
   instances?: PluginCredentialInstanceState[];
   /** Field whose value names an instance. */
   labelField?: string;
@@ -112,8 +116,10 @@ export type DeclaredSlot = {
   id: string;
   kind: PluginCredentialKind;
   scope: { domains?: unknown };
-  /** `multiple.max`; absent keeps the released single-value slot. */
+  /** `multiple.max` as the host applies it; absent keeps the released slot. */
   multipleMax?: number;
+  /** `multiple.max` as the manifest declared it; absent means no plugin limit. */
+  multipleDeclaredMax?: number;
   /** Field whose value names an instance; never a secret field. */
   labelField?: string;
   /**
@@ -310,13 +316,16 @@ export async function listPluginCredentialSlots(
     if (typeof id !== "string" || !id) continue;
     const lastUsedAt = (entry as { lastUsedAt?: unknown }).lastUsedAt;
     const max = (entry as { max?: unknown }).max;
+    const limit = (entry as { limit?: unknown }).limit;
     const labelField = (entry as { labelField?: unknown }).labelField;
     const multiple = (entry as { multiple?: unknown }).multiple === true;
     states.push({
       id,
       configured: (entry as { configured?: unknown }).configured === true,
       ...(typeof lastUsedAt === "string" ? { lastUsedAt } : {}),
-      ...(multiple && typeof max === "number" ? { multiple: true as const, max } : {}),
+      ...(multiple ? { multiple: true as const } : {}),
+      ...(multiple && typeof max === "number" ? { max } : {}),
+      ...(multiple && typeof limit === "number" ? { limit } : {}),
       ...(multiple ? { instances: credentialInstances(entry) } : {}),
       ...(typeof labelField === "string" ? { labelField } : {}),
     });
@@ -360,9 +369,17 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
     // `multiple` is either a usable bound or absent: a manifest that declares a
     // half-shaped one was refused at install, so an unusable value here is read
     // as the released single-value slot instead of a slot nothing can inject.
-    const max = slot.multiple?.max;
+    const declaredMax = slot.multiple?.max;
+    const multipleDeclaredMax =
+      typeof declaredMax === "number" && Number.isInteger(declaredMax) && declaredMax >= 1
+        ? declaredMax
+        : undefined;
+    // `multiple` without `max` means "as many as the host allows"; the ceiling is
+    // the same number the store enforces.
     const multipleMax =
-      typeof max === "number" && Number.isInteger(max) && max >= 1 ? max : undefined;
+      slot.multiple === undefined
+        ? undefined
+        : (multipleDeclaredMax ?? MAX_CREDENTIAL_INSTANCES);
     // `userEndpoint` is a declaration of the mail protocols the user may pick,
     // not a value: a half-shaped one was refused at install, so anything this
     // host cannot read is read as the released one-server slot.
@@ -380,6 +397,7 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
       kind: slot.kind as PluginCredentialKind,
       scope,
       ...(multipleMax === undefined ? {} : { multipleMax }),
+      ...(multipleDeclaredMax === undefined ? {} : { multipleDeclaredMax }),
       ...(typeof slot.labelField === "string" && slot.labelField
         ? { labelField: slot.labelField }
         : {}),

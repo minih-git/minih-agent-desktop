@@ -100,19 +100,21 @@ describe("contributes.credentials: multiple, labelField, field controls", () => 
     expect(validateCredentialContributions([slot()])).toBe(undefined);
   });
 
-  it("bounds multiple.max to the host's 1..5 window", () => {
+  it("treats multiple.max as optional, within the host's 1..100 ceiling", () => {
+    // No `max`: the plugin sets no limit of its own and the host ceiling applies.
+    expect(validateCredentialContributions([slot({ multiple: {} })])).toBe(undefined);
     expect(validateCredentialContributions([slot({ multiple: { max: 1 } })])).toBe(undefined);
     expect(validateCredentialContributions([slot({ multiple: { max: 5 } })])).toBe(undefined);
+    expect(validateCredentialContributions([slot({ multiple: { max: 100 } })])).toBe(undefined);
     expect(validateCredentialContributions([slot({ multiple: { max: 0 } })])).toMatch(
-      /multiple\.max must be an integer from 1 to 5/,
+      /multiple\.max must be an integer from 1 to 100/,
     );
-    expect(validateCredentialContributions([slot({ multiple: { max: 6 } })])).toMatch(
-      /multiple\.max must be an integer from 1 to 5/,
+    expect(validateCredentialContributions([slot({ multiple: { max: 101 } })])).toMatch(
+      /multiple\.max must be an integer from 1 to 100/,
     );
     expect(validateCredentialContributions([slot({ multiple: { max: 2.5 } })])).toMatch(
       /multiple\.max/,
     );
-    expect(validateCredentialContributions([slot({ multiple: {} })])).toMatch(/multiple\.max/);
     expect(validateCredentialContributions([slot({ multiple: "yes" })])).toMatch(
       /multiple must be an object/,
     );

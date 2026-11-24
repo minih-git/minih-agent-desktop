@@ -133,11 +133,17 @@ export class PluginCredentialBroker {
         publicFields: { ...instance.publicFields },
         configured: true as const,
       }));
+      const declared = state?.max ?? slot.multipleDeclaredMax;
+      const limit = state?.limit ?? slot.multipleMax;
       return {
         id: slot.id,
         configured: instances.length > 0,
         multiple: true as const,
-        max: state?.max ?? slot.multipleMax ?? 0,
+        // `max` is what the manifest asked for; `limit` is the host's ceiling. A
+        // plugin that declared no `max` gets no `max` back, so nothing shows a
+        // bound it never set.
+        ...(declared === undefined ? {} : { max: declared }),
+        ...(limit === undefined ? {} : { limit }),
         instances,
       };
     });

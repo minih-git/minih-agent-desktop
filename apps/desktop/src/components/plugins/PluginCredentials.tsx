@@ -250,8 +250,11 @@ function MultiValueSlot({
   const [error, setError] = useState<string | null>(null);
   const locale = i18n.resolvedLanguage ?? "en";
   const instances = slot.instances ?? [];
-  const max = slot.max ?? instances.length;
-  const full = instances.length >= max;
+  // `max` is the bound the plugin declared; `limit` is the app's own ceiling, so
+  // a slot the manifest left open shows a count and never "x of y".
+  const declaredMax = slot.max;
+  const limit = slot.limit ?? declaredMax;
+  const full = limit !== undefined && instances.length >= limit;
 
   const add = async () => {
     setBusy(true);
@@ -293,7 +296,9 @@ function MultiValueSlot({
       <div className="plugin-credential-heading">
         <strong>{localized(slot.title, locale)}</strong>
         <span>
-          {t("pluginCredentials.instanceCount", { count: instances.length, max })}
+          {declaredMax === undefined
+            ? t("pluginCredentials.instanceCountUnbounded", { count: instances.length })
+            : t("pluginCredentials.instanceCount", { count: instances.length, max: declaredMax })}
         </span>
       </div>
       <InstanceList slot={slot} busy={busy} onRemove={(instanceId) => void remove(instanceId)} />
@@ -340,7 +345,7 @@ function MultiValueSlot({
           >
             {t("pluginCredentials.add")}
           </Button>
-          {full ? <p>{t("pluginCredentials.limitReached", { max })}</p> : null}
+          {full ? <p>{t("pluginCredentials.limitReached", { max: limit ?? 0 })}</p> : null}
         </div>
       )}
     </section>

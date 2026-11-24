@@ -1089,7 +1089,10 @@ pi.credentials.list(): Promise<Array<{
   configured: boolean;
   /** 仅声明了 `multiple` 的槽位出现。 */
   multiple?: true;
+  /** 清单自己声明的上限；没声明就不出现。 */
   max?: number;
+  /** 宿主的硬上限；达到该计数即 `CREDENTIAL_LIMIT`。 */
+  limit?: number;
   /** 仅声明了 `multiple` 的槽位出现，按创建顺序。 */
   instances?: Array<{
     instanceId: string;                    // 宿主生成的不透明 id

@@ -16,6 +16,11 @@ use super::{array_of, is_contrib_id, require_permission, PluginManifest};
 
 use crate::plugins::user_endpoint;
 
+/// Hard ceiling on how many instances one credential slot may hold, mirroring
+/// `MAX_INSTANCES` in `plugins/credentials.rs` and `MAX_CREDENTIAL_INSTANCES` in
+/// the plugin SDK. A manifest may declare a lower `max`, or none at all.
+const MAX_CREDENTIAL_INSTANCES: u64 = 100;
+
 /// `contributes.credentials[].kind` — how the host injects the stored secret.
 const CREDENTIAL_KINDS: [&str; 5] = ["basic", "bearer", "header", "oauth2", "imap"];
 
@@ -113,6 +118,7 @@ fn validate_credentials(map: &Map<String, Value>, manifest: &PluginManifest) -> 
             }
         }
 
+        validate_multiple(id, obj.get("multiple"))?;
         validate_user_endpoint(id, kind, obj.get("userEndpoint"), &keys)?;
         if let Some(scope) = obj.get("scope") {
             let scope = scope.as_object().ok_or_else(|| {
@@ -404,6 +410,28 @@ pub(crate) fn is_hostname(value: &str) -> bool {
                     .chars()
                     .all(|character| character.is_ascii_alphanumeric() || character == '-')
         })
+}
+
+/// `multiple` — one value, or many. `max` is optional: a manifest that omits it
+/// sets no limit of its own and the host's ceiling applies, which is what a
+/// mailbox plugin wants (the user has as many accounts as they have). A declared
+/// `max` keeps its released meaning, now inside the ceiling.
+fn validate_multiple(id: &str, raw: Option<&Value>) -> Result<()> {
+    let Some(raw) = raw else {
+        return Ok(());
+    };
+    let obj = raw
+        .as_object()
+        .ok_or_else(|| anyhow!("PLUGIN_INVALID: credential {id} multiple must be an object"))?;
+    let Some(max) = obj.get("max") else {
+        return Ok(());
+    };
+    match max.as_u64() {
+        Some(value) if (1..=MAX_CREDENTIAL_INSTANCES).contains(&value) => Ok(()),
+        _ => bail!(
+            "PLUGIN_INVALID: credential {id} multiple.max must be an integer from 1 to {MAX_CREDENTIAL_INSTANCES}"
+        ),
+    }
 }
 
 /// `contributes.credentials[].userEndpoint`: a mailbox slot may let the user

@@ -21,6 +21,7 @@ export const en = {
     removeFailed: "Couldn't remove this account. Try again later.",
     limitReached: "All {{max}} accounts allowed here are configured.",
     instanceCount: "{{count}} of {{max}} accounts",
+    instanceCountUnbounded: "{{count}} accounts configured",
     instanceFallback: "Account {{index}}",
     noInstances: "No account is configured yet.",
     selectPlaceholder: "Choose an option",

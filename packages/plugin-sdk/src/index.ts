@@ -88,8 +88,13 @@ export type PluginCredentialSlotStatus = {
   configured: boolean;
   /** Present only for a slot that declares `multiple`. */
   multiple?: true;
-  /** Present only for a slot that declares `multiple`. */
+  /**
+   * The bound the manifest declared. Absent when it declares none, so a plugin
+   * can show a count without inventing a limit.
+   */
   max?: number;
+  /** The host's own ceiling for one slot; `CREDENTIAL_LIMIT` at this count. */
+  limit?: number;
   /** Present only for a slot that declares `multiple`; oldest first. */
   instances?: PluginCredentialInstanceStatus[];
 };

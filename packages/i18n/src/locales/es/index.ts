@@ -21,6 +21,7 @@ export const es = {
     removeFailed: "No se pudo eliminar esta cuenta. Inténtalo más tarde.",
     limitReached: "Las {{max}} cuentas permitidas ya están configuradas.",
     instanceCount: "{{count}} de {{max}} cuentas",
+    instanceCountUnbounded: "{{count}} cuentas configuradas",
     instanceFallback: "Cuenta {{index}}",
     noInstances: "Todavía no hay ninguna cuenta configurada.",
     selectPlaceholder: "Elige una opción",

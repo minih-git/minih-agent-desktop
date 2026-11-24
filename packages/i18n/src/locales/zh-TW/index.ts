@@ -21,6 +21,7 @@ export const zhTW = {
     removeFailed: "無法刪除此帳號，請稍後再試一次。",
     limitReached: "此處最多允許 {{max}} 個帳號，已全部設定。",
     instanceCount: "已設定 {{count}}/{{max}} 個帳號",
+    instanceCountUnbounded: "已設定 {{count}} 個帳號",
     instanceFallback: "帳號 {{index}}",
     noInstances: "尚未設定帳號。",
     selectPlaceholder: "請選擇",
