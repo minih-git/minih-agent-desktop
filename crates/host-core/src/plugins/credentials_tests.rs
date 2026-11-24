@@ -276,7 +276,7 @@ fn a_plugin_without_credential_slots_reports_none() {
 }
 
 #[test]
-fn a_manifest_that_added_a_field_makes_the_stored_slot_unconfigured() {
+fn a_manifest_change_keeps_secrets_mandatory_and_metadata_optional() {
     let dir = tempdir().unwrap();
     let (_plugins, plugin, root) = install(
         dir.path(),
@@ -290,6 +290,8 @@ fn a_manifest_that_added_a_field_makes_the_stored_slot_unconfigured() {
         true
     );
 
+    // A non-secret field the manifest added later is identity, not the secret:
+    // the account keeps working and simply does not know the new value yet.
     let mut grown = mailbox_slot();
     grown["fields"] = json!([
         field("username", "User", false),
@@ -300,8 +302,26 @@ fn a_manifest_that_added_a_field_makes_the_stored_slot_unconfigured() {
         &root,
         manifest("demo.grown", json!({ "credentials": [grown] })),
     );
+    assert_eq!(
+        status(&secrets, &plugin, "en", None).unwrap()["slots"][0]["configured"],
+        true
+    );
+    let fields = resolve(&secrets, &plugin, "mailbox", None).unwrap();
+    assert_eq!(fields.get("password").map(String::as_str), Some("hunter2"));
+    assert!(!fields.contains_key("domain"));
 
-    // Half a credential must never be injected after a manifest change.
+    // A secret added later is different: nobody entered it, so the slot is not
+    // a usable credential and is never injected half-filled.
+    let mut stricter = mailbox_slot();
+    stricter["fields"] = json!([
+        field("username", "User", false),
+        field("password", "Password", true),
+        field("appPassword", "App password", true),
+    ]);
+    write_manifest(
+        &root,
+        manifest("demo.grown", json!({ "credentials": [stricter] })),
+    );
     assert_eq!(
         status(&secrets, &plugin, "en", None).unwrap()["slots"][0]["configured"],
         false
