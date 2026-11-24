@@ -2,10 +2,12 @@ use super::*;
 mod composer_transforms;
 mod contribution_ids;
 mod host_capabilities;
+mod labels;
 mod provider_catalog;
 mod views;
 
 pub(crate) use contribution_ids::is_contrib_id;
+use labels::{is_optional_plugin_label, is_plugin_label, is_shortcut_shape};
 use views::validate_views;
 
 pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> Result<()> {
@@ -45,13 +47,19 @@ pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> 
                 bail!("PLUGIN_INVALID: duplicate setting key {key}");
             }
             seen.push(key);
-            if obj
-                .get("title")
-                .and_then(Value::as_str)
-                .map(|title| title.trim().is_empty())
-                .unwrap_or(true)
-            {
+            // A title is the author's plain string or a complete
+            // `{ en, "zh-CN" }` map (ADR 0340), the same grammar views and
+            // host-capability contributions already use. A half-translated map
+            // is refused here rather than silently falling back at runtime.
+            if !obj.get("title").is_some_and(is_plugin_label) {
                 bail!("PLUGIN_INVALID: setting {key} requires a title");
+            }
+            if let Some(description) = obj.get("description") {
+                if !is_optional_plugin_label(description) {
+                    bail!(
+                        "PLUGIN_INVALID: setting {key} description must be a string or {{ en, \"zh-CN\" }}"
+                    );
+                }
             }
             let setting_type = obj
                 .get("type")
@@ -126,7 +134,7 @@ pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> 
                     let option = option.as_object().ok_or_else(|| {
                         anyhow!("PLUGIN_INVALID: select setting {key} has an invalid enum option")
                     })?;
-                    if option.get("label").and_then(Value::as_str).is_none()
+                    if !option.get("label").is_some_and(is_plugin_label)
                         || !option
                             .get("value")
                             .map(|value| {
@@ -629,79 +637,6 @@ fn is_setting_key(value: &str) -> bool {
         && value
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
-}
-
-/// A block label is a plain string or both contract locales, mirroring
-/// `localizedStringError` in the plugin SDK: a half-translated title would
-/// silently fall back at runtime and read as a plugin bug rather than a
-/// manifest one.
-pub(super) fn is_plugin_label(value: &Value) -> bool {
-    if value.as_str().is_some_and(|label| !label.trim().is_empty()) {
-        return true;
-    }
-    value.as_object().is_some_and(|localized| {
-        ["en", "zh-CN"].iter().all(|locale| {
-            localized
-                .get(*locale)
-                .and_then(Value::as_str)
-                .is_some_and(|label| !label.trim().is_empty())
-        })
-    })
-}
-
-fn is_shortcut_shape(value: &Value) -> bool {
-    let Some(value) = value.as_str() else {
-        return false;
-    };
-    let parts: Vec<&str> = value.split('+').filter(|part| !part.is_empty()).collect();
-    if parts.len() < 2
-        && !matches!(parts.first(), Some(key) if key.starts_with('F') && key[1..].parse::<u8>().map(|n| (1..=12).contains(&n)).unwrap_or(false))
-    {
-        return false;
-    }
-    let Some(key) = parts.last() else {
-        return false;
-    };
-    let named = matches!(
-        *key,
-        "Enter"
-            | "Space"
-            | "Tab"
-            | "Backspace"
-            | "Delete"
-            | "Insert"
-            | "Home"
-            | "End"
-            | "PageUp"
-            | "PageDown"
-            | "ArrowUp"
-            | "ArrowDown"
-            | "ArrowLeft"
-            | "ArrowRight"
-            | "Comma"
-            | "Period"
-            | "Equal"
-            | "Minus"
-            | "Slash"
-            | "Backslash"
-            | "Semicolon"
-            | "Quote"
-            | "BracketLeft"
-            | "BracketRight"
-            | "Backquote"
-    );
-    let alpha_numeric = key.len() == 1 && key.chars().all(|ch| ch.is_ascii_alphanumeric());
-    let function_key = key.starts_with('F')
-        && key[1..]
-            .parse::<u8>()
-            .map(|number| (1..=12).contains(&number))
-            .unwrap_or(false);
-    if !(named || alpha_numeric || function_key) {
-        return false;
-    }
-    parts[..parts.len().saturating_sub(1)]
-        .iter()
-        .all(|part| matches!(*part, "Mod" | "Ctrl" | "Alt" | "Shift"))
 }
 
 pub(super) fn array_of<'a>(value: &'a Value, field: &str) -> Result<&'a [Value]> {

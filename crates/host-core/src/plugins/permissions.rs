@@ -1,6 +1,34 @@
 use super::*;
 
-pub(crate) fn derive_settings(manifest: &PluginManifest) -> Vec<PluginSettingDefinition> {
+/// A declared label: the author's plain string, or the entry a generated sheet
+/// reads from a `{ en, "zh-CN" }` map (ADR 0340). The fallback order is the same
+/// one every other localized manifest label uses, so a map missing the shell
+/// locale reads English rather than nothing.
+fn localized_setting_label(value: &Value, locale: &str) -> Option<String> {
+    if value.is_string() {
+        return value.as_str().map(str::to_string);
+    }
+    let map = value.as_object()?;
+    let mut order = vec![plugin_display_locale(locale)];
+    for key in ["en", "zh-CN"] {
+        if !order.contains(&key) {
+            order.push(key);
+        }
+    }
+    order
+        .into_iter()
+        .find_map(|key| {
+            map.get(key)
+                .and_then(Value::as_str)
+                .filter(|text| !text.trim().is_empty())
+        })
+        .map(str::to_string)
+}
+
+pub(crate) fn derive_settings(
+    manifest: &PluginManifest,
+    locale: &str,
+) -> Vec<PluginSettingDefinition> {
     let Some(entries) = manifest
         .contributes
         .as_ref()
@@ -16,11 +44,10 @@ pub(crate) fn derive_settings(manifest: &PluginManifest) -> Vec<PluginSettingDef
             let obj = entry.as_object()?;
             Some(PluginSettingDefinition {
                 key: obj.get("key")?.as_str()?.to_string(),
-                title: obj.get("title")?.as_str()?.to_string(),
+                title: localized_setting_label(obj.get("title")?, locale)?,
                 description: obj
                     .get("description")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
+                    .and_then(|value| localized_setting_label(value, locale)),
                 setting_type: obj.get("type")?.as_str()?.to_string(),
                 default: obj.get("default").cloned(),
                 enum_values: obj
@@ -32,7 +59,7 @@ pub(crate) fn derive_settings(manifest: &PluginManifest) -> Vec<PluginSettingDef
                             .filter_map(|value| {
                                 let option = value.as_object()?;
                                 Some(PluginSettingOption {
-                                    label: option.get("label")?.as_str()?.to_string(),
+                                    label: localized_setting_label(option.get("label")?, locale)?,
                                     value: option.get("value")?.clone(),
                                 })
                             })

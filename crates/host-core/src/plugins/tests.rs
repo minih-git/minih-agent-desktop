@@ -895,6 +895,126 @@ fn a_model_setting_cannot_declare_its_own_options() {
 }
 
 #[test]
+fn a_localized_setting_title_is_resolved_to_the_app_locale() {
+    // ADR 0340: a generated settings row's title, description and option label
+    // may carry `{ en, "zh-CN" }`, like a view or credential title already does.
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("plugin");
+    write_plugin(
+        &root,
+        capability_manifest(
+            json!({
+                "settings": [
+                    {
+                        "key": "keywords",
+                        "title": { "en": "Important keywords", "zh-CN": "重要关键词" },
+                        "description": { "en": "One per line.", "zh-CN": "每行一个。" },
+                        "type": "string",
+                        "default": ""
+                    },
+                    {
+                        "key": "scope",
+                        "title": { "en": "Scope", "zh-CN": "范围" },
+                        "type": "select",
+                        "default": "all",
+                        "enum": [
+                            { "label": { "en": "Every model", "zh-CN": "全部模型" }, "value": "all" }
+                        ]
+                    }
+                ]
+            }),
+            json!([]),
+        ),
+        &[],
+    );
+    let manifest = PluginManager::read_manifest(&root).expect("a localized setting title is valid");
+    let zh = derive_settings(&manifest, "zh-CN");
+    assert_eq!(zh[0].title, "重要关键词");
+    assert_eq!(zh[0].description.as_deref(), Some("每行一个。"));
+    assert_eq!(zh[1].enum_values[0].label, "全部模型");
+    let en = derive_settings(&manifest, "en");
+    assert_eq!(en[0].title, "Important keywords");
+    assert_eq!(en[1].enum_values[0].label, "Every model");
+}
+
+#[test]
+fn a_localized_setting_row_survives_a_dev_load() {
+    // The row, not just the manifest, has to reach the shell: a settings entry
+    // whose title is a map used to be dropped from the summary.
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("plugin");
+    write_plugin(
+        &root,
+        capability_manifest(
+            json!({
+                "settings": [{
+                    "key": "keywords",
+                    "title": { "en": "Keywords", "zh-CN": "关键词" },
+                    "type": "string",
+                    "default": ""
+                }]
+            }),
+            json!([]),
+        ),
+        &[],
+    );
+    let mut mgr = PluginManager::new(
+        dir.path().join("data").as_path(),
+        MarketChannel::Official,
+        None,
+    );
+    mgr.set_locale("zh-CN");
+    let summary = mgr
+        .load_dev(root.to_str().unwrap())
+        .expect("a localized title loads");
+    assert_eq!(summary.settings.len(), 1);
+    assert_eq!(summary.settings[0].title, "关键词");
+}
+
+#[test]
+fn a_half_translated_setting_label_is_refused() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("plugin");
+    write_plugin(
+        &root,
+        capability_manifest(
+            json!({
+                "settings": [{
+                    "key": "keywords",
+                    "title": { "en": "Keywords" },
+                    "type": "string",
+                    "default": ""
+                }]
+            }),
+            json!([]),
+        ),
+        &[],
+    );
+    let error = read_manifest_err(&root);
+    assert!(error.contains("requires a title"), "{error}");
+
+    let root = dir.path().join("plugin-two");
+    write_plugin(
+        &root,
+        capability_manifest(
+            json!({
+                "settings": [{
+                    "key": "keywords",
+                    "title": "Keywords",
+                    "description": { "en": "Only this one" },
+                    "type": "string",
+                    "default": ""
+                }]
+            }),
+            json!([]),
+        ),
+        &[],
+    );
+    let error = read_manifest_err(&root);
+    assert!(error.contains("description must be a string"), "{error}");
+}
+
+#[test]
 fn a_model_setting_default_must_be_a_model_key() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("plugin");
