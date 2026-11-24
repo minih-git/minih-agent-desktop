@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { portalToBody } from "../lib/portal-visibility";
+import { useBlockingOverlay } from "../lib/blocking-overlay";
 import { useTranslation } from "react-i18next";
 import {
   formatCompactTokenCount,
@@ -63,6 +64,8 @@ export function ContextUsageInspector({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  // The popover is a fixed layer, so it can reach over a native plugin view.
+  useBlockingOverlay(open);
   const [popoverPosition, setPopoverPosition] =
     useState<ContextInspectorPlacement | null>(null);
   const sessionId = useAppStore((state) => state.activeSessionId);

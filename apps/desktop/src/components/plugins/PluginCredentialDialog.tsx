@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   PluginCredentialDialogRequest,
   PluginCredentialStatus,
 } from "@minih-agent/shared";
 import { api } from "../../lib/api";
+import { useBlockingOverlay } from "../../lib/blocking-overlay";
 import { Button, cx, portalOverlay } from "../ui";
 import {
   CredentialFieldsForm,
@@ -29,6 +30,25 @@ export function PluginCredentialDialog() {
   const [values, setValues] = useState<CredentialValues>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // The overlay is modal in the renderer, but a plugin view is a native
+  // `WebContentsView` that draws above it: registering the dialog is what
+  // removes the view from the screen while the user answers, and unregistering
+  // is what brings it back afterwards.
+  useBlockingOverlay(request !== null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  // Focus has to move with the overlay. If the keys stayed in the plugin page
+  // underneath, Escape would reach the plugin and the form below would be
+  // unreachable without a pointer.
+  useLayoutEffect(() => {
+    if (!request) return;
+    const target =
+      dialogRef.current?.querySelector<HTMLElement>(
+        "input:not([disabled]), textarea:not([disabled]), select:not([disabled])",
+      ) ?? dialogRef.current;
+    target?.focus({ preventScroll: true });
+  }, [request, slot]);
 
   useEffect(
     () =>
@@ -83,12 +103,22 @@ export function PluginCredentialDialog() {
   return portalOverlay(
     <div className="plugins-modal-backdrop" role="presentation">
       <div
+        ref={dialogRef}
         className={cx("plugins-modal", "plugin-credential-dialog")}
         // Lets the E2E name the exact dialog it is answering.
         data-request-id={request.requestId}
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        // Focusable so the confirmation variant, which has no field, can still
+        // take the keyboard and answer Escape.
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || busy) return;
+          event.preventDefault();
+          event.stopPropagation();
+          void close({ action: "cancel" });
+        }}
       >
         <header className="plugins-modal-head">
           <div className="plugins-settings-heading">

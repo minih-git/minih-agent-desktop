@@ -99,7 +99,11 @@ test("plugin views reach the panel body and the empty state", () => {
 });
 
 test("the native surface keeps its full and current bounds while the launcher is active", () => {
-  assert.match(panelSource, /blocked=\{\s*exiting \|\| panelBlocked \|\| blockingOverlayActive\s*\}/s);
+  assert.match(panelSource, /blocked=\{\s*exiting \|\| panelBlocked\s*\}/s);
+  // The native view hides for a blocking overlay by reading the registry in the
+  // tab, which is what makes a sidebar page or any future mount obey it too.
+  assert.match(viewTabSource, /const overlayActive = useBlockingOverlayActive\(\);/);
+  assert.match(viewTabSource, /const hidden = blocked \|\| overlayActive;/);
   assert.doesNotMatch(panelSource, /avoid: pluginSurface/);
   assert.doesNotMatch(panelSource, /menuOpen|work-panel-new-menu|placeWorkPanelMenu/);
   assert.doesNotMatch(viewTabSource, /occludedById/);
@@ -110,7 +114,7 @@ test("the native surface keeps its full and current bounds while the launcher is
   // rectangle current without changing the active tab.
   assert.match(
     viewTabSource,
-    /pluginViewSetVisible\(pluginId, viewId, !blocked, sessionId\)/,
+    /pluginViewSetVisible\(pluginId, viewId, !hidden, sessionId\)/,
   );
   assert.match(
     viewTabSource,

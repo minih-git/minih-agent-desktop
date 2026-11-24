@@ -232,10 +232,9 @@ test("work panel uses the fixed-window internal dock", () => {
   assert.match(appSource, /finishWorkPanelExit\(workPanelExitGeneration\.current\)/);
   // Native surfaces hide via `blocked` before work-panel-out starts, so the
   // guest clamped to the plugin view is gone before the dock CSS animation.
-  assert.match(
-    panelSource,
-    /blocked=\{\s*exiting \|\| panelBlocked \|\| blockingOverlayActive\s*\}/,
-  );
+  // Overlay hiding is not the dock's business: the tab reads the blocking
+  // overlay registry itself, so every surface that mounts one is covered.
+  assert.match(panelSource, /blocked=\{\s*exiting \|\| panelBlocked\s*\}/);
   assert.match(panelSource, /nativeSurfaceReadyForExit/);
   assert.match(panelSource, /is-exit-pending/);
   assert.match(panelSource, /exitAnimationReady && "is-exiting"/);
@@ -312,7 +311,7 @@ test("work panel header exposes a scrollable tab strip and direct new-page actio
   const pluginSurface = panelSource.slice(pluginSurfaceStart, pluginSurfaceEnd);
   assert.match(
     pluginSurface,
-    /blocked=\{\s*exiting \|\| panelBlocked \|\| blockingOverlayActive\s*\}/s,
+    /blocked=\{\s*exiting \|\| panelBlocked\s*\}/s,
   );
   assert.doesNotMatch(pluginSurface, /isResizing/);
   assert.doesNotMatch(panelSource, /createPortal|newTabMenuRef|menuOpen/);

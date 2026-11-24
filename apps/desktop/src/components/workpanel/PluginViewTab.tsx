@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { useBlockingOverlayActive } from "../../lib/blocking-overlay";
 import { pluginViewIcon } from "../../lib/plugin-view-icons";
 import { IconPlug } from "../icons";
 import { WorkTabEmpty } from "./WorkTabEmpty";
@@ -10,11 +11,16 @@ import { WorkTabEmpty } from "./WorkTabEmpty";
  *
  * The surface itself is a main-process `WebContentsView`, the same isolated
  * page a `ui.panel` window hosts; this component renders nothing into it. It
- * measures the placeholder rect and drives visibility. The view composites
- * above renderer content, so a panel-wide blocking overlay still hides it.
- * The work-panel menu temporarily blocks the active view while open, which
+ * measures the placeholder rect and drives visibility.
+ *
+ * A native view composites above renderer content, including the browser top
+ * layer, so anything the renderer means to put in front of it has to make the
+ * view disappear instead of out-stacking it. The component therefore hides
+ * itself while a blocking overlay is registered (`useBlockingOverlay`), no
+ * matter which surface mounted it, and ORs that with `blocked` for callers
+ * that also hide it for a layout reason of their own — the work-panel menu
  * keeps the menu inside the dock without changing plugin bounds or pushing the
- * plugin body down.
+ * plugin body down, and the dock hides the view while the panel animates out.
  */
 export function PluginViewTab({
   pluginId,
@@ -40,6 +46,9 @@ export function PluginViewTab({
   const locationRef = useRef(location);
   locationRef.current = location;
   const viewLocation = pluginId === "pi.browser" && viewId === "browser" ? undefined : location;
+  const overlayActive = useBlockingOverlayActive();
+  // Either reason hides the native view; callers own only their own.
+  const hidden = blocked || overlayActive;
   const [failed, setFailed] = useState(false);
   const boundsFrameRef = useRef(0);
   const reportBounds = useCallback(() => {
@@ -94,11 +103,11 @@ export function PluginViewTab({
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface || failed) return;
-    void api.pluginViewSetVisible(pluginId, viewId, !blocked, sessionId);
+    void api.pluginViewSetVisible(pluginId, viewId, !hidden, sessionId);
     return () => {
       void api.pluginViewSetVisible(pluginId, viewId, false);
     };
-  }, [pluginId, viewId, blocked, failed, sessionId]);
+  }, [pluginId, viewId, hidden, failed, sessionId]);
 
   useEffect(() => {
     const surface = surfaceRef.current;

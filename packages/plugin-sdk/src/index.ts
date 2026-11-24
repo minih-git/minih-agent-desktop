@@ -961,6 +961,7 @@ export const PLUGIN_VIEW_ICONS = [
   "key",
   "link",
   "list-checks",
+  "mail",
   "palette",
   "plug",
   "pull-request",

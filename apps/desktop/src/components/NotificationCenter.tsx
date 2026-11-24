@@ -18,6 +18,7 @@ import {
 } from "@minih-agent/shared";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../stores/app-store";
+import { useBlockingOverlay } from "../lib/blocking-overlay";
 import { IconBell, IconCheckCheck, IconTrash } from "./icons";
 import { NotificationRow, type NotificationRowPlugin } from "./NotificationRow";
 import { TooltipButton } from "./ui";
@@ -100,6 +101,11 @@ export function NotificationCenter({
   const showToast = useAppStore((state) => state.showToast);
 
   const [open, setOpen] = useState(false);
+
+  // The popover is portaled and fixed, so it can cover a plugin view anywhere
+  // in the window. Registering it is what hides the native view underneath;
+  // the trigger row itself stays unregistered.
+  useBlockingOverlay(open);
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const [popoverPos, setPopoverPos] = useState<{ bottom: number; left: number } | null>(null);

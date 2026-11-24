@@ -634,7 +634,7 @@ header menu. `title` may be a plain string or an `{ en, "zh-CN" }` object.
 
 `icon` is a token from a fixed list the host draws from its own icon set —
 `bell`, `book`, `bot`, `branch`, `browser`, `chat`, `clock`, `diff`, `files`,
-`folder`, `image`, `key`, `link`, `list-checks`, `palette`, `plug`,
+`folder`, `image`, `key`, `link`, `list-checks`, `mail`, `palette`, `plug`,
 `pull-request`, `search`, `server`, `shield`, `sparkles`, `target`, `terminal`,
 `workflow`, `wrench`. A plugin cannot supply its own SVG, because the icon is
 drawn inside host chrome. An unknown token is not an error: it renders as a

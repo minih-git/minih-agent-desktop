@@ -2,6 +2,7 @@ import { OverlayBackdrop } from "./ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
+import { useBlockingOverlay } from "../lib/blocking-overlay";
 import { runPaletteCommand } from "../lib/commands";
 import { isDefaultSessionTitle, useAppStore } from "../stores/app-store";
 import { normalizeProjectPath } from "../lib/sidebar-session-groups";
@@ -100,6 +101,10 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
     hits: CommandItem[];
   }>({ query: "", hits: [] });
   const commandHits = commandResult.query === query ? commandResult.hits : [];
+
+  // The palette covers the window, so a native plugin view has to go away while
+  // it is open: it is the only surface the user can type into.
+  useBlockingOverlay(open);
 
   useEffect(() => {
     if (!open) return;

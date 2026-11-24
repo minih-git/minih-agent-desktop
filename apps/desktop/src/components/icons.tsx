@@ -51,6 +51,7 @@ import {
   Link,
   ListChecks,
   LogOut,
+  Mail,
   Mic,
   MicOff,
   Minus,
@@ -191,6 +192,8 @@ export const IconCode = icon(Code2);
 export const IconDatabase = icon(Database);
 export const IconCheck = icon(Check);
 export const IconBell = icon(Bell);
+/* Envelope: mail-like plugin views, which name the `mail` token. */
+export const IconMail = icon(Mail);
 export const IconBot = icon(Bot);
 export const IconCheckCheck = icon(CheckCheck);
 export const IconShield = icon(Shield);
