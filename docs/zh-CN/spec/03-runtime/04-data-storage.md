@@ -761,6 +761,11 @@ CREATE UNIQUE INDEX idx_session_collaboration_receipt
 - 协作来源存储在转录行 `meta` 的 `sessionMessage` 中，并以
   `UiMessage.sessionMessage` 投影到 UI。宿主校验阻止伪造、剥离、编辑或重新生成协作输入
   变成人类输入。该元数据是增量字段，不需要给 `messages` 增加列。
+- 被**已经在运行的回合**当作转向输入接管的投递（`send now`，ADR 0265）没有自己的
+  `turn_id`。自架构 v46 起它把承载它的回合记在 `host_turn_id`，由
+  `session.collaboration.steered` 认领为 `running`（`completion` 回执直接结算为
+  `completed`），并在那个回合结算时一并关闭。没有别的路径可以认领它：该行只会离开
+  `queued` 一次，因此 drain 不可能把同一份内容投递两次（§4.19g）。
 
 ### 4.19 bot 会话与任务授权（架构 v31，ADR bot-sessions-and-steward）
 
@@ -1065,6 +1070,31 @@ ALTER TABLE sessions ADD COLUMN agent_name TEXT;
 - 只读不改。定义后来被删除或被停用，句柄仍留在行里：运行时不再追加提示词小节，
   侧栏气泡仍然写着那个角色。
 - `session.fork` 不复制它：分支是用户自己的会话，与 origin 同一条规则。
+
+### 4.19g session_collaboration_messages —— 承载转向投递的那个回合（架构 v46）
+
+`send now` 会把排队中的投递折进已经在运行的回合（ADR 0265）。那个回合就是这条投递
+的回合，但它不是投递自己的回合：`turn_id` 引用投递启动的回合且有唯一索引，所以被
+承载的投递需要自己的列。
+
+```sql
+ALTER TABLE session_collaboration_messages ADD COLUMN host_turn_id TEXT;
+CREATE INDEX idx_session_collaboration_host_turn
+  ON session_collaboration_messages(host_turn_id) WHERE host_turn_id IS NOT NULL;
+```
+
+- `host_turn_id` 只有 `session.collaboration.steered` 会写，且只写仍处于 `queued`、
+  其 `target_session_id` 拥有指定运行中回合的行。它从不与 `turn_id` 同时存在，也不需要
+  唯一索引：多条投递可以搭同一个回合。
+- `completion` 回执不需要后续结算——它只报告结果、永不产生新回执——所以认领时直接结算
+  为 `completed`。其他 kind 变为 `running`，在承载它的回合结算时关闭：`settle_turn`
+  现在既关闭拥有该回合的行，也关闭该回合承载的每一行，并在同一事务里写它们的回执。
+- `recover` 不需要额外规则：被承载的行状态就是 `running`，启动栅栏本来就会把所有
+  `running` 行标为 `interrupted`。
+- 没有回填。v46 之前根本不记录被转向的投递，启动栅栏会把那些行标为 `interrupted`，
+  猜测哪些曾被转向等于替没有人能核实的声明作证。
+- **架构 v45 -> v46。** 一个可空列加一个部分索引，在自己的事务步骤里执行，最后才写入
+  `user_version = 46`。不重写任何行，因此步骤幂等且非破坏性。
 ### 4.7 messages — 转录索引
 
 脚本本身是每个会话的 JSONL 文件（第 2.1 节）；这张表是它的
