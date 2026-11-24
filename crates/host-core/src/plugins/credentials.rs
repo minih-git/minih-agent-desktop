@@ -48,7 +48,7 @@ pub(crate) const CREDENTIAL_LIMIT: &str = "CREDENTIAL_LIMIT";
 /// Largest string one credential field may carry (8 KiB). The Settings sheet
 /// asks for a token or a login, never a document; the bound keeps a malformed
 /// caller from filling the encrypted store with one slot.
-const MAX_FIELD_BYTES: usize = 8 * 1024;
+pub(crate) const MAX_FIELD_BYTES: usize = 8 * 1024;
 
 /// What went wrong, in the terms the RPC layer maps to `data.errorCode`.
 #[derive(Debug)]
@@ -567,52 +567,6 @@ fn declared_text(raw: &Value, locale: &str) -> String {
     }
 }
 
-/// Does a stored slot still hold what the host needs to use it?
-///
-/// Every declared **secret** field has to be there: a half-filled credential is
-/// never injected. A non-secret field that the manifest added later is optional —
-/// it is identity (an address, a provider, a server), not the secret — so an
-/// account saved before that field existed keeps working instead of vanishing
-/// from the instance list and being refused at login.
-pub(crate) fn covers(stored: &StoredSlot, slot: &DeclaredSlot) -> bool {
-    slot.fields
-        .iter()
-        .filter(|field| field.secret)
-        .all(|field| stored.fields.contains_key(&field.key))
-}
-
-/// Every value the host may inject for one stored instance: the slot's
-/// declared fields, plus the four reserved endpoint keys when the instance
-/// carries them.
-///
-/// `None` means the blob is incomplete, which is the same answer as a slot with
-/// nothing stored: a half-filled instance is never injected.
-pub(crate) fn injected_fields(
-    slot: &DeclaredSlot,
-    stored: &StoredSlot,
-) -> Option<BTreeMap<String, String>> {
-    let mut fields = BTreeMap::new();
-    for field in &slot.fields {
-        match stored.fields.get(&field.key) {
-            Some(value) => {
-                fields.insert(field.key.clone(), value.clone());
-            }
-            // A secret nobody entered is not a credential; a non-secret the
-            // manifest added later is simply not known for this account yet.
-            None if field.secret => return None,
-            None => {}
-        }
-    }
-    if !slot.user_endpoint_protocols.is_empty() {
-        for key in user_endpoint::RESERVED_KEYS {
-            if let Some(value) = stored.fields.get(key) {
-                fields.insert(key.to_string(), value.clone());
-            }
-        }
-    }
-    Some(fields)
-}
-
 pub(crate) fn read_slot(
     secrets: &SecretStore,
     plugin_id: &str,
@@ -672,7 +626,7 @@ fn slot_state(
         return Ok((!instances.is_empty(), instances));
     }
     if let Some(stored) = read_slot(secrets, plugin_id, &slot.id)? {
-        return Ok((covers(&stored, slot), Vec::new()));
+        return Ok((credential_instances::covers(&stored, slot), Vec::new()));
     }
     let kept = credential_instances::fold_back_for_read(secrets, plugin_id, slot, db)?;
     Ok((kept.is_some(), Vec::new()))
@@ -906,7 +860,8 @@ pub(crate) fn resolve(
         ))
     };
     if let Some(stored) = read_slot(secrets, &plugin.id, slot_id)? {
-        let fields = injected_fields(&slot, &stored).ok_or_else(not_configured)?;
+        let fields =
+            credential_instances::injected_fields(&slot, &stored).ok_or_else(not_configured)?;
         remember_used(&plugin.id, slot_id);
         return Ok(fields);
     }
@@ -990,48 +945,11 @@ fn validated_fields(
         values.insert(key.to_string(), value.to_string());
     }
     if takes_endpoint {
-        if let Some(endpoint) = validated_endpoint(slot, &fields)? {
+        if let Some(endpoint) = credential_instances::validated_endpoint(slot, &fields)? {
             values.extend(endpoint.to_fields());
         }
     }
     Ok(values)
-}
-
-/// The user-typed server of one submission, normalized, or `None` when the
-/// form left it empty.
-///
-/// A blank value counts as "not set", so an untouched form posts exactly what
-/// it rendered. A partly filled one is refused: storing it would leave the
-/// password pointing at a server the user never finished choosing.
-fn validated_endpoint(
-    slot: &DeclaredSlot,
-    fields: &Map<String, Value>,
-) -> Result<Option<user_endpoint::UserEndpoint>, CredentialError> {
-    let mut submitted = BTreeMap::new();
-    for key in user_endpoint::RESERVED_KEYS {
-        let Some(raw) = fields.get(key) else {
-            continue;
-        };
-        let value = raw.as_str().ok_or_else(|| {
-            CredentialError::Invalid(format!(
-                "{CREDENTIAL_INVALID}: credential slot {} field {key} must be a string",
-                slot.id
-            ))
-        })?;
-        if value.len() > MAX_FIELD_BYTES {
-            return Err(CredentialError::Invalid(format!(
-                "{CREDENTIAL_INVALID}: credential slot {} field {key} exceeds {MAX_FIELD_BYTES} bytes",
-                slot.id
-            )));
-        }
-        submitted.insert(key.to_string(), value.to_string());
-    }
-    user_endpoint::from_fields(&submitted, &slot.user_endpoint_protocols).map_err(|message| {
-        CredentialError::Invalid(format!(
-            "{CREDENTIAL_INVALID}: credential slot {} {message}",
-            slot.id
-        ))
-    })
 }
 
 #[cfg(test)]

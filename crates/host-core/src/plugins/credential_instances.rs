@@ -29,14 +29,14 @@
 //! even a label, reaches the audit log.
 
 use super::credentials::{
-    self, slot_ref, CredentialError, DeclaredSlot, PluginIndex, CREDENTIAL_INVALID,
-    CREDENTIAL_LIMIT, CREDENTIAL_NOT_CONFIGURED,
+    self, slot_ref, CredentialError, DeclaredSlot, PluginIndex, StoredSlot, CREDENTIAL_INVALID,
+    CREDENTIAL_LIMIT, CREDENTIAL_NOT_CONFIGURED, MAX_FIELD_BYTES,
 };
-use super::{is_contrib_id, Utc};
+use super::{is_contrib_id, user_endpoint, Utc};
 use crate::db::Database;
 use crate::secrets::SecretStore;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
@@ -184,7 +184,7 @@ fn read_instances(
             plugin_id,
             &format!("{}#{}", slot.id, meta.instance_id),
         ) {
-            Ok(Some(blob)) => credentials::covers(&blob, slot),
+            Ok(Some(blob)) => covers(&blob, slot),
             Ok(None) => false,
             // A store failure is not evidence that the instance is gone.
             Err(_) => true,
@@ -280,7 +280,7 @@ fn fold_back(
         )?;
         if position == 0 {
             if let Some(blob) = &blob {
-                if credentials::covers(blob, slot) {
+                if covers(blob, slot) {
                     let payload = serde_json::to_string(blob).map_err(|error| {
                         CredentialError::Storage(format!("credential store failure: {error}"))
                     })?;
@@ -591,6 +591,88 @@ pub(crate) fn clear_slot(
     Ok(removed_any)
 }
 
+/// Does a stored slot still hold what the host needs to use it?
+///
+/// Every declared **secret** field has to be there: a half-filled credential is
+/// never injected. A non-secret field that the manifest added later is optional —
+/// it is identity (an address, a provider, a server), not the secret — so an
+/// account saved before that field existed keeps working instead of vanishing
+/// from the instance list and being refused at login.
+pub(crate) fn covers(stored: &StoredSlot, slot: &DeclaredSlot) -> bool {
+    slot.fields
+        .iter()
+        .filter(|field| field.secret)
+        .all(|field| stored.fields.contains_key(&field.key))
+}
+
+/// Every value the host may inject for one stored instance: the slot's
+/// declared fields, plus the four reserved endpoint keys when the instance
+/// carries them.
+///
+/// `None` means the blob is incomplete, which is the same answer as a slot with
+/// nothing stored: a half-filled instance is never injected.
+pub(crate) fn injected_fields(
+    slot: &DeclaredSlot,
+    stored: &StoredSlot,
+) -> Option<BTreeMap<String, String>> {
+    let mut fields = BTreeMap::new();
+    for field in &slot.fields {
+        match stored.fields.get(&field.key) {
+            Some(value) => {
+                fields.insert(field.key.clone(), value.clone());
+            }
+            // A secret nobody entered is not a credential; a non-secret the
+            // manifest added later is simply not known for this account yet.
+            None if field.secret => return None,
+            None => {}
+        }
+    }
+    if !slot.user_endpoint_protocols.is_empty() {
+        for key in user_endpoint::RESERVED_KEYS {
+            if let Some(value) = stored.fields.get(key) {
+                fields.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    Some(fields)
+}
+
+/// The user-typed server of one submission, normalized, or `None` when the
+/// form left it empty.
+///
+/// A blank value counts as "not set", so an untouched form posts exactly what
+/// it rendered. A partly filled one is refused: storing it would leave the
+/// password pointing at a server the user never finished choosing.
+pub(crate) fn validated_endpoint(
+    slot: &DeclaredSlot,
+    fields: &Map<String, Value>,
+) -> Result<Option<user_endpoint::UserEndpoint>, CredentialError> {
+    let mut submitted = BTreeMap::new();
+    for key in user_endpoint::RESERVED_KEYS {
+        let Some(raw) = fields.get(key) else {
+            continue;
+        };
+        let value = raw.as_str().ok_or_else(|| {
+            CredentialError::Invalid(format!(
+                "{CREDENTIAL_INVALID}: credential slot {} field {key} must be a string",
+                slot.id
+            ))
+        })?;
+        if value.len() > MAX_FIELD_BYTES {
+            return Err(CredentialError::Invalid(format!(
+                "{CREDENTIAL_INVALID}: credential slot {} field {key} exceeds {MAX_FIELD_BYTES} bytes",
+                slot.id
+            )));
+        }
+        submitted.insert(key.to_string(), value.to_string());
+    }
+    user_endpoint::from_fields(&submitted, &slot.user_endpoint_protocols).map_err(|message| {
+        CredentialError::Invalid(format!(
+            "{CREDENTIAL_INVALID}: credential slot {} {message}",
+            slot.id
+        ))
+    })
+}
 /// The values of one instance, ready for host-owned injection.
 pub(crate) fn resolve(
     secrets: &SecretStore,
@@ -616,10 +698,10 @@ pub(crate) fn resolve(
     else {
         return Err(not_configured(plugin_id, &slot.id, instance_id));
     };
-    if !credentials::covers(&stored, slot) {
+    if !covers(&stored, slot) {
         return Err(not_configured(plugin_id, &slot.id, instance_id));
     }
-    let fields = credentials::injected_fields(slot, &stored)
+    let fields = injected_fields(slot, &stored)
         .ok_or_else(|| not_configured(plugin_id, &slot.id, instance_id))?;
     credentials::remember_used(plugin_id, &slot.id);
     Ok(fields)
