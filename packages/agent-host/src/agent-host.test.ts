@@ -641,7 +641,7 @@ describe("AgentHost turns", () => {
     ]);
   });
 
-  it("never delivers a folded receipt twice, and claims it before the turn ends", async () => {
+  it("claims a folded delivery only after the runtime accepted it", async () => {
     const order: string[] = [];
     const { host, runtime } = build({
       onDeliverySteered: async (input) => {
@@ -656,16 +656,20 @@ describe("AgentHost turns", () => {
       input: { text: "the task finished", sessionMessageId: "receipt-1" },
       context: { requestId: "receipt" },
     });
-    await host.prioritizeTurn(owner, delivery.turn.id);
-    expect(order).toEqual(["claim:receipt-1"]);
+    const steer = runtime.steer.bind(runtime);
+    runtime.steer = async (request) => {
+      order.push(`steer:${request.sessionMessageId}`);
+      return steer(request);
+    };
 
-    // The turn that carried it ends; a drain runs. The receipt is not work
-    // waiting for a turn any more, so no second turn is started for it.
-    host.endTurn("s1", "rt_1", "completed");
-    await vi.waitFor(() => expect(host.queueEntries("s1")).toEqual([]));
-    await host.kick("s1");
-    expect(runtime.prompts.map((entry) => entry.content)).toEqual(["original task"]);
-    expect(host.queueEntries("s1")).toEqual([]);
+    await host.prioritizeTurn(owner, delivery.turn.id);
+
+    // Acceptance first, claim second: claiming input the turn refused would
+    // settle a delivery that still has to run in its own turn. Whether a later
+    // drain re-delivers it is the ledger's business (`pendingDispatch`, covered
+    // by the host-core tests), not this module's queue.
+    expect(order).toEqual(["steer:receipt-1", "claim:receipt-1"]);
+    expect(runtime.steers).toHaveLength(1);
   });
 
   it("folds the rest of the promoted block into the started turn, in click order", async () => {

@@ -25,20 +25,26 @@ pub fn prepare_append(
     if message.role == "user" && message.parent_tool_call_id.is_none() {
         // The delivery itself, folded into a turn that was already running
         // (ADR 0265, `send now`): the input *is* the delivery, so its ledger row
-        // — and only that row — supplies the provenance. It qualifies while it
-        // is still queued or while this very turn carries it, and its body must
-        // match, exactly as a delivery's own turn requires.
+        // — and only that row — supplies the provenance. It qualifies while it is
+        // still queued (a runtime may write the transcript row before the claim)
+        // and for the rest of the life of the turn that carries it: the runtime
+        // only writes the row at its next boundary, so "claimed, then appended"
+        // is the normal order and the claim may already have settled a receipt.
+        // The body must match and attachments are refused, exactly as a
+        // delivery's own turn requires.
         if let (Some(turn), Some(claimed)) = (turn_id, message.session_message.as_ref()) {
             let claimed_id = claimed
                 .get("messageId")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             if let Some(carried) = repository::get(db, claimed_id)? {
-                let carried_by_this_turn =
-                    carried.status == "running" && carried.host_turn_id.as_deref() == Some(turn);
                 if carried.target_session_id == session_id
                     && carried.content == message.content
-                    && (carried.status == "queued" || carried_by_this_turn)
+                    && !message
+                        .attachments
+                        .as_ref()
+                        .is_some_and(|items| !items.is_empty())
+                    && (carried.status == "queued" || carried.host_turn_id.as_deref() == Some(turn))
                 {
                     message.session_message = Some(repository::origin(&carried));
                     return Ok(message);

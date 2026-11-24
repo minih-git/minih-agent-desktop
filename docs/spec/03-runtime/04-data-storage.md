@@ -1515,6 +1515,23 @@ CREATE INDEX idx_session_collaboration_host_turn
   `completed`. Every other kind becomes `running` and closes when the carrying
   turn settles: `settle_turn` now closes the row that owns the turn and every
   row that turn carried, and writes their callbacks in the same transaction.
+- Provenance follows the carrying turn, not the row's status. The runtime writes
+  the steering row only at its next boundary — minutes later in practice — so
+  "claimed first, appended second" is the normal order and the row may already
+  be `completed` (a receipt the claim settled) when `session.appendMessage`
+  validates it. `prepare_append` therefore accepts a row whose `host_turn_id` is
+  this turn in any status, or a row that is still `queued`; the target session,
+  the body, and the no-attachment rule are the same as a delivery's own turn. A
+  rejected provenance is a lost transcript line, because the outbox drops a
+  poisoned write instead of retrying it forever.
+- **A claim that fails is recorded as a failure, not left `queued`.** The claim
+  is a separate host call made after the runtime accepted the input, so it can
+  fail on its own (host restarting, transport error). Such a row is written
+  `failed` with `STEERED_CLAIM_FAILED` in `error`, because a row left `queued` is
+  exactly what the next drain delivers a second time. Limits: the work did run,
+  yet a `task`/`message` delivery then reports a failure receipt to its sender;
+  the write only touches a row that is still `queued`, so it never overwrites a
+  claim or a settlement that won the race.
 - `recover` needs no extra rule: a carried row is `running`, and the startup
   fence already marks every `running` row `interrupted`.
 - There is no backfill. Before v46 a steered delivery was never recorded, and

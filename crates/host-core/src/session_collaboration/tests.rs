@@ -1,6 +1,6 @@
 use super::*;
 
-fn session(db: &Database, title: &str) -> String {
+pub(super) fn session(db: &Database, title: &str) -> String {
     sessions::create_session_with_options(
         db,
         sessions::SessionCreateOptions {
@@ -14,7 +14,7 @@ fn session(db: &Database, title: &str) -> String {
     .id
 }
 
-fn send(db: &Database, source: &str, target: &str, key: &str) -> Message {
+pub(super) fn send(db: &Database, source: &str, target: &str, key: &str) -> Message {
     send_record(
         db,
         &json!({"sourceSessionId":source,"pluginId":"pi.session-orchestrator",
@@ -25,7 +25,7 @@ fn send(db: &Database, source: &str, target: &str, key: &str) -> Message {
     .unwrap()
 }
 
-fn ui(role: &str, content: &str) -> sessions::UiMessage {
+pub(super) fn ui(role: &str, content: &str) -> sessions::UiMessage {
     serde_json::from_value(
         json!({"id":Uuid::new_v4().to_string(),"role":role,"content":content,
         "createdAt":ms_to_ts(now_ms())}),
@@ -866,127 +866,4 @@ fn a_spawned_worker_is_tagged_as_a_plugin_session() {
     let after = sessions::session_summary(&db, worker).unwrap().unwrap();
     assert_eq!(after.origin, crate::session_origin::ORIGIN_PLUGIN);
     assert_eq!(after.origin_session.map(|o| o.available), Some(false));
-}
-
-/// Flag one ledger row as an existing delivery of `kind`, without a turn.
-fn queued(db: &Database, source: &str, target: &str, key: &str, kind: &str) -> Message {
-    send_record(
-        db,
-        &json!({"sourceSessionId":source,"pluginId":"pi.session-orchestrator",
-        "content":"Review the change","idempotencyKey":key,"notifyOnCompletion":true}),
-        target,
-        kind,
-    )
-    .unwrap()
-}
-
-fn pending(db: &Database) -> Vec<String> {
-    repository::pending_dispatch(db)
-        .unwrap()
-        .into_iter()
-        .map(|message| message.id)
-        .collect()
-}
-
-fn claim(db: &Database, message_id: &str, session_id: &str, turn_id: &str) -> Result<Value> {
-    handle(
-        db,
-        "session.collaboration.steered",
-        &json!({"messageId":message_id,"sessionId":session_id,"turnId":turn_id}),
-    )
-}
-
-#[test]
-fn a_steered_completion_is_claimed_and_never_dispatched_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let parent = session(&db, "Parent");
-    let child = session(&db, "Child");
-    // A finished task writes its receipt to the parent, where nothing is running.
-    let task = send(&db, &parent, &child, "work");
-    let work = begin_turn(&db, &child, &task.id, None, None).unwrap();
-    sessions::end_turn(&db, &work, "completed", None, None, false).unwrap();
-    let receipt = settle_turn(&db, &work).unwrap().unwrap();
-    assert_eq!(receipt.kind, "completion");
-    assert!(pending(&db).contains(&receipt.id));
-
-    // The parent is busy in a turn of its own and folds the receipt into it.
-    let host_turn = sessions::begin_turn(&db, &parent, None, None).unwrap();
-    let claimed = claim(&db, &receipt.id, &parent, &host_turn).unwrap();
-    assert_eq!(claimed["message"]["status"], "completed");
-    assert_eq!(claimed["message"]["kind"], "completion");
-    assert_eq!(claimed["message"]["hostTurnId"], host_turn.as_str());
-    // The whole fix: a delivered receipt is no longer waiting for a turn, so the
-    // next drain cannot hand it to the person a second time.
-    assert!(!pending(&db).contains(&receipt.id));
-
-    // Repeating the same claim is not a second delivery and writes no receipt.
-    let again = claim(&db, &receipt.id, &parent, &host_turn).unwrap();
-    assert_eq!(again["message"]["status"], "completed");
-    let receipts: i64 = db
-        .conn()
-        .query_row(
-            "SELECT COUNT(*) FROM session_collaboration_messages WHERE reply_to_message_id=?1",
-            params![receipt.id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(receipts, 0);
-
-    // A turn that is no longer running cannot carry anything.
-    sessions::end_turn(&db, &host_turn, "completed", None, None, false).unwrap();
-    let stale = claim(&db, &receipt.id, &parent, &host_turn).unwrap_err();
-    assert!(stale.to_string().starts_with("PERMISSION_DENIED"));
-}
-
-#[test]
-fn a_steered_delivery_settles_with_the_turn_that_carried_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let parent = session(&db, "Parent");
-    let child = session(&db, "Child");
-    let notice = queued(&db, &parent, &child, "carried", "stage");
-    assert!(pending(&db).contains(&notice.id));
-
-    // The child is already working, so the notice rides that turn instead of
-    // starting one of its own.
-    let host_turn = sessions::begin_turn(&db, &child, None, None).unwrap();
-    let claimed = claim(&db, &notice.id, &child, &host_turn).unwrap();
-    assert_eq!(claimed["message"]["status"], "running");
-    assert_eq!(claimed["message"]["hostTurnId"], host_turn.as_str());
-    assert!(claimed["message"].get("turnId").is_none());
-    assert!(!pending(&db).contains(&notice.id));
-
-    // The carrying turn settles it, and the sender hears about it once.
-    sessions::end_turn(&db, &host_turn, "completed", None, None, false).unwrap();
-    let receipt = settle_turn(&db, &host_turn).unwrap().unwrap();
-    assert_eq!(receipt.kind, "completion");
-    assert_eq!(receipt.target_session_id, parent);
-    let settled = get(&db, &notice.id).unwrap().unwrap();
-    assert_eq!(settled.status, "completed");
-    assert!(settled.turn_id.is_none());
-    assert_eq!(settled.host_turn_id.as_deref(), Some(host_turn.as_str()));
-    // Settling again finds nothing left to close.
-    assert!(settle_turn(&db, &host_turn).unwrap().is_none());
-
-    // A settled row cannot be claimed for another turn.
-    let next = sessions::begin_turn(&db, &child, None, None).unwrap();
-    let conflict = claim(&db, &notice.id, &child, &next).unwrap_err();
-    assert!(conflict.to_string().starts_with("CONFLICT"));
-}
-
-#[test]
-fn a_steered_claim_is_scoped_to_its_session() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
-    let parent = session(&db, "Parent");
-    let child = session(&db, "Child");
-    let other = session(&db, "Other");
-    let notice = queued(&db, &parent, &child, "scoped", "stage");
-    let host_turn = sessions::begin_turn(&db, &other, None, None).unwrap();
-    let denied = claim(&db, &notice.id, &other, &host_turn).unwrap_err();
-    assert!(denied.to_string().starts_with("PERMISSION_DENIED"));
-    // The row is untouched and still waiting for its own turn.
-    assert_eq!(get(&db, &notice.id).unwrap().unwrap().status, "queued");
-    assert!(pending(&db).contains(&notice.id));
 }

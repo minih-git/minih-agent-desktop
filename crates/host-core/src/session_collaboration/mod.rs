@@ -497,3 +497,8 @@ mod tests;
 /// Slice 6: hiring, team norms, and the employee behind a task session.
 #[cfg(test)]
 mod slice6_tests;
+
+/// The steered-delivery ledger: the claim, the settlement it joins, and the
+/// provenance that follows the carrying turn.
+#[cfg(test)]
+mod steered_tests;

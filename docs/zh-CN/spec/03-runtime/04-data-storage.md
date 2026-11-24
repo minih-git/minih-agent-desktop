@@ -1089,6 +1089,17 @@ CREATE INDEX idx_session_collaboration_host_turn
 - `completion` 回执不需要后续结算——它只报告结果、永不产生新回执——所以认领时直接结算
   为 `completed`。其他 kind 变为 `running`，在承载它的回合结算时关闭：`settle_turn`
   现在既关闭拥有该回合的行，也关闭该回合承载的每一行，并在同一事务里写它们的回执。
+- 来源校验跟随承载它的回合，而不是行的状态。运行时只在下一个边界才写这条 steering 行
+  ——实际数据里常常晚好几分钟——所以「先认领、后写入转录」是常规顺序，等到
+  `session.appendMessage` 校验时该行可能已经是 `completed`（回执被认领时就结算了）。
+  因此 `prepare_append` 接受 `host_turn_id` 就是本回合、任意状态的行，或仍为 `queued`
+  的行；目标会话、正文一致、不允许附件这三条与投递自己的回合完全相同。来源被拒绝
+  等于丢掉一条转录行，因为 outbox 会把中毒的写入直接丢弃而不是一直重试。
+- **认领失败会被记为失败，而不是留在 `queued`。** 认领是运行时接受输入之后另一次独立的
+  宿主调用，可能自己失败（宿主重启、传输错误）。这种行写入 `failed` 并在 `error` 里带
+  `STEERED_CLAIM_FAILED`，因为留在 `queued` 正是下一次 drain 会二次投递的状态。限制：
+  工作其实已经执行，`task`/`message` 投递却会给发送方一张失败回执；该写入只作用于仍为
+  `queued` 的行，因此不会覆盖赢得竞态的认领或结算。
 - `recover` 不需要额外规则：被承载的行状态就是 `running`，启动栅栏本来就会把所有
   `running` 行标为 `interrupted`。
 - 没有回填。v46 之前根本不记录被转向的投递，启动栅栏会把那些行标为 `interrupted`，
