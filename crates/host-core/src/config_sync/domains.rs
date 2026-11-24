@@ -340,6 +340,33 @@ pub struct RevisionManifest {
 pub struct LocalSnapshot {
     pub manifest: RevisionManifest,
     pub resources: ResourceMap,
+    /// Skills whose folder is larger than one portable package. Every one of
+    /// them is reported, whatever the user decided, because the interface is
+    /// also where that decision is made and revisited (ADR 0303 amendment 2).
+    #[serde(default)]
+    pub skipped_packages: Vec<SkippedSkillPackage>,
+}
+
+/// One directory-shaped skill whose folder exceeds a package bound.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedSkillPackage {
+    /// The local skill the decision belongs to.
+    pub id: String,
+    /// The skill's name, so the interface can name what is being decided.
+    pub name: String,
+    /// `files`, `resourceBytes` or `packageBytes`; the interface localizes the
+    /// sentence around these numbers.
+    pub reason: String,
+    /// The value that crossed the bound. For `files` it is the first count above
+    /// the limit, because the walk stops there.
+    pub actual: u64,
+    pub limit: u64,
+    /// `document` (the document syncs, the resources stay here), `skip` (the
+    /// skill is not part of the synced set), or absent while it is undecided —
+    /// which syncs nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choice: Option<String>,
 }
 
 pub type ResourceMap = BTreeMap<String, Vec<u8>>;
@@ -356,6 +383,12 @@ pub struct PreviewCounts {
     pub categories: Vec<CategoryPreview>,
 }
 
+/// The two answers a user can give for a skill folder bigger than one package.
+/// `document` publishes `SKILL.md` alone; `skip` leaves the skill out of the
+/// synced set. Absent means the question is still open, which also syncs
+/// nothing.
+pub const SKILL_PACKAGE_CHOICE_DOCUMENT: &str = "document";
+pub const SKILL_PACKAGE_CHOICE_SKIP: &str = "skip";
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CategoryPreview {

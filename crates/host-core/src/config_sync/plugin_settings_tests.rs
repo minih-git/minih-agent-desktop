@@ -176,6 +176,7 @@ fn plugin_category_opt_out_excludes_settings_and_preview_uses_plugin_category() 
             resource_ids: vec![],
         },
         resources: Default::default(),
+        skipped_packages: Vec::new(),
     };
     let preview = super::super::domains::preview(&snapshot, &selection);
     assert_eq!(preview.excluded, 1);

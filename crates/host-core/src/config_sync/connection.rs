@@ -263,6 +263,9 @@ pub(super) fn config_from_input(
         recovery_points: same_state
             .map(|v| v.recovery_points.clone())
             .unwrap_or_default(),
+        oversized_skills: same_state
+            .map(|v| v.oversized_skills.clone())
+            .unwrap_or_default(),
     })
 }
 

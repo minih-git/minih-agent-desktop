@@ -9726,9 +9726,9 @@ Follow the [current router-account acceptance scenario](/spec/06-delivery/04-e2e
 ### E2E-CONFIG-SYNC-skill-package-repository-metadata
 
 - **前提：** 已构建的任务候选、两个隔离 Host 进程与本地 S3 fixture，以及一个目录形态的 skill，其目录内包含带超过单资源上限对象包的 git 仓库。
-- **步骤：** 1) 在技能文档旁放置一个真实资源，以及一个超过 2 MiB 的 `.git` 对象包。2) 执行同步，在第二台设备批准该 skill，并对比两侧 package。3) 用仍列出 `.git` 资源的旧版本修订重做一次。4) 再用一个真实超限资源重做一次。
-- **预期：** 采集成功且只上传真实资源；`.git` 对象包既不上传也不写入接收设备，发送端的仓库保持不变。旧修订中的 `.git` 条目被忽略，而不会被当作本地 package 欠远端设备的文件，因此重复同步收敛而不产生冲突。真实超限资源仍以 `SKILL_LIMIT_EXCEEDED` 失败，并给出技能、资源路径、实际大小与上限。
-- **自动化：** Rust `user_skills::package_tests` 覆盖打包过滤、git 指针文件、`.git` 符号链接、旧修订与拒绝信息；`config_sync::engine::tests::two_devices_sync_credentials_capabilities_and_disjoint_edit` 让 `.git` 对象包走完采集、上传、回读与应用；`pnpm test:e2e:config-sync` 仍是多 Host 测试载体。
+- **步骤：** 1) 在技能文档旁放置一个真实资源，以及一个超过 2 MiB 的 `.git` 对象包。2) 执行同步，在第二台设备批准该 skill，并对比两侧 package。3) 用仍列出 `.git` 资源的旧版本修订重做一次。4) 再用一个真实超限资源重做一次。5) 再用一个资源数量超过单包上限的技能目录重做一次（真实技能可带上万个文件）。
+- **预期：** 采集成功且只上传真实资源；`.git` 对象包既不上传也不写入接收设备，发送端的仓库保持不变。旧修订中的 `.git` 条目被忽略，而不会被当作本地 package 欠远端设备的文件，因此重复同步收敛而不产生冲突。真实超限资源在写入时仍以 `SKILL_LIMIT_EXCEEDED` 失败，并给出技能、资源路径、实际大小与上限。第 5 步先询问而不是自行决定：未答复时不采集该技能的任何内容，界面列出技能与两个选项；选「只同步文档」后只发布文档、资源留在本机；选「不同步」则该技能不进入同步集合。两种情况其余同步都继续，而不是让所有域一起失败。
+- **自动化：** Rust `user_skills::package_tests` 覆盖打包过滤、git 指针文件、`.git` 符号链接、旧修订与拒绝信息；`config_sync::engine::tests::two_devices_sync_credentials_capabilities_and_disjoint_edit` 让 `.git` 对象包走完采集、上传、回读与应用；`config_sync::engine::skill_package_tests` 覆盖采集侧的跳过报告，以及应用时不动接收设备已有资源的用例；`pnpm test:e2e:config-sync` 仍是多 Host 测试载体。
 - **规格：** `03-runtime/22-config-sync.md`、`docs/adr/0303-skill-package-resource-limits.md`。
 - **验收：** F（持久化）、品质。
 - **里程碑：** Post-M6 desktop shell maintenance。

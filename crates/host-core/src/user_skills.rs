@@ -543,19 +543,108 @@ fn is_package_metadata_path(relative: &str) -> bool {
         .any(|component| component.eq_ignore_ascii_case(PACKAGE_METADATA_DIR))
 }
 
+/// Which package bound a directory-shaped skill exceeded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillPackageOverflowReason {
+    /// More resources than one package may carry.
+    Files,
+    /// One resource above the per-resource cap.
+    ResourceBytes,
+    /// All resources together above the per-package cap.
+    PackageBytes,
+}
+
+impl SkillPackageOverflowReason {
+    /// Wire name a caller reports; the interface localizes the sentence.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Files => "files",
+            Self::ResourceBytes => "resourceBytes",
+            Self::PackageBytes => "packageBytes",
+        }
+    }
+}
+
+/// A package bound that was exceeded, with the measured value and the limit so
+/// a caller can say which bound and by how much.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SkillPackageOverflow {
+    pub reason: SkillPackageOverflowReason,
+    /// The measured value. For [`SkillPackageOverflowReason::Files`] it is the
+    /// first count above the bound, because the walk stops there; for the byte
+    /// bounds it is the exact size that crossed.
+    pub actual: u64,
+    pub limit: u64,
+}
+
+/// The bounded sibling resources of a directory-shaped skill.
+///
+/// A package bound is a property of the data, not a failure of the caller: a
+/// skill whose folder is far larger than one portable package (`ppt-master`
+/// carries twelve thousand icon and sound assets) used to return `Err` here,
+/// and one such skill then failed the capture of every configuration domain
+/// (ADR 0303 amendment 2). The bound still reports itself, but as data, so the
+/// caller can keep the skill document and leave the resources on this device.
+pub enum SkillPackageFiles {
+    /// Every resource fits the package bounds, in package path order.
+    Complete(Vec<(String, Vec<u8>)>),
+    /// A bound was exceeded and the resources are not part of the package.
+    OverLimit(SkillPackageOverflow),
+}
+
+impl std::fmt::Debug for SkillPackageFiles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Paths and counts, never the bytes: a failing assertion must not print
+        // a multi-megabyte package.
+        match self {
+            Self::Complete(files) => f
+                .debug_struct("Complete")
+                .field("resources", &files.len())
+                .field(
+                    "paths",
+                    &files.iter().map(|(path, _)| path).collect::<Vec<_>>(),
+                )
+                .finish(),
+            Self::OverLimit(overflow) => f.debug_tuple("OverLimit").field(overflow).finish(),
+        }
+    }
+}
+
+impl SkillPackageFiles {
+    /// The resources when the package fits, for callers that cannot proceed
+    /// with an over-limit package at all.
+    #[cfg(test)]
+    pub fn complete(self) -> Vec<(String, Vec<u8>)> {
+        match self {
+            Self::Complete(files) => files,
+            Self::OverLimit(overflow) => {
+                panic!("package is over the {overflow:?} bound")
+            }
+        }
+    }
+}
+
+fn overflow_bytes(
+    reason: SkillPackageOverflowReason,
+    actual: u64,
+    limit: usize,
+) -> SkillPackageOverflow {
+    SkillPackageOverflow {
+        reason,
+        actual,
+        limit: limit as u64,
+    }
+}
+
+/// Walk one package. `Ok(None)` means every resource fits; `Ok(Some(_))` stops
+/// at the first exceeded bound, so the caller keeps the document instead of
+/// collecting a package it cannot carry.
 fn collect_package_files(
     root: &Path,
     current: &Path,
-    skill: &str,
     result: &mut Vec<(String, Vec<u8>)>,
     total: &mut usize,
-) -> Result<()> {
-    if result.len() > MAX_SKILL_PACKAGE_FILES {
-        bail!(
-            "SKILL_LIMIT_EXCEEDED: skill `{skill}` package contains more than \
-             {MAX_SKILL_PACKAGE_FILES} resources"
-        );
-    }
+) -> Result<Option<SkillPackageOverflow>> {
     for entry in fs::read_dir(current)? {
         let entry = entry?;
         let path = entry.path();
@@ -573,7 +662,9 @@ fn collect_package_files(
             bail!("SKILL_INVALID: skill packages cannot contain symbolic links");
         }
         if metadata.is_dir() {
-            collect_package_files(root, &path, skill, result, total)?;
+            if let Some(overflow) = collect_package_files(root, &path, result, total)? {
+                return Ok(Some(overflow));
+            }
             continue;
         }
         if !metadata.is_file() {
@@ -587,40 +678,42 @@ fn collect_package_files(
             continue;
         }
         let relative = package_relative_path(root, &path)?;
-        // Reject an oversized resource from its metadata before reading it: a
+        // Refuse an oversized resource from its metadata before reading it: a
         // multi-gigabyte file in a skill directory must not be pulled into
-        // memory only to be refused.
+        // memory only to be left out.
         if metadata.len() > MAX_SKILL_RESOURCE_BYTES as u64 {
-            bail!(
-                "SKILL_LIMIT_EXCEEDED: skill `{skill}` resource `{relative}` is \
-                 {} bytes, above the {MAX_SKILL_RESOURCE_BYTES} byte limit",
-                metadata.len()
-            );
+            return Ok(Some(overflow_bytes(
+                SkillPackageOverflowReason::ResourceBytes,
+                metadata.len(),
+                MAX_SKILL_RESOURCE_BYTES,
+            )));
         }
         let bytes = fs::read(&path)?;
         if bytes.len() > MAX_SKILL_RESOURCE_BYTES {
-            bail!(
-                "SKILL_LIMIT_EXCEEDED: skill `{skill}` resource `{relative}` is \
-                 {} bytes, above the {MAX_SKILL_RESOURCE_BYTES} byte limit",
-                bytes.len()
-            );
+            return Ok(Some(overflow_bytes(
+                SkillPackageOverflowReason::ResourceBytes,
+                bytes.len() as u64,
+                MAX_SKILL_RESOURCE_BYTES,
+            )));
         }
         *total = total.saturating_add(bytes.len());
         if *total > MAX_SKILL_PACKAGE_BYTES {
-            bail!(
-                "SKILL_LIMIT_EXCEEDED: skill `{skill}` package exceeds the \
-                 {MAX_SKILL_PACKAGE_BYTES} byte resource limit at `{relative}`"
-            );
+            return Ok(Some(overflow_bytes(
+                SkillPackageOverflowReason::PackageBytes,
+                *total as u64,
+                MAX_SKILL_PACKAGE_BYTES,
+            )));
         }
         result.push((relative, bytes));
         if result.len() > MAX_SKILL_PACKAGE_FILES {
-            bail!(
-                "SKILL_LIMIT_EXCEEDED: skill `{skill}` package contains more than \
-                 {MAX_SKILL_PACKAGE_FILES} resources"
-            );
+            return Ok(Some(overflow_bytes(
+                SkillPackageOverflowReason::Files,
+                result.len() as u64,
+                MAX_SKILL_PACKAGE_FILES,
+            )));
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 fn package_destination(root: &Path, relative: &str) -> Result<PathBuf> {
@@ -1281,26 +1374,32 @@ impl UserSkillRegistry {
         Ok(Some((record, body)))
     }
 
-    /// Read bounded sibling resources from a directory-shaped skill. The
+    /// Read the bounded sibling resources of a directory-shaped skill. The
     /// skill document itself is captured separately so its body can retain the
     /// existing update/import semantics.
+    ///
+    /// An over-limit package is reported as [`SkillPackageFiles::OverLimit`]
+    /// rather than as an error: the caller decides whether to keep the document
+    /// and drop the resources.
     pub fn package_files(
         &mut self,
         id: &str,
         level: CapabilityLevel,
         project_path: Option<&str>,
-    ) -> Result<Vec<(String, Vec<u8>)>> {
+    ) -> Result<SkillPackageFiles> {
         let Some(record) = self.find(id, Some(level), project_path)? else {
-            return Ok(Vec::new());
+            return Ok(SkillPackageFiles::Complete(Vec::new()));
         };
         let Some(root) = package_root(&record, level, project_path)? else {
-            return Ok(Vec::new());
+            return Ok(SkillPackageFiles::Complete(Vec::new()));
         };
         let mut result = Vec::new();
         let mut total = 0usize;
-        collect_package_files(&root, &root, id, &mut result, &mut total)?;
+        if let Some(overflow) = collect_package_files(&root, &root, &mut result, &mut total)? {
+            return Ok(SkillPackageFiles::OverLimit(overflow));
+        }
         result.sort_by(|left, right| left.0.cmp(&right.0));
-        Ok(result)
+        Ok(SkillPackageFiles::Complete(result))
     }
 
     /// Seed fixtures without overwriting existing resource contents.
@@ -1312,7 +1411,7 @@ impl UserSkillRegistry {
         project_path: Option<&str>,
         files: &[(String, Vec<u8>)],
     ) -> Result<()> {
-        let existing = self.package_files(id, level, project_path)?;
+        let existing = self.package_files(id, level, project_path)?.complete();
         let mut desired = existing
             .iter()
             .cloned()

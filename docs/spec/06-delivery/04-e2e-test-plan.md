@@ -11358,18 +11358,25 @@ selection already in place shows it without waiting for another event.
   beside the skill document on the first device. 2) Sync, approve the skill on
   the second device, and compare both packages. 3) Repeat with a revision
   captured by an older build that still lists `.git` resources. 4) Repeat with a
-  genuine resource above the cap.
+  genuine resource above the cap. 5) Repeat with a skill folder that holds more
+  resources than one package may carry (a real skill carries twelve thousand).
 - **Expected:** Capture succeeds and ships only real resources; the `.git` pack
   is neither uploaded nor written on the receiving device, and the sender's
   repository is untouched. An older revision's `.git` entries are ignored rather
   than treated as files the local package owes the remote one, so repeated syncs
-  converge instead of conflicting. A genuine oversized resource still fails with
-  `SKILL_LIMIT_EXCEEDED`, now naming the skill, the resource path, the actual
-  size and the limit.
+  converge instead of conflicting. A genuine oversized resource is still refused
+  when it is written, with `SKILL_LIMIT_EXCEEDED` naming the skill, the resource
+  path, the actual size and the limit. Step 5 asks instead of assuming:
+  undecided, nothing of the skill travels and the page names it with both
+  answers; after `document`, the document alone is published and the resources
+  stay behind; after `skip`, the skill stays out of the synced set. Either way
+  the rest of the sync proceeds instead of failing every domain.
 - **Automation:** Rust `user_skills::package_tests` covers the packager filter,
   the git pointer file, the `.git` symlink, the legacy revision and the refusal
   detail; `config_sync::engine::tests::two_devices_sync_credentials_capabilities_and_disjoint_edit`
   carries a `.git` pack through capture, upload, read-back and apply;
+  `config_sync::engine::skill_package_tests` covers the capture report and an
+  apply that leaves the receiving device's resources untouched;
   `pnpm test:e2e:config-sync` remains the multi-Host harness.
 - **Specs:** `03-runtime/22-config-sync.md`,
   `docs/adr/0303-skill-package-resource-limits.md`.

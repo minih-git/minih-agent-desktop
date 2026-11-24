@@ -99,6 +99,19 @@ and an import ignores it even when a revision still lists it, so a repository
 kept beside a skill neither fails the capture nor travels to another device.
 Scripts are stored as bytes and are never executed by import.
 
+A package bound is not a failure, and it is the user's decision. A skill whose
+folder exceeds one of the bounds — a real skill carries twelve thousand icon and
+sound files, far past 256 resources — is reported with its name, the bound, the
+measured value and the limit, and none of it is captured until the user answers:
+`document` publishes its `SKILL.md` alone, with a marker in place of the package
+descriptors, and `skip` leaves the skill out of the synced set (a skill synced
+before is then removed from the other devices). The answer is device-local
+policy stored beside the sync configuration, so the next capture follows it. The
+receiving device writes a marked skill's document and leaves whatever resources
+it already holds untouched, so a copy that fits elsewhere is never reduced to
+its document, and repeated syncs converge instead of conflicting. Written
+package resources are still refused at the same bounds.
+
 The connected Minih Router account row is device-local, like the project
 lists. It is the sync transport's own identity — each device links its own
 account — so it is never captured, applied, or tombstoned by sync or backup.

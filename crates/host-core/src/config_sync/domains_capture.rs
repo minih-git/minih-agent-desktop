@@ -120,10 +120,46 @@ fn capture_mcp(
 
 /// Global skills only, with their bounded package resources. A skill installed
 /// for one project stays with that folder and is carried by a project archive.
-fn capture_skills(st: &mut AppState, key: &VaultKey) -> Result<(Vec<PortableEntity>, ResourceMap)> {
+///
+/// A folder larger than one portable package is a decision, not a failure: the
+/// skill is reported in `skipped` with the bound it broke, and `choices` says
+/// what the user decided. Only `document` publishes it — as its SKILL.md alone,
+/// with a `packageSkipped` marker so the receiving device leaves its own
+/// resources untouched. Undecided and `skip` publish nothing: the skill is not
+/// part of the synced set (ADR 0303 amendment 2).
+fn capture_skills(
+    st: &mut AppState,
+    key: &VaultKey,
+    choices: &BTreeMap<String, String>,
+    skipped: &mut Vec<SkippedSkillPackage>,
+) -> Result<(Vec<PortableEntity>, ResourceMap)> {
     let mut result = Vec::new();
     let mut resources = BTreeMap::new();
     for record in st.user_skills.list(CapabilityLevel::Global, None)? {
+        let (package_files, overflow) =
+            match st
+                .user_skills
+                .package_files(&record.id, CapabilityLevel::Global, None)?
+            {
+                crate::user_skills::SkillPackageFiles::Complete(files) => (files, None),
+                crate::user_skills::SkillPackageFiles::OverLimit(overflow) => {
+                    let choice = choices.get(&record.id).cloned();
+                    skipped.push(SkippedSkillPackage {
+                        id: record.id.clone(),
+                        name: record.name.clone(),
+                        reason: overflow.reason.as_str().to_string(),
+                        actual: overflow.actual,
+                        limit: overflow.limit,
+                        choice: choice.clone(),
+                    });
+                    if choice.as_deref() != Some(SKILL_PACKAGE_CHOICE_DOCUMENT) {
+                        // Undecided, or the user chose to leave it out: nothing
+                        // of this skill travels, not even its document.
+                        continue;
+                    }
+                    (Vec::new(), Some(overflow))
+                }
+            };
         let bytes = st
             .user_skills
             .read(&record.id, Some(CapabilityLevel::Global), None)?
@@ -131,9 +167,6 @@ fn capture_skills(st: &mut AppState, key: &VaultKey) -> Result<(Vec<PortableEnti
             .ok_or_else(|| anyhow::anyhow!("skill disappeared while capturing"))?;
         let resource_id = object_id(key, &bytes);
         resources.entry(resource_id.clone()).or_insert(bytes);
-        let package_files =
-            st.user_skills
-                .package_files(&record.id, CapabilityLevel::Global, None)?;
         let mut resource_ids = vec![resource_id.clone()];
         let mut package_descriptors = Vec::with_capacity(package_files.len());
         for (path, bytes) in package_files {
@@ -168,6 +201,15 @@ fn capture_skills(st: &mut AppState, key: &VaultKey) -> Result<(Vec<PortableEnti
                 object.insert(
                     "packageFiles".to_string(),
                     Value::Array(package_descriptors),
+                );
+            } else if let Some(overflow) = overflow {
+                object.insert(
+                    "packageSkipped".to_string(),
+                    json!({
+                        "reason": overflow.reason.as_str(),
+                        "actual": overflow.actual,
+                        "limit": overflow.limit,
+                    }),
                 );
             }
         }
@@ -444,6 +486,7 @@ pub(crate) fn capture(
     selection: &CategorySelection,
     include_secrets: bool,
     plugin_intents: &BTreeMap<String, Value>,
+    skill_choices: &BTreeMap<String, String>,
 ) -> Result<LocalSnapshot> {
     let mut snapshot = LocalSnapshot {
         manifest: RevisionManifest {
@@ -456,6 +499,7 @@ pub(crate) fn capture(
             resource_ids: Vec::new(),
         },
         resources: BTreeMap::new(),
+        skipped_packages: Vec::new(),
     };
     if selection.is_selected(DOMAIN_APPLICATION) {
         snapshot.manifest.entities.push(capture_application(st)?);
@@ -496,7 +540,8 @@ pub(crate) fn capture(
             .extend(capture_mcp(st, selection, include_secrets)?);
     }
     if selection.is_selected(DOMAIN_SKILLS) {
-        let (entities, resources) = capture_skills(st, key)?;
+        let (entities, resources) =
+            capture_skills(st, key, skill_choices, &mut snapshot.skipped_packages)?;
         snapshot.manifest.entities.extend(entities);
         snapshot.resources.extend(resources);
     }

@@ -4,6 +4,7 @@ import type {
   ConfigSyncCategorySelection,
   ConfigSyncHistoryEntry,
   ConfigSyncProgress,
+  ConfigSyncSkillPackageChoice,
   ConfigSyncState,
 } from "@minih-agent/shared";
 import { api } from "../../lib/api";
@@ -11,6 +12,7 @@ import { Badge, Button, Field, Input, PasswordInput, SettingsToggle } from "../u
 import { IconCloudDown, IconRefresh, IconShield } from "../icons";
 import { SettingsCard, SettingsRow } from "../../features/settings/primitives";
 import { configSyncProgressView } from "../../features/settings/config-sync-progress";
+import { skippedPackageMessageKey } from "../../features/settings/config-sync-skipped";
 import { useAppStore } from "../../stores/app-store";
 import {
   cacheConfigSyncHistory,
@@ -77,6 +79,7 @@ export function ConfigSyncPage() {
     | "history"
     | "restore"
     | "password"
+    | "skill"
     | "disconnect"
     | null
   >(null);
@@ -288,6 +291,24 @@ export function ConfigSyncPage() {
     }
   };
 
+  // The answer decides what leaves this device, so it is stored and the host
+  // re-captures: the page redraws with the new choice, and the next sync (or
+  // the automatic one) uses it.
+  const decideSkillPackage = async (
+    skillId: string,
+    choice: ConfigSyncSkillPackageChoice,
+  ) => {
+    setBusy("skill");
+    setError(null);
+    try {
+      applyState(await api.configSyncSetSkillChoice({ skillId, choice }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const restore = async (entry: ConfigSyncHistoryEntry) => {
     const propagate = state?.mode === "sync";
     if (!window.confirm(t(propagate ? "settings.configSync.restoreConfirm" : "settings.configSync.restoreBackupConfirm"))) return;
@@ -399,6 +420,38 @@ export function ConfigSyncPage() {
       ) : null}
       {error || state?.lastError ? (
         <ConfigSyncError message={error ?? state?.lastError ?? ""} />
+      ) : null}
+      {state?.skippedPackages?.length ? (
+        <SettingsCard title={t("settings.configSync.skippedPackagesTitle")}>
+          <p className="settings-config-sync-note">
+            {t("settings.configSync.skippedPackagesDescription")}
+          </p>
+          {state.skippedPackages.map((item) => (
+            <SettingsRow
+              key={item.id}
+              title={t(skippedPackageMessageKey(item.reason), {
+                name: item.name,
+                actual: item.actual,
+                limit: item.limit,
+              })}
+            >
+              <div className="settings-config-sync-actions">
+                {(["document", "skip"] as const).map((choice) => (
+                  <Button
+                    key={choice}
+                    size="sm"
+                    variant={item.choice === choice ? "primary" : "ghost"}
+                    aria-pressed={item.choice === choice}
+                    disabled={controlsBusy}
+                    onClick={() => void decideSkillPackage(item.id, choice)}
+                  >
+                    {t(`settings.configSync.skillPackageChoice.${choice}`)}
+                  </Button>
+                ))}
+              </div>
+            </SettingsRow>
+          ))}
+        </SettingsCard>
       ) : null}
       {state?.configured && (
         <SettingsCard title={t("settings.configSync.statusTitle")}>

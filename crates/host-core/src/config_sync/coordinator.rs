@@ -63,6 +63,7 @@ pub(super) async fn sync_once(
                 &selection(&config),
                 config.include_secrets,
                 &config.plugin_intents,
+                &config.oversized_skills,
             )?;
             let local_digest = domains::snapshot_digest(&local);
             let local_before = local.manifest.clone();
@@ -199,6 +200,7 @@ pub(super) async fn sync_once(
                 resource_ids: resources.keys().cloned().collect(),
             },
             resources,
+            skipped_packages: Vec::new(),
         };
         upload_snapshot(&transport, &config, &key, &candidate, observer).await?;
         let head = next_head(
@@ -355,6 +357,7 @@ pub(crate) async fn sync_if_enabled(
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
+            &config.oversized_skills,
         )?;
         let digest = domains::snapshot_digest(&snapshot);
         let now = Utc::now();

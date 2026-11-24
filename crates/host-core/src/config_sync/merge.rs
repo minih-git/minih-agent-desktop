@@ -439,6 +439,7 @@ mod tests {
         let mut local = LocalSnapshot {
             manifest: manifest(vec![]),
             resources: BTreeMap::new(),
+            skipped_packages: Vec::new(),
         };
         let mut selection = CategorySelection::default();
         selection.0.insert("test".into(), false);
@@ -476,6 +477,7 @@ mod tests {
         let mut local = LocalSnapshot {
             manifest: manifest(vec![]),
             resources: BTreeMap::new(),
+            skipped_packages: Vec::new(),
         };
         snapshot_with_tombstones(Some(&base), &mut local, &CategorySelection::all_selected());
         assert_eq!(local.manifest.entities, vec![tombstone]);

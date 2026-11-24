@@ -58,6 +58,39 @@ object pack reported `SKILL_LIMIT_EXCEEDED: skill package resource is too large`
 and stopped the sync of every domain. Junk directories such as `__pycache__` and
 `.venv`, and the symlink refusal, are unchanged.
 
+## Amendment 2
+
+An over-bound package is now skippable, and what happens to it is the user's
+decision — the gap the Consequences below name. A skill folder of 13 221 files
+and 83 MiB (`ppt-master`: 12 029 icon and 191 sound assets) reported
+`SKILL_LIMIT_EXCEEDED: skill ppt-master package contains more than 256
+resources`, so one installed skill made configuration sync impossible — and no
+bound can be raised to fit it, because one revision holds at most 4096 objects
+across all domains and 13 221 resources would need 13 221 of them.
+
+`package_files` therefore reports the bound it exceeded instead of returning an
+error, and the capture decides nothing on its own. Every over-bound skill is
+reported to the interface with its name, the bound, the measured value and the
+limit; until the user answers, none of it is captured. `document` publishes the
+skill as its `SKILL.md` alone with a `packageSkipped` marker in place of
+`packageFiles`, and `skip` leaves the skill out of the synced set — a tombstone
+if a previous revision carried it, which is what removal means everywhere else
+in this sync. The answer is device-local policy stored beside the sync
+configuration (`oversizedSkills`), set through `configSync.setSkillChoice`, and
+revisited from the same card. Apply writes a marked skill's document and
+reconciles no package files for it, and likewise leaves a local package alone
+when this device's own copy is over the bound, so a smaller copy elsewhere is
+never reduced to its document. The approved-write path still refuses resources
+above the same bounds, and a remote revision still may not carry more than 256
+descriptors.
+
+Consequences: one oversized skill costs its own resources and one question
+instead of the whole sync; what leaves the device is chosen rather than assumed,
+and an unanswered question ships nothing. The receiving device may hold a skill
+whose resources differ from the sender's, which the card states rather than
+hides. The prompt-facing document cap and every other package rule above are
+unchanged.
+
 ## Consequences
 
 - A package may now be 32× larger than before (512 KiB → 16 MiB) and hold 4×
@@ -67,11 +100,11 @@ and stopped the sync of every domain. Junk directories such as `__pycache__` and
 - Resources share the existing 4096-object ceiling for one revision across all
   domains; roughly sixteen maximum-size packages fill it, and the existing
   `CONFIG_SYNC_LIMIT_EXCEEDED` error is what a user sees beyond that.
-- A bound is still all-or-nothing. `package_files` returns an error that the
-  skills capture propagates, so one resource above 2 MiB, more than 256
-  resources, or more than 16 MiB of resources in one package still fails the
-  capture, and with it the sync of every domain. This record moves the bound; it
-  does not make an oversized package skippable.
+- A bound was all-or-nothing when this record was accepted: one resource above
+  2 MiB, more than 256 resources, or more than 16 MiB of resources in one
+  package failed the capture, and with it the sync of every domain. Amendment 2
+  above makes an over-bound package skippable instead; the bounds themselves
+  are unchanged.
 - The descriptor list of a package travels in the entity payload, which keeps
   its own 512 KiB bound. A package with 256 resource paths long enough to push
   that payload over the bound is therefore refused at upload

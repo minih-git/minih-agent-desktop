@@ -164,6 +164,7 @@ pub(super) async fn restore(
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
+            &config.oversized_skills,
         )?;
         let account = configured_account(&st, &config)?;
         (config, key, base, local, account)
@@ -195,6 +196,7 @@ pub(super) async fn restore(
             resource_ids: resources.keys().cloned().collect(),
         },
         resources,
+        skipped_packages: Vec::new(),
     };
     if config.mode == SyncMode::Sync {
         upload_snapshot(&transport, &config, &key, &candidate, &NoSyncProgress).await?;

@@ -927,7 +927,8 @@ fn directory_skill_package_resources_round_trip_without_execution() {
             CapabilityLevel::Project,
             Some(project.to_str().unwrap()),
         )
-        .unwrap();
+        .unwrap()
+        .complete();
     assert_eq!(
         files,
         vec![("scripts/check.txt".into(), b"safe bytes".to_vec())]

@@ -48,12 +48,15 @@ mod remote;
 #[path = "engine_router_tests.rs"]
 mod router_tests;
 #[cfg(test)]
+#[path = "skill_package_tests.rs"]
+mod skill_package_tests;
+#[cfg(test)]
 pub(crate) use apply::validate_application_references;
 pub(crate) use apply::{apply_bundle, mapped_project_paths, recover_import_journal};
 pub(crate) use coordinator::{sync_if_enabled, sync_now};
 pub(crate) use handlers::{
     approve, change_password, configure, disconnect, get_state, list_history, map_project, pause,
-    reject, restore, test, unlock,
+    reject, restore, set_skill_choice, test, unlock,
 };
 use progress::{NoSyncProgress, ProgressNotifier, SyncPhase, SyncProgress, SyncProgressObserver};
 use remote::next_head;
@@ -133,6 +136,12 @@ pub(crate) struct StoredConfig {
     pub plugin_intents: BTreeMap<String, Value>,
     #[serde(default)]
     pub recovery_points: Vec<String>,
+    /// The user's answer for a skill folder larger than one package: `document`
+    /// publishes its `SKILL.md` alone, `skip` keeps it out of the synced set.
+    /// An absent skill is still an open question and syncs nothing (ADR 0303
+    /// amendment 2).
+    #[serde(default)]
+    pub oversized_skills: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,6 +270,10 @@ struct PublicState {
     mappings: Vec<PublicProjectMapping>,
     #[serde(skip_serializing_if = "Option::is_none")]
     preview: Option<domains::PreviewCounts>,
+    /// Skills whose package is too large for one revision. The interface names
+    /// them so a partial sync is never mistaken for a complete one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    skipped_packages: Vec<domains::SkippedSkillPackage>,
 }
 
 fn default_categories() -> BTreeMap<String, bool> {
@@ -726,6 +739,7 @@ pub fn public_state(st: &mut AppState) -> Result<Value> {
             pending_approvals: vec![],
             mappings: vec![],
             preview: None,
+            skipped_packages: vec![],
         })?);
     };
     let key = local_vault_key(st, initial_config)?;
@@ -751,41 +765,46 @@ pub fn public_state(st: &mut AppState) -> Result<Value> {
         .as_ref()
         .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: sync configuration disappeared"))?;
     let syncing = st.config_sync_in_progress.load(Ordering::Relaxed);
-    let preview = if let Some(bundle) = pending.as_ref() {
-        let snapshot = LocalSnapshot {
-            manifest: bundle.manifest.clone(),
-            resources: bundle.resources.clone(),
-        };
-        Some(domains::preview(&snapshot, &selection(config_ref)))
-    } else if let Some(key) = key.as_ref() {
-        let snapshot = domains::capture(
+    // One capture serves the preview, the pending-change check and the
+    // skipped-package report; the pending-bundle path reuses the bundle's own
+    // snapshot for the preview.
+    let captured = match key.as_ref() {
+        Some(key) => Some(domains::capture(
             st,
             key,
             &selection(config_ref),
             config_ref.include_secrets,
             &config_ref.plugin_intents,
-        )?;
+            &config_ref.oversized_skills,
+        )?),
+        None => None,
+    };
+    let preview = if let Some(bundle) = pending.as_ref() {
+        let snapshot = LocalSnapshot {
+            manifest: bundle.manifest.clone(),
+            resources: bundle.resources.clone(),
+            skipped_packages: Vec::new(),
+        };
         Some(domains::preview(&snapshot, &selection(config_ref)))
     } else {
-        None
+        captured
+            .as_ref()
+            .map(|snapshot| domains::preview(snapshot, &selection(config_ref)))
     };
+    let skipped_packages = captured
+        .as_ref()
+        .map(|snapshot| snapshot.skipped_packages.clone())
+        .unwrap_or_default();
     let local_changes_pending = if syncing {
         false
     } else {
         match (
-            key.as_ref(),
+            captured.as_ref(),
             config_ref.last_success_at.as_ref(),
             config_ref.last_local_digest.as_deref(),
         ) {
-            (Some(key), Some(_), Some(expected)) => {
-                let snapshot = domains::capture(
-                    st,
-                    key,
-                    &selection(config_ref),
-                    config_ref.include_secrets,
-                    &config_ref.plugin_intents,
-                )?;
-                domains::snapshot_digest(&snapshot) != expected
+            (Some(snapshot), Some(_), Some(expected)) => {
+                domains::snapshot_digest(snapshot) != expected
             }
             _ => false,
         }
@@ -818,6 +837,7 @@ pub fn public_state(st: &mut AppState) -> Result<Value> {
         pending_approvals: public_pending(pending.as_ref()),
         mappings: public_mappings(config_ref),
         preview,
+        skipped_packages,
     })?)
 }
 
@@ -1308,6 +1328,7 @@ mod tests {
                 &selection(&config),
                 config.include_secrets,
                 &config.plugin_intents,
+                &config.oversized_skills,
             )?;
             let captured = snapshot
                 .manifest
