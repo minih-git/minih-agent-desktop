@@ -2425,6 +2425,10 @@ sklm: {
     documentInput: "PDF",
     thinkingManualOverrideHint: "Katalogda yok; destekleniyorsa açın.",
     contextWindowCatalogHint: "models.dev'i takip eder; düzenlerseniz değeriniz sabitlenir.",
+    modelGatewayFollowed:
+      "{{count}} ayar ağ geçidinin model profilini izliyor. Birini düzenlerseniz değeriniz sabitlenir.",
+    modelGatewayRestore: "Ağ geçidi değerlerini geri yükle",
+    modelGatewayFollowHint: "Ağ geçidini izler; düzenlerseniz değeriniz sabitlenir.",
     availableForSubagents: "AI devri için kullanılabilir",
     embeddingModel: "Gömme modeli",
     embeddingModelHint: "Bu modeli vektör modeli olarak kaydeder: eklentiler onunla gömme üretir ve konuşma modeli olarak hiç önerilmez",

@@ -37,6 +37,7 @@ import { runLiveVoiceShortcut } from "../voice/live/live-voice-shortcuts";
 import { useSidebarTransition } from "./useSidebarTransition";
 import { useStartupWatchdog } from "./useStartupWatchdog";
 import { useTraySessions } from "./useTraySessions";
+import { useRouterModelProfileSync } from "./useRouterModelProfileSync";
 
 const MODIFIER_ONLY_KEYS = new Set([
   "Alt",
@@ -199,6 +200,10 @@ export function useAppShellRuntime() {
     setSidebarCollapsed(false);
   }, []);
   useTraySessions({ setSearchOpen, reopenSidebar });
+  // The gateway's own per-model profile, applied once at start: an installed app
+  // picks up a profile change without the user opening Settings.
+  useRouterModelProfileSync();
+
 
   // Stable identity: the keydown and native-menu handlers register once and
   // must never capture a stale `sidebarCollapsed`. Every invocation is a user

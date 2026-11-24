@@ -2389,6 +2389,10 @@ export const ptBR = {
     documentInput: "PDF",
     thinkingManualOverrideHint: "Substitui a configuração padrão de raciocínio deste modelo.",
     contextWindowCatalogHint: "Segue models.dev; editar fixa o seu valor.",
+    modelGatewayFollowed:
+      "{{count}} ajustes seguem o perfil de modelo do gateway. Editar um fixa o seu valor.",
+    modelGatewayRestore: "Restaurar valores do gateway",
+    modelGatewayFollowHint: "Segue o gateway; editar fixa o seu valor.",
     availableForSubagents: "Disponível para subagentes",
     embeddingModel: "Modelo de embeddings",
     embeddingModelHint: "Salva este modelo como modelo vetorial: os plugins geram embeddings com ele e nunca é oferecido como modelo de conversa",

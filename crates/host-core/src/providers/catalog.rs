@@ -24,8 +24,28 @@ const MODEL_API_STYLES: &[&str] = &[
 
 /// Recognised per-limit provenance markers. Anything else is dropped so a
 /// row always falls back to the documented rule instead of a third state no
-/// reader understands.
-const MODEL_LIMIT_SOURCES: &[&str] = &["catalog", "user"];
+/// reader understands. `gateway` is a limit the Minih Router profile resolved,
+/// which models.dev does not replace either.
+const MODEL_LIMIT_SOURCES: &[&str] = &["catalog", "user", "gateway"];
+/// Binding fields a gateway model profile may own, `imageGeneration` included:
+/// that one is the image-generation designation stored in settings.
+const PROFILE_SOURCE_FIELDS: &[&str] = &[
+    "alias",
+    "contextWindow",
+    "maxTokens",
+    "thinkingLevels",
+    "defaultThinkingLevel",
+    "thinkingProtocol",
+    "apiStyle",
+    "supportsImages",
+    "supportsDocuments",
+    "nativeWebSearch",
+    "systemPrompt",
+    "kind",
+    "imageGeneration",
+];
+/// The two states a profile marker may hold.
+const PROFILE_SOURCE_VALUES: &[&str] = &["gateway", "user"];
 pub(crate) const DEFAULT_CONTEXT_WINDOW: u32 = 128_000;
 pub(crate) const DEFAULT_MAX_TOKENS: u32 = 8_192;
 
@@ -43,6 +63,29 @@ fn normalize_model_limit_source(value: Option<&str>) -> Option<String> {
     MODEL_LIMIT_SOURCES
         .contains(&trimmed.as_str())
         .then_some(trimmed)
+}
+
+/// Keep only the per-field markers a reader understands.
+///
+/// An unknown field or a third state is dropped rather than stored: readers
+/// decide "follows the gateway" or "pinned" from this map, and a value nobody
+/// defines would silently become one of the two. An empty map is the same as
+/// no map, so the record cannot spell one state two ways.
+fn normalize_profile_sources(
+    value: Option<&BTreeMap<String, String>>,
+) -> Option<BTreeMap<String, String>> {
+    let value = value?;
+    let kept: BTreeMap<String, String> = value
+        .iter()
+        .filter_map(|(field, source)| {
+            let field = field.trim();
+            let source = source.trim().to_ascii_lowercase();
+            (PROFILE_SOURCE_FIELDS.contains(&field)
+                && PROFILE_SOURCE_VALUES.contains(&source.as_str()))
+            .then(|| (field.to_string(), source))
+        })
+        .collect();
+    (!kept.is_empty()).then_some(kept)
 }
 
 fn default_thinking_level_allowed(level: &str, thinking_levels: &[String]) -> bool {
@@ -122,6 +165,7 @@ pub(crate) fn normalize_model_bindings(bindings: &[ModelBinding]) -> Vec<ModelBi
                 native_web_search: binding.native_web_search,
                 api_style,
                 kind: normalize_model_kind(binding.kind.as_deref()),
+                profile_sources: normalize_profile_sources(binding.profile_sources.as_ref()),
             })
         })
         .collect()
@@ -149,6 +193,7 @@ fn legacy_model_binding(model_id: Option<String>) -> Vec<ModelBinding> {
                 native_web_search: None,
                 api_style: None,
                 kind: None,
+                profile_sources: None,
             }]
         })
         .unwrap_or_default()
@@ -539,6 +584,7 @@ mod tests {
             native_web_search: None,
             api_style: None,
             kind: None,
+            profile_sources: None,
         }
     }
 
@@ -560,6 +606,49 @@ mod tests {
         assert_eq!(value["models"][0]["kind"], "embedding");
         assert!(value["models"][1].get("kind").is_none(), "{saved}");
         assert!(value["models"][2].get("kind").is_none(), "{saved}");
+    }
+
+    /// A `minih-router` binding records, per field, whether it still follows
+    /// the gateway's model profile. The store keeps the two states for the
+    /// fields any reader knows and drops everything else, so a client never
+    /// meets a third state it would have to guess about.
+    #[test]
+    fn profile_markers_survive_the_config_round_trip() {
+        let raw = r#"{"models":[{"id":"terra",
+            "contextWindow":200000,"contextWindowSource":"gateway",
+            "profileSources":{"alias":"gateway","systemPrompt":"user",
+                "imageGeneration":"gateway","aliasAgain":"nonsense","kind":"maybe"}}]}"#;
+        let read_back = read(raw);
+        assert_eq!(
+            read_back[0].context_window_source.as_deref(),
+            Some("gateway")
+        );
+        let markers = read_back[0].profile_sources.as_ref().expect("markers kept");
+        assert_eq!(markers.get("alias").map(String::as_str), Some("gateway"));
+        assert_eq!(
+            markers.get("systemPrompt").map(String::as_str),
+            Some("user")
+        );
+        assert_eq!(
+            markers.get("imageGeneration").map(String::as_str),
+            Some("gateway")
+        );
+        // Unknown fields and unknown states are dropped, not stored.
+        assert!(!markers.contains_key("aliasAgain"), "{markers:?}");
+        assert!(!markers.contains_key("kind"), "{markers:?}");
+
+        let saved = config_with_model_bindings("{}", &read_back).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        assert_eq!(value["models"][0]["profileSources"]["alias"], "gateway");
+        assert_eq!(value["models"][0]["contextWindowSource"], "gateway");
+        // The legacy default stays absent, so the two spellings of "no markers"
+        // cannot both appear in one record.
+        let plain = config_with_model_bindings("{}", &[binding("terra", 128_000)]).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&plain).unwrap();
+        assert!(
+            value["models"][0].get("profileSources").is_none(),
+            "{plain}"
+        );
     }
 
     /// Every read names the provider it came from: a warning that does not is

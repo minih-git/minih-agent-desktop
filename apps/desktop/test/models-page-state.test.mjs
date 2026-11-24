@@ -53,8 +53,8 @@ test("a plaza row seeds a binding that still follows the catalog", () => {
   const seeded = bindingFromRouterModel(plazaModel("gpt-4.1", 1_047_576));
   assert.equal(seeded.id, "gpt-4.1");
   assert.equal(seeded.contextWindow, 1_047_576);
-  // The gateway's number is the best known published value, not a pin: a later
-  // models.dev correction still reaches the binding.
+  // The seed is a snapshot, not a pin: a later models.dev correction still
+  // reaches the binding, exactly as before the gateway profile existed.
   assert.equal(seeded.contextWindowSource, "catalog");
   assert.equal(seeded.apiStyle, undefined);
 
@@ -259,9 +259,13 @@ test("the mirror seeds only the models it appends from the catalog", () => {
     asked.push(model.id);
     return model.id === "fresh" ? { modelId: "fresh", contextWindow: 1_000_000 } : null;
   });
+  // models.dev is asked only about what the row is about to gain.
   assert.deepEqual(asked, ["fresh"]);
   assert.deepEqual(next?.map((binding) => binding.id), ["known", "fresh"]);
+  // The seeded binding is a catalog snapshot, not a pin: models.dev's number
+  // for this model is what the append writes.
   assert.equal(next?.[1]?.contextWindow, 1_000_000);
+  assert.equal(next?.[1]?.contextWindowSource, "catalog");
 });
 
 test("removing the model the app default names moves that default on", () => {

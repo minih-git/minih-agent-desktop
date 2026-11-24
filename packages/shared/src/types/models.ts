@@ -204,10 +204,59 @@ export function catalogModelIdsMatch(candidate: string, requested: string): bool
   return pathLeaf(left) === pathLeaf(right);
 }
 
-/** Where a saved model limit came from; user-authored values are never replaced. */
-export type ModelLimitSource = "catalog" | "user";
+/**
+ * Where a saved model limit came from.
+ *
+ * `catalog` follows the published models.dev record, `user` is a value entered
+ * in Settings and is never replaced, and `gateway` is a value the Minih Router
+ * gateway's own model profile supplied — the gateway is that row's authority,
+ * so models.dev does not replace it either.
+ */
+export type ModelLimitSource = "catalog" | "user" | "gateway";
 /** @deprecated Use ModelLimitSource; kept for existing context-window callers. */
 export type ContextWindowSource = ModelLimitSource;
+
+/**
+ * Binding properties a Minih Router gateway model profile may set.
+ *
+ * Each one is independently either still following the gateway or pinned by
+ * the user (see {@link BindingProfileSources}).
+ */
+export type BindingProfileField =
+  | "alias"
+  | "contextWindow"
+  | "maxTokens"
+  | "thinkingLevels"
+  | "defaultThinkingLevel"
+  | "thinkingProtocol"
+  | "apiStyle"
+  | "supportsImages"
+  | "supportsDocuments"
+  | "nativeWebSearch"
+  | "systemPrompt"
+  | "kind";
+
+/**
+ * Profile-controlled items that are not binding properties.
+ *
+ * `imageGeneration` is the model's membership in `settings.imageGenerationModels`
+ * (the "this model draws images" checkbox); the designation itself stays in
+ * settings, and only the question of who owns it lives here.
+ */
+export type BindingProfileSourceField = BindingProfileField | "imageGeneration";
+
+/**
+ * Per-field provenance of a gateway-maintained binding.
+ *
+ * `gateway` means the field follows the Minih Router model profile and the
+ * next profile read may replace it; `user` means the user changed it in the
+ * model dialog and nothing overwrites it. An absent entry is a record written
+ * before the markers existed, which readers resolve with the historical rule
+ * documented on `profileFollowsGateway`.
+ */
+export type BindingProfileSources = Partial<
+  Record<BindingProfileSourceField, "gateway" | "user">
+>;
 
 /** What a saved model is for. A record without the marker is a chat model. */
 export const MODEL_KINDS = ["chat", "embedding"] as const;
@@ -307,6 +356,12 @@ export type ModelBinding = {
    * cannot answer a turn, so selecting it would only fail the session.
    */
   kind?: ModelKind;
+  /**
+   * Which of this binding's fields follow the Minih Router gateway model
+   * profile. Only a `minih-router` row has one; absent means the record was
+   * written before the markers existed (or by another client).
+   */
+  profileSources?: BindingProfileSources;
 };
 
 /**

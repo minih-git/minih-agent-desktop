@@ -394,8 +394,12 @@ test("a saved image selection never takes the app's image default", () => {
   assert.match(modelsPageStateSource, /planImageGenerationDefaults\(/);
   assert.match(
     pageSource,
-    /planModelsSave\(\s*routerProvider,\s*models \?\? routerProvider\.models,\s*current,\s*providers,\s*imageModelIds,\s*\)/,
+    /planModelsSave\(\s*latestRow,\s*models \?\? latestRow\.models,\s*current,\s*latestProviders,\s*imageModelIds,\s*\)/,
   );
+  // The row and the provider list are re-read once the awaits are done: this
+  // write replaces the row's whole list, so a pre-await snapshot would undo an
+  // edit the user made while the save was preparing.
+  assert.match(pageSource, /useAppStore\.getState\(\)\.providers/);
   assert.doesNotMatch(pageSource, /nextActive/);
 });
 

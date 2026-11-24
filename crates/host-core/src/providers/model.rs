@@ -195,6 +195,14 @@ pub struct ModelBinding {
     /// a record written by an older device stays a conversation model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// Per-field provenance of a `minih-router` binding: which fields still
+    /// follow the gateway's own model profile (`gateway`) and which the user
+    /// froze in the model dialog (`user`). Known field names and the two states
+    /// only; anything else is dropped so a reader never meets a third state.
+    /// Absent means the record predates the markers, and readers apply the
+    /// historical rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_sources: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

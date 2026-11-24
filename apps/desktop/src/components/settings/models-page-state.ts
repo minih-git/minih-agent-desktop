@@ -11,6 +11,9 @@
 import {
   bindingForCustomModel,
   bindingForCustomModelInfo,
+  mergeRouterModelProfile,
+  mergeRouterModelProfileList,
+  planRouterImageModelIds,
   type ImageGenerationBinding,
   type MinihRouterModel,
   type ModelBinding,
@@ -30,9 +33,10 @@ function sameId(left: string, right: string): boolean {
  *
  * The models.dev record wins when it describes the id — it carries the
  * published limits, thinking ladder and attachment capabilities — and the
- * gateway's own context window is the fallback for an id the catalog has not
- * described yet. Either way the seed stays catalog-sourced: nothing is pinned,
- * so a later catalog correction still reaches the binding.
+ * gateway's own limits are the fallback for an id the catalog has not
+ * described yet. The gateway's own model profile then overrides every field it
+ * declares: the operator maintains that profile for this route, and the seed's
+ * catalog values are what it is meant to replace.
  */
 export function bindingFromRouterModel(
   model: MinihRouterModel,
@@ -42,7 +46,9 @@ export function bindingFromRouterModel(
   // The gateway already classifies its own catalog, so a model it publishes as
   // an embedding route is saved that way and stays out of every conversation
   // picker. The user can still change it on the model's own row.
-  return model.category === "embedding" ? { ...seeded, kind: "embedding" } : seeded;
+  const classified =
+    model.category === "embedding" ? { ...seeded, kind: "embedding" as const } : seeded;
+  return mergeRouterModelProfile(classified, model) ?? classified;
 }
 
 function seedBindingFromRouterModel(
@@ -152,6 +158,11 @@ export function missingCatalogModels(
  * matches: bindings the user removed stay out, every other catalog model is
  * carried, and the row's own order is preserved.
  *
+ * Every carried binding is also merged with the gateway's model profile, so
+ * opening the page is enough for a profile the operator changed to reach a row
+ * that was configured months ago. The merge is per field: a field the user
+ * pinned keeps its value.
+ *
  * A binding the gateway no longer lists is kept: the row may be serving an id
  * the plaza stopped advertising, and silently dropping it would reroute a
  * model the user still sends. Only an explicit removal leaves the list.
@@ -163,7 +174,8 @@ export function planCatalogSync(
   infoFor?: (model: MinihRouterModel) => ModelInfo | null | undefined,
 ): ModelBinding[] | null {
   const hidden = new Set(hiddenIds.map(normalizeId));
-  const kept = current.filter((binding) => !hidden.has(normalizeId(binding.id)));
+  const listed = current.filter((binding) => !hidden.has(normalizeId(binding.id)));
+  const kept = mergeRouterModelProfileList(listed, catalog) ?? listed;
   const next = mergeAddedBindings(
     kept,
     catalog.filter((model) => !hidden.has(normalizeId(model.id))),
@@ -173,6 +185,24 @@ export function planCatalogSync(
     next.length === current.length &&
     next.every((binding, index) => binding === current[index]);
   return unchanged ? null : next;
+}
+
+/**
+ * The image-generation designation after a profile sync, or `null` when it
+ * already matches.
+ *
+ * The designation lives in `settings.imageGenerationModels` (one entry per
+ * provider and model), so it is planned next to the bindings rather than inside
+ * one: a model the gateway publishes as image output becomes usable by
+ * `GenerateImages` without the user hunting for the checkbox, and a designation
+ * the user removed stays removed.
+ */
+export function planCatalogImageModels(
+  currentIds: readonly string[],
+  bindings: readonly ModelBinding[],
+  catalog: readonly MinihRouterModel[],
+): string[] | null {
+  return planRouterImageModelIds(currentIds, bindings, catalog);
 }
 
 export type ModelsPageSettingsDraft = {

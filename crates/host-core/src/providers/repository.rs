@@ -115,6 +115,7 @@ fn hydrate_dynamic_plugin_models(db: &Database, provider: &mut ProviderPublic) -
                 native_web_search: None,
                 api_style: None,
                 kind: None,
+                profile_sources: None,
             }
         })
         .collect();

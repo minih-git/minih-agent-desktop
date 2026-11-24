@@ -11,18 +11,33 @@
  * are pure over a decoded JSON value.
  */
 import {
+  MINIH_ROUTER_MODEL_API_STYLES,
   MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
   MINIH_ROUTER_REASONING_LEVELS,
+  type MinihRouterDeclaredProfile,
   type MinihRouterModel,
+  type MinihRouterModelApiStyle,
   type MinihRouterModelCategory,
   type MinihRouterModelPage,
   type MinihRouterModelPrice,
   type MinihRouterReasoningLevel,
 } from "./minih-router.js";
+import type { ModelKind, ThinkingProtocol } from "./types/models.js";
 
 const isReasoningLevel = (value: unknown): value is MinihRouterReasoningLevel =>
   typeof value === "string" &&
   (MINIH_ROUTER_REASONING_LEVELS as readonly string[]).includes(value);
+
+const isThinkingProtocol = (value: unknown): value is ThinkingProtocol =>
+  value === "legacy" || value === "adaptive";
+
+const isModelApiStyle = (value: unknown): value is MinihRouterModelApiStyle =>
+  typeof value === "string" &&
+  (MINIH_ROUTER_MODEL_API_STYLES as readonly string[]).includes(value);
+
+/** A model's purpose as the gateway declares it; absent means it said nothing. */
+const isModelKind = (value: unknown): value is ModelKind =>
+  value === "chat" || value === "embedding";
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -117,11 +132,26 @@ function parseModel(value: unknown): MinihRouterModel | null {
     const modality = record(model.modalities);
     return [...list(modality.input), ...list(modality.output)].map(text);
   });
-  const inputModalities = Array.from(
+  /**
+   * Input modalities.
+   *
+   * The gateway's own `input_modalities` is the operator's declaration and, when
+   * it lists anything, is authoritative for image and document input. An empty
+   * or missing list asserts nothing, so the upstream catalog references are
+   * consulted instead — the same "empty is not a claim" rule `output_modalities`
+   * follows. Only the declared list reaches `declaredProfile`: the catalog value
+   * describes the model, it is not the gateway configuring this row.
+   */
+  const declaredInputModalities = Array.from(
+    new Set(list(row.input_modalities).map(text).filter(Boolean)),
+  );
+  const catalogInputModalities = Array.from(
     new Set(
       catalogs.flatMap((model) => list(record(model.modalities).input).map(text).filter(Boolean)),
     ),
   );
+  const inputModalities =
+    declaredInputModalities.length > 0 ? declaredInputModalities : catalogInputModalities;
   /**
    * What the model produces.
    *
@@ -176,9 +206,27 @@ function parseModel(value: unknown): MinihRouterModel | null {
     isReasoningLevel(declaredDefaultReasoning) && reasoningLevels.includes(declaredDefaultReasoning)
       ? declaredDefaultReasoning
       : undefined;
-  const contextWindow = catalogs
-    .map((model) => integer(record(model.limits).context))
-    .find((limit): limit is number => limit !== null && limit > 0) ?? null;
+  /**
+   * Limits.
+   *
+   * `context_window` / `max_output_tokens` are what the gateway's own profile
+   * resolved; the upstream catalog reference is the fallback a gateway uses so
+   * the plaza can still show a number. The two must not be confused: the
+   * fallback describes the model, while `declaredProfile` below is the gateway
+   * configuring this row, and only that may overwrite a client's setting.
+   */
+  const declaredContextWindow = positiveInteger(row.context_window);
+  const contextWindow =
+    declaredContextWindow ??
+    catalogs
+      .map((model) => positiveInteger(record(model.limits).context))
+      .find((limit): limit is number => limit !== null) ??
+    null;
+  /**
+   * The gateway's own display name (`display_name`), empty when it publishes
+   * none. It names the route in the plaza and becomes the row's alias.
+   */
+  const displayName = text(row.display_name).trim() || undefined;
   /**
    * Whether the operator opened this model to mobile conversations
    * (`mobile_chat`).
@@ -190,9 +238,44 @@ function parseModel(value: unknown): MinihRouterModel | null {
    * chat list the day this shipped. Absent therefore stays `undefined`.
    */
   const mobileChat = typeof row.mobile_chat === "boolean" ? row.mobile_chat : undefined;
-  const maxOutput = catalogs
-    .map((model) => integer(record(model.limits).output))
-    .find((limit): limit is number => limit !== null && limit > 0) ?? null;
+  const declaredMaxOutput = positiveInteger(row.max_output_tokens);
+  const maxOutput =
+    declaredMaxOutput ??
+    catalogs
+      .map((model) => positiveInteger(record(model.limits).output))
+      .find((limit): limit is number => limit !== null) ??
+    null;
+  /**
+   * The rest of the operator's model profile, each keyed by whether the
+   * gateway sent it at all: an absent key is "the gateway has no opinion",
+   * never a value to write over the client's own setting.
+   */
+  const thinkingProtocolRaw = text(row.thinking_protocol).trim();
+  const thinkingProtocol = isThinkingProtocol(thinkingProtocolRaw) ? thinkingProtocolRaw : undefined;
+  const apiStyleRaw = text(row.api_style).trim();
+  const apiStyle = isModelApiStyle(apiStyleRaw) ? apiStyleRaw : undefined;
+  const kindRaw = text(row.model_kind).trim();
+  const kind = isModelKind(kindRaw) ? kindRaw : undefined;
+  const nativeWebSearch =
+    typeof row.native_web_search === "boolean" ? row.native_web_search : undefined;
+  const systemPrompt = text(row.system_prompt).trim() || undefined;
+  /**
+   * What the gateway itself declares, which is what a row may follow.
+   *
+   * Built from the top-level keys only: a value the gateway merely copied out
+   * of the upstream catalog is knowledge about the model, not a configuration
+   * for this row, and writing it onto every client would freeze a number the
+   * operator never chose.
+   */
+  const declaredProfileValues: MinihRouterDeclaredProfile = {
+    ...(declaredContextWindow === null ? {} : { contextWindow: declaredContextWindow }),
+    ...(declaredMaxOutput === null ? {} : { maxOutput: declaredMaxOutput }),
+    ...(declaredInputModalities.length === 0
+      ? {}
+      : { inputModalities: declaredInputModalities }),
+  };
+  const declaredProfile =
+    Object.keys(declaredProfileValues).length > 0 ? declaredProfileValues : undefined;
   const price: MinihRouterModelPrice = {
     input: lowest(inputs),
     output: lowest(outputs),
@@ -219,10 +302,28 @@ function parseModel(value: unknown): MinihRouterModel | null {
     maxOutput,
     inputModalities: inputModalities.length > 0 ? inputModalities : undefined,
     outputModalities: outputModalities.length > 0 ? outputModalities : undefined,
+    ...(declaredProfile ? { declaredProfile } : {}),
     ...(reasoningLevels.length > 0 ? { reasoningLevels } : {}),
     ...(defaultReasoningLevel ? { defaultReasoningLevel } : {}),
     ...(mobileChat === undefined ? {} : { mobileChat }),
+    ...(displayName ? { displayName } : {}),
+    ...(thinkingProtocol ? { thinkingProtocol } : {}),
+    ...(apiStyle ? { apiStyle } : {}),
+    ...(kind ? { kind } : {}),
+    ...(nativeWebSearch === undefined ? {} : { nativeWebSearch }),
+    ...(systemPrompt ? { systemPrompt } : {}),
   };
+}
+
+/**
+ * A whole positive token count, or null.
+ *
+ * `context_window` / `max_output_tokens` are counts: a zero or a fraction is
+ * not a limit any client can honour, so it reads as "not published".
+ */
+function positiveInteger(value: unknown): number | null {
+  const parsed = integer(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
 }
 
 /** Parse one `/api/models` page. */

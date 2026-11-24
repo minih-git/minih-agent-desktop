@@ -10,6 +10,7 @@
  */
 
 import { currentBrandProfile } from "./brand.js";
+import type { ModelKind, ThinkingProtocol } from "./types/models.js";
 
 export const MINIH_ROUTER_PRESET_ID = "minih-router";
 export const MINIH_ROUTER_VENDOR_KEY = "minih-router";
@@ -164,6 +165,37 @@ export const MINIH_ROUTER_REASONING_LEVELS = [
 ] as const;
 export type MinihRouterReasoningLevel = (typeof MINIH_ROUTER_REASONING_LEVELS)[number];
 
+/**
+ * Wire APIs the gateway's per-model `api_style` may name.
+ *
+ * Deliberately narrower than the desktop's own list: these are the four
+ * surfaces a gateway route forwards. An unknown value is ignored rather than
+ * stored as a per-model pin.
+ */
+export const MINIH_ROUTER_MODEL_API_STYLES = [
+  "chat_completions",
+  "responses",
+  "anthropic_messages",
+  "google_generative_ai",
+] as const;
+export type MinihRouterModelApiStyle = (typeof MINIH_ROUTER_MODEL_API_STYLES)[number];
+
+/**
+ * The fields of a model's configuration the gateway itself declares.
+ *
+ * Only top-level `/api/models` keys land here. The catalog-reference fallbacks
+ * a gateway uses for display are deliberately excluded: an operator who never
+ * set a window must not have one written onto every client's row.
+ */
+export type MinihRouterDeclaredProfile = {
+  /** Top-level `context_window`, or absent. */
+  contextWindow?: number;
+  /** Top-level `max_output_tokens`, or absent. */
+  maxOutput?: number;
+  /** Top-level `input_modalities`, when it lists anything. */
+  inputModalities?: string[];
+};
+
 export type MinihRouterModel = {
   /** The model id a client sends. */
   id: string;
@@ -179,10 +211,43 @@ export type MinihRouterModel = {
   multiplePrices: boolean;
   /** At least one source bills in context-length tiers. */
   tieredPricing: boolean;
+  /**
+   * The display name the gateway publishes for this route (`display_name`),
+   * empty or absent when it publishes none.
+   *
+   * This is the gateway's own label for the model, so a `minih-router` row
+   * follows it as the model's alias.
+   */
+  displayName?: string;
+  /**
+   * Effective context window in tokens, for display and for seeding a new
+   * binding.
+   *
+   * The gateway's own `context_window` when the item carries it, otherwise the
+   * upstream catalog references' `limits.context`. This is the best number a
+   * client knows, not a declaration: only `declaredProfile.contextWindow` is
+   * the gateway speaking about *this* row's configuration.
+   */
   contextWindow: number | null;
+  /** Effective output cap for display and seeding; see `contextWindow`. */
   maxOutput: number | null;
-  /** Authoritative input modalities declared by upstream catalog, e.g. ["text", "image"]. */
+  /**
+   * Effective input modalities, for display.
+   *
+   * The gateway's own `input_modalities` when it lists anything, otherwise the
+   * upstream catalog references. As with the limits, this is knowledge, not a
+   * declaration; see `declaredProfile.inputModalities`.
+   */
   inputModalities?: string[];
+  /**
+   * The profile values the gateway itself declares on the item.
+   *
+   * Only the top-level keys appear here — never a catalog-reference fallback.
+   * That distinction is the whole contract: a key the gateway omits means it
+   * has no opinion, and a client must leave its own value alone, while the
+   * fallbacks above only describe what the model *is* for display and seeding.
+   */
+  declaredProfile?: MinihRouterDeclaredProfile;
   /**
    * What the model produces, e.g. `["text"]`, `["image"]`, or both (`text`
    * first). `["image"]` alone is legal: a pure image model.
@@ -227,6 +292,35 @@ export type MinihRouterModel = {
    * `outputModalities`, which this flag never touches.
    */
   mobileChat?: boolean;
+  /**
+   * Provider request protocol the gateway's profile declares for this model
+   * (`thinking_protocol`), when the operator set one.
+   */
+  thinkingProtocol?: ThinkingProtocol;
+  /**
+   * Wire protocol the gateway's profile declares for this model (`api_style`),
+   * when the operator set one. A `minih-router` row sends this model over it
+   * instead of the row's own global style.
+   */
+  apiStyle?: MinihRouterModelApiStyle;
+  /**
+   * What the gateway says this model is for (`model_kind`), when set.
+   *
+   * `embedding` keeps it out of every conversation picker; absent is the
+   * gateway's silence, not a claim that the model is a chat model.
+   */
+  kind?: ModelKind;
+  /**
+   * Whether the gateway's profile attaches its hosted web search tool for this
+   * model (`native_web_search`), when set.
+   */
+  nativeWebSearch?: boolean;
+  /**
+   * The instruction block the gateway's profile attaches to this model
+   * (`system_prompt`), when set. Trimmed; the host enforces the same length cap
+   * as a hand-written one.
+   */
+  systemPrompt?: string;
 };
 
 export type MinihRouterModelPage = {

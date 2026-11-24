@@ -87,9 +87,9 @@
           "id": { "type": "string", "minLength": 1 },
           "alias": { "type": "string", "maxLength": 60 },
           "contextWindow": { "type": "integer", "minimum": 0 },
-          "contextWindowSource": { "enum": ["catalog", "user"] },
+          "contextWindowSource": { "enum": ["catalog", "user", "gateway"] },
           "maxTokens": { "type": "integer", "minimum": 0 },
-          "maxTokensSource": { "enum": ["catalog", "user"] },
+          "maxTokensSource": { "enum": ["catalog", "user", "gateway"] },
           "supportsReasoningEffort": { "type": ["boolean", "null"] },
           "thinkingLevels": {
             "type": "array",
@@ -102,7 +102,20 @@
           },
           "supportsImages": { "type": ["boolean", "null"] },
           "supportsDocuments": { "type": ["boolean", "null"] },
-          "availableForSubagents": { "type": "boolean", "default": false }
+          "availableForSubagents": { "type": "boolean", "default": false },
+          "profileSources": {
+            "type": "object",
+            "description": "Minih Router 绑定的逐字段来源：gateway 表示仍跟随网关模型档案，user 表示用户自己的答案。没有标记的旧记录不写该键。",
+            "propertyNames": {
+              "enum": [
+                "alias", "contextWindow", "maxTokens", "thinkingLevels",
+                "defaultThinkingLevel", "thinkingProtocol", "apiStyle",
+                "supportsImages", "supportsDocuments", "nativeWebSearch",
+                "systemPrompt", "kind", "imageGeneration"
+              ]
+            },
+            "additionalProperties": { "enum": ["gateway", "user"] }
+          }
         }
       }
     },
@@ -140,11 +153,22 @@ JSON、根节点非对象、`models` 非数组，或任一条目不可读，都�
 
 `models[].contextWindowSource` 与 `models[].maxTokensSource` 分别记录各自限额的来源。
 `catalog` 表示 models.dev 快照，之后对应目录字段的修正可以替换它（查询未命中而回退到
-通用形状不算修正）；`user` 表示用户在设置中输入的值，永不被目录覆盖。修改上下文窗口
-不会改变最大输出 token 的来源。两个字段都是可选的，旧配置仍可读，旧客户端会忽略它们。
-host-core 只保留 `catalog` / `user`，丢弃其他值。没有来源标记的旧记录会保留已存限额，
-包括通用的 128,000 / 8,192，因为旧值无法表明它是通用种子还是用户显式选择。解析规则见
+通用形状不算修正）；`user` 表示用户在设置中输入的值，永不被目录覆盖；`gateway` 表示
+Minih Router 网关模型档案为自己的路由解析出的值，models.dev 的修正与未固定的编辑都
+不会替换它。修改上下文窗口不会改变最大输出 token 的来源。三个字段都是可选的，旧配置
+仍可读，旧客户端会忽略它们。host-core 只保留 `catalog` / `user` / `gateway`，丢弃其他值。
+没有来源标记的旧记录会保留已存限额，包括通用的 128,000 / 8,192，因为旧值无法表明它是
+通用种子还是用户显式选择。解析规则见
 [13-model-catalog-and-selection](13-model-catalog-and-selection.md) §9.1。
+
+`models[].profileSources` 逐字段记录一条绑定究竟仍跟随网关模型档案（`gateway`）还是
+带着用户自己的答案（`user`）。它只出现在 `minih-router` 行维护的绑定上；两个限额继续用
+自己的 `contextWindowSource` / `maxTokensSource` 标记，不在这里重复出现，`imageGeneration`
+则对应生图模型指定——那份名单存在 `settings.imageGenerationModels` 里，而不是绑定上。
+该属性可选且纯新增：没有它的旧记录按历史规则读取（`user` 限额、非空别名与非空
+`systemPrompt` 属于用户，其余跟随网关），不认识它的客户端原样存回即可。host-core 只保留
+已知字段名与两个取值，其余丢弃，读取方永远不会遇到第三种状态。合并规则见
+[§ 网关模型档案](#网关模型档案)。
 
 `models[].supportsReasoningEffort` 可选且为三态：缺省或 `null` 保持端点/模型自动兼容性判断；
 `true` 显式允许 Chat Completions 的 `reasoning_effort` 参数；`false` 省略该参数。显式绑定
@@ -575,6 +599,50 @@ Electron main 自行读取该行（`providers.get`）及其密钥（`providers.g
 
 客户端把对话发给运营者关闭的模型时，网关可以拒绝；遵守这个标记的客户端不会走到那一步，
 因为它一开始就不会把该模型列出来。
+
+### 网关模型档案
+
+Minih Router 行的逐模型配置只在网关维护一次，行按字段跟随它。`/api/models` 在每个条目上
+带出生效的档案；网关没有下发的键表示它对这一项没有意见，绝不是要覆盖客户端本地设置的
+值。
+
+| `/api/models` 键 | `models[]` 字段 | 规则 |
+|---|---|---|
+| `display_name` | `alias` | 去首尾空白，最长 60 字符。 |
+| `context_window` | `contextWindow` | 同时写 `contextWindowSource: "gateway"`。 |
+| `max_output_tokens` | `maxTokens` | 同时写 `maxTokensSource: "gateway"`。 |
+| `reasoning_levels` | `thinkingLevels` | `none` 对应桌面端的 `off`；`ultra` 与 `persistent` 丢弃，映射后为空的声明不动本地档位。 |
+| `default_reasoning_level` | `defaultThinkingLevel` | 仅当映射后的档位在结果列表里才写入。 |
+| `thinking_protocol` | `thinkingProtocol` | `legacy` 或 `adaptive`。 |
+| `api_style` | `apiStyle` | 四种被转发的接口格式之一，其他值忽略。 |
+| `input_modalities` | `supportsImages`、`supportsDocuments` | 非空列表逐项权威；空或缺失表示未声明。 |
+| `output_modalities` | 生图模型指定 | 出图的模型会被加入 `settings.imageGenerationModels`。 |
+| `model_kind` | `kind` | `embedding` 会被存储，`chat` 清除标记。 |
+| `native_web_search` | `nativeWebSearch` | `false` 存为缺省，即同一个“关闭”状态。 |
+| `system_prompt` | `systemPrompt` | 去首尾空白，最长 8,000 字符。 |
+
+只有条目顶层的键才算“声明”。`context_window`、`max_output_tokens` 与
+`input_modalities` 也会用于广场展示和新加模型的初始种子，那时网关可能回填
+`upstream_models[].catalog_reference` 里的目录值——那份兜底是“这个模型是什么”，
+不是运营者对本行的答复，客户端绝不能把它写进已有绑定、更不能标记为网关所有。
+解析结果把两者分开保存（`declaredProfile` 与生效的 `contextWindow` / `maxOutput` /
+`inputModalities`），所以只回填目录值的旧网关不会改动任何已存限额与能力。
+
+刻意不包含：`availableForSubagents`（可供 AI 自动调度）是本机个人选择，保持本地。
+
+归属逐字段判定。网关声明了的字段，只要仍在跟随就会被写入（`profileSources[field] =
+"gateway"`）；在模型对话框里改动该字段即写入新值并固定为用户（`"user"`），对话框的
+“恢复跟随网关”把已声明的字段交回网关并立即应用档案。行的生图模型指定同样按
+`profileSources.imageGeneration` 判定归属。
+
+合并在打开模型设置页时（作为目录镜像的一部分）与每次应用启动时各执行一次。两条路径都
+复用页面本就要读的那次 `/api/models` 应答，不额外轮询，并且只在合并结果真的变化时才写入，
+所以无事的启动不产生任何写操作。启动路径只合并行上已有的绑定、从不新增模型：镜像目录是
+设置页的职责，重启不该让用户删掉的模型复活。
+
+降级：网关不可达、密钥被拒、网关早于这些键，或网关列出了模型却没有档案，都让每一行保持
+原样，也不向用户报错。生图指定的移除始终由用户决定：网关不再标记的模型保留原指定，
+否则会破坏本来可用的出图能力。
 
 ## 6. 安全限制
 
