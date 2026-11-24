@@ -140,7 +140,7 @@ impl PluginManager {
                     yanked: None,
                     ui: manifest.ui.clone(),
                     fs: manifest.fs.clone(),
-                    settings: derive_settings(&manifest),
+                    settings: derive_settings(&manifest, &self.locale),
                     i18n: manifest.i18n.clone(),
                 });
             }
@@ -271,7 +271,7 @@ impl PluginManager {
             let Ok(manifest) = serde_json::from_str::<PluginManifest>(&manifest_raw) else {
                 continue;
             };
-            plugin.settings = derive_settings(&manifest);
+            plugin.settings = derive_settings(&manifest, &self.locale);
             plugin.i18n = manifest.i18n.clone();
         }
         Ok(())
@@ -324,7 +324,7 @@ impl PluginManager {
             yanked: None,
             ui: manifest.ui.clone(),
             fs: manifest.fs.clone(),
-            settings: derive_settings(&manifest),
+            settings: derive_settings(&manifest, &self.locale),
             i18n: manifest.i18n.clone(),
         };
         self.upsert_summary(summary)

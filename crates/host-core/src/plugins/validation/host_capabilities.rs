@@ -11,7 +11,8 @@
 use anyhow::{anyhow, bail, Result};
 use serde_json::{Map, Value};
 
-use super::{array_of, is_contrib_id, is_plugin_label, require_permission, PluginManifest};
+use super::labels::is_plugin_label;
+use super::{array_of, is_contrib_id, require_permission, PluginManifest};
 
 /// `contributes.credentials[].kind` — how the host injects the stored secret.
 const CREDENTIAL_KINDS: [&str; 5] = ["basic", "bearer", "header", "oauth2", "imap"];

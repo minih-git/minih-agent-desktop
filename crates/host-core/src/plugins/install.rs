@@ -134,7 +134,7 @@ impl PluginManager {
                 yanked: None,
                 ui: manifest.ui.clone(),
                 fs: manifest.fs.clone(),
-                settings: derive_settings(&manifest),
+                settings: derive_settings(&manifest, &self.locale),
                 i18n: manifest.i18n.clone(),
             };
             let plugin = self.upsert_summary(summary)?;
