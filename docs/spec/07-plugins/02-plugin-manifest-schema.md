@@ -766,6 +766,11 @@ many instances exist, and learns both from `credentials.list`
   (`credentials.requestAdd` / `requestRemove`); the host's own form is what
   collects the values, never the plugin process
   ([04-plugin-security.md](04-plugin-security.md) §8.3).
+- Editing one account replaces **that** account: `credentials.set` with an
+  `instanceId` keeps its id and creation time, refuses a label another instance
+  of the same slot already uses, and announces the change like an add does. The
+  Settings sheet edits through this path — removing and re-adding would mint a new
+  id, and whatever the plugin stored for the account would be lost.
 
 ### 5.5.2 A user-typed mail server (`userEndpoint`)
 

@@ -435,6 +435,80 @@ fn merge_metas(mut existing: Vec<InstanceMeta>, meta: InstanceMeta) -> Vec<Insta
     existing
 }
 
+/// Replace one instance's values, keeping its id and its creation time.
+///
+/// The id is what a plugin stores per account (message cursors, progress), so
+/// editing an account in Settings must not mint a new one. The label has to stay
+/// unique inside the slot, because it is how the account is addressed by name.
+pub(crate) fn update(
+    secrets: &SecretStore,
+    plugin_id: &str,
+    slot: &DeclaredSlot,
+    instance_id: &str,
+    values: &BTreeMap<String, String>,
+    db: Option<&Database>,
+) -> Result<(), CredentialError> {
+    if !valid_instance_id(instance_id) {
+        return Err(CredentialError::Invalid(format!(
+            "{CREDENTIAL_INVALID}: invalid credential instance id"
+        )));
+    }
+    let mut index = credentials::read_index(secrets, plugin_id)?;
+    let existing = read_instances(secrets, plugin_id, slot, &mut index, db)?;
+    let Some(previous) = existing
+        .iter()
+        .find(|meta| meta.instance_id == instance_id)
+        .cloned()
+    else {
+        return Err(not_configured(plugin_id, &slot.id, instance_id));
+    };
+    let label = label_of(slot, values);
+    if !label.is_empty()
+        && existing
+            .iter()
+            .any(|meta| meta.instance_id != instance_id && meta.label == label)
+    {
+        return Err(CredentialError::Invalid(format!(
+            "{CREDENTIAL_INVALID}: credential slot {} already holds an instance labelled {label}",
+            slot.id
+        )));
+    }
+    let payload = serde_json::to_string(&credentials::StoredSlot {
+        fields: values.clone(),
+    })
+    .map_err(|error| CredentialError::Storage(format!("credential store failure: {error}")))?;
+    // The value first: after a failed index write the account still logs in with
+    // what the user just saved, and the next edit repairs the label.
+    secrets
+        .set(&instance_ref(plugin_id, &slot.id, instance_id), &payload)
+        .map_err(|error| CredentialError::Storage(format!("credential store failure: {error}")))?;
+    // The index still holds the list `read_instances` just settled on, so the
+    // meta is replaced there rather than re-read.
+    let metas = index.instances.get(&slot.id).cloned().unwrap_or_default();
+    let metas = merge_metas(
+        metas,
+        InstanceMeta {
+            instance_id: instance_id.to_string(),
+            label,
+            public_fields: public_fields(slot, values),
+            created_at: previous.created_at,
+        },
+    );
+    index.insert(&slot.id);
+    index.instances.insert(slot.id.clone(), metas);
+    credentials::write_index(secrets, plugin_id, &index)?;
+    audit(
+        db,
+        json!({
+            "pluginId": plugin_id,
+            "slotId": slot.id,
+            "event": "update",
+            "instanceId": instance_id,
+        }),
+    );
+    Ok(())
+}
+
 /// Drop one instance. Returns whether a value was there.
 pub(crate) fn remove(
     secrets: &SecretStore,

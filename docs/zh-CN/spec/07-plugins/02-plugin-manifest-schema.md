@@ -629,6 +629,9 @@ type PluginTasksContrib = {
 - 插件也可以请宿主代为收集或删除实例（`credentials.requestAdd` /
   `requestRemove`）：值由宿主自己的表单收集，从不经过插件进程
   （[04-plugin-security.md](04-plugin-security.md) §8.3）。
+- 编辑一个账号是替换**那一个**账号：带 `instanceId` 的 `credentials.set` 保留它的 id
+  与创建时间，拒绝同一槽位里另一个实例已用的显示名，并像添加一样广播变更。设置页走这条
+  路径——先删再加会生成新的 id，插件为该账号保存的东西就丢了。
 
 ### 5.5.2 用户自填的邮件服务器（`userEndpoint`）
 

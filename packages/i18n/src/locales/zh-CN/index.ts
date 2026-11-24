@@ -30,6 +30,7 @@ export const zhCN = {
     add: "添加",
     cancel: "取消",
     remove: "删除",
+    edit: "编辑",
     addFailed: "无法添加该账号，请检查全部字段后重试。",
     removeFailed: "无法删除该账号，请稍后重试。",
     limitReached: "此处最多允许 {{max}} 个账号，已全部配置。",

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { PluginCredentialStatus } from "@minih-agent/shared";
+import type { PluginCredentialInstanceStatus, PluginCredentialStatus } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { Button, Input, PasswordInput, Select } from "../ui";
 import { CustomMailServerFields } from "./PluginCredentialEndpoint";
@@ -109,10 +109,12 @@ export function valuesComplete(fields: CredentialField[], values: CredentialValu
 function InstanceList({
   slot,
   busy,
+  onEdit,
   onRemove,
 }: {
   slot: PluginCredentialStatus;
   busy: boolean;
+  onEdit: (instance: PluginCredentialInstanceStatus) => void;
   onRemove: (instanceId: string) => void;
 }) {
   const { t } = useTranslation();
@@ -128,6 +130,13 @@ function InstanceList({
           <span className="plugin-credential-instance-state">
             {t(instance.configured ? "pluginCredentials.configured" : "pluginCredentials.notConfigured")}
           </span>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onEdit(instance)}
+          >
+            {t("pluginCredentials.edit")}
+          </Button>
           <Button
             variant="secondary"
             disabled={busy}
@@ -245,6 +254,7 @@ function MultiValueSlot({
 }) {
   const { t, i18n } = useTranslation();
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const [values, setValues] = useState<CredentialValues>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -260,9 +270,13 @@ function MultiValueSlot({
     setBusy(true);
     setError(null);
     try {
-      await api.setPluginCredential(pluginId, slot.id, values);
+      // `editing` names the account being replaced: the host keeps that id, so a
+      // rotated password or a new server does not lose the plugin's per-account
+      // state.
+      await api.setPluginCredential(pluginId, slot.id, values, editing ?? undefined);
       setValues({});
       setAdding(false);
+      setEditing(null);
       try {
         await refresh();
       } catch {
@@ -301,10 +315,22 @@ function MultiValueSlot({
             : t("pluginCredentials.instanceCount", { count: instances.length, max: declaredMax })}
         </span>
       </div>
-      <InstanceList slot={slot} busy={busy} onRemove={(instanceId) => void remove(instanceId)} />
+      <InstanceList
+        slot={slot}
+        busy={busy}
+        onEdit={(instance) => {
+          // Only the non-secret values are prefilled: a stored secret is never
+          // handed back to any surface, so it has to be typed again.
+          setValues({ ...instance.publicFields });
+          setEditing(instance.instanceId);
+          setAdding(true);
+        }}
+        onRemove={(instanceId) => void remove(instanceId)}
+      />
       {error ? <p role="alert" className="plugins-settings-error">{error}</p> : null}
       {adding ? (
         <div className="plugin-credential-add">
+          {editing ? <p>{t("pluginCredentials.hint")}</p> : null}
           <CredentialFieldsForm
             fields={slot.fields}
             values={values}
@@ -326,6 +352,7 @@ function MultiValueSlot({
               disabled={busy}
               onClick={() => {
                 setAdding(false);
+                setEditing(null);
                 setValues({});
               }}
             >
@@ -340,6 +367,7 @@ function MultiValueSlot({
             disabled={busy || full}
             onClick={() => {
               setValues({});
+              setEditing(null);
               setAdding(true);
             }}
           >

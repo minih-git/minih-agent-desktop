@@ -803,6 +803,29 @@ pub(crate) fn set(
     Ok(None)
 }
 
+/// Replace one instance's values without changing its id.
+///
+/// Editing an account in Settings is a replacement of that account, not a new
+/// one: the id a plugin keeps next to its own per-account state has to survive,
+/// or editing a password would lose the mailbox's progress.
+pub(crate) fn update(
+    secrets: &SecretStore,
+    plugin: &PluginSummary,
+    slot_id: &str,
+    instance_id: &str,
+    fields: Map<String, Value>,
+    db: Option<&Database>,
+) -> Result<(), CredentialError> {
+    let slot = declared_slot(plugin, slot_id)?;
+    if slot.multiple_max.is_none() {
+        return Err(CredentialError::Invalid(format!(
+            "{CREDENTIAL_INVALID}: credential slot {slot_id} holds a single value"
+        )));
+    }
+    let values = validated_fields(&slot, fields)?;
+    credential_instances::update(secrets, &plugin.id, &slot, instance_id, &values, db)
+}
+
 /// Drop one slot, or one instance of a multi-instance slot. Returns whether a
 /// value was there.
 ///

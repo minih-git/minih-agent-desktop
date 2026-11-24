@@ -17,6 +17,7 @@ export const ko = {
     add: "추가",
     cancel: "취소",
     remove: "삭제",
+    edit: "편집",
     addFailed: "계정을 추가하지 못했습니다. 모든 항목을 확인하세요.",
     removeFailed: "계정을 삭제하지 못했습니다. 나중에 다시 시도하세요.",
     limitReached: "허용된 {{max}}개 계정이 모두 설정되었습니다.",

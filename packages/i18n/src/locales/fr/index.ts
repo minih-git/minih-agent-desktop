@@ -17,6 +17,7 @@ export const fr = {
     add: "Ajouter",
     cancel: "Annuler",
     remove: "Supprimer",
+    edit: "Modifier",
     addFailed: "Impossible d'ajouter ce compte. Vérifiez tous les champs.",
     removeFailed: "Impossible de supprimer ce compte. Réessayez plus tard.",
     limitReached: "Les {{max}} comptes autorisés sont déjà configurés.",

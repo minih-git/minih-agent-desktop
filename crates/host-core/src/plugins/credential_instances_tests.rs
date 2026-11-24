@@ -157,6 +157,93 @@ fn a_slot_reports_its_declared_max_separately_from_the_host_ceiling() {
 }
 
 #[test]
+fn editing_an_account_keeps_its_id_and_refuses_a_taken_label() {
+    let dir = tempdir().unwrap();
+    let (_plugins, plugin, _root) = install(
+        dir.path(),
+        "demo.edit-account",
+        json!({ "credentials": [multi_mailbox_slot()] }),
+    );
+    let secrets = SecretStore::open(dir.path()).unwrap();
+    let first = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        account("a@example.com", "one"),
+        None,
+    )
+    .unwrap()
+    .unwrap();
+    let second = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        account("b@example.com", "two"),
+        None,
+    )
+    .unwrap()
+    .unwrap();
+
+    // The account is replaced in place: same id, new value, no new instance.
+    update(
+        &secrets,
+        &plugin,
+        "mailbox",
+        &first,
+        account("a@example.com", "rotated"),
+        None,
+    )
+    .unwrap();
+    let fields = resolve(&secrets, &plugin, &format!("mailbox#{first}"), None).unwrap();
+    assert_eq!(fields.get("password").map(String::as_str), Some("rotated"));
+    assert_eq!(
+        instances_of(&list(&secrets, &plugin, None).unwrap()).len(),
+        2,
+        "editing must not add an account"
+    );
+    let listed = list(&secrets, &plugin, None).unwrap();
+    let listed = instances_of(&listed);
+    assert!(listed.iter().any(|meta| meta["instanceId"] == json!(first)));
+    assert!(listed
+        .iter()
+        .any(|meta| meta["instanceId"] == json!(second)));
+
+    // A label another account already uses is refused, and nothing changes.
+    let error = update(
+        &secrets,
+        &plugin,
+        "mailbox",
+        &first,
+        account("b@example.com", "duplicate"),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("already holds an instance labelled"),
+        "{error}"
+    );
+    let fields = resolve(&secrets, &plugin, &format!("mailbox#{first}"), None).unwrap();
+    assert_eq!(fields.get("password").map(String::as_str), Some("rotated"));
+
+    // An unknown id is a refusal, not a new account.
+    let error = update(
+        &secrets,
+        &plugin,
+        "mailbox",
+        "acc_deadbeef",
+        account("c@example.com", "x"),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, CredentialError::NotConfigured(_)),
+        "{error}"
+    );
+}
+
+#[test]
 fn a_multi_instance_slot_refuses_more_than_its_maximum() {
     let dir = tempdir().unwrap();
     let (_plugins, plugin, _root) = install(

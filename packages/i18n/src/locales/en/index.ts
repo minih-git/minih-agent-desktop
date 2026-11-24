@@ -17,6 +17,7 @@ export const en = {
     add: "Add",
     cancel: "Cancel",
     remove: "Remove",
+    edit: "Edit",
     addFailed: "Couldn't add this account. Check all fields and try again.",
     removeFailed: "Couldn't remove this account. Try again later.",
     limitReached: "All {{max}} accounts allowed here are configured.",

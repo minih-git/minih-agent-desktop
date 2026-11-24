@@ -17,6 +17,7 @@ export const tr = {
     add: "Ekle",
     cancel: "İptal",
     remove: "Kaldır",
+    edit: "Düzenle",
     addFailed: "Bu hesap eklenemedi. Tüm alanları kontrol edin.",
     removeFailed: "Bu hesap kaldırılamadı. Daha sonra tekrar deneyin.",
     limitReached: "İzin verilen {{max}} hesabın tümü yapılandırıldı.",
