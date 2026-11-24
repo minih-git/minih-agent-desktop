@@ -14,6 +14,7 @@ import {
   scaleBoundsToDip,
   type PluginViewBounds,
 } from "./plugin-view-bounds";
+import { detachPluginView } from "./plugin-view-detach";
 import {
   applyPluginEgressPolicy,
   pluginSessionPartition,
@@ -370,17 +371,9 @@ export class PluginViewHost {
   private detachVisible(): void {
     const entry = this.visibleKey ? this.views.get(this.visibleKey) : null;
     this.visibleKey = null;
-    if (entry && this.window && !this.window.isDestroyed()) {
-      const children = this.window.contentView.children;
-      if (children.includes(entry.view)) {
-        this.window.contentView.removeChildView(entry.view);
-      }
-      if (entry.view.webContents.isFocused()) {
-        // The page keeps the keyboard otherwise, and the renderer overlay that
-        // replaced it never receives the Escape or Tab the user types next.
-        this.window.webContents.focus();
-      }
-    }
+    // Removing the page is also the keyboard handoff; both live in
+    // `plugin-view-detach.ts`, where the order is unit-tested.
+    if (entry && this.window) detachPluginView({ window: this.window, view: entry.view });
     this.emitSurface();
   }
 
