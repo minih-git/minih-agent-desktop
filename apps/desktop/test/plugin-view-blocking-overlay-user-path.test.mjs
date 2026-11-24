@@ -198,8 +198,17 @@ window.pluginViewOcclusionProbe = async () => {
 };
 `;
 
+// This test drives a real Electron renderer, so it needs both a display and the
+// Electron binary. CI supplies both; a lane that does not (the release verify
+// job runs `pnpm -r --if-present test` after a plain install) must skip it the
+// same way every other isolated Electron UI test does, instead of failing on a
+// binary that was never downloaded.
 test("plugin view hides under renderer overlays, restores, and answers the credential dialog", {
   timeout: 120_000,
+  skip:
+    process.platform === "linux" && !process.env.DISPLAY
+      ? "Isolated Electron UI test requires a display"
+      : false,
 }, async () => {
   const temp = await mkdtemp(join(tmpdir(), "pi-plugin-view-occlusion-"));
   try {
