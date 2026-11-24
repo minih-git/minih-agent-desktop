@@ -9,7 +9,7 @@
 import { useTranslation } from "react-i18next";
 import type { ModelBinding, ModelInfo, ThinkingLevel } from "@minih-agent/shared";
 import { OverlayBackdrop, Button, portalOverlay } from "../ui";
-import { ModelBindingFields } from "./ModelBindingFields";
+import { ModelBindingFields, type GatewayProfileControls } from "./ModelBindingFields";
 
 export type ModelConfigureDialogProps = {
   /** The binding being edited (draft state included). */
@@ -28,6 +28,8 @@ export type ModelConfigureDialogProps = {
   apiStyleOptions?: ReadonlyArray<{ id: string; label: string }>;
   /** The provider row's own global style, shown as the follow-global value. */
   globalApiStyle?: string;
+  /** Present when this model's gateway profile can be followed or restored. */
+  gatewayProfile?: GatewayProfileControls;
   onClose: () => void;
   /** Persists the edited binding. */
   onSave: () => void;
@@ -44,6 +46,7 @@ export function ModelConfigureDialog({
   onImageModelChange,
   apiStyleOptions,
   globalApiStyle,
+  gatewayProfile,
   onClose,
   onSave,
   onChange,
@@ -85,6 +88,7 @@ export function ModelConfigureDialog({
             onImageModelChange={onImageModelChange}
             apiStyleOptions={apiStyleOptions}
             globalApiStyle={globalApiStyle}
+            gatewayProfile={gatewayProfile}
             onChange={onChange}
           />
         </div>

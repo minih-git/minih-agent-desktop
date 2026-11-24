@@ -295,6 +295,95 @@ describe("parseMinihRouterModelPage", () => {
     expect(parsed.items[3]?.mobileChat).toBeUndefined();
   });
 
+  it("reads the gateway's own model profile fields", () => {
+    const parsed = parseMinihRouterModelPage({
+      items: [
+        {
+          client_model: "claude-sonnet-4.5",
+          display_name: "Claude Sonnet 4.5",
+          context_window: 200000,
+          max_output_tokens: 64000,
+          input_modalities: ["text", "image", "pdf"],
+          thinking_protocol: "adaptive",
+          api_style: "anthropic_messages",
+          model_kind: "chat",
+          native_web_search: true,
+          system_prompt: "Answer in the user's language.",
+          // The upstream catalog says something else; the profile above wins.
+          upstream_models: [
+            { catalog_reference: { model: { limits: { context: 1000, output: 7 } } } },
+          ],
+        },
+        { client_model: "text-embedding-4", model_kind: "embedding" },
+      ],
+      pagination: { page: 1, page_size: 2, total_items: 2, total_pages: 1 },
+    });
+    const model = parsed.items[0]!;
+    expect(model.displayName).toBe("Claude Sonnet 4.5");
+    expect(model.contextWindow).toBe(200000);
+    expect(model.maxOutput).toBe(64000);
+    expect(model.inputModalities).toEqual(["text", "image", "pdf"]);
+    expect(model.thinkingProtocol).toBe("adaptive");
+    expect(model.apiStyle).toBe("anthropic_messages");
+    expect(model.kind).toBe("chat");
+    expect(model.nativeWebSearch).toBe(true);
+    expect(model.systemPrompt).toBe("Answer in the user's language.");
+    expect(parsed.items[1]?.kind).toBe("embedding");
+  });
+
+  it("treats an absent or unusable profile field as the gateway having no opinion", () => {
+    const parsed = parseMinihRouterModelPage({
+      items: [
+        {
+          // An older gateway: nothing but the catalog reference.
+          client_model: "old-gateway",
+          upstream_models: [
+            {
+              catalog_reference: {
+                model: {
+                  limits: { context: 128000, output: 8192 },
+                  modalities: { input: ["text", "image"] },
+                },
+              },
+            },
+          ],
+        },
+        {
+          // Present but wrong: nothing here is a value a client may store.
+          client_model: "junk",
+          display_name: "   ",
+          context_window: 0,
+          max_output_tokens: -5,
+          input_modalities: [],
+          thinking_protocol: "auto",
+          api_style: "grpc",
+          model_kind: "rerank",
+          native_web_search: "yes",
+          system_prompt: "  ",
+        },
+      ],
+      pagination: { page: 1, page_size: 2, total_items: 2, total_pages: 1 },
+    });
+    const old = parsed.items[0]!;
+    expect(old.contextWindow).toBe(128000);
+    expect(old.maxOutput).toBe(8192);
+    expect(old.inputModalities).toEqual(["text", "image"]);
+    expect(old.displayName).toBeUndefined();
+    expect(old.kind).toBeUndefined();
+    expect(old.nativeWebSearch).toBeUndefined();
+
+    const junk = parsed.items[1]!;
+    expect(junk.displayName).toBeUndefined();
+    expect(junk.contextWindow).toBeNull();
+    expect(junk.maxOutput).toBeNull();
+    expect(junk.inputModalities).toBeUndefined();
+    expect(junk.thinkingProtocol).toBeUndefined();
+    expect(junk.apiStyle).toBeUndefined();
+    expect(junk.kind).toBeUndefined();
+    expect(junk.nativeWebSearch).toBeUndefined();
+    expect(junk.systemPrompt).toBeUndefined();
+  });
+
   it("keeps pagination as the gateway reported it", () => {
     expect(parseMinihRouterModelPage(page)).toMatchObject({
       page: 1,

@@ -95,9 +95,9 @@ Tables (canonical DDL in [04-data-storage](04-data-storage.md) §4.3–4.4, §4.
             "description": "Instruction block appended to the system prompt while this model is the session's main model; a blank value is stored as absent."
           },
           "contextWindow": { "type": "integer", "minimum": 0 },
-          "contextWindowSource": { "enum": ["catalog", "user"] },
+          "contextWindowSource": { "enum": ["catalog", "user", "gateway"] },
           "maxTokens": { "type": "integer", "minimum": 0 },
-          "maxTokensSource": { "enum": ["catalog", "user"] },
+          "maxTokensSource": { "enum": ["catalog", "user", "gateway"] },
           "supportsReasoningEffort": { "type": ["boolean", "null"] },
           "thinkingLevels": {
             "type": "array",
@@ -122,6 +122,19 @@ Tables (canonical DDL in [04-data-storage](04-data-storage.md) §4.3–4.4, §4.
               "pi_messages", "opencode_go"
             ],
             "description": "Per-model wire protocol override; absent follows the provider row's own apiStyle."
+          },
+          "profileSources": {
+            "type": "object",
+            "description": "Per-field provenance of a Minih Router binding: `gateway` still follows the gateway's model profile, `user` is the user's own answer. Absent on records written before the markers existed.",
+            "propertyNames": {
+              "enum": [
+                "alias", "contextWindow", "maxTokens", "thinkingLevels",
+                "defaultThinkingLevel", "thinkingProtocol", "apiStyle",
+                "supportsImages", "supportsDocuments", "nativeWebSearch",
+                "systemPrompt", "kind", "imageGeneration"
+              ]
+            },
+            "additionalProperties": { "enum": ["gateway", "user"] }
           }
         }
       }
@@ -143,13 +156,29 @@ over-long alias with `MODEL_ALIAS_TOO_LONG`.
 record where their corresponding limit came from. `catalog` marks a models.dev
 snapshot that a later correction may replace (a lookup that falls back to the
 generic shape is not a correction); `user` marks a value entered in Settings
-and is never replaced. In particular, changing the context window does not
-change ownership of the output cap. Both properties are optional, so configs
-written before either marker stay readable and older clients ignore them.
-Host-core keeps only `catalog` and `user` and drops other values. Legacy rows
-without a source marker preserve their stored limit, including the generic
-128,000 / 8,192 values, because the old record cannot reveal whether a value was
-an explicit user choice.
+and is never replaced; `gateway` marks a value the Minih Router gateway's own
+model profile resolved for its route, which neither a models.dev correction nor
+an unpinned edit replaces. In particular, changing the context window does not
+change ownership of the output cap. All three properties are optional, so
+configs written before a marker stay readable and older clients ignore them.
+Host-core keeps only `catalog`, `user` and `gateway` and drops other values.
+Legacy rows without a source marker preserve their stored limit, including the
+generic 128,000 / 8,192 values, because the old record cannot reveal whether a
+value was an explicit user choice.
+
+`models[].profileSources` records, per field, whether a binding still follows
+the gateway's model profile (`gateway`) or carries the user's own answer
+(`user`). It exists only on bindings a `minih-router` row maintains; the two
+limits keep their `contextWindowSource` / `maxTokensSource` markers instead of
+appearing twice, and `imageGeneration` covers the image-model designation,
+which lives in `settings.imageGenerationModels` rather than on the binding. The
+property is optional and additive: a record written before it existed is read
+with the historical rule (a `user` limit, a non-empty alias and a non-empty
+`systemPrompt` are the user's; everything else follows the gateway), and a
+client that does not know it simply stores the map back. Host-core keeps only
+known field names with the two values and drops everything else, so a reader
+never meets a third state. The merge itself is specified in
+[§ Gateway model profile](#gateway-model-profile).
 The resolution rule is specified in
 [13-model-catalog-and-selection](13-model-catalog-and-selection.md) §9.1.
 
@@ -955,6 +984,52 @@ has for sending a reasoning parameter:
 When a client sends a conversation to a model the operator closed, the gateway
 may refuse it; a client that honours the flag never gets there, because it does
 not offer the model in the first place.
+
+### Gateway model profile
+
+A Minih Router row's per-model configuration is maintained once, on the
+gateway, and the row follows it field by field. `/api/models` carries the
+effective profile on each item; a key the gateway omits is a field it has no
+opinion on, never a value to write over the client's own.
+
+| `/api/models` key | `models[]` field | Rule |
+|---|---|---|
+| `display_name` | `alias` | Trimmed, capped at 60 characters. |
+| `context_window` | `contextWindow` | With `contextWindowSource: "gateway"`. |
+| `max_output_tokens` | `maxTokens` | With `maxTokensSource: "gateway"`. |
+| `reasoning_levels` | `thinkingLevels` | `none` is the desktop's `off`; `ultra` and `persistent` are dropped, and a declaration mapping to nothing leaves the ladder alone. |
+| `default_reasoning_level` | `defaultThinkingLevel` | Only when the mapped level is in the resulting ladder. |
+| `thinking_protocol` | `thinkingProtocol` | `legacy` or `adaptive`. |
+| `api_style` | `apiStyle` | One of the four forwarded wire APIs; any other value is ignored. |
+| `input_modalities` | `supportsImages`, `supportsDocuments` | A non-empty list is authoritative per item; an empty or missing list asserts nothing. |
+| `output_modalities` | image-model designation | A model that produces images is added to `settings.imageGenerationModels`. |
+| `model_kind` | `kind` | `embedding` is stored; `chat` clears the marker. |
+| `native_web_search` | `nativeWebSearch` | `false` stores absence, the same off state. |
+| `system_prompt` | `systemPrompt` | Trimmed, capped at 8,000 characters. |
+
+Deliberately absent: `availableForSubagents` is a personal choice about this
+machine and stays local.
+
+Ownership is per field. A field the gateway declares is written while it still
+follows (`profileSources[field] = "gateway"`); editing that field in the model
+dialog writes the value and pins it (`"user"`), and the dialog's "restore
+gateway values" action hands the declared fields back and applies the profile
+immediately. A row's image-model designation follows the same rule through
+`profileSources.imageGeneration`.
+
+The merge runs when the models page opens (as part of the catalog mirror) and
+once at application start. Both paths read the same `/api/models` answer the
+page already fetches — no extra polling — and write only when the merged result
+differs, so a start with nothing to do writes nothing. The startup path merges
+the bindings a row already carries and never adds a model: mirroring the
+catalog is the page's job, and a restart must not resurrect a model the user
+removed.
+
+Degradation: an unreachable gateway, a rejected key, a gateway that predates
+these keys, or a gateway that lists a model without a profile all leave every
+row exactly as stored, and report nothing to the user. Image-designation
+removal is always the user's: a model the gateway stops marking keeps its
+designation, because taking it away would break image generation that works.
 
 ## 6. Security constraints
 

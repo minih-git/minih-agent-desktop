@@ -19,13 +19,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  declaredProfileFields,
   isMinihRouterVendorKey,
   modelWireIdsEqual,
   publishedThinkingLevels,
+  restoreRouterProfileFollow,
   sortThinkingLevels,
   type AppSettings,
   type CompactionModelSetting,
   type ImageGenerationBinding,
+  type MinihRouterModel,
   type ModelBinding,
   type ModelInfo,
   type SessionCreateModelBinding,
@@ -57,6 +60,7 @@ import {
   hiddenModelIdsFor,
   mergeAddedBindings,
   missingCatalogModels,
+  planCatalogImageModels,
   planCatalogSync,
   planModelsSave,
   sameHiddenIds,
@@ -339,7 +343,19 @@ export function ModelsPage() {
             return next;
           });
         }
-        if (nextModels) await writeModels({ models: nextModels });
+        // A model the gateway publishes as image output is designated in the
+        // same pass, so `GenerateImages` works without a separate trip to the
+        // checkbox. The list is this row's own entries; other rows keep theirs.
+        const nextImageIds = planCatalogImageModels(
+          currentImageIds,
+          nextModels ?? routerProvider.models,
+          listed,
+        );
+        if (!nextModels && !nextImageIds) return;
+        await writeModels({
+          ...(nextModels ? { models: nextModels } : {}),
+          ...(nextImageIds ? { imageModelIds: nextImageIds } : {}),
+        });
       } finally {
         // A failed or superseded run only stops this attempt: the row keeps what
         // it has, and the next mount may mirror again.
@@ -353,7 +369,15 @@ export function ModelsPage() {
       alive = false;
       mirroringRef.current = false;
     };
-  }, [routerProvider, mirrorKey, catalog.data, hiddenIds, writeModels, settings]);
+  }, [
+    routerProvider,
+    mirrorKey,
+    catalog.data,
+    hiddenIds,
+    currentImageIds,
+    writeModels,
+    settings,
+  ]);
 
   if (!settings) return null;
 
@@ -386,13 +410,17 @@ export function ModelsPage() {
       for (const [id, info] of entries) if (info) next.set(id, info);
       return next;
     });
+    const nextModels = mergeAddedBindings(routerProvider.models, models, (model) =>
+      infoById.get(model.id.toLowerCase()),
+    );
     await writeModels({
-      models: mergeAddedBindings(routerProvider.models, models, (model) =>
-        infoById.get(model.id.toLowerCase()),
-      ),
+      models: nextModels,
       // A model offered here was hidden by a removal, or a catalog sync would
       // already carry it: bringing it back also drops it from the hidden list.
       hiddenIds: hiddenIdsWithout(hiddenIds, models.map((model) => model.id)),
+      // A model the gateway marks as image output arrives designated, so
+      // adding it here is enough for GenerateImages to run it.
+      imageModelIds: planCatalogImageModels(currentImageIds, nextModels, models) ?? undefined,
       toastKey: "settings.modelsAddedToast",
     });
   };
@@ -435,6 +463,20 @@ export function ModelsPage() {
     );
   };
 
+  /**
+   * Replace one draft binding outright.
+   *
+   * A restore drops provenance markers, and a patch merge cannot express a
+   * removed key — the stored value would survive underneath it.
+   */
+  const replaceBinding = (id: string, next: ModelBinding) => {
+    setDraftBindings((current) =>
+      (current ?? routerProvider?.models ?? []).map((binding) =>
+        binding.id === id ? next : binding,
+      ),
+    );
+  };
+
   const effectiveBindings = draftBindings ?? routerProvider?.models ?? [];
   /** The published thinking ladder for one chosen id, in canonical order. */
   const publishedLevelsFor = (id: string) =>
@@ -446,6 +488,27 @@ export function ModelsPage() {
         (binding) => binding.id.toLowerCase() === configuringId.toLowerCase(),
       ) ?? null
     : null;
+
+  /** What the gateway itself says about one configured model, when it lists it. */
+  const gatewayModelFor = (id: string): MinihRouterModel | undefined =>
+    selected.data.find((entry) => entry.model.id.toLowerCase() === id.toLowerCase())?.model;
+
+  /**
+   * The gateway profile this dialog can mark and hand back.
+   *
+   * Absent when the page has no gateway answer for the model: without one there
+   * is nothing to follow, and a restore action would silently do nothing.
+   */
+  const gatewayProfileFor = (binding: ModelBinding) => {
+    const model = gatewayModelFor(binding.id);
+    const declared = model ? declaredProfileFields(model) : [];
+    if (!routerProvider || !model || declared.length === 0) return undefined;
+    return {
+      declared,
+      onRestore: () =>
+        replaceBinding(binding.id, restoreRouterProfileFollow(binding, model)),
+    };
+  };
 
   /**
    * The configure dialog's Save.
@@ -890,6 +953,7 @@ export function ModelsPage() {
           }
           apiStyleOptions={modelApiStyleOptions}
           globalApiStyle={routerProvider.apiStyle ?? "chat_completions"}
+          gatewayProfile={gatewayProfileFor(configuredBinding)}
           onClose={() => {
             setConfiguringId(null);
             setDraftBindings(null);

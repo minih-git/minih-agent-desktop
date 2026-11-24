@@ -170,7 +170,10 @@ export function effectiveContextWindow(
   const configured = positiveTokenCount(configuredContextWindow);
 
   if (source === "catalog") return published ?? configured;
-  if (source === "user") return configured ?? published;
+  // Both `user` and `gateway` are answers this record owns: the gateway's own
+  // profile resolved the number for its route, and models.dev does not replace
+  // either of them.
+  if (source === "user" || source === "gateway") return configured ?? published;
   if (configured === undefined) return published;
   return configured;
 }
@@ -193,7 +196,9 @@ export function effectiveMaxTokens(
   const configured = positiveTokenCount(configuredMaxTokens);
 
   if (source === "catalog") return published ?? configured;
-  if (source === "user") return configured ?? published;
+  // Same rule as the context window: a `gateway` cap is the number the router
+  // resolved for its own route, not a models.dev snapshot.
+  if (source === "user" || source === "gateway") return configured ?? published;
   if (configured === undefined) return published;
   return configured;
 }

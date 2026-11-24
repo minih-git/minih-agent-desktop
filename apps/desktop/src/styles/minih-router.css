@@ -847,6 +847,21 @@
   gap: 10px;
 }
 
+/* Which fields of this binding still follow the gateway's model profile, and
+   the one action that hands them back. */
+.provider-profile-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.provider-profile-note {
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+}
+
 .provider-binding-api-style {
   max-width: 320px;
 }

@@ -73,9 +73,10 @@ test("the model prompt textarea renders the saved text and is wired to the patch
   assert.match(empty, /placeholder="Instructions for this model only…"/);
 
   // Wiring: one keystroke reaches the saved patch, rather than a second copy
-  // of the mapping living in the markup.
+  // of the mapping living in the markup. It goes through `emit`, which also
+  // pins the field the user just edited.
   assert.match(
     bindingEditorSource,
-    /onChange=\{\(event\) =>\s*onChange\(modelSystemPromptPatch\(event\.target\.value\)\)\s*\}/,
+    /onChange=\{\s*\(event\) =>\s*emit\(modelSystemPromptPatch\(event\.target\.value\)\)\s*\}/,
   );
 });

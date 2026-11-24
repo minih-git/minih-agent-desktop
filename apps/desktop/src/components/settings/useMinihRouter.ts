@@ -119,10 +119,44 @@ export function useMinihRouterModels(
 }
 
 /**
- * Reads the gateway's full model catalog across pages (100 models per page) so
- * the add-models dialog can list every vendor with accurate counts and filter
- * by vendor client-side without losing models on later pages.
+ * Read the gateway's full model catalog across pages (100 models per page).
+ *
+ * The add-models dialog lists every vendor with accurate counts and filters by
+ * vendor client-side, so it needs the whole catalog rather than one page; the
+ * startup profile sync needs the same answer, so both read it here.
+ *
+ * `isCancelled` is asked between pages: a page that closed, or a row that
+ * changed, stops the scan instead of finishing into a discarded result. `null`
+ * reports that cancellation, which is never an error.
  */
+export async function fetchMinihRouterCatalog(
+  providerId: string,
+  isCancelled: () => boolean = () => false,
+): Promise<MinihRouterModel[] | null> {
+  const items: MinihRouterModel[] = [];
+  const seen = new Set<string>();
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const res = await api.minihRouterModels({
+      providerId,
+      page,
+      pageSize: MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
+    });
+    if (isCancelled()) return null;
+    totalPages = res.totalPages;
+    for (const item of res.items) {
+      const key = item.id.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        items.push(item);
+      }
+    }
+    page += 1;
+  } while (page <= totalPages && items.length < MINIH_ROUTER_LOOKUP_MAX_MODELS);
+  return items;
+}
+
 export function useMinihRouterCatalog(
   providerId: string,
   revision: number,
@@ -138,33 +172,13 @@ export function useMinihRouterCatalog(
     }
     let current = true;
     setLoad((previous) => ({ state: "loading", data: previous.data }));
-    void (async () => {
-      try {
-        const items: MinihRouterModel[] = [];
-        const seen = new Set<string>();
-        let page = 1;
-        let totalPages = 1;
-        do {
-          const res = await api.minihRouterModels({
-            providerId,
-            page,
-            pageSize: MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
-          });
-          if (!current) return;
-          totalPages = res.totalPages;
-          for (const item of res.items) {
-            const key = item.id.toLowerCase();
-            if (!seen.has(key)) {
-              seen.add(key);
-              items.push(item);
-            }
-          }
-          page += 1;
-        } while (page <= totalPages && items.length < MINIH_ROUTER_LOOKUP_MAX_MODELS);
-        if (current) {
-          setLoad({ state: "ready", data: items });
-        }
-      } catch (error: unknown) {
+    fetchMinihRouterCatalog(providerId, () => !current).then(
+      (items) => {
+        // A cancelled read reports `null`; the unmount (or the newer row) owns
+        // the state by then.
+        if (current && items) setLoad({ state: "ready", data: items });
+      },
+      (error: unknown) => {
         if (current) {
           setLoad((previous) => ({
             state: "error",
@@ -172,8 +186,8 @@ export function useMinihRouterCatalog(
             message: messageOf(error),
           }));
         }
-      }
-    })();
+      },
+    );
     return () => {
       current = false;
     };

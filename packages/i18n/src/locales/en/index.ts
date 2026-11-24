@@ -2463,6 +2463,10 @@ sklm: {
     documentInput: "PDF",
     thinkingManualOverrideHint: "Not in catalog; enable if supported.",
     contextWindowCatalogHint: "Follows models.dev; editing pins your value.",
+    modelGatewayFollowed:
+      "Following the gateway's model profile for {{count}} settings. Editing one pins your value.",
+    modelGatewayRestore: "Restore gateway values",
+    modelGatewayFollowHint: "Follows the gateway; editing pins your value.",
     availableForSubagents: "Available for AI delegation",
     embeddingModel: "Embedding model",
     embeddingModelHint: "Saves this model as a vector model: plugins can generate embeddings with it, and it is never offered as a conversation model",

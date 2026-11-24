@@ -10,6 +10,7 @@
  */
 
 import { currentBrandProfile } from "./brand.js";
+import type { ModelKind, ThinkingProtocol } from "./types/models.js";
 
 export const MINIH_ROUTER_PRESET_ID = "minih-router";
 export const MINIH_ROUTER_VENDOR_KEY = "minih-router";
@@ -164,6 +165,21 @@ export const MINIH_ROUTER_REASONING_LEVELS = [
 ] as const;
 export type MinihRouterReasoningLevel = (typeof MINIH_ROUTER_REASONING_LEVELS)[number];
 
+/**
+ * Wire APIs the gateway's per-model `api_style` may name.
+ *
+ * Deliberately narrower than the desktop's own list: these are the four
+ * surfaces a gateway route forwards. An unknown value is ignored rather than
+ * stored as a per-model pin.
+ */
+export const MINIH_ROUTER_MODEL_API_STYLES = [
+  "chat_completions",
+  "responses",
+  "anthropic_messages",
+  "google_generative_ai",
+] as const;
+export type MinihRouterModelApiStyle = (typeof MINIH_ROUTER_MODEL_API_STYLES)[number];
+
 export type MinihRouterModel = {
   /** The model id a client sends. */
   id: string;
@@ -179,9 +195,35 @@ export type MinihRouterModel = {
   multiplePrices: boolean;
   /** At least one source bills in context-length tiers. */
   tieredPricing: boolean;
+  /**
+   * The display name the gateway publishes for this route (`display_name`),
+   * empty or absent when it publishes none.
+   *
+   * This is the gateway's own label for the model, so a `minih-router` row
+   * follows it as the model's alias.
+   */
+  displayName?: string;
+  /**
+   * Effective context window in tokens.
+   *
+   * Read from the gateway's `context_window` when the item carries it, and
+   * otherwise derived from the upstream catalog references' `limits.context`.
+   * `null` means neither source published a number.
+   */
   contextWindow: number | null;
+  /**
+   * Effective output cap (`max_output_tokens`), falling back to the upstream
+   * catalog references' `limits.output`. `null` when nothing published one.
+   */
   maxOutput: number | null;
-  /** Authoritative input modalities declared by upstream catalog, e.g. ["text", "image"]. */
+  /**
+   * Input modalities the gateway declares for this model (`input_modalities`).
+   *
+   * A non-empty array is the operator's own declaration and is authoritative
+   * for image and document input. `undefined` means nothing was asserted — a
+   * gateway too old to send the field, or empty upstream references — which is
+   * not a declaration that the model accepts nothing.
+   */
   inputModalities?: string[];
   /**
    * What the model produces, e.g. `["text"]`, `["image"]`, or both (`text`
@@ -227,6 +269,35 @@ export type MinihRouterModel = {
    * `outputModalities`, which this flag never touches.
    */
   mobileChat?: boolean;
+  /**
+   * Provider request protocol the gateway's profile declares for this model
+   * (`thinking_protocol`), when the operator set one.
+   */
+  thinkingProtocol?: ThinkingProtocol;
+  /**
+   * Wire protocol the gateway's profile declares for this model (`api_style`),
+   * when the operator set one. A `minih-router` row sends this model over it
+   * instead of the row's own global style.
+   */
+  apiStyle?: MinihRouterModelApiStyle;
+  /**
+   * What the gateway says this model is for (`model_kind`), when set.
+   *
+   * `embedding` keeps it out of every conversation picker; absent is the
+   * gateway's silence, not a claim that the model is a chat model.
+   */
+  kind?: ModelKind;
+  /**
+   * Whether the gateway's profile attaches its hosted web search tool for this
+   * model (`native_web_search`), when set.
+   */
+  nativeWebSearch?: boolean;
+  /**
+   * The instruction block the gateway's profile attaches to this model
+   * (`system_prompt`), when set. Trimmed; the host enforces the same length cap
+   * as a hand-written one.
+   */
+  systemPrompt?: string;
 };
 
 export type MinihRouterModelPage = {

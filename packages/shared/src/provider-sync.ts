@@ -1,4 +1,5 @@
 import { HEADER_VALUE_ALLOWED } from "./header-value.js";
+import { BINDING_PROFILE_FIELDS } from "./router-model-profile.js";
 import { MODEL_SYSTEM_PROMPT_MAX_CHARS, THINKING_LEVELS, type ModelBinding } from "./types/models.js";
 import type { ProviderCreateInput, ProviderPublic } from "./types/providers.js";
 
@@ -25,8 +26,27 @@ const MODEL_API_STYLES = new Set(["chat_completions", "responses", "anthropic_me
 const EXCLUDED_VENDORS = new Set(["claude-cli", "codex", "openai-codex", "github-copilot", "google-antigravity", "google-gemini-cli", "ollama", "lmstudio", "lm-studio", "local"]);
 const RESERVED_HEADERS = new Set(["authorization", "proxy-authorization", "x-api-key", "api-key", "x-goog-api-key", "cookie", "set-cookie", "host", "content-type", "content-length", "connection", "transfer-encoding", "te", "trailer", "upgrade", "keep-alive", "chatgpt-account-id", "x-opencode-session"]);
 const INPUT_FIELDS = ["name", "vendorKey", "type", "protocol", "baseUrl", "authKind", "models", "defaultModelId", "secretValue", "apiStyle", "headers", "supportsReasoning", "supportedThinkingLevels", "contextWindow", "maxOutputTokens", "temperature"];
-const MODEL_FIELDS = ["id", "alias", "systemPrompt", "contextWindow", "contextWindowSource", "maxTokens", "maxTokensSource", "thinkingLevels", "defaultThinkingLevel", "thinkingProtocol", "supportsReasoningEffort", "supportsImages", "supportsDocuments", "availableForSubagents", "nativeWebSearch", "apiStyle"];
-
+const MODEL_FIELDS = ["id", "alias", "systemPrompt", "contextWindow", "contextWindowSource", "maxTokens", "maxTokensSource", "thinkingLevels", "defaultThinkingLevel", "thinkingProtocol", "supportsReasoningEffort", "supportsImages", "supportsDocuments", "availableForSubagents", "nativeWebSearch", "apiStyle", "kind", "profileSources"];
+/** Per-field provenance a router-maintained binding may carry. */
+const PROFILE_SOURCE_FIELDS = new Set<string>([...BINDING_PROFILE_FIELDS, "imageGeneration"]);
+/** Values a limit marker may hold; `gateway` is a number the router resolved. */
+const LIMIT_SOURCES = new Set(["catalog", "user", "gateway"]);
+/** Model kinds host-core stores; anything else is not a kind it would keep. */
+const MODEL_KINDS_STORED = new Set(["chat", "embedding"]);
+/** Per-field provenance values; the markers are two-state by design. */
+const PROFILE_SOURCE_VALUES = new Set(["gateway", "user"]);
+/** A per-field provenance map: known field names only, two states only. */
+function profileSources(value: unknown): boolean {
+  if (!record(value)) return false;
+  const entries = Object.entries(value);
+  if (entries.length > PROFILE_SOURCE_FIELDS.size) return false;
+  return entries.every(
+    ([field, source]) =>
+      PROFILE_SOURCE_FIELDS.has(field) &&
+      typeof source === "string" &&
+      PROFILE_SOURCE_VALUES.has(source),
+  );
+}
 function invalid(): never {
   // Never include input values, unknown field names, parser diagnostics or causes.
   throw Object.assign(new Error("Invalid provider import payload"), { errorCode: "INVALID_ARGUMENT" });
@@ -85,7 +105,7 @@ function validateModel(value: unknown): ModelBinding {
   if (value.alias !== undefined && !text(value.alias, 60)) invalid();
   if (value.systemPrompt !== undefined && !modelPrompt(value.systemPrompt)) invalid();
   for (const key of ["contextWindowSource", "maxTokensSource"] as const) {
-    if (value[key] !== undefined && value[key] !== "catalog" && value[key] !== "user") invalid();
+    if (value[key] !== undefined && !LIMIT_SOURCES.has(value[key] as string)) invalid();
   }
   const thinking = value.defaultThinkingLevel;
   if (thinking !== null && thinking !== "omit" && !(typeof thinking === "string" && (value.thinkingLevels as string[]).includes(thinking))) invalid();
@@ -97,6 +117,8 @@ function validateModel(value: unknown): ModelBinding {
   for (const key of ["availableForSubagents", "nativeWebSearch"] as const) {
     if (value[key] !== undefined && typeof value[key] !== "boolean") invalid();
   }
+  if (value.kind !== undefined && !MODEL_KINDS_STORED.has(value.kind as string)) invalid();
+  if (value.profileSources !== undefined && !profileSources(value.profileSources)) invalid();
   return value as ModelBinding;
 }
 function validateInput(value: unknown): ProviderCreateInput {

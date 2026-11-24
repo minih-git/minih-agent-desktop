@@ -191,6 +191,7 @@ pub(crate) fn declared_providers(manifest: &PluginManifest) -> Vec<DeclaredPlugi
                                 api_style: None,
                                 // A plugin contributes conversation providers.
                                 kind: None,
+                                profile_sources: None,
                             })
                         })
                         .collect::<Vec<_>>()

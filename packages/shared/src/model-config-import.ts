@@ -844,10 +844,11 @@ function bindingFromGenericModel(
 
 /**
  * A config exported by Minih-Agent-Desktop carries the provenance marker; an older or
- * foreign config does not.
+ * foreign config does not. `gateway` is a router-resolved number, kept so a
+ * round trip does not turn it into a models.dev snapshot.
  */
 function importedModelLimitSource(value: unknown): ModelLimitSource | undefined {
-  return value === "catalog" || value === "user" ? value : undefined;
+  return value === "catalog" || value === "user" || value === "gateway" ? value : undefined;
 }
 
 function bindingFromPiModel(value: unknown): ModelBinding | null {

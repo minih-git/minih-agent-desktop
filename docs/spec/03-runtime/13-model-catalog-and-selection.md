@@ -402,15 +402,21 @@ to `maxTokens`.
   ladder and is never replaced by the catalog, including explicit 128,000 and
   8,192 values that equal the generic seeds. Setting a context window cannot
   change the output-cap source.
+- `gateway` — the value is the Minih Router gateway's own model profile resolved
+  for its route (see [12-provider-config-schema](12-provider-config-schema.md)
+  § Gateway model profile). The gateway is that row's authority, so a models.dev
+  correction does not replace it either; editing the limit in the model dialog
+  rewrites the marker as `user`.
 
-Bindings written before either marker preserve their stored window and output
+Bindings written before any marker preserve their stored window and output
 cap, including 128,000 and 8,192, because old records cannot distinguish generic
 seeds from user choices. Only explicit `catalog` provenance follows later
-corrections. Unknown models use conservative
+catalog corrections and only `gateway` provenance follows the gateway. Unknown
+models use conservative
 128k / 8.2k runtime limits and are never promoted from an ID pattern alone.
 Settings shows an em dash for an unpublished limit unless the user explicitly
 configured that value; the Advanced inputs retain the conservative runtime
-limits until the user edits them. Both markers are optional, so old configs
+limits until the user edits them. All three markers are optional, so old configs
 remain readable and downgrade clients ignore them.
 
 The configured user value remains persisted and visible in Advanced settings, but

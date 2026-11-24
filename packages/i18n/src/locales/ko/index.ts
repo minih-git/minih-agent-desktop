@@ -2431,6 +2431,10 @@ sklm: {
     documentInput: "PDF",
     thinkingManualOverrideHint: "카탈로그에 없음. 지원되는 경우 활성화하세요.",
     contextWindowCatalogHint: "models.dev를 따릅니다. 수정하면 내 값으로 고정됩니다.",
+    modelGatewayFollowed:
+      "{{count}}개 설정이 게이트웨이 모델 프로필을 따릅니다. 수정하면 내 값으로 고정됩니다.",
+    modelGatewayRestore: "게이트웨이 값으로 되돌리기",
+    modelGatewayFollowHint: "게이트웨이를 따릅니다. 수정하면 내 값으로 고정됩니다.",
     availableForSubagents: "AI 위임에 사용 가능",
     embeddingModel: "임베딩 모델",
     embeddingModelHint: "이 모델을 벡터 모델로 저장합니다. 플러그인이 이 모델로 임베딩을 생성하며, 대화 모델로는 제공되지 않습니다",

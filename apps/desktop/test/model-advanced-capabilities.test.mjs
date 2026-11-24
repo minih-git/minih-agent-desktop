@@ -108,8 +108,10 @@ test("image generation selection hides the summary when nothing can be chosen", 
     /className="provider-chosen-advanced-toggle"[^\n]*settings\.setImageModel/,
   );
   assert.match(pickerSource, /imageModelIds\?\.some\([\s\S]*?modelId\.toLowerCase\(\) === binding\.id\.toLowerCase\(\)/);
-  // The editor fires the shared callback; the picker only forwards it.
-  assert.match(advancedSource, /onImageModelChange\(binding\.id, event\.target\.checked\)/);
+  // The editor fires the shared callback, and records that this one designation
+  // is the user's own so a later gateway sync never re-adds what they removed.
+  assert.match(advancedSource, /onImageModelChange\(binding\.id, selected\)/);
+  assert.match(advancedSource, /imageGeneration: "user"/);
   assert.match(pickerSource, /onImageModelChange=\{onImageModelChange\}/);
   // The row's own rule — the stored candidate list, the legacy single binding
   // only while no list was ever saved, plus a signed-in vendor account's image

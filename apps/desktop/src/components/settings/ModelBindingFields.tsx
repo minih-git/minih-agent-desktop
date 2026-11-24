@@ -15,8 +15,11 @@ import {
   bindingDefaultThinkingMenuLevels,
   modelKind,
   modelMatchesFilter,
+  pinRouterProfilePatch,
+  profileFollowsGateway,
   resolveBindingDefaultThinkingLevel,
   sortThinkingLevels,
+  type BindingProfileField,
   type ModelBinding,
   type ModelInfo,
   type SessionThinkingLevel,
@@ -28,7 +31,7 @@ import {
   MAX_OUTPUT_PRESETS,
   matchPresetIndex,
 } from "../../lib/model-limit-presets";
-import { Checkbox, HelpIcon, Input, Textarea, Tooltip, TooltipButton, cx } from "../ui";
+import { Button, Checkbox, HelpIcon, Input, Textarea, Tooltip, TooltipButton, cx } from "../ui";
 import { IconHelp } from "../icons";
 import { ReasoningEffortSelect } from "./ReasoningEffortSelect";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
@@ -63,6 +66,13 @@ export function modelSystemPromptPatch(value: string): Partial<ModelBinding> {
   return { systemPrompt: value || undefined };
 }
 
+export type GatewayProfileControls = {
+  /** The fields this model's profile declares, i.e. what "restore" hands back. */
+  declared: readonly BindingProfileField[];
+  /** Hand every declared field back to the gateway and apply it now. */
+  onRestore: () => void;
+};
+
 export type ModelBindingFieldsProps = {
   binding: ModelBinding;
   /** Published record for this model, when any source described it. */
@@ -82,6 +92,14 @@ export type ModelBindingFieldsProps = {
   apiStyleOptions?: ReadonlyArray<{ id: string; label: string }>;
   /** The row's own global style, shown beside the follow-global default. */
   globalApiStyle?: string;
+  /**
+   * Present only for a `minih-router` row whose gateway described this model.
+   *
+   * A field the gateway declares follows it until the user edits that field;
+   * this prop is what makes the mark and the restore action visible, and what
+   * turns an edit into a pin.
+   */
+  gatewayProfile?: GatewayProfileControls;
   onChange: (patch: Partial<ModelBinding>) => void;
 };
 
@@ -95,6 +113,7 @@ export function ModelBindingFields({
   onImageModelChange,
   apiStyleOptions,
   globalApiStyle,
+  gatewayProfile,
   onChange,
 }: ModelBindingFieldsProps) {
   const { t } = useTranslation();
@@ -106,14 +125,37 @@ export function ModelBindingFields({
   const enabledLevels = sortThinkingLevels(binding.thinkingLevels);
   const publishedImages = info ? modelMatchesFilter(info, "vision") : false;
   const publishedDocuments = info ? modelMatchesFilter(info, "pdf") : false;
+  /** True while `field` is both declared by the gateway and still followed. */
+  const followsGateway = (field: BindingProfileField): boolean =>
+    !!gatewayProfile?.declared.includes(field) && profileFollowsGateway(binding, field);
+  const gatewayHint = (field: BindingProfileField): React.ReactNode =>
+    followsGateway(field) ? <HelpIcon label={t("settings.modelGatewayFollowHint")} /> : null;
+  /**
+   * Every edit goes through the pin: a field the user touches stops following
+   * the gateway, which is the whole rule this dialog implements.
+   */
+  const emit = (patch: Partial<ModelBinding>): void => {
+    onChange(gatewayProfile ? pinRouterProfilePatch(binding, patch) : patch);
+  };
 
   const effectiveApiStyle = binding.apiStyle || globalApiStyle;
   return (
     <div className="provider-chosen-row-body-fields">
+      {gatewayProfile && gatewayProfile.declared.length > 0 ? (
+        <div className="provider-chosen-field provider-profile-row">
+          <span className="provider-profile-note">
+            {t("settings.modelGatewayFollowed", { count: gatewayProfile.declared.length })}
+          </span>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={gatewayProfile.onRestore}>
+            {t("settings.modelGatewayRestore")}
+          </Button>
+        </div>
+      ) : null}
       <label className="provider-chosen-field">
         <span className="provider-chosen-field-label">
           {t("settings.modelAlias")}
           <HelpIcon label={t("settings.modelAliasHint")} />
+          {gatewayHint("alias")}
         </span>
         <Input
           value={binding.alias ?? ""}
@@ -122,7 +164,7 @@ export function ModelBindingFields({
           autoCorrect="off"
           autoCapitalize="off"
           onChange={(event) =>
-            onChange({
+            emit({
               // Host-core caps the alias at 60 Unicode scalars, so clamp by
               // code point rather than UTF-16 unit.
               alias: [...event.target.value].slice(0, 60).join(""),
@@ -140,6 +182,7 @@ export function ModelBindingFields({
             {followsCatalog ? (
               <HelpIcon label={t("settings.contextWindowCatalogHint")} />
             ) : null}
+            {gatewayHint("contextWindow")}
           </span>
           {/* Preset ladder (#202): click writes the token count; the input
               stays hand-editable off the ladder. */}
@@ -163,7 +206,7 @@ export function ModelBindingFields({
                   tooltip={preset.label}
                   aria-pressed={on}
                   onClick={() =>
-                    onChange({
+                    emit({
                       contextWindow: preset.tokens,
                       contextWindowSource: "user",
                     })
@@ -180,7 +223,7 @@ export function ModelBindingFields({
             inputMode="numeric"
             value={binding.contextWindow}
             onChange={(event) =>
-              onChange({
+              emit({
                 contextWindow: Number(event.target.value) || 0,
                 contextWindowSource: "user",
               })
@@ -188,7 +231,10 @@ export function ModelBindingFields({
           />
         </label>
         <label className="provider-chosen-field">
-          <span className="provider-chosen-field-label">{t("settings.maxOutput")}</span>
+          <span className="provider-chosen-field-label">
+            {t("settings.maxOutput")}
+            {gatewayHint("maxTokens")}
+          </span>
           <div
             className="provider-limit-presets"
             role="group"
@@ -208,7 +254,7 @@ export function ModelBindingFields({
                   tooltip={preset.label}
                   aria-pressed={on}
                   onClick={() =>
-                    onChange({
+                    emit({
                       maxTokens: preset.tokens,
                       maxTokensSource: "user",
                     })
@@ -225,7 +271,7 @@ export function ModelBindingFields({
             inputMode="numeric"
             value={binding.maxTokens}
             onChange={(event) =>
-              onChange({
+              emit({
                 maxTokens: Number(event.target.value) || 0,
                 maxTokensSource: "user",
               })
@@ -238,13 +284,14 @@ export function ModelBindingFields({
           <span className="provider-chosen-field-label">
             {t("settings.modelApiStyle")}
             <HelpIcon label={t("settings.modelApiStyleHint")} />
+            {gatewayHint("apiStyle")}
           </span>
           <SettingsMenuSelect
             className="provider-chosen-thinking-select"
             label={t("settings.modelApiStyle")}
             value={binding.apiStyle ?? ""}
             onChange={(id) =>
-              onChange({ apiStyle: id || undefined })
+              emit({ apiStyle: id || undefined })
             }
             options={[
               {
@@ -267,17 +314,19 @@ export function ModelBindingFields({
             {publishedLevels.length === 0 ? (
               <HelpIcon label={t("settings.thinkingManualOverrideHint")} />
             ) : null}
+            {gatewayHint("thinkingLevels")}
           </span>
           <div className="provider-chosen-thinking-controls">
             <div className="provider-chosen-thinking-protocol">
               <span className="provider-chosen-thinking-label">
                 {t("settings.thinkingProtocol")}
+                {gatewayHint("thinkingProtocol")}
               </span>
               <SettingsMenuSelect
                 className="provider-chosen-thinking-select"
                 label={t("settings.thinkingProtocol")}
                 value={binding.thinkingProtocol ?? info?.thinkingProtocol ?? "legacy"}
-                onChange={(id) => onChange({ thinkingProtocol: id as ThinkingProtocol })}
+                onChange={(id) => emit({ thinkingProtocol: id as ThinkingProtocol })}
                 options={[
                   { id: "legacy", label: t("settings.thinkingProtocolLegacy") },
                   { id: "adaptive", label: t("settings.thinkingProtocolAdaptive") },
@@ -288,6 +337,7 @@ export function ModelBindingFields({
               <div className="provider-chosen-thinking-default">
                 <span className="provider-chosen-thinking-label">
                   {t("settings.defaultThinkingLevel")}
+                  {gatewayHint("defaultThinkingLevel")}
                 </span>
                 <SettingsMenuSelect
                   className="provider-chosen-thinking-select"
@@ -299,7 +349,7 @@ export function ModelBindingFields({
                     ) ?? ""
                   }
                   onChange={(id) =>
-                    onChange({ defaultThinkingLevel: id as SessionThinkingLevel })
+                    emit({ defaultThinkingLevel: id as SessionThinkingLevel })
                   }
                   options={bindingDefaultThinkingMenuLevels(enabledLevels).map(
                     (level) => ({ id: level, label: level }),
@@ -328,7 +378,7 @@ export function ModelBindingFields({
                   const next: ThinkingLevel[] = on
                     ? binding.thinkingLevels.filter((entry) => entry !== level)
                     : [...binding.thinkingLevels, level];
-                  onChange({
+                  emit({
                     thinkingLevels: next,
                     defaultThinkingLevel: resolveBindingDefaultThinkingLevel(
                       binding.defaultThinkingLevel,
@@ -360,13 +410,15 @@ export function ModelBindingFields({
             label={t("settings.imageInput")}
             published={publishedImages}
             value={binding.supportsImages}
-            onChange={(next) => onChange({ supportsImages: next })}
+            hint={gatewayHint("supportsImages")}
+            onChange={(next) => emit({ supportsImages: next })}
           />
           <CapabilityToggle
             label={t("settings.documentInput")}
             published={publishedDocuments}
             value={binding.supportsDocuments}
-            onChange={(next) => onChange({ supportsDocuments: next })}
+            hint={gatewayHint("supportsDocuments")}
+            onChange={(next) => emit({ supportsDocuments: next })}
           />
           {onImageModelChange ? (
             <span className="provider-chosen-delegation">
@@ -379,9 +431,21 @@ export function ModelBindingFields({
                     ? "settings.imageModelSelected"
                     : "settings.setImageModel",
                 )}
-                onChange={(event) =>
-                  onImageModelChange(binding.id, event.target.checked)
-                }
+                onChange={(event) => {
+                  const selected = event.target.checked;
+                  // The designation itself is a settings entry; this records
+                  // who owns it, so a later sync never re-adds one the user
+                  // removed.
+                  if (gatewayProfile) {
+                    onChange({
+                      profileSources: {
+                        ...(binding.profileSources ?? {}),
+                        imageGeneration: "user",
+                      },
+                    });
+                  }
+                  onImageModelChange(binding.id, selected);
+                }}
                 label={t(
                   imageModelSelected
                     ? "settings.imageModelSelected"
@@ -397,10 +461,11 @@ export function ModelBindingFields({
                 type="checkbox"
                 checked={modelKind(binding) === "embedding"}
                 onChange={(event) =>
-                  onChange({ kind: event.target.checked ? "embedding" : undefined })
+                  emit({ kind: event.target.checked ? "embedding" : undefined })
                 }
               />
               <span>{t("settings.embeddingModel")}</span>
+              {gatewayHint("kind")}
             </label>
             <Tooltip
               className="provider-chosen-delegation-help"
@@ -436,10 +501,11 @@ export function ModelBindingFields({
                 checked={binding.nativeWebSearch === true}
                 disabled={!nativeWebSearchCapable}
                 onChange={(event) =>
-                  onChange({ nativeWebSearch: event.target.checked || undefined })
+                  emit({ nativeWebSearch: event.target.checked || undefined })
                 }
               />
               <span>{t("settings.nativeWebSearch")}</span>
+              {gatewayHint("nativeWebSearch")}
             </label>
             <Tooltip
               className="provider-chosen-delegation-help"
@@ -466,6 +532,7 @@ export function ModelBindingFields({
         <span className="provider-chosen-field-label">
           {t("settings.modelSystemPrompt")}
           <HelpIcon label={t("settings.modelSystemPromptHint")} />
+          {gatewayHint("systemPrompt")}
         </span>
         <Textarea
           value={binding.systemPrompt ?? ""}
@@ -474,7 +541,7 @@ export function ModelBindingFields({
           disabled={busy}
           maxLength={MODEL_SYSTEM_PROMPT_MAX_CHARS}
           onChange={(event) =>
-            onChange(modelSystemPromptPatch(event.target.value))
+            emit(modelSystemPromptPatch(event.target.value))
           }
         />
       </label>
@@ -488,6 +555,8 @@ type CapabilityToggleProps = {
   published: boolean;
   /** Stored override: `true`/`false` explicit, `null`/undefined follows. */
   value: boolean | null | undefined;
+  /** Mark shown while the field still follows the gateway's profile. */
+  hint?: React.ReactNode;
   onChange: (next: boolean) => void;
 };
 
@@ -498,7 +567,7 @@ type CapabilityToggleProps = {
  * selected boolean is explicit and stays pinned even if it currently agrees
  * with models.dev; catalog refreshes must not undo a deliberate choice.
  */
-function CapabilityToggle({ label, published, value, onChange }: CapabilityToggleProps) {
+function CapabilityToggle({ label, published, value, hint, onChange }: CapabilityToggleProps) {
   const effective = typeof value === "boolean" ? value : published;
   return (
     <label className="provider-chosen-capability">
@@ -508,6 +577,7 @@ function CapabilityToggle({ label, published, value, onChange }: CapabilityToggl
         onChange={(event) => onChange(event.target.checked)}
       />
       <span>{label}</span>
+      {hint}
     </label>
   );
 }

@@ -257,6 +257,7 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
                     native_web_search: None,
                     api_style: None,
                     kind: None,
+                    profile_sources: None,
                 },
                 ModelBinding {
                     id: "plain-model".into(),
@@ -276,6 +277,7 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
                     native_web_search: None,
                     api_style: None,
                     kind: None,
+                    profile_sources: None,
                 },
             ]),
             default_model_id: None,
@@ -395,6 +397,7 @@ fn binding_with_alias(id: &str, alias: Option<&str>) -> ModelBinding {
         native_web_search: None,
         api_style: None,
         kind: None,
+        profile_sources: None,
     }
 }
 
@@ -1691,6 +1694,7 @@ fn binding_with_limits(id: &str, context_window: u32, max_tokens: u32) -> ModelB
         native_web_search: None,
         api_style: None,
         kind: None,
+        profile_sources: None,
     }
 }
 
