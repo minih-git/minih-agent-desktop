@@ -116,9 +116,11 @@ fn validate_credentials(map: &Map<String, Value>, manifest: &PluginManifest) -> 
                     bail!("PLUGIN_INVALID: credential {id} field {key} secret must be a boolean");
                 }
             }
+            validate_field_control(id, field, key)?;
         }
 
         validate_multiple(id, obj.get("multiple"))?;
+        validate_label_field(id, obj.get("labelField"), fields)?;
         validate_user_endpoint(id, kind, obj.get("userEndpoint"), &keys)?;
         if let Some(scope) = obj.get("scope") {
             let scope = scope.as_object().ok_or_else(|| {
@@ -410,6 +412,93 @@ pub(crate) fn is_hostname(value: &str) -> bool {
                     .chars()
                     .all(|character| character.is_ascii_alphanumeric() || character == '-')
         })
+}
+
+/// One field's control: the `type` the manifest declares (defaulted from
+/// `secret`), and the options a `select` needs.
+///
+/// The same three checks the slot read performs, moved to install time: a
+/// masked dropdown would publish the very list its value is hidden from, a
+/// `select` with no options has nothing to pick, and an unknown control is
+/// something the Settings sheet cannot draw.
+fn validate_field_control(id: &str, field: &Map<String, Value>, key: &str) -> Result<()> {
+    let secret = field.get("secret").and_then(Value::as_bool) == Some(true);
+    let control = match field.get("type").and_then(Value::as_str) {
+        None => {
+            if secret {
+                "password"
+            } else {
+                "text"
+            }
+        }
+        Some("select") if secret => {
+            bail!("PLUGIN_INVALID: credential {id} field {key} cannot be secret and a select")
+        }
+        Some(control @ ("text" | "password" | "select")) => control,
+        Some(other) => {
+            bail!("PLUGIN_INVALID: credential {id} field {key} has unsupported type {other}")
+        }
+    };
+    let options = field.get("options");
+    if control != "select" {
+        if options.is_some() {
+            bail!(
+                "PLUGIN_INVALID: credential {id} field {key} declares options but is not a select"
+            );
+        }
+        return Ok(());
+    }
+    let Some(options) = options
+        .and_then(Value::as_array)
+        .filter(|options| !options.is_empty())
+    else {
+        bail!("PLUGIN_INVALID: credential {id} field {key} is a select without options");
+    };
+    let mut seen: Vec<&str> = Vec::new();
+    for option in options {
+        let value = option
+            .get("value")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                anyhow!("PLUGIN_INVALID: credential {id} field {key} has an option without a value")
+            })?;
+        if seen.contains(&value) {
+            bail!("PLUGIN_INVALID: credential {id} field {key} lists option {value} twice");
+        }
+        seen.push(value);
+        if !option.get("label").is_some_and(is_plugin_label) {
+            bail!("PLUGIN_INVALID: credential {id} field {key} option {value} requires a label");
+        }
+    }
+    Ok(())
+}
+
+/// `labelField` — the non-secret field that names an instance.
+///
+/// A label read from a secret would publish it through `credentials.list`, and a
+/// label that names no declared field cannot be filled in, so both are refused
+/// here as well as when the slot is read.
+fn validate_label_field(id: &str, raw: Option<&Value>, fields: &[Value]) -> Result<()> {
+    let Some(raw) = raw else {
+        return Ok(());
+    };
+    let key = raw
+        .as_str()
+        .filter(|key| is_contrib_id(key))
+        .ok_or_else(|| anyhow!("PLUGIN_INVALID: credential {id} labelField must be a field key"))?;
+    let field = fields
+        .iter()
+        .filter_map(Value::as_object)
+        .find(|field| field.get("key").and_then(Value::as_str) == Some(key))
+        .ok_or_else(|| {
+            anyhow!("PLUGIN_INVALID: credential {id} labelField {key} is not a declared field")
+        })?;
+    if field.get("secret").and_then(Value::as_bool) == Some(true) {
+        bail!("PLUGIN_INVALID: credential {id} labelField {key} must not be secret");
+    }
+    Ok(())
 }
 
 /// `multiple` — one value, or many. `max` is optional: a manifest that omits it
