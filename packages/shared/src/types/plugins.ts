@@ -381,6 +381,12 @@ export type PluginCredentialStatus = {
   max?: number;
   /** Present only for a slot that declares `multiple`, in creation order. */
   instances?: PluginCredentialInstanceStatus[];
+  /**
+   * Present only for a slot whose manifest declares `userEndpoint`: the user
+   * may name their own mail server for each account, and the host reserves the
+   * field keys `server`, `port`, `protocol` and `security` for it.
+   */
+  userEndpoint?: { protocols: Array<"imap" | "pop3"> };
   /** Field whose value names an instance. */
   labelField?: string;
 };

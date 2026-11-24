@@ -552,6 +552,18 @@ author whether a connection is encrypted.
   receives the value through an API — not the peer's later output.
 - Every connection closes on unload, disable, and crash; `connect` and `close`
   are audited with the endpoint and the outcome, never with payload bytes.
+- **A user-typed server is bound to one credential instance.** When the manifest
+  declares `userEndpoint` (02 §5.5.2), the endpoint is stored inside the account
+  and the host logs in with that account's password only there; the manifest
+  allowlist and the slot `scope` are replaced by that binding. A connect without
+  `credentialRef` still needs `manifest.net.tcp` and cannot reach such a server,
+  and an endpoint the plugin names must equal the stored one exactly. There is no
+  plaintext transport option, STARTTLS is mandatory when chosen (never a
+  fallback), the plaintext capabilities are discarded before the login, a byte
+  after the upgrade agreement aborts the connection, and certificate
+  verification plus SNI apply exactly as on the manifest path. Cloud metadata
+  hosts are refused when the value is saved, so an account cannot be pointed at
+  instance credentials.
 - The user's outbound HTTP proxy is not consulted for raw sockets. The install
   review says so, because an author expecting proxy enforcement would otherwise
   assume it.

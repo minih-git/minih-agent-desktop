@@ -210,6 +210,51 @@ describe("contributes.credentials: multiple, labelField, field controls", () => 
   });
 });
 
+describe("contributes.credentials: userEndpoint", () => {
+  const imap = (overrides: Record<string, unknown> = {}) =>
+    slot({ kind: "imap", userEndpoint: { protocols: ["imap", "pop3"] }, ...overrides });
+
+  it("accepts an imap slot that offers the user their own mail server", () => {
+    expect(validateCredentialContributions([imap()])).toBe(undefined);
+  });
+
+  it("refuses userEndpoint on any other kind", () => {
+    expect(
+      validateCredentialContributions([slot({ userEndpoint: { protocols: ["imap"] } })]),
+    ).toMatch(/only an imap slot/);
+  });
+
+  it("needs at least one protocol, and only mail protocols", () => {
+    expect(validateCredentialContributions([imap({ userEndpoint: { protocols: [] } })])).toMatch(
+      /at least one protocol/,
+    );
+    expect(
+      validateCredentialContributions([imap({ userEndpoint: { protocols: ["smtp"] } })]),
+    ).toMatch(/imap or pop3/);
+    expect(
+      validateCredentialContributions([imap({ userEndpoint: { protocols: ["imap", "imap"] } })]),
+    ).toMatch(/lists imap twice/);
+    expect(
+      validateCredentialContributions([
+        imap({ userEndpoint: { protocols: ["imap"], host: "mail.example.com" } }),
+      ]),
+    ).toMatch(/unsupported key host/);
+    expect(validateCredentialContributions([imap({ userEndpoint: "yes" })])).toMatch(
+      /userEndpoint must be an object/,
+    );
+  });
+
+  it("refuses a declared field that collides with a reserved key", () => {
+    const fields = [
+      { key: "username", label: "User" },
+      { key: "server", label: "Server" },
+    ];
+    expect(validateCredentialContributions([imap({ fields })])).toMatch(
+      /field server is reserved for the user-typed mail server/,
+    );
+  });
+});
+
 describe("contributes.webhooks", () => {
   it("accepts bounds at or below the ceilings", () => {
     expect(

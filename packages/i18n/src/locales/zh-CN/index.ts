@@ -2,6 +2,17 @@ import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhCN = {
   pluginCredentials: {
+    customServer: "使用自己的邮件服务器",
+    customServerHint: "留空则使用插件预设的服务器。填写服务器后，密码只会发往这台服务器。",
+    customServerServer: "服务器",
+    customServerServerPlaceholder: "mail.example.com",
+    customServerProtocol: "协议",
+    customServerProtocolImap: "IMAP",
+    customServerProtocolPop3: "POP3",
+    customServerSecurity: "加密方式",
+    customServerSecurityTls: "SSL/TLS",
+    customServerSecurityStarttls: "STARTTLS",
+    customServerPort: "端口",
     title: "凭据",
     hint: "保存会整体替换凭据。修改时请重新填写全部字段；已保存的值不会显示。",
     configured: "已配置",

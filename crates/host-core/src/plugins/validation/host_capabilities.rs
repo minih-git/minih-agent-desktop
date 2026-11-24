@@ -14,6 +14,8 @@ use serde_json::{Map, Value};
 use super::labels::is_plugin_label;
 use super::{array_of, is_contrib_id, require_permission, PluginManifest};
 
+use crate::plugins::user_endpoint;
+
 /// `contributes.credentials[].kind` — how the host injects the stored secret.
 const CREDENTIAL_KINDS: [&str; 5] = ["basic", "bearer", "header", "oauth2", "imap"];
 
@@ -110,6 +112,8 @@ fn validate_credentials(map: &Map<String, Value>, manifest: &PluginManifest) -> 
                 }
             }
         }
+
+        validate_user_endpoint(id, kind, obj.get("userEndpoint"), &keys)?;
         if let Some(scope) = obj.get("scope") {
             let scope = scope.as_object().ok_or_else(|| {
                 anyhow!("PLUGIN_INVALID: credential {id} scope must be an object")
@@ -390,7 +394,7 @@ fn validate_tasks(tasks: Option<&Value>, manifest: &PluginManifest) -> Result<()
 
 /// Mirrors `HOSTNAME` in the plugin SDK's egress policy: dot-separated labels
 /// that start and end alphanumeric. `value` is already lowercased.
-fn is_hostname(value: &str) -> bool {
+pub(crate) fn is_hostname(value: &str) -> bool {
     !value.is_empty()
         && value.split('.').all(|label| {
             !label.is_empty()
@@ -400,4 +404,67 @@ fn is_hostname(value: &str) -> bool {
                     .chars()
                     .all(|character| character.is_ascii_alphanumeric() || character == '-')
         })
+}
+
+/// `contributes.credentials[].userEndpoint`: a mailbox slot may let the user
+/// name their own mail server instead of the one the manifest preset uses.
+///
+/// Two things are decided here, and both are about who chooses the server:
+/// only an `imap` slot may declare it (POP3 is a transport the same slot
+/// speaks, not a separate kind), and the four values the host reserves for it
+/// may not also be declared fields — a plugin-authored field of that key would
+/// let its own form decide where the stored password is sent.
+fn validate_user_endpoint(
+    id: &str,
+    kind: &str,
+    raw: Option<&Value>,
+    field_keys: &[&str],
+) -> Result<()> {
+    let Some(raw) = raw else {
+        return Ok(());
+    };
+    if kind != "imap" {
+        bail!(
+            "PLUGIN_INVALID: credential {id} declares userEndpoint with kind {kind}; only an imap slot accepts a user-typed mail server"
+        );
+    }
+    let obj = raw
+        .as_object()
+        .ok_or_else(|| anyhow!("PLUGIN_INVALID: credential {id} userEndpoint must be an object"))?;
+    if let Some(unknown) = obj.keys().find(|key| key.as_str() != "protocols") {
+        bail!("PLUGIN_INVALID: credential {id} userEndpoint has an unsupported key {unknown}");
+    }
+    let protocols = match obj.get("protocols") {
+        Some(value) => array_of(value, "credential userEndpoint.protocols")?,
+        None => &[],
+    };
+    if protocols.is_empty() {
+        bail!("PLUGIN_INVALID: credential {id} userEndpoint needs at least one protocol");
+    }
+    let mut seen: Vec<String> = Vec::new();
+    for protocol in protocols {
+        let value = protocol
+            .as_str()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .filter(|value| user_endpoint::PROTOCOLS.contains(&value.as_str()))
+            .ok_or_else(|| {
+                anyhow!(
+                    "PLUGIN_INVALID: credential {id} userEndpoint protocols must be imap or pop3"
+                )
+            })?;
+        if seen.contains(&value) {
+            bail!("PLUGIN_INVALID: credential {id} userEndpoint lists {value} twice");
+        }
+        seen.push(value);
+    }
+    if let Some(key) = field_keys
+        .iter()
+        .find(|key| user_endpoint::RESERVED_KEYS.contains(key))
+    {
+        bail!(
+            "PLUGIN_INVALID: credential {id} field {key} is reserved for the user-typed mail server"
+        );
+    }
+    Ok(())
 }

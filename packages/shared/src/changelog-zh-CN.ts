@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.10.0",
+    date: "2026-11-24",
+    highlights: [
+      "邮箱账号现在可以使用你自己的邮件服务器：服务器地址、端口、协议（IMAP 或 POP3）和加密方式（SSL/TLS 或 STARTTLS）随账号一起保存，应用只会把这个账号的密码发往与它一起保存的那台服务器。选了 STARTTLS 就必须升级成功，不会退回明文；证书不受信任或与主机不匹配都会被拒绝。",
+    ],
+  },
+  {
     version: "1.9.0",
     date: "2026-11-24",
     highlights: [

@@ -9,13 +9,39 @@ export class PluginTcpImapLogin {
   private capabilities = new Set<string>();
   private readonly credentials: ImapCredentials;
   private readonly send: (data: Buffer) => void;
+  private readonly afterStarttls: boolean;
 
-  constructor(credentials: ImapCredentials, send: (data: Buffer) => void) {
+  /** Does not replace the socket: this login runs once the transport is TLS. */
+  readonly wantsUpgrade = false;
+
+  constructor(
+    credentials: ImapCredentials,
+    send: (data: Buffer) => void,
+    options?: { afterStarttls?: boolean },
+  ) {
     this.credentials = credentials;
     this.send = send;
+    this.afterStarttls = options?.afterStarttls === true;
+    if (this.afterStarttls) {
+      // A STARTTLS session continues without a new greeting: the server is
+      // waiting for the client's first command, which `start` sends.
+      this.state = "capability";
+    }
     if ([credentials.username, credentials.password].some((value) => /[\r\n\0]/.test(value))) {
       throw new PluginSocketError("CREDENTIAL_UNSUPPORTED", "IMAP credentials cannot be used for authentication");
     }
+  }
+
+  /**
+   * Ask for the capabilities again, now that the transport is TLS.
+   *
+   * Everything the plaintext phase advertised is discarded: it was not
+   * protected by anything, so only this answer may decide how the password is
+   * sent. A session that started on implicit TLS has its greeting handled by
+   * `receive` and needs nothing here.
+   */
+  start(): void {
+    if (this.afterStarttls) this.write("MHA1 CAPABILITY\r\n");
   }
 
   /** Returns bytes after the tagged completion, or null while still logging in. */
@@ -57,6 +83,10 @@ export class PluginTcpImapLogin {
       return;
     }
     if (this.state === "capability") {
+      // A server may answer the post-STARTTLS CAPABILITY with a fresh greeting
+      // instead of an untagged CAPABILITY line; both carry the same facts.
+      const greeted = /^\* OK.*\[CAPABILITY\s+([^\]]*)\]/i.exec(line);
+      if (greeted) this.addCapabilities(greeted[1]);
       const match = /^\* CAPABILITY(?:\s+(.*))?$/i.exec(line);
       if (match) this.addCapabilities(match[1] ?? "");
       if (/^MHA1\s+OK(?:\s|$)/i.test(line)) this.authenticate();

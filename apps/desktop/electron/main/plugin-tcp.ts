@@ -33,7 +33,9 @@
  */
 import { connect as netConnect, type Socket } from "node:net";
 import { connect as tlsConnect } from "node:tls";
-import { PluginTcpImapLogin, type ImapCredentials } from "./plugin-tcp-imap-login";
+import type { ImapCredentials } from "./plugin-tcp-imap-login";
+import { PluginTcpMailLogin, type PluginTcpLogin } from "./plugin-tcp-login";
+import { upgradeToTls } from "./plugin-tcp-starttls";
 import { PluginSocketError } from "./plugin-websocket";
 
 /**
@@ -131,7 +133,9 @@ type Entry = {
   finalized: boolean;
   timer: NodeJS.Timeout | null;
   graceTimer: NodeJS.Timeout | null;
-  login: PluginTcpImapLogin | null;
+  login: PluginTcpMailLogin | null;
+  /** Set once a STARTTLS connection has been upgraded to TLS. */
+  starttls: boolean;
   credentialBearing: boolean;
 };
 
@@ -174,6 +178,8 @@ export class PluginTcpRegistry {
     endpoint: PluginTcpEndpoint;
     timeoutMs?: number;
     imap?: ImapCredentials;
+    /** A mail login the host performs, for a user-typed server. */
+    login?: PluginTcpLogin;
   }): Promise<{ connectionId: string; authenticated?: true }> {
     const { pluginId } = request;
     if (typeof pluginId !== "string" || !pluginId.trim()) {
@@ -182,6 +188,9 @@ export class PluginTcpRegistry {
     const endpoint = parseEndpoint(request.endpoint);
     if (request.imap && !endpoint.tls) {
       throw new PluginSocketError("PERMISSION_DENIED", "IMAP authentication requires TLS");
+    }
+    if (request.imap && request.login) {
+      throw new PluginSocketError("INVALID_ARGUMENT", "one connection authenticates once");
     }
     const timeoutMs = parseTimeout(request.timeoutMs, this.defaultTimeoutMs);
     if (this.countFor(pluginId) >= this.maxPerPlugin) {
@@ -203,10 +212,21 @@ export class PluginTcpRegistry {
       timer: null,
       graceTimer: null,
       login: null,
-      credentialBearing: Boolean(request.imap),
+      starttls: false,
+      credentialBearing: Boolean(request.imap ?? request.login),
     };
-    if (request.imap) {
-      entry.login = new PluginTcpImapLogin(request.imap, (data) => {
+    const login = request.login;
+    if (login || request.imap) {
+      const stage = login ?? { protocol: "imap" as const, security: "tls" as const, ...request.imap! };
+      // A password never travels on a plaintext connection, and STARTTLS is the
+      // only way a credential-bearing connection may start out unencrypted.
+      if (stage.security === "tls" && !endpoint.tls) {
+        throw new PluginSocketError("PERMISSION_DENIED", "mail authentication requires TLS");
+      }
+      if (stage.security === "starttls" && endpoint.tls) {
+        throw new PluginSocketError("INVALID_ARGUMENT", "STARTTLS starts on a plaintext connection");
+      }
+      entry.login = new PluginTcpMailLogin(stage, (data) => {
         entry.socket?.write(data);
         this.count(entry, 0, data.byteLength);
       });
@@ -231,7 +251,10 @@ export class PluginTcpRegistry {
     try {
       this.dial(entry);
       await entry.opened;
-      return { connectionId: entry.connectionId, ...(request.imap ? { authenticated: true as const } : {}) };
+      return {
+        connectionId: entry.connectionId,
+        ...(entry.credentialBearing ? { authenticated: true as const } : {}),
+      };
     } catch (error) {
       throw error instanceof PluginSocketError
         ? error
@@ -315,7 +338,9 @@ export class PluginTcpRegistry {
         connectionId: entry.connectionId,
         host: entry.endpoint.host,
         port: entry.endpoint.port,
-        tls: entry.endpoint.tls,
+        // `tls` reports the connection as it is now: a STARTTLS connection that
+        // has finished its upgrade carries TLS too.
+        tls: entry.endpoint.tls || entry.starttls,
         state: entry.state,
       }));
   }
@@ -375,7 +400,6 @@ export class PluginTcpRegistry {
       return;
     }
     entry.socket = socket;
-    socket.setNoDelay(true);
     // A TLS socket answers `connect` before the handshake; only `secureConnect`
     // means the peer is verified and usable.
     socket.once(tls ? "secureConnect" : "connect", () => {
@@ -384,11 +408,62 @@ export class PluginTcpRegistry {
       if (entry.finalized || entry.state !== "connecting") return;
       if (!entry.login) this.open(entry);
     });
+    this.watch(entry, socket);
+  }
+
+  /** Route one socket's traffic to this connection; the caller owns the socket. */
+  private watch(entry: Entry, socket: Socket): void {
+    socket.setNoDelay(true);
     socket.on("data", (chunk: Buffer) => this.receive(entry, chunk));
     socket.on("error", (error: Error) => this.failed(entry, error));
     socket.on("close", (hadError: boolean) => this.finalize(entry, hadError));
   }
 
+  /**
+   * Replace a STARTTLS connection's plaintext socket with a TLS one.
+   *
+   * The plaintext reader goes first: from here on every byte belongs to the
+   * handshake, and a byte that arrived after the server agreed would be exactly
+   * the STARTTLS injection this design refuses — it fails the handshake instead
+   * of being parsed.
+   */
+  private upgrade(entry: Entry): void {
+    const socket = entry.socket;
+    const login = entry.login;
+    if (!socket || !login || entry.finalized) {
+      this.abort(
+        entry,
+        new PluginSocketError("STARTTLS_FAILED", "the TLS upgrade could not be started"),
+      );
+      return;
+    }
+    socket.removeAllListeners("data");
+    socket.removeAllListeners("error");
+    socket.removeAllListeners("close");
+    void upgradeToTls(socket, {
+      host: entry.endpoint.host,
+      ...(this.deps.tlsCa === undefined ? {} : { ca: this.deps.tlsCa }),
+    }).then(
+      (secure) => {
+        if (entry.finalized) {
+          secure.destroy();
+          return;
+        }
+        entry.starttls = true;
+        entry.socket = secure;
+        login.upgradedToTls();
+        this.watch(entry, secure);
+      },
+      (error: unknown) => {
+        this.abort(
+          entry,
+          error instanceof PluginSocketError
+            ? error
+            : new PluginSocketError("TLS_FAILED", "the TLS handshake with the mail server failed"),
+        );
+      },
+    );
+  }
   private open(entry: Entry): void {
     if (entry.finalized || entry.state !== "connecting") return;
     entry.login = null;
@@ -403,6 +478,10 @@ export class PluginTcpRegistry {
     if (entry.state === "connecting" && entry.login) {
       try {
         const remaining = entry.login.receive(chunk);
+        if (entry.login.wantsUpgrade) {
+          this.upgrade(entry);
+          return;
+        }
         if (remaining === null) return;
         this.open(entry);
         if (remaining.length) this.deliverData(entry, remaining);

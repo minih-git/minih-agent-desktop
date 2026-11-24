@@ -3,6 +3,17 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const tr = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    customServer: "Kendi posta sunucunuzu kullanın",
+    customServerHint: "Sunucuyu boş bırakırsanız eklentinin önceden tanımladığı sunucular kullanılır. Bir sunucu girdiğinizde parola yalnızca o sunucuya gönderilir.",
+    customServerServer: "Sunucu",
+    customServerServerPlaceholder: "mail.example.com",
+    customServerProtocol: "Protokol",
+    customServerProtocolImap: "IMAP",
+    customServerProtocolPop3: "POP3",
+    customServerSecurity: "Şifreleme",
+    customServerSecurityTls: "SSL/TLS",
+    customServerSecurityStarttls: "STARTTLS",
+    customServerPort: "Bağlantı noktası",
     add: "Ekle",
     cancel: "İptal",
     remove: "Kaldır",

@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.10.0",
+    date: "2026-11-24",
+    highlights: [
+      "A mailbox account can now use your own mail server: the server, port, protocol (IMAP or POP3) and encryption (SSL/TLS or STARTTLS) are saved with the account, and the app sends that account's password only to the server saved with it. When STARTTLS is chosen it is required — there is no plaintext fallback — and an untrusted or mismatched certificate is refused.",
+    ],
+  },
+  {
     version: "1.9.0",
     date: "2026-11-24",
     highlights: [

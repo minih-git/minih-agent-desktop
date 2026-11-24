@@ -30,6 +30,7 @@ mod providers;
 mod registry;
 mod renderer;
 pub(crate) mod settings;
+pub(crate) mod user_endpoint;
 mod validation;
 
 pub use manifest::PluginManifest;

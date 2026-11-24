@@ -3,6 +3,17 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const ptBR = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    customServer: "Usar seu próprio servidor de e-mail",
+    customServerHint: "Deixe o servidor vazio para usar os que o plugin define. Ao informar um servidor, a senha só é enviada para ele.",
+    customServerServer: "Servidor",
+    customServerServerPlaceholder: "mail.example.com",
+    customServerProtocol: "Protocolo",
+    customServerProtocolImap: "IMAP",
+    customServerProtocolPop3: "POP3",
+    customServerSecurity: "Criptografia",
+    customServerSecurityTls: "SSL/TLS",
+    customServerSecurityStarttls: "STARTTLS",
+    customServerPort: "Porta",
     add: "Adicionar",
     cancel: "Cancelar",
     remove: "Remover",
