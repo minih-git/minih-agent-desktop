@@ -848,62 +848,9 @@ export const ptBR = {
     loadPlugin: "Carregar um plugin de desenvolvimento (opcional)",
     dismiss: "Dispensar"
   },
-  // Employees: the sidebar group, the settings page, and the tasks an
-  // employee holds (ADR bot-sessions-and-steward).
+  // Employees: the sidebar group and the tasks an employee holds (ADR
+  // bot-sessions-and-steward).
   bots: {
-    // Contratar, normas da equipe e escolha de modelo (modo funcionário 0.5, fatia 6).
-    hiring: {
-      title: "Contratar",
-      description:
-        "Escolha um cargo para começar, descreva a pessoa em uma frase ou comece com um formulário em branco. Nada é contratado até você salvar o formulário.",
-      templates: "Cargos para os quais você pode contratar",
-      fromBlank: "Começar em branco",
-      readOnly: "Somente leitura",
-      noRepository: "Sem repositório",
-      prefersUiModel: "Prefere um modelo da família Gemini",
-      avoidsUiModel: "Não é um modelo da família Gemini",
-      draftPlaceholder: "Descreva em uma frase a pessoa que você quer contratar",
-      draft: "Rascunhar",
-      drafting: "Rascunhando…",
-      draftHint:
-        "O rascunho apenas preenche o formulário; você ainda confirma, e nada é criado antes disso.",
-      draftReason: "Por que este cargo: {{reason}}",
-      template: {
-        ui: { name: "Interface", duty: "Telas, componentes e detalhes visuais do renderer." },
-        frontendLogic: { name: "Lógica de front-end", duty: "Estado, fluxo de dados e comportamento do front-end, sem o design visual." },
-        backend: { name: "Backend", duty: "Código de servidor, API, armazenamento, protocolo e cobrança." },
-        design: { name: "Design", duty: "Como uma tela deve parecer e ser lida." },
-        review: { name: "Revisão", duty: "Lê o código e aponta problemas; nunca edita." },
-        research: { name: "Pesquisa", duty: "Pesquisa, leitura e comparação; sem repositório." },
-      },
-    },
-    norms: {
-      title: "Normas da equipe",
-      description:
-        "As regras que todo funcionário segue. Acompanham cada tarefa e não podem ampliar uma permissão nem afrouxar uma regra de segurança.",
-      communication: "Comunicação",
-      communicationHint: "Como falam com você: idioma, tamanho, quando perguntar.",
-      communicationPlaceholder:
-        "Exemplo: reporte em português, comece pela conclusão, sem narrar o processo.",
-      scope: "Escopo",
-      scopeHint: "O que assumem e o que não tocam.",
-      scopePlaceholder:
-        "Exemplo: não reformate arquivos que você não alterou; pergunte antes de mexer na configuração compartilhada.",
-      delivery: "Entrega",
-      deliveryHint: "O que precisa ser verdade quando dizem que está pronto.",
-      deliveryPlaceholder:
-        "Exemplo: toda mudança traz o teste que a prova e o comando que você executou.",
-      sectionCount: "{{used}}/{{max}}",
-      totalCount: "{{used}} de {{max}} caracteres no total",
-      boundary:
-        "São regras de equipe, não permissões: nunca autorizam uma ação que o host recusaria.",
-      save: "Salvar normas",
-      saving: "Salvando…",
-      saved: "Salvo. Toda tarefa a partir de agora as carrega.",
-      cleared: "Limpo. A partir de agora nenhuma norma é anexada.",
-      loadFailed: "Não foi possível ler as normas da equipe ({{reason}}).",
-      saveFailed: "Não foi possível salvar as normas da equipe ({{reason}}).",
-    },
     // Waiting channel and blocked card (employee mode 0.5 slice 4a).
     waiting: {
       title: "{{count}} esperando por você",
@@ -1007,18 +954,6 @@ export const ptBR = {
         checking: "Verificando…",
       },
     },
-    experience: {
-      title: "Experiências",
-      description:
-        "O que cada funcionário aprendeu com tarefas já concluídas. Apenas referência; uma experiência apagada não é aprendida de novo.",
-      forEmployee: "Funcionário: {{name}}",
-      empty: "Ainda sem experiências.",
-      disabled: "A extração de experiências está desligada.",
-      openSettings: "Abrir ajustes de memória",
-      source: "Tarefa #{{shortId}} · {{date}}",
-      deleteLabel: "Apagar esta experiência",
-      deleteFailed: "Não foi possível apagar. Tente de novo.",
-    },
     taskStage: {
       queued: "Na fila",
       working: "Em andamento",
@@ -1043,15 +978,9 @@ export const ptBR = {
       offline: "Offline",
     },
     settings: {
-      title: "Super Agent",
-      listTitle: "Seus funcionários",
-      listDescription: "Um funcionário é uma conversa duradoura com um nome, uma função e um nível de permissão.",
-      empty: "Nenhum funcionário ainda",
       name: "Nome",
       duty: "Função",
       dutyHint: "Uma linha dizendo para que serve este funcionário.",
-      home: "Máquina de trabalho",
-      homeLocal: "Este computador",
       permission: "Nível de permissão",
       permissionAsk: "Perguntar",
       permissionAcceptEdits: "Aceitar edições",
@@ -1061,13 +990,9 @@ export const ptBR = {
       definition: "Executa como",
       definitionNone: "Sem definição",
       definitionHint: "A definição do subagente fornece o prompt e a lista de ferramentas que este funcionário pode usar.",
-      model: "Modelo",
-      modelHint: "Onde rodam as tarefas deste funcionário. Sugerido pelo cargo contratado; você pode mudar.",
-      modelNone: "Padrão do app",
       project: "Projeto",
       projectNone: "Sem projeto",
       projectHint: "O repositório em que este funcionário trabalha. Sem um, ele não consegue ler código.",
-      projectUnbound: "Nenhum projeto vinculado",
       mustAsk: "Sempre me perguntar",
       mustAskHint: "Estas ações sempre voltam para você.",
       mustAskForced: "Sempre pergunta",
@@ -1077,22 +1002,10 @@ export const ptBR = {
       mustAskDelete: "Excluir",
       mustAskSpend: "Gastar",
       mustAskCriteriaChange: "Alterar critérios",
-      add: "Novo funcionário",
-      addTitle: "Novo funcionário",
       editTitle: "Editar funcionário",
-      edit: "Editar {{name}}",
       save: "Salvar",
       saving: "Salvando…",
       cancel: "Cancelar",
-      dismiss: "Dispensar funcionário",
-      dismissConfirmTitle: "Dispensar {{name}}?",
-      dismissConfirmBody: "A conversa permanece e volta a ser uma sessão comum. O nome, a função e o nível de permissão deste funcionário são removidos.",
-      dismissConfirm: "Dispensar",
-      dismissCancel: "Manter",
-      loadFailed: "Não foi possível carregar os funcionários: {{reason}}",
-      saveFailed: "Não foi possível salvar {{name}}: {{reason}}",
-      dismissFailed: "Não foi possível dispensar {{name}}: {{reason}}",
-      nameRequired: "O nome é obrigatório.",
     },
     card: {
       targetUnknown: "Sem responsável",
@@ -1385,7 +1298,6 @@ export const ptBR = {
       skills: "Habilidades",
       mcp: "MCP",
       subagents: "Subagentes",
-      employees: "Super Agent",
       projects: "Projetos",
       sync: "Sincronização",
       remoteHosts: "Hosts remotos",

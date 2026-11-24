@@ -149,18 +149,6 @@ export const IPC = {
     /** Explicit, user-triggered: never runs at startup. */
     botSeedDefaults: "minih-agent-desktop/bot/seedDefaults",
     /**
-     * One-sentence hiring (slice 6): Main asks a model for a profile draft from
-     * the person's sentence. It creates nothing — the draft fills the form and
-     * the person confirms it like any other hire.
-     */
-    botDraftHire: "minih-agent-desktop/bot/draftHire",
-    /**
-     * The team norms the person writes (slice 6). Stored on this computer, in
-     * the host's local key–value table, one versioned row.
-     */
-    teamNormsGet: "minih-agent-desktop/team/norms/get",
-    teamNormsSet: "minih-agent-desktop/team/norms/set",
-    /**
      * Tasks under an employee (ADR bot-sessions-and-steward §7). A task is one
      * piece of work the employee holds; it owns a session, so opening a task is
      * opening a conversation, and archiving one ends it.
@@ -315,12 +303,6 @@ export const IPC = {
     memoryArchive: "minih-agent-desktop/memory/archive",
     memoryRestore: "minih-agent-desktop/memory/restore",
     memoryDelete: "minih-agent-desktop/memory/delete",
-    /**
-     * One employee's lessons from its finished tasks (employee mode 0.5 slice 5).
-     * They live in the learned-memory `bot` scope but have their own list because
-     * each one has to name the task it came from.
-     */
-    taskExperienceList: "minih-agent-desktop/task/experience/list",
     // The transcript receipt's "remember again": the user's own action, and the
     // only path that clears a delete. Never reachable from a model tool.
     memoryRememberAgain: "minih-agent-desktop/memory/rememberAgain",

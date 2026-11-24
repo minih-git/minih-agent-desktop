@@ -91,10 +91,12 @@ export type LearnedMemoryEntry = {
 };
 
 /**
- * One employee lesson, as `task.experience.list` returns it (employee mode 0.5
- * slice 5). The entry is an ordinary learned-memory row in the employee's `bot`
- * scope; the extra fields name the task it was learned from, so a lesson can be
- * opened in its context and deleted with the knowledge of where it came from.
+ * One employee lesson, as the host's `task.experience.list` RPC returns it
+ * (employee mode 0.5 slice 5). The renderer channel of that name is gone (ADR
+ * 0341) but the RPC and this shape are the plugin-facing contract. The entry is
+ * an ordinary learned-memory row in the employee's `bot` scope; the extra fields
+ * name the task it was learned from, so a lesson can be opened in its context
+ * and deleted with the knowledge of where it came from.
  */
 export type EmployeeLesson = LearnedMemoryEntry & {
   sourceTaskId?: string;

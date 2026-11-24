@@ -858,64 +858,9 @@ export const tr = {
     loadPlugin: "Geliştirme eklentisi yükleyin (isteğe bağlı)",
     dismiss: "Kapat",
   },
-  // Employees: the sidebar group, the settings page, and the tasks an
-  // employee holds (ADR bot-sessions-and-steward).
+  // Employees: the sidebar group and the tasks an employee holds (ADR
+  // bot-sessions-and-steward).
   bots: {
-    // İşe alma, ekip kuralları ve model seçimi (çalışan modu 0.5, dilim 6).
-    hiring: {
-      title: "İşe al",
-      description:
-        "Bir işten başlayın, kişiyi tek cümleyle anlatın veya boş formla başlayın. Formu kaydedene kadar kimse işe alınmaz.",
-      templates: "İşe alınabilecek işler",
-      fromBlank: "Boş formla başla",
-      readOnly: "Salt okunur",
-      noRepository: "Depo yok",
-      prefersUiModel: "Gemini ailesi modeli tercih eder",
-      avoidsUiModel: "Gemini ailesi model değil",
-      draftPlaceholder: "İşe almak istediğiniz kişiyi tek cümleyle anlatın",
-      draft: "Taslak",
-      drafting: "Taslak hazırlanıyor…",
-      draftHint:
-        "Taslak yalnızca formu doldurur; yine siz onaylarsınız ve o ana kadar hiçbir şey oluşturulmaz.",
-      draftReason: "Bu iş neden: {{reason}}",
-      template: {
-        ui: { name: "Arayüz", duty: "Renderer'daki ekranlar, bileşenler ve görsel ayrıntılar." },
-        frontendLogic: {
-          name: "Ön yüz mantığı",
-          duty: "Görsel tasarım olmadan ön yüz durumu, veri akışı ve davranış.",
-        },
-        backend: { name: "Arka uç", duty: "Sunucu, API, depolama, protokol ve faturalama kodu." },
-        design: { name: "Tasarım", duty: "Bir ekranın nasıl görünmesi ve okunması gerektiği." },
-        review: { name: "İnceleme", duty: "Kodu okur ve sorunları bildirir; asla düzenlemez." },
-        research: { name: "Araştırmacı", duty: "Araştırma, okuma ve karşılaştırma; depo yok." },
-      },
-    },
-    norms: {
-      title: "Ekip kuralları",
-      description:
-        "Her çalışanın uyduğu kurallar. Her göreve eklenir; bir izni genişletemez ve güvenlik kuralını gevşetemez.",
-      communication: "İletişim",
-      communicationHint: "Sizinle nasıl konuşurlar: dil, uzunluk, ne zaman soracakları.",
-      communicationPlaceholder: "Örnek: Türkçe raporla, sonuçla başla, süreci anlatma.",
-      scope: "Kapsam",
-      scopeHint: "Neyi üstlenirler, neye dokunmazlar.",
-      scopePlaceholder:
-        "Örnek: değiştirmediğin dosyaları yeniden biçimlendirme; ortak yapılandırmaya dokunmadan önce sor.",
-      delivery: "Teslim",
-      deliveryHint: "\"Bitti\" dediklerinde neyin doğru olması gerekir.",
-      deliveryPlaceholder:
-        "Örnek: her değişiklik, onu kanıtlayan testi ve çalıştırdığın komutu getirir.",
-      sectionCount: "{{used}}/{{max}}",
-      totalCount: "Toplam {{used}}/{{max}} karakter",
-      boundary:
-        "Bunlar ekip kurallarıdır, izin değil: ana bilgisayarın reddedeceği bir eylemi asla yetkilendirmezler.",
-      save: "Kuralları kaydet",
-      saving: "Kaydediliyor…",
-      saved: "Kaydedildi. Bundan sonraki her görev bunları taşır.",
-      cleared: "Temizlendi. Bundan sonra kural eklenmeyecek.",
-      loadFailed: "Ekip kuralları okunamadı ({{reason}}).",
-      saveFailed: "Ekip kuralları kaydedilemedi ({{reason}}).",
-    },
     // Waiting channel and blocked card (employee mode 0.5 slice 4a).
     waiting: {
       title: "Sizi bekleyen {{count}} iş",
@@ -1019,18 +964,6 @@ export const tr = {
         checking: "Kontrol ediliyor…",
       },
     },
-    experience: {
-      title: "Deneyimler",
-      description:
-        "Her çalışanın tamamladığı işlerden öğrendikleri. Yalnızca referans; silinen bir deneyim yeniden öğrenilmez.",
-      forEmployee: "Çalışan: {{name}}",
-      empty: "Henüz deneyim yok.",
-      disabled: "Deneyim çıkarımı kapalı.",
-      openSettings: "Bellek ayarlarını aç",
-      source: "Görev #{{shortId}} · {{date}}",
-      deleteLabel: "Bu deneyimi sil",
-      deleteFailed: "Silinemedi. Yeniden deneyin.",
-    },
     taskStage: {
       queued: "Kuyrukta",
       working: "Sürüyor",
@@ -1055,15 +988,9 @@ export const tr = {
       offline: "Çevrimdışı",
     },
     settings: {
-      title: "Super Agent",
-      listTitle: "Çalışanlarınız",
-      listDescription: "Bir çalışan; adı, görevi ve izin düzeyi olan uzun ömürlü bir sohbettir.",
-      empty: "Henüz çalışan yok",
       name: "Ad",
       duty: "Görev",
       dutyHint: "Bu çalışanın ne için olduğunu tek satırda anlatın.",
-      home: "Çalıştığı makine",
-      homeLocal: "Bu bilgisayar",
       permission: "İzin düzeyi",
       permissionAsk: "Sor",
       permissionAcceptEdits: "Düzenlemeleri kabul et",
@@ -1073,14 +1000,9 @@ export const tr = {
       definition: "Şu tanımla çalışır",
       definitionNone: "Tanım yok",
       definitionHint: "Alt ajan tanımı, bu çalışanın istemini ve kullanabileceği araç listesini belirler.",
-      model: "Model",
-      modelHint:
-        "Bu çalışanın görevlerinin çalıştığı model. İşe aldığınız iş önerir; siz değiştirebilirsiniz.",
-      modelNone: "Uygulama varsayılanı",
       project: "Proje",
       projectNone: "Proje yok",
       projectHint: "Bu çalışanın çalıştığı depo. Depo olmadan kod okuyamaz.",
-      projectUnbound: "Bağlı proje yok",
       mustAsk: "Her zaman bana sor",
       mustAskHint: "Bu eylemler her zaman size geri döner.",
       mustAskForced: "Her zaman sorar",
@@ -1090,22 +1012,10 @@ export const tr = {
       mustAskDelete: "Sil",
       mustAskSpend: "Harcama",
       mustAskCriteriaChange: "Ölçütleri değiştir",
-      add: "Yeni çalışan",
-      addTitle: "Yeni çalışan",
       editTitle: "Çalışanı düzenle",
-      edit: "{{name}} kişisini düzenle",
       save: "Kaydet",
       saving: "Kaydediliyor…",
       cancel: "İptal",
-      dismiss: "Çalışanı çıkar",
-      dismissConfirmTitle: "{{name}} çıkarılsın mı?",
-      dismissConfirmBody: "Sohbet kalır ve yeniden sıradan bir oturuma dönüşür. Bu çalışanın adı, görevi ve izin düzeyi kaldırılır.",
-      dismissConfirm: "Çıkar",
-      dismissCancel: "Tut",
-      loadFailed: "Çalışanlar yüklenemedi: {{reason}}",
-      saveFailed: "{{name}} kaydedilemedi: {{reason}}",
-      dismissFailed: "{{name}} çıkarılamadı: {{reason}}",
-      nameRequired: "Ad gerekli.",
     },
     card: {
       targetUnknown: "Atanan yok",
@@ -1406,7 +1316,6 @@ sklm: {
       skills: "Beceriler",
       mcp: "MCP",
       subagents: "Alt ajanlar",
-      employees: "Super Agent",
       projects: "Projeler",
       sync: "Bulut senkronizasyonu",
       remoteHosts: "Uzak ana bilgisayarlar",

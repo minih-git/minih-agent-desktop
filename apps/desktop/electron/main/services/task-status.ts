@@ -1,5 +1,4 @@
 import { type TaskView } from "@minih-agent/shared";
-import { readTeamNorms, teamNormsBriefing } from "./team-norms";
 
 export type BoardReader = <T>(method: string, params?: Record<string, unknown>) => Promise<T>;
 
@@ -32,38 +31,18 @@ export const TASK_SESSION_BRIEFING = [
 
 
 /**
- * The rules a **task** turn runs under: slice 4a's rules, then the team norms
- * the person wrote (slice 6).
+ * The rules a **task** turn runs under: slice 4a's rules, then where the task
+ * sits in its relay chain.
  *
  * Same channel as the rules — attached to this request only, never written to
- * the transcript — so a norm cannot accumulate over turns or be read back as
- * something the person said in the conversation. A norms read that fails says
- * so: "no team rules" and "could not read them" are different facts, and the
- * second one must not be presented as the first.
+ * the transcript — so a step rule cannot accumulate over turns or be read back
+ * as something the person said in the conversation.
  */
 export async function buildTaskSessionBriefing(
   call: BoardReader,
   sessionId?: string,
 ): Promise<string> {
-  const norms = await readTeamNorms(call);
-  const relay = relayStepBriefing(call, sessionId);
-  if (norms.kind === "norms") {
-    return [TASK_SESSION_BRIEFING, "", await relay, teamNormsBriefing(norms.norms)]
-      .filter((part) => part.length > 0)
-      .join("\n");
-  }
-  if (norms.kind === "unreadable") {
-    return [
-      TASK_SESSION_BRIEFING,
-      "",
-      await relay,
-      "[Team norms could not be read for this turn, so none are attached. Do not",
-      `assume the team has no rules; say so if it matters. (${norms.reason})]`,
-    ]
-      .filter((part) => part.length > 0)
-      .join("\n");
-  }
-  const line = await relay;
+  const line = await relayStepBriefing(call, sessionId);
   return line ? [TASK_SESSION_BRIEFING, "", line].join("\n") : TASK_SESSION_BRIEFING;
 }
 

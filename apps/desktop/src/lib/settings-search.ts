@@ -35,7 +35,6 @@ export type SettingsTabId =
   | "skills"
   | "mcp"
   | "subagents"
-  | "employees"
   | "accounts"
   | "devices"
   | "sync"
@@ -315,31 +314,6 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "extensions.subagents.tools",
     ],
   },
-  {
-    id: "employees",
-    labelKey: "settings.nav.employees",
-    titleKey: "bots.settings.title",
-    category: "capabilities",
-    keywordKeys: [
-      "bots.settings.listTitle",
-      "bots.settings.listDescription",
-      "bots.settings.name",
-      "bots.settings.duty",
-      "bots.settings.home",
-      "bots.settings.permission",
-      "bots.settings.observe",
-      "bots.settings.definition",
-      "bots.settings.mustAsk",
-      "bots.settings.add",
-      "bots.settings.editTitle",
-      "bots.settings.dismiss",
-      "bots.hiring.title",
-      "bots.hiring.fromBlank",
-      "bots.hiring.draft",
-      "bots.norms.title",
-    ],
-  },
-
   // 账户 — account, devices, the one cloud-sync surface, and advanced
   // (SSH hosts and the self-hosted gateway).
   {

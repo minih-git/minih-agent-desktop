@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ALWAYS_MUST_ASK, BOT_MUST_ASK, type BotMustAsk } from "@minih-agent/shared";
+import { BOT_MUST_ASK, type BotMustAsk } from "@minih-agent/shared";
 import {
   Button,
   Checkbox,
@@ -31,8 +31,8 @@ const MUST_ASK_LABEL_KEYS: Record<BotMustAsk, string> = {
 };
 
 /**
- * The employee form, shared by "new" and "edit" (ADR bot-sessions-and-steward
- * §1). One form for both paths keeps "what an employee is" in one place: name,
+ * The employee form behind an employee's profile tab (ADR
+ * bot-sessions-and-steward §1). One place states what an employee is: name,
  * duty, permission ceiling, the actions that must come back to the person, the
  * consent gate, and the definition that supplies its prompt and tools.
  *
@@ -44,29 +44,20 @@ export function BotFormCard({
   initial,
   definitions,
   projects = [],
-  models = [],
   title,
   busy,
   error,
-  note,
-  showModel = false,
   onCancel,
   onSubmit,
 }: {
   initial: BotDraft;
-  /** Definition handles `Task` would offer; the steward is one of them. */
+  /** Definition handles the person has installed; empty means "no definition". */
   definitions: readonly { id: string; label: string }[];
   /** Projects the person can bind; an employee without one cannot read code. */
   projects?: readonly { path: string; name: string }[];
-  /** Models the person configured, offered only when this is a new employee. */
-  models?: readonly { key: string; label: string }[];
   title: string;
   busy: boolean;
   error: string | null;
-  /** Why a draft was filled like this, shown above the fields. */
-  note?: string | null;
-  /** The model picker is a hiring decision, so an edit does not show it. */
-  showModel?: boolean;
   onCancel: () => void;
   onSubmit: (profile: ReturnType<typeof botProfileInput>, projectPath: string | null) => void;
 }) {
@@ -76,11 +67,6 @@ export function BotFormCard({
   return (
     <SettingsCard title={title}>
       <div className="bot-form">
-        {note ? (
-          <p className="bot-form-note" role="status">
-            {note}
-          </p>
-        ) : null}
         <Field label={t("bots.settings.name")}>
           <Input
             value={draft.name}
@@ -158,22 +144,6 @@ export function BotFormCard({
             onChange={(projectPath) => setDraft({ ...draft, projectPath })}
           />
         </SettingsRow>
-        {showModel ? (
-          <SettingsRow
-            title={t("bots.settings.model")}
-            description={t("bots.settings.modelHint")}
-          >
-            <SettingsMenuSelect
-              label={t("bots.settings.model")}
-              value={draft.modelKey}
-              options={[
-                { id: "", label: t("bots.settings.modelNone") },
-                ...models.map((model) => ({ id: model.key, label: model.label })),
-              ]}
-              onChange={(modelKey) => setDraft({ ...draft, modelKey })}
-            />
-          </SettingsRow>
-        ) : null}
         <SettingsRow
           title={t("bots.settings.definition")}
           description={t("bots.settings.definitionHint")}
@@ -212,6 +182,3 @@ export function BotFormCard({
     </SettingsCard>
   );
 }
-
-/** The three the host always adds; exported so the page's copy stays honest. */
-export { ALWAYS_MUST_ASK };

@@ -1,5 +1,4 @@
 import type { BotMustAsk, BotProfile, TaskStage } from "./bot-session.js";
-import type { HireTemplateId } from "./bot-hiring.js";
 import type { TeamNorms } from "./team-norms.js";
 import type { GlobalPermissionMode, PermissionMode } from "./types/permissions.js";
 
@@ -100,33 +99,6 @@ export type BotSeedDefaultsResult = {
 export type BotsChangedEvent = {
   reason: "created" | "updated" | "dismissed" | "seeded" | "status";
 };
-/**
- * One-sentence hiring (employee mode 0.5 slice 6).
- *
- * The sentence is the person's; the answer is Main's, and it is a **draft**: it
- * fills the form, and only the person's confirmation creates an employee. The
- * draft never carries a session id, so nothing here can promote or dismiss
- * anything either.
- */
-export type BotHireDraftRequest = { utterance: string };
-
-export type BotHireDraft = {
-  templateId: HireTemplateId;
-  name: string;
-  duty: string;
-  /** Never `inherit`: a draft is a concrete hiring decision. */
-  permissionMode: GlobalPermissionMode;
-  mustAsk: BotMustAsk[];
-  /** The installed definition the template resolved to, when it resolved. */
-  definition?: string;
-  /** An existing project the draft suggests; never a project it created. */
-  projectPath?: string;
-  /** The model's one sentence on why this template, shown above the form. */
-  reason: string;
-};
-
-export type BotHireDraftResult = { draft: BotHireDraft };
-
 /** The team norms the person writes; empty sections are simply blank. */
 export type TeamNormsSetRequest = {
   norms: { communication: string; scope: string; delivery: string };

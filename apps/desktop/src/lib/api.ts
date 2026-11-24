@@ -21,12 +21,9 @@ import type {
   ActivationScope,
   BotCreateRequest,
   BotList,
-  BotHireDraftResult,
   BotSeedDefaultsResult,
   BotUpdateRequest,
   BotsChangedEvent,
-  TeamNormsSetRequest,
-  TeamNormsView,
   ScheduledTaskRun,
   AgentCapabilityMove,
   AgentCapabilityQuery,
@@ -210,7 +207,6 @@ import type {
   TaskView,
   TaskWorkspaceRetryResult,
   TaskInspectionEvent,
-  EmployeeLesson,
   TasksChangedEvent,
 } from "@minih-agent/shared";
 import {
@@ -1168,9 +1164,6 @@ export const api = {
   restoreLearnedMemory: (id: string) =>
     invoke<{ entry: LearnedMemoryEntry }>(IPC.invoke.memoryRestore, { id }),
   deleteLearnedMemory: (id: string) => invoke<{ ok: boolean }>(IPC.invoke.memoryDelete, { id }),
-  /** One employee's lessons, newest first, each naming the task it came from. */
-  listEmployeeExperience: (employeeSessionId: string) =>
-    invoke<{ entries: EmployeeLesson[] }>(IPC.invoke.taskExperienceList, { employeeSessionId }),
   // The user's own "remember again" on a receipt: the one write that clears a
   // delete. It sends the turn, never a message id, so the host stays the source
   // of the cited evidence.
@@ -1721,16 +1714,6 @@ export const api = {
   dismissBot: (sessionId: string) =>
     invoke<{ session: SessionSummary }>(IPC.invoke.botDismiss, { sessionId }),
   seedDefaultBots: () => invoke<BotSeedDefaultsResult>(IPC.invoke.botSeedDefaults),
-  /**
-   * One-sentence hiring (slice 6): Main turns a sentence into a profile draft.
-   * Nothing is created here — the draft fills the form and the person saves it.
-   */
-  draftHire: (utterance: string) =>
-    invoke<BotHireDraftResult>(IPC.invoke.botDraftHire, { utterance }),
-  /** The team norms the person wrote; `norms: null` means none yet. */
-  getTeamNorms: () => invoke<TeamNormsView>(IPC.invoke.teamNormsGet),
-  setTeamNorms: (norms: TeamNormsSetRequest["norms"]) =>
-    invoke<TeamNormsView>(IPC.invoke.teamNormsSet, { norms }),
   // --- Tasks under an employee (ADR bot-sessions-and-steward §7) -----------
   /**
    * Start one task. The host creates the task and its session in one
