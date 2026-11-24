@@ -157,6 +157,77 @@ fn a_slot_reports_its_declared_max_separately_from_the_host_ceiling() {
 }
 
 #[test]
+fn an_account_survives_a_non_secret_field_the_manifest_added_later() {
+    let dir = tempdir().unwrap();
+    let (_plugins, plugin, root) = install(
+        dir.path(),
+        "demo.added-field",
+        json!({ "credentials": [multi_mailbox_slot()] }),
+    );
+    let secrets = SecretStore::open(dir.path()).unwrap();
+    let instance = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        account("a@example.com", "one"),
+        None,
+    )
+    .unwrap()
+    .unwrap();
+
+    // The plugin now asks which provider the account uses. The account was saved
+    // before that choice existed, and it must keep working: the field is
+    // identity, not the secret.
+    let mut grown = multi_mailbox_slot();
+    grown["fields"] = json!([
+        field("username", "Address", false),
+        field("password", "Password", true),
+        {
+            "key": "provider",
+            "label": "Provider",
+            "type": "select",
+            "options": [{ "value": "custom", "label": "Custom" }]
+        }
+    ]);
+    write_manifest(
+        &root,
+        manifest("demo.added-field", json!({ "credentials": [grown] })),
+    );
+
+    let listed = list(&secrets, &plugin, None).unwrap();
+    let instances = instances_of(&listed);
+    assert_eq!(instances.len(), 1, "{listed}");
+    assert_eq!(instances[0]["instanceId"], json!(instance));
+    // The value it never had is simply absent from what the plugin reads back.
+    assert!(
+        instances[0]["publicFields"].get("provider").is_none(),
+        "{listed}"
+    );
+
+    let fields = resolve(&secrets, &plugin, &format!("mailbox#{instance}"), None).unwrap();
+    assert_eq!(fields.get("password").map(String::as_str), Some("one"));
+    assert!(!fields.contains_key("provider"));
+
+    // A secret the manifest added later is different: the old value cannot be
+    // used, because nobody ever entered it.
+    let mut stricter = multi_mailbox_slot();
+    stricter["fields"] = json!([
+        field("username", "Address", false),
+        field("password", "Password", true),
+        field("appPassword", "App password", true)
+    ]);
+    write_manifest(
+        &root,
+        manifest("demo.added-field", json!({ "credentials": [stricter] })),
+    );
+    assert_eq!(
+        instances_of(&list(&secrets, &plugin, None).unwrap()).len(),
+        0
+    );
+    assert!(resolve(&secrets, &plugin, &format!("mailbox#{instance}"), None).is_err());
+}
+
+#[test]
 fn editing_an_account_keeps_its_id_and_refuses_a_taken_label() {
     let dir = tempdir().unwrap();
     let (_plugins, plugin, _root) = install(

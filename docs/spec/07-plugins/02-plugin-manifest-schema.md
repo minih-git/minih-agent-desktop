@@ -766,6 +766,13 @@ many instances exist, and learns both from `credentials.list`
   (`credentials.requestAdd` / `requestRemove`); the host's own form is what
   collects the values, never the plugin process
   ([04-plugin-security.md](04-plugin-security.md) §8.3).
+- A manifest that adds a **non-secret** field later does not invalidate an
+  account saved before it existed: the value is simply absent from
+  `publicFields` and from what the host injects, and the user picks it on the next
+  save. A **secret** field added later is different — nobody entered it, so the
+  account reports `configured: false` and is refused instead of being injected
+  half-filled. Saving still requires every declared field, so the first save after
+  such an upgrade fills them all.
 - Editing one account replaces **that** account: `credentials.set` with an
   `instanceId` keeps its id and creation time, refuses a label another instance
   of the same slot already uses, and announces the change like an add does. The

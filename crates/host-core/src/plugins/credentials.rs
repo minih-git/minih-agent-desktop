@@ -567,13 +567,18 @@ fn declared_text(raw: &Value, locale: &str) -> String {
     }
 }
 
-/// Does a stored slot still hold every declared field?
+/// Does a stored slot still hold what the host needs to use it?
 ///
-/// A manifest that added a field makes an older blob incomplete. Reporting it
-/// as unconfigured is the fail-closed answer: the user re-enters the slot
-/// instead of the host injecting half a credential.
+/// Every declared **secret** field has to be there: a half-filled credential is
+/// never injected. A non-secret field that the manifest added later is optional —
+/// it is identity (an address, a provider, a server), not the secret — so an
+/// account saved before that field existed keeps working instead of vanishing
+/// from the instance list and being refused at login.
 pub(crate) fn covers(stored: &StoredSlot, slot: &DeclaredSlot) -> bool {
-    slot.field_keys().all(|key| stored.fields.contains_key(key))
+    slot.fields
+        .iter()
+        .filter(|field| field.secret)
+        .all(|field| stored.fields.contains_key(&field.key))
 }
 
 /// Every value the host may inject for one stored instance: the slot's
@@ -587,8 +592,16 @@ pub(crate) fn injected_fields(
     stored: &StoredSlot,
 ) -> Option<BTreeMap<String, String>> {
     let mut fields = BTreeMap::new();
-    for key in slot.field_keys() {
-        fields.insert(key.to_string(), stored.fields.get(key)?.clone());
+    for field in &slot.fields {
+        match stored.fields.get(&field.key) {
+            Some(value) => {
+                fields.insert(field.key.clone(), value.clone());
+            }
+            // A secret nobody entered is not a credential; a non-secret the
+            // manifest added later is simply not known for this account yet.
+            None if field.secret => return None,
+            None => {}
+        }
     }
     if !slot.user_endpoint_protocols.is_empty() {
         for key in user_endpoint::RESERVED_KEYS {
