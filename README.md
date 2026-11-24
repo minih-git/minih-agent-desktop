@@ -24,7 +24,7 @@ Local-first · Model-agnostic · Plugin-powered · macOS / Windows / Linux
 <br />
 </div>
 
-> **Current release line: 1.8.x.**
+> **Current release line: 1.9.x.**
 
 ---
 
@@ -165,7 +165,7 @@ what the app holds for it:
 
 | Host resource | What the plugin gets |
 | --- | --- |
-| **Credential** | An account or token you enter in its settings, used by the app on its behalf and never handed over |
+| **Credential** | One or more accounts or tokens you enter in its settings, used by the app on its behalf and never handed over |
 | **TCP endpoint** | A connection to a declared host and port, opened and measured by the app |
 | **Webhook** | Requests the app accepts on your local network and forwards to the plugin as events |
 | **Schedule** | A timer the app keeps, with pause, resume, and run-now on the Extensions page |
