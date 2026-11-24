@@ -13,6 +13,7 @@ import { PluginTcpImapLogin, type ImapCredentials } from "./plugin-tcp-imap-logi
 import { PluginTcpPop3Login } from "./plugin-tcp-pop3-login";
 import { starttlsPhase } from "./plugin-tcp-starttls";
 import type { MailProtocol, MailSecurity } from "./plugin-tcp-user-endpoint";
+import { PluginSocketError } from "./plugin-websocket";
 
 /** What one connection authenticates as, and over which transport. */
 export type PluginTcpLogin = ImapCredentials & {
@@ -35,6 +36,16 @@ export class PluginTcpMailLogin {
   private upgraded = false;
 
   constructor(login: PluginTcpLogin, send: (data: Buffer) => void) {
+    // The authentication stage of a STARTTLS session is built only after the
+    // upgrade, so a credential that can never go on a login line is refused
+    // here, on the way in: both transports then fail before anything is dialed
+    // instead of leaving an upgraded, unauthenticated connection behind.
+    if ([login.username, login.password].some((value) => /[\r\n\0]/.test(value))) {
+      throw new PluginSocketError(
+        "CREDENTIAL_UNSUPPORTED",
+        "the credential cannot carry a line break or a NUL",
+      );
+    }
     this.login = login;
     this.send = send;
     this.machine = PluginTcpMailLogin.stage(login, send);

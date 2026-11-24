@@ -452,8 +452,20 @@ export class PluginTcpRegistry {
         }
         entry.starttls = true;
         entry.socket = secure;
-        login.upgradedToTls();
-        this.watch(entry, secure);
+        try {
+          login.upgradedToTls();
+          this.watch(entry, secure);
+        } catch (error) {
+          // The authentication stage is built here, after the upgrade, and the
+          // handler below only sees a failed handshake. A refusal raised at this
+          // point has to end the connection now: otherwise it stays upgraded and
+          // unauthenticated until the deadline, spending a plugin slot.
+          secure.destroy();
+          const code = error instanceof PluginSocketError ? error.code : tlsFailureCode(error);
+          const message =
+            error instanceof PluginSocketError ? error.message : connectionMessage(code);
+          this.abort(entry, new PluginSocketError(code, message));
+        }
       },
       (error: unknown) => {
         const code = tlsFailureCode(error);

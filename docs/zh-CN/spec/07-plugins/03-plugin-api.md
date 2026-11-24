@@ -1249,7 +1249,9 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   明文端口，读问候语，要求能力里有 `STARTTLS`（IMAP）或 `CAPA` 里有 `STLS`（POP3），
   发出命令并要求对方同意，之后才带证书校验与 SNI 升级。服务器没有声明升级，或声明之后
   拒绝执行，都是 `STARTTLS_UNAVAILABLE`——宿主绝不回退到明文——升级达成之后才到的字节
-  是 `TLS_FAILED`。明文阶段的能力全部丢弃并在 TLS 上重读，敌意的升级前回答因此无法
+  是 `TLS_FAILED`。登录行放不下的凭据（内含换行或 NUL）在拨号之前就被拒绝，两种加密方式
+  都一样，所以 STARTTLS 会话不会停在「已升级、未认证」的状态。明文阶段的能力全部丢弃并
+  在 TLS 上重读，敌意的升级前回答因此无法
   选中更弱的登录方式。POP3 在 `CAPA` 声明 `SASL PLAIN` 时用 `AUTH PLAIN`，否则用
   `USER`/`PASS`；两种协议对凭据被拒都回答 `CREDENTIAL_REJECTED`，用户自填服务器成功时
   `connect` 会带 `protocol: "imap" | "pop3"`。没有 `credentialRef` 的连接永远到不了它。

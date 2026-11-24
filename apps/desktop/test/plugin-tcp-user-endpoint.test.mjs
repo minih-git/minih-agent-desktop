@@ -557,6 +557,32 @@ test("a server that advertises STARTTLS and then refuses it is still unavailable
   assert.ok(!server.sawCredential(), "no credential byte reached the server at all");
 });
 
+test("a password a login line cannot carry fails a STARTTLS connect before the dial", async (t) => {
+  // The authentication stage is built only after the upgrade, so a credential
+  // that can never be sent has to be refused up front: otherwise the rejection
+  // lands inside the upgrade callback and the connection stays half-open until
+  // the deadline, spending one of the plugin's slots.
+  const server = await mailServer(t, {
+    greeting: "* OK [CAPABILITY IMAP4rev1 STARTTLS] ready",
+    respond: imapResponder(),
+  });
+  const pluginId = "test.starttls-line-break";
+  const { call, settings, host, registry } = await harness(t, [{ id: pluginId }]);
+  await settings.save(pluginId, "mailbox", {
+    ...saved("localhost", String(server.port), "imap", "starttls"),
+    password: `${PASSWORD}\r\nA001 LOGOUT`,
+  });
+
+  await refusal(
+    call(pluginId, "connect", { credentialRef: `mailbox#${await lastInstance(host, pluginId)}` }),
+    "CREDENTIAL_REJECTED",
+    /cannot carry/,
+  );
+  assert.equal(server.upgraded(), 0, "nothing was upgraded");
+  assert.deepEqual(server.lines, [], "the server was never spoken to");
+  assert.deepEqual(registry.list(pluginId), [], "no connection is left behind");
+});
+
 test("a byte pushed right after the upgrade agreement aborts the connection", async (t) => {
   const server = await mailServer(t, {
     greeting: "* OK [CAPABILITY IMAP4rev1 STARTTLS] ready",
