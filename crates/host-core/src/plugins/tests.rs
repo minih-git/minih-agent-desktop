@@ -3074,6 +3074,38 @@ fn user_endpoint_slot(overrides: Value) -> Value {
 }
 
 #[test]
+fn a_multi_instance_slot_may_leave_its_maximum_open() {
+    let dir = tempdir().unwrap();
+    let grant = json!(["credentials.use"]);
+    for (name, multiple, acceptable) in [
+        ("open", json!({}), true),
+        ("bounded", json!({ "max": 5 }), true),
+        ("ceiling", json!({ "max": 100 }), true),
+        ("above-ceiling", json!({ "max": 101 }), false),
+        ("zero", json!({ "max": 0 }), false),
+        ("not-an-object", json!("yes"), false),
+    ] {
+        let root = dir.path().join(format!("multiple-{name}"));
+        let manifest = capability_manifest(
+            json!({ "credentials": [credential_slot(json!({
+                "kind": "imap",
+                "multiple": multiple,
+                "labelField": "username",
+            }))] }),
+            grant.clone(),
+        );
+        if acceptable {
+            write_plugin(&root, manifest, &[]);
+            PluginManager::read_manifest(&root)
+                .unwrap_or_else(|error| panic!("{name} should be accepted: {error}"));
+        } else {
+            let error = refuse(&root, manifest);
+            assert!(error.contains("multiple"), "{name}: {error}");
+        }
+    }
+}
+
+#[test]
 fn a_user_typed_mail_server_is_declared_only_where_it_can_be_served() {
     let dir = tempdir().unwrap();
     let grant = json!(["credentials.use"]);

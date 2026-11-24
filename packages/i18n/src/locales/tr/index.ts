@@ -21,6 +21,7 @@ export const tr = {
     removeFailed: "Bu hesap kaldırılamadı. Daha sonra tekrar deneyin.",
     limitReached: "İzin verilen {{max}} hesabın tümü yapılandırıldı.",
     instanceCount: "{{count}}/{{max}} hesap",
+    instanceCountUnbounded: "{{count}} hesap yapılandırıldı",
     instanceFallback: "Hesap {{index}}",
     noInstances: "Henüz hesap yapılandırılmadı.",
     selectPlaceholder: "Bir seçenek seçin",

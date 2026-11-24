@@ -21,6 +21,7 @@ export const fr = {
     removeFailed: "Impossible de supprimer ce compte. Réessayez plus tard.",
     limitReached: "Les {{max}} comptes autorisés sont déjà configurés.",
     instanceCount: "{{count}} comptes sur {{max}}",
+    instanceCountUnbounded: "{{count}} comptes configurés",
     instanceFallback: "Compte {{index}}",
     noInstances: "Aucun compte configuré pour l'instant.",
     selectPlaceholder: "Choisir une option",

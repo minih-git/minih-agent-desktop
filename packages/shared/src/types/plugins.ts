@@ -377,8 +377,10 @@ export type PluginCredentialStatus = {
   lastUsedAt: number | null;
   /** Present only for a slot that declares `multiple`. */
   multiple?: true;
-  /** Present only for a slot that declares `multiple`. */
+  /** The bound the manifest declared; absent when it declares none. */
   max?: number;
+  /** The host's own ceiling for one slot; the sheet disables "Add" here. */
+  limit?: number;
   /** Present only for a slot that declares `multiple`, in creation order. */
   instances?: PluginCredentialInstanceStatus[];
   /**

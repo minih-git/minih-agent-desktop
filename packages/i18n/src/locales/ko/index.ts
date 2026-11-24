@@ -21,6 +21,7 @@ export const ko = {
     removeFailed: "계정을 삭제하지 못했습니다. 나중에 다시 시도하세요.",
     limitReached: "허용된 {{max}}개 계정이 모두 설정되었습니다.",
     instanceCount: "계정 {{count}}/{{max}}개",
+    instanceCountUnbounded: "{{count}}개 계정 설정됨",
     instanceFallback: "계정 {{index}}",
     noInstances: "아직 설정된 계정이 없습니다.",
     selectPlaceholder: "옵션 선택",

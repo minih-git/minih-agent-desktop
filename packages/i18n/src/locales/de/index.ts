@@ -21,6 +21,7 @@ export const de = {
     removeFailed: "Das Konto konnte nicht entfernt werden. Versuche es später erneut.",
     limitReached: "Alle {{max}} erlaubten Konten sind eingerichtet.",
     instanceCount: "{{count}} von {{max}} Konten",
+    instanceCountUnbounded: "{{count}} Konten eingerichtet",
     instanceFallback: "Konto {{index}}",
     noInstances: "Noch kein Konto eingerichtet.",
     selectPlaceholder: "Option wählen",

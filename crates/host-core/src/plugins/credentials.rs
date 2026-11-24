@@ -121,8 +121,13 @@ pub(crate) struct DeclaredSlot {
     /// `scope.domains`; empty when the slot declares no scope, which the host
     /// reads as "injected nowhere".
     pub domains: Vec<String>,
-    /// `multiple.max`; `None` is the released single-instance slot.
+    /// `multiple.max` as the host applies it: the declared bound, or the host's
+    /// own ceiling when the manifest declares none. `None` is the released
+    /// single-instance slot.
     pub multiple_max: Option<u32>,
+    /// `multiple.max` as the manifest declared it; `None` means the manifest set
+    /// no limit of its own, so nothing user-facing should show one.
+    pub multiple_declared_max: Option<u32>,
     /// `labelField`: the non-secret field that names an instance.
     pub label_field: Option<String>,
     /// `userEndpoint.protocols`; empty when the slot keeps the servers the
@@ -317,7 +322,11 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
                 plugin.id
             )));
         }
-        let multiple_max = multiple_max_of(id, entry, plugin)?;
+        let multiple_bounds = multiple_bounds_of(id, entry, plugin)?;
+        // The effective ceiling and the declared bound travel together: the
+        // first is what the store enforces, the second is what a user may see.
+        let multiple_max = multiple_bounds.map(|(effective, _)| effective);
+        let multiple_declared_max = multiple_bounds.and_then(|(_, declared)| declared);
         let label_field = label_field_of(id, entry, &declared_fields, plugin)?;
         let user_endpoint_protocols = user_endpoint::declared_protocols(entry.get("userEndpoint"));
         let domains = entry
@@ -346,6 +355,7 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
             fields: declared_fields,
             domains,
             multiple_max,
+            multiple_declared_max,
             label_field,
             user_endpoint_protocols,
         });
@@ -353,9 +363,13 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
     Ok(slots)
 }
 
-/// The largest instance count a slot may declare. The same 1–5 bound the SDK
-/// enforces: the Settings sheet has to draw the list, and the host has to hold it.
-const MAX_INSTANCES: u64 = 5;
+/// The hard ceiling one slot may hold, and the bound a manifest may declare.
+///
+/// A manifest that omits `multiple.max` means "as many as the host allows": the
+/// user's own accounts, not an authoring decision. The ceiling is what keeps one
+/// slot from filling the encrypted store and its index, and it is the number the
+/// Settings sheet is told about as `limit`.
+const MAX_INSTANCES: u64 = 100;
 
 /// `type`, by the same rule as the SDK: what the field declares, else what
 /// `secret` implies. An unknown control is a manifest this host cannot render.
@@ -429,18 +443,31 @@ fn field_options(
     Ok(declared)
 }
 
-/// `multiple.max`, the only thing that makes a slot hold more than one value.
-fn multiple_max_of(
+/// `multiple` as the host applies it: the effective ceiling and the bound the
+/// manifest declared, or `None` for the released single-instance slot.
+///
+/// Omitting `max` means the plugin sets no limit of its own — the host's ceiling
+/// still applies, so nothing can fill the store without bound — and a declared
+/// `max` keeps its old meaning, now within the ceiling.
+fn multiple_bounds_of(
     slot_id: &str,
     entry: &Value,
     plugin: &PluginSummary,
-) -> Result<Option<u32>, CredentialError> {
+) -> Result<Option<(u32, Option<u32>)>, CredentialError> {
     let Some(multiple) = entry.get("multiple") else {
         return Ok(None);
     };
-    let max = multiple.get("max").and_then(Value::as_u64);
-    match max {
-        Some(max) if (1..=MAX_INSTANCES).contains(&max) => Ok(Some(max as u32)),
+    if !multiple.is_object() {
+        return Err(CredentialError::PluginInvalid(format!(
+            "PLUGIN_INVALID: credential slot {slot_id} of plugin {} declares multiple that is not an object",
+            plugin.id
+        )));
+    }
+    let Some(raw) = multiple.get("max") else {
+        return Ok(Some((MAX_INSTANCES as u32, None)));
+    };
+    match raw.as_u64() {
+        Some(max) if (1..=MAX_INSTANCES).contains(&max) => Ok(Some((max as u32, Some(max as u32)))),
         _ => Err(CredentialError::PluginInvalid(format!(
             "PLUGIN_INVALID: credential slot {slot_id} of plugin {} declares multiple.max outside 1..={MAX_INSTANCES}",
             plugin.id
@@ -689,9 +716,14 @@ pub(crate) fn status(
             "configured": configured,
             "lastUsedAt": last_used(&plugin.id, &slot.id),
         });
-        if let Some(max) = slot.multiple_max {
+        if let Some(limit) = slot.multiple_max {
             entry["multiple"] = json!(true);
-            entry["max"] = json!(max);
+            // `max` is what the manifest asked for and `limit` is what the host
+            // enforces, so a slot with no limit of its own shows no "x of y".
+            if let Some(declared) = slot.multiple_declared_max {
+                entry["max"] = json!(declared);
+            }
+            entry["limit"] = json!(limit);
             entry["instances"] = json!(instances
                 .iter()
                 .map(credential_instances::public_json)
@@ -721,9 +753,12 @@ pub(crate) fn list(
     for slot in &declared {
         let (configured, instances) = slot_state(secrets, &plugin.id, slot, db)?;
         let mut entry = json!({ "id": slot.id, "configured": configured });
-        if let Some(max) = slot.multiple_max {
+        if let Some(limit) = slot.multiple_max {
             entry["multiple"] = json!(true);
-            entry["max"] = json!(max);
+            if let Some(declared) = slot.multiple_declared_max {
+                entry["max"] = json!(declared);
+            }
+            entry["limit"] = json!(limit);
             entry["instances"] = json!(instances
                 .iter()
                 .map(credential_instances::public_json)

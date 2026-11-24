@@ -92,6 +92,71 @@ fn a_multi_instance_slot_lists_instances_without_any_secret() {
 }
 
 #[test]
+fn a_slot_with_no_declared_max_takes_accounts_up_to_the_host_ceiling() {
+    let dir = tempdir().unwrap();
+    let mut slot = multi_mailbox_slot();
+    slot["multiple"] = json!({});
+    let (_plugins, plugin, _root) = install(
+        dir.path(),
+        "demo.multi-open",
+        json!({ "credentials": [slot] }),
+    );
+    let secrets = SecretStore::open(dir.path()).unwrap();
+
+    // The host's own ceiling is the only bound: filling it is what a user with
+    // many mailboxes does, and the refusal has to come from that number.
+    for index in 0..100 {
+        set(
+            &secrets,
+            &plugin,
+            "mailbox",
+            account(&format!("user{index}@example.com"), "secret"),
+            None,
+        )
+        .unwrap_or_else(|error| panic!("account {index} was refused: {error}"));
+    }
+    let error = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        account("overflow@example.com", "secret"),
+        None,
+    )
+    .unwrap_err();
+    assert!(error.to_string().starts_with(CREDENTIAL_LIMIT), "{error}");
+    assert_eq!(
+        instances_of(&list(&secrets, &plugin, None).unwrap()).len(),
+        100
+    );
+}
+
+#[test]
+fn a_slot_reports_its_declared_max_separately_from_the_host_ceiling() {
+    let dir = tempdir().unwrap();
+    let mut open = multi_mailbox_slot();
+    open["multiple"] = json!({});
+    let (_plugins, open_plugin, _root) = install(
+        dir.path(),
+        "demo.report-open",
+        json!({ "credentials": [open] }),
+    );
+    let (_plugins2, capped_plugin, _root2) = install(
+        dir.path(),
+        "demo.report-capped",
+        json!({ "credentials": [multi_mailbox_slot()] }),
+    );
+    let secrets = SecretStore::open(dir.path()).unwrap();
+
+    let open_status = status(&secrets, &open_plugin, "en", None).unwrap();
+    assert!(open_status["slots"][0]["max"].is_null(), "{open_status}");
+    assert_eq!(open_status["slots"][0]["limit"], 100);
+
+    let capped_status = status(&secrets, &capped_plugin, "en", None).unwrap();
+    assert_eq!(capped_status["slots"][0]["max"], 2);
+    assert_eq!(capped_status["slots"][0]["limit"], 2);
+}
+
+#[test]
 fn a_multi_instance_slot_refuses_more_than_its_maximum() {
     let dir = tempdir().unwrap();
     let (_plugins, plugin, _root) = install(

@@ -44,7 +44,7 @@ export function registerPluginCredentialIpc(
       })),
       configured: slot.configured,
       ...(slot.lastUsedAt === undefined ? {} : { lastUsedAt: slot.lastUsedAt }),
-      ...(slot.multiple ? { multiple: true as const, max: slot.max } : {}),
+      ...(slot.multiple ? { multiple: true as const, max: slot.max, limit: slot.limit } : {}),
       ...(slot.instances
         ? {
             instances: slot.instances.map(({ instanceId, label, publicFields, configured }) => ({

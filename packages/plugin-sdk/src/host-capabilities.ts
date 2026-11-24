@@ -19,8 +19,8 @@ const CONTRIB_ID = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 export const PLUGIN_CREDENTIAL_KINDS = ["basic", "bearer", "header", "oauth2", "imap"] as const;
 export type PluginCredentialKind = (typeof PLUGIN_CREDENTIAL_KINDS)[number];
 
-/** Most instances one multi-instance credential slot may hold. */
-export const MAX_CREDENTIAL_INSTANCES = 5;
+/** How many instances one multi-instance credential slot may hold at most. */
+export const MAX_CREDENTIAL_INSTANCES = 100;
 
 /** How the Settings sheet and the host dialog render one credential field. */
 export const PLUGIN_CREDENTIAL_FIELD_TYPES = ["text", "password", "select"] as const;
@@ -90,13 +90,15 @@ export type PluginCredentialContrib = {
    */
   scope?: { domains: PluginNetDomain[] };
   /**
-   * The slot holds up to `max` instances — separate mailboxes, accounts, or
-   * tenants the user adds from Settings or through
-   * `pi.credentials.requestAdd`. Absent keeps the single-instance behaviour
-   * exactly as released: same storage key, same `list` answer, same
-   * `credentialRef` spelling.
+   * The slot holds instances — separate mailboxes, accounts, or tenants the
+   * user adds from Settings or through `pi.credentials.requestAdd`. `max` is
+   * optional: omitting it means the plugin sets no limit of its own and the
+   * host's ceiling (`MAX_CREDENTIAL_INSTANCES`) applies, which is what an
+   * account list wants. Declaring `max` keeps its old meaning. Absent
+   * `multiple` keeps the single-instance behaviour exactly as released: same
+   * storage key, same `list` answer, same `credentialRef` spelling.
    */
-  multiple?: { max: number };
+  multiple?: { max?: number };
   /**
    * Field whose value names an instance (an address, a login). It has to name a
    * non-secret field of this slot. `pi.credentials.list()` reports that value,
@@ -337,10 +339,12 @@ export function validateCredentialContributions(raw: unknown): string | undefine
         return `credential "${slot.id}" multiple must be an object`;
       }
       const max = multiple.max;
+      // `max` is optional: a plugin that leaves it out sets no limit of its own.
       if (
-        !Number.isInteger(max) ||
-        (max as number) < 1 ||
-        (max as number) > MAX_CREDENTIAL_INSTANCES
+        max !== undefined &&
+        (!Number.isInteger(max) ||
+          (max as number) < 1 ||
+          (max as number) > MAX_CREDENTIAL_INSTANCES)
       ) {
         return `credential "${slot.id}" multiple.max must be an integer from 1 to ${MAX_CREDENTIAL_INSTANCES}`;
       }

@@ -604,9 +604,13 @@ type PluginTasksContrib = {
 
 ### 5.5.1 多实例凭据槽位
 
-声明了 `multiple` 的槽位在同一份声明下容纳最多 `max` 份独立的值——多个邮箱、租户或
-账号。每个实例的 id 由宿主生成（`acc_` 加 8 位十六进制），插件既不能指定 id，也不能
-指定实例数量，两者都从 `credentials.list` 得知
+声明了 `multiple` 的槽位在同一份声明下容纳多份独立的值——多个邮箱、租户或账号。
+`max` 可省略：省略表示清单不设自己的上限，由宿主的硬上限生效，这正是账号列表需要的。
+写出 `max` 时取值为 1..100 的整数，含义与已发布版本一致。宿主每个槽位最多容纳
+**100** 个实例，达到即返回 `CREDENTIAL_LIMIT`；`credentials.status` /
+`credentials.list` 把清单自己声明的上限报为 `max`（没声明就没有该字段），把宿主的
+硬上限报为 `limit`。每个实例的 id 由宿主生成（`acc_` 加 8 位十六进制），插件既不能
+指定 id，也不能指定实例数量，两者都从 `credentials.list` 得知
 （[03-plugin-api.md](03-plugin-api.md) §3.x）。
 
 - 存储仍在加密的 secret store 内，因此不需要数据库迁移：每个实例一份 blob，键为

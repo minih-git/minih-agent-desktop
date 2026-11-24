@@ -730,8 +730,14 @@ type PluginTasksContrib = {
 
 ### 5.5.1 Multi-instance credential slots
 
-A slot that declares `multiple` holds up to `max` separate values — mailboxes,
-tenants, or accounts — under one declaration. The host issues every instance an
+A slot that declares `multiple` holds separate values — mailboxes, tenants, or
+accounts — under one declaration. `max` is optional: omitting it means the
+manifest sets no limit of its own and the host's ceiling applies, which is what
+an account list wants. A declared `max` is an integer from 1 to 100 and keeps its
+released meaning. The host holds at most **100** instances per slot and answers
+`CREDENTIAL_LIMIT` at that count; `credentials.status` / `credentials.list`
+report the manifest's own bound as `max` (absent when it declared none) and the
+host ceiling as `limit`. The host issues every instance an
 opaque id (`acc_` plus eight hex digits); a plugin names neither the id nor how
 many instances exist, and learns both from `credentials.list`
 ([03-plugin-api.md](03-plugin-api.md) §3.x).

@@ -21,6 +21,7 @@ export const ptBR = {
     removeFailed: "Não foi possível remover esta conta. Tente novamente mais tarde.",
     limitReached: "As {{max}} contas permitidas já estão configuradas.",
     instanceCount: "{{count}} de {{max}} contas",
+    instanceCountUnbounded: "{{count}} contas configuradas",
     instanceFallback: "Conta {{index}}",
     noInstances: "Nenhuma conta configurada ainda.",
     selectPlaceholder: "Escolha uma opção",

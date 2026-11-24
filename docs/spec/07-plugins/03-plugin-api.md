@@ -1389,7 +1389,10 @@ pi.credentials.list(): Promise<Array<{
   configured: boolean;
   /** Present only for a slot that declares `multiple`. */
   multiple?: true;
+  /** The bound the manifest declared; absent when it declares none. */
   max?: number;
+  /** The host's own ceiling for one slot; `CREDENTIAL_LIMIT` at this count. */
+  limit?: number;
   /** Present only for a slot that declares `multiple`; oldest first. */
   instances?: Array<{
     instanceId: string;                    // opaque, host-issued

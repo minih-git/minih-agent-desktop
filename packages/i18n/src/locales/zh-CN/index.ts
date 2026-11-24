@@ -34,6 +34,7 @@ export const zhCN = {
     removeFailed: "无法删除该账号，请稍后重试。",
     limitReached: "此处最多允许 {{max}} 个账号，已全部配置。",
     instanceCount: "已配置 {{count}}/{{max}} 个账号",
+    instanceCountUnbounded: "已配置 {{count}} 个账号",
     instanceFallback: "账号 {{index}}",
     noInstances: "还没有配置账号。",
     selectPlaceholder: "请选择",
