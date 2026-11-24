@@ -1584,7 +1584,9 @@ Semantics:
   certificate verification and SNI. A server that does not advertise the upgrade,
   or advertises it and then refuses the command, is `STARTTLS_UNAVAILABLE` — the
   host never falls back to plaintext — and a byte that arrives after the
-  agreement is `TLS_FAILED`. The plaintext
+  agreement is `TLS_FAILED`. A credential a login line cannot carry (a line break
+  or a NUL) is refused before the connection is dialed, over either transport, so
+  a STARTTLS session never ends up upgraded and unauthenticated. The plaintext
   capabilities are discarded and read again over TLS, so a hostile pre-upgrade
   answer cannot pick a weaker login. POP3 authenticates with `AUTH PLAIN` when
   `CAPA` advertises `SASL PLAIN` and with `USER`/`PASS` otherwise; both
