@@ -626,6 +626,23 @@ type PluginTasksContrib = {
   `requestRemove`）：值由宿主自己的表单收集，从不经过插件进程
   （[04-plugin-security.md](04-plugin-security.md) §8.3）。
 
+### 5.5.2 用户自填的邮件服务器（`userEndpoint`）
+
+`imap` 槽位可以声明 `userEndpoint: { protocols: ("imap" | "pop3")[] }`（非空、不重复；
+其它 kind 在安装时即被拒）。它允许用户为每个账号指定自己的邮件服务器
+（[ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md) §5）。
+
+- 该声明为宿主预留四个**非密钥**字段键：`server`、`port`（`1..65535`）、`protocol`
+  （须是声明的协议之一）、`security`（`tls` | `starttls`）。同一槽位再声明这四个键之一
+  会在安装时被拒，插件自己的表单因此写不进它们。
+- 这四个值存在该账号自己的加密块里，紧挨地址和密码；宿主只用该账号的密码登录该账号存下
+  的端点，不会去别处。这类账号的清单白名单与槽位 `scope` 由这个绑定替代：
+  `net.tcp.connect` 可以省略 `endpoint`，一旦给出就必须与存下的主机和端口完全一致，
+  否则 `PERMISSION_DENIED`。没有 `credentialRef` 的连接仍要求 `manifest.net.tcp`，
+  永远到不了用户填写的端点。
+- `server` 留空表示不使用自定义服务器：账号走回预设路径，另外三个值会被丢弃而不保存。
+- `credentials.list` 在 `publicFields` 里报出这四个值。
+
 ## 6. activationEvents（可选）
 
 示例：

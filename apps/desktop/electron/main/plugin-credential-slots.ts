@@ -15,6 +15,7 @@
  * controls.
  */
 import {
+  PLUGIN_MAIL_PROTOCOLS,
   isNetHostAllowed,
   parseNetDomains,
   type PluginCredentialContrib,
@@ -28,6 +29,7 @@ export type PluginCredentialCode =
   | "CREDENTIAL_NOT_CONFIGURED"
   | "CREDENTIAL_UNAVAILABLE"
   | "CREDENTIAL_INSTANCE_REQUIRED"
+  | "CREDENTIAL_INVALID"
   | "CREDENTIAL_LIMIT"
   | "CREDENTIAL_DIALOG_BUSY"
   | "CREDENTIAL_DIALOG_UNAVAILABLE";
@@ -114,6 +116,12 @@ export type DeclaredSlot = {
   multipleMax?: number;
   /** Field whose value names an instance; never a secret field. */
   labelField?: string;
+  /**
+   * `userEndpoint.protocols`: the mail protocols the user may pick when they
+   * name their own server. Absent keeps the released one-server path, and the
+   * four endpoint keys are then not reserved at all.
+   */
+  userEndpointProtocols?: string[];
 };
 
 /**
@@ -355,6 +363,18 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
     const max = slot.multiple?.max;
     const multipleMax =
       typeof max === "number" && Number.isInteger(max) && max >= 1 ? max : undefined;
+    // `userEndpoint` is a declaration of the mail protocols the user may pick,
+    // not a value: a half-shaped one was refused at install, so anything this
+    // host cannot read is read as the released one-server slot.
+    const declaredProtocols: string[] = [];
+    for (const protocol of slot.userEndpoint?.protocols ?? []) {
+      if (
+        (PLUGIN_MAIL_PROTOCOLS as readonly string[]).includes(protocol) &&
+        !declaredProtocols.includes(protocol)
+      ) {
+        declaredProtocols.push(protocol);
+      }
+    }
     slots.push({
       id: slot.id,
       kind: slot.kind as PluginCredentialKind,
@@ -363,6 +383,7 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
       ...(typeof slot.labelField === "string" && slot.labelField
         ? { labelField: slot.labelField }
         : {}),
+      ...(declaredProtocols.length ? { userEndpointProtocols: declaredProtocols } : {}),
     });
   }
   return slots;

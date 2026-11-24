@@ -3,6 +3,17 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const zhTW = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    customServer: "使用自己的郵件伺服器",
+    customServerHint: "留空則使用外掛預設的伺服器。填寫伺服器後，密碼只會傳送到這台伺服器。",
+    customServerServer: "伺服器",
+    customServerServerPlaceholder: "mail.example.com",
+    customServerProtocol: "協定",
+    customServerProtocolImap: "IMAP",
+    customServerProtocolPop3: "POP3",
+    customServerSecurity: "加密方式",
+    customServerSecurityTls: "SSL/TLS",
+    customServerSecurityStarttls: "STARTTLS",
+    customServerPort: "連接埠",
     add: "新增",
     cancel: "取消",
     remove: "刪除",

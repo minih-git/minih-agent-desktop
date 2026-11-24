@@ -761,6 +761,28 @@ many instances exist, and learns both from `credentials.list`
   collects the values, never the plugin process
   ([04-plugin-security.md](04-plugin-security.md) §8.3).
 
+### 5.5.2 A user-typed mail server (`userEndpoint`)
+
+An `imap` slot may declare `userEndpoint: { protocols: ("imap" | "pop3")[] }`
+(non-empty, no duplicates; any other kind is refused at install). It lets the
+user name their own mail server for each account
+([ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md) §5).
+
+- The declaration reserves four **non-secret** field keys for the host:
+  `server`, `port` (`1..65535`), `protocol` (one of the declared protocols) and
+  `security` (`tls` | `starttls`). A slot that also declares a field with one of
+  those keys is refused at install, so the plugin's own form cannot write them.
+- They are stored inside the account's own blob, next to the address and the
+  password, and the host logs in with that account's password at that endpoint
+  and nowhere else. For such an account the manifest allowlist and the slot
+  `scope` are replaced by the binding; `net.tcp.connect` may omit `endpoint`,
+  and one it does supply must equal the stored host and port or the call is
+  `PERMISSION_DENIED`. A connection without a `credentialRef` still needs
+  `manifest.net.tcp` and can never reach a user-typed endpoint.
+- A blank `server` means no custom server: the account keeps the preset path,
+  and the other three values are dropped rather than stored.
+- `credentials.list` reports the four values in `publicFields`.
+
 ## 6. activationEvents (optional)
 
 Examples:

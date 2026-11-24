@@ -3,6 +3,17 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const fr = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    customServer: "Utiliser votre propre serveur de messagerie",
+    customServerHint: "Laissez le serveur vide pour utiliser ceux prédéfinis par l’extension. Dès que vous en indiquez un, le mot de passe n’est envoyé qu’à ce serveur.",
+    customServerServer: "Serveur",
+    customServerServerPlaceholder: "mail.example.com",
+    customServerProtocol: "Protocole",
+    customServerProtocolImap: "IMAP",
+    customServerProtocolPop3: "POP3",
+    customServerSecurity: "Chiffrement",
+    customServerSecurityTls: "SSL/TLS",
+    customServerSecurityStarttls: "STARTTLS",
+    customServerPort: "Port",
     add: "Ajouter",
     cancel: "Annuler",
     remove: "Supprimer",

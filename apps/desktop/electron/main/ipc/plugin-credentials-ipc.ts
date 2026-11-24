@@ -53,6 +53,7 @@ export function registerPluginCredentialIpc(
           }
         : {}),
       ...(slot.labelField ? { labelField: slot.labelField } : {}),
+      ...(slot.userEndpoint ? { userEndpoint: slot.userEndpoint } : {}),
     })) };
   });
   registrar.handleWithEvent(IPC.invoke.pluginCredentialsSet, async (event, input: {

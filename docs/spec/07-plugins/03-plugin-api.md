@@ -1407,12 +1407,13 @@ pi.credentials.requestRemove(
 pi.net.fetch(input: { …; credentialRef?: string })
 pi.net.websocket.connect(input: { …; credentialRef?: string })
 
-// net.tcp (requires `net.tcp`, and the endpoint must be in manifest.net.tcp)
+// net.tcp (requires `net.tcp`, and the endpoint must be in manifest.net.tcp
+// unless the credential names a user-typed server — see 02 §5.5.2)
 pi.net.tcp.connect(input: {
-  endpoint: { host: string; port: number }
+  endpoint?: { host: string; port: number }
   credentialRef?: string   // an `imap` slot; needs `credentials.use` too
   timeoutMs?: number
-}): Promise<{ connectionId: string; authenticated?: true }>
+}): Promise<{ connectionId: string; authenticated?: true; protocol?: "imap" | "pop3" }>
 pi.net.tcp.send(input: { connectionId: string; data: string | Uint8Array }): Promise<void>
 pi.net.tcp.close(input: { connectionId: string }): Promise<void>
 // events: net:tcp:open | net:tcp:data | net:tcp:close | net:tcp:error
@@ -1569,6 +1570,22 @@ Semantics:
   it; plugin code that logs or forwards the stream can leak it too.
   Transparency is the contract, so the protection is that the credential is
   never handed to the plugin, not that the peer stays silent.
+- **STARTTLS, POP3, and a server the user typed.** A slot that declares
+  `userEndpoint` stores the server with the account, and the host dials that one
+  (02 §5.5.2): `endpoint` may be omitted, and an endpoint the plugin does supply
+  must match the stored host and port. `security: "tls"` keeps the flow above;
+  `security: "starttls"` starts on the plaintext port, reads the greeting,
+  requires `STARTTLS` in the capabilities (IMAP) or `STLS` in `CAPA` (POP3),
+  sends the command and requires the agreement before upgrading with
+  certificate verification and SNI. A server that does not advertise the upgrade
+  is `STARTTLS_UNAVAILABLE` — the host never falls back to plaintext — and a
+  byte that arrives after the agreement is `STARTTLS_FAILED`. The plaintext
+  capabilities are discarded and read again over TLS, so a hostile pre-upgrade
+  answer cannot pick a weaker login. POP3 authenticates with `AUTH PLAIN` when
+  `CAPA` advertises `SASL PLAIN` and with `USER`/`PASS` otherwise; both
+  protocols answer `CREDENTIAL_REJECTED` for a refused credential, and `connect`
+  reports `protocol: "imap" | "pop3"` for a user-typed server. A connection
+  without a `credentialRef` never reaches one.
 - **Inbound webhooks deliver, they do not answer.** The host listens on port
   37124, or a persisted fallback port if occupied, only while an enabled and
   granted receiver exists. LAN and local-only bindings and source filtering are

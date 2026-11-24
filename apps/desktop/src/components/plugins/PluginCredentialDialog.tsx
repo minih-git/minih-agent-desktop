@@ -141,6 +141,7 @@ export function PluginCredentialDialog() {
                 onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
                 locale={locale}
                 disabled={busy}
+                userEndpoint={slot.userEndpoint}
               />
             ) : (
               <p role="alert">{error ?? t("pluginCredentials.loadFailed")}</p>

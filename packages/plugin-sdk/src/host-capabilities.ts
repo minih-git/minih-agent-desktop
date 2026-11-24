@@ -26,6 +26,24 @@ export const MAX_CREDENTIAL_INSTANCES = 5;
 export const PLUGIN_CREDENTIAL_FIELD_TYPES = ["text", "password", "select"] as const;
 export type PluginCredentialFieldType = (typeof PLUGIN_CREDENTIAL_FIELD_TYPES)[number];
 
+/** Mail protocols a user may pick for their own mail server. */
+export const PLUGIN_MAIL_PROTOCOLS = ["imap", "pop3"] as const;
+export type PluginMailProtocol = (typeof PLUGIN_MAIL_PROTOCOLS)[number];
+
+/**
+ * Transport security the user may pick for their own mail server. There is no
+ * plaintext option: the host never writes a password to an unencrypted stream.
+ */
+export const PLUGIN_MAIL_SECURITIES = ["tls", "starttls"] as const;
+export type PluginMailSecurity = (typeof PLUGIN_MAIL_SECURITIES)[number];
+
+/**
+ * Field keys a `userEndpoint` slot reserves for the host. A plugin may not
+ * declare a field with one of these keys: its own form would otherwise decide
+ * where the stored password is sent.
+ */
+export const PLUGIN_USER_ENDPOINT_FIELD_KEYS = ["server", "port", "protocol", "security"] as const;
+
 /** One option of a `select` credential field. */
 export type PluginCredentialFieldOption = {
   /** Stored verbatim as the field value. */
@@ -86,6 +104,18 @@ export type PluginCredentialContrib = {
    * field stays unreadable.
    */
   labelField?: string;
+
+  /**
+   * Let the user name their own mail server for each account instead of the
+   * one this manifest presets. Only an `imap` slot may declare it.
+   *
+   * The host then reserves the field keys `server`, `port`, `protocol` and
+   * `security` for that slot — declaring a field of one of those keys is
+   * refused at install — and injects an instance's password only into the
+   * endpoint stored with that same instance, so a plugin cannot redirect a
+   * stored secret.
+   */
+  userEndpoint?: { protocols: PluginMailProtocol[] };
 };
 
 /** Largest request body a webhook receiver accepts (256 KiB). */
@@ -205,6 +235,49 @@ function credentialFieldControlError(
 }
 
 /**
+ * `userEndpoint`: only an `imap` slot may offer the user their own mail server,
+ * because that is the kind whose password the host can log in with. The four
+ * reserved keys are refused as declared fields here too: a plugin field of one
+ * of them would let its own form decide where its stored password is sent.
+ */
+function credentialUserEndpointError(
+  slot: Partial<PluginCredentialContrib>,
+): string | undefined {
+  const at = `credential "${slot.id}"`;
+  if (slot.kind !== "imap") {
+    return `${at} declares userEndpoint with kind ${String(slot.kind)}; only an imap slot accepts a user-typed mail server`;
+  }
+  const endpoint = slot.userEndpoint as { protocols?: unknown } | undefined;
+  if (!endpoint || typeof endpoint !== "object" || Array.isArray(endpoint)) {
+    return `${at} userEndpoint must be an object`;
+  }
+  const unknown = Object.keys(endpoint).find((key) => key !== "protocols");
+  if (unknown) return `${at} userEndpoint has an unsupported key ${unknown}`;
+  const protocols = endpoint.protocols;
+  if (!Array.isArray(protocols) || protocols.length === 0) {
+    return `${at} userEndpoint needs at least one protocol`;
+  }
+  const seen = new Set<string>();
+  for (const protocol of protocols) {
+    if (
+      typeof protocol !== "string" ||
+      !(PLUGIN_MAIL_PROTOCOLS as readonly string[]).includes(protocol)
+    ) {
+      return `${at} userEndpoint protocols must be imap or pop3`;
+    }
+    if (seen.has(protocol)) return `${at} userEndpoint lists ${protocol} twice`;
+    seen.add(protocol);
+  }
+  const reserved = (slot.fields ?? []).find((field) =>
+    (PLUGIN_USER_ENDPOINT_FIELD_KEYS as readonly string[]).includes(field.key),
+  );
+  if (reserved) {
+    return `${at} field ${reserved.key} is reserved for the user-typed mail server`;
+  }
+  return undefined;
+}
+
+/**
  * `contributes.credentials`. Every slot is user-filled, so the shape is
  * validated at install: a slot the Settings sheet cannot render is a dead
  * permission, and a scope nobody can inject into is an authoring slip.
@@ -253,6 +326,10 @@ export function validateCredentialContributions(raw: unknown): string | undefine
       }
       const controlError = credentialFieldControlError(slot.id, field);
       if (controlError) return controlError;
+    }
+    if (slot.userEndpoint !== undefined) {
+      const endpointError = credentialUserEndpointError(slot);
+      if (endpointError) return endpointError;
     }
     if (slot.multiple !== undefined) {
       const multiple = slot.multiple as { max?: unknown };

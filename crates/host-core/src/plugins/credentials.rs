@@ -26,6 +26,7 @@
 //! credentials, and it needs no database migration.
 
 use super::credential_instances::{self, split_ref, InstanceMeta};
+use super::user_endpoint;
 use super::{is_contrib_id, plugin_display_locale, PluginSummary};
 use crate::db::Database;
 use crate::secrets::SecretStore;
@@ -124,6 +125,11 @@ pub(crate) struct DeclaredSlot {
     pub multiple_max: Option<u32>,
     /// `labelField`: the non-secret field that names an instance.
     pub label_field: Option<String>,
+    /// `userEndpoint.protocols`; empty when the slot keeps the servers the
+    /// manifest presets. A non-empty list is what makes the slot accept the
+    /// four reserved endpoint keys and what a stored instance is checked
+    /// against.
+    pub user_endpoint_protocols: Vec<String>,
 }
 
 impl DeclaredSlot {
@@ -313,6 +319,7 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
         }
         let multiple_max = multiple_max_of(id, entry, plugin)?;
         let label_field = label_field_of(id, entry, &declared_fields, plugin)?;
+        let user_endpoint_protocols = user_endpoint::declared_protocols(entry.get("userEndpoint"));
         let domains = entry
             .get("scope")
             .and_then(Value::as_object)
@@ -340,6 +347,7 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
             domains,
             multiple_max,
             label_field,
+            user_endpoint_protocols,
         });
     }
     Ok(slots)
@@ -541,6 +549,30 @@ pub(crate) fn covers(stored: &StoredSlot, slot: &DeclaredSlot) -> bool {
     slot.field_keys().all(|key| stored.fields.contains_key(key))
 }
 
+/// Every value the host may inject for one stored instance: the slot's
+/// declared fields, plus the four reserved endpoint keys when the instance
+/// carries them.
+///
+/// `None` means the blob is incomplete, which is the same answer as a slot with
+/// nothing stored: a half-filled instance is never injected.
+pub(crate) fn injected_fields(
+    slot: &DeclaredSlot,
+    stored: &StoredSlot,
+) -> Option<BTreeMap<String, String>> {
+    let mut fields = BTreeMap::new();
+    for key in slot.field_keys() {
+        fields.insert(key.to_string(), stored.fields.get(key)?.clone());
+    }
+    if !slot.user_endpoint_protocols.is_empty() {
+        for key in user_endpoint::RESERVED_KEYS {
+            if let Some(value) = stored.fields.get(key) {
+                fields.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    Some(fields)
+}
+
 pub(crate) fn read_slot(
     secrets: &SecretStore,
     plugin_id: &str,
@@ -667,6 +699,9 @@ pub(crate) fn status(
         }
         if let Some(label_field) = &slot.label_field {
             entry["labelField"] = json!(label_field);
+        }
+        if !slot.user_endpoint_protocols.is_empty() {
+            entry["userEndpoint"] = json!({ "protocols": slot.user_endpoint_protocols });
         }
         slots.push(entry);
     }
@@ -800,11 +835,7 @@ pub(crate) fn resolve(
         ))
     };
     if let Some(stored) = read_slot(secrets, &plugin.id, slot_id)? {
-        let mut fields = BTreeMap::new();
-        for key in slot.field_keys() {
-            let value = stored.fields.get(key).ok_or_else(not_configured)?;
-            fields.insert(key.to_string(), value.clone());
-        }
+        let fields = injected_fields(&slot, &stored).ok_or_else(not_configured)?;
         remember_used(&plugin.id, slot_id);
         return Ok(fields);
     }
@@ -843,15 +874,17 @@ pub(crate) fn purge_plugin(data_dir: &Path, plugin_id: &str) -> Result<usize, Cr
 }
 
 /// The submitted map must be exactly the slot's declared fields, each a
-/// non-empty string. Anything else is refused as a whole.
+/// non-empty string, plus the four reserved endpoint keys of a slot that
+/// declares `userEndpoint`. Anything else is refused as a whole.
 fn validated_fields(
     slot: &DeclaredSlot,
     fields: Map<String, Value>,
 ) -> Result<BTreeMap<String, String>, CredentialError> {
-    if let Some(key) = fields
-        .keys()
-        .find(|key| !slot.field_keys().any(|declared| declared == *key))
-    {
+    let takes_endpoint = !slot.user_endpoint_protocols.is_empty();
+    if let Some(key) = fields.keys().find(|key| {
+        !slot.field_keys().any(|declared| declared == *key)
+            && !(takes_endpoint && user_endpoint::is_reserved(key))
+    }) {
         return Err(CredentialError::Invalid(format!(
             "{CREDENTIAL_INVALID}: credential slot {} does not declare field {key}",
             slot.id
@@ -885,7 +918,49 @@ fn validated_fields(
         }
         values.insert(key.to_string(), value.to_string());
     }
+    if takes_endpoint {
+        if let Some(endpoint) = validated_endpoint(slot, &fields)? {
+            values.extend(endpoint.to_fields());
+        }
+    }
     Ok(values)
+}
+
+/// The user-typed server of one submission, normalized, or `None` when the
+/// form left it empty.
+///
+/// A blank value counts as "not set", so an untouched form posts exactly what
+/// it rendered. A partly filled one is refused: storing it would leave the
+/// password pointing at a server the user never finished choosing.
+fn validated_endpoint(
+    slot: &DeclaredSlot,
+    fields: &Map<String, Value>,
+) -> Result<Option<user_endpoint::UserEndpoint>, CredentialError> {
+    let mut submitted = BTreeMap::new();
+    for key in user_endpoint::RESERVED_KEYS {
+        let Some(raw) = fields.get(key) else {
+            continue;
+        };
+        let value = raw.as_str().ok_or_else(|| {
+            CredentialError::Invalid(format!(
+                "{CREDENTIAL_INVALID}: credential slot {} field {key} must be a string",
+                slot.id
+            ))
+        })?;
+        if value.len() > MAX_FIELD_BYTES {
+            return Err(CredentialError::Invalid(format!(
+                "{CREDENTIAL_INVALID}: credential slot {} field {key} exceeds {MAX_FIELD_BYTES} bytes",
+                slot.id
+            )));
+        }
+        submitted.insert(key.to_string(), value.to_string());
+    }
+    user_endpoint::from_fields(&submitted, &slot.user_endpoint_protocols).map_err(|message| {
+        CredentialError::Invalid(format!(
+            "{CREDENTIAL_INVALID}: credential slot {} {message}",
+            slot.id
+        ))
+    })
 }
 
 #[cfg(test)]

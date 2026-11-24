@@ -15,7 +15,7 @@ import { register } from "node:module";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const { PluginCredentialBroker } = await import("../electron/main/plugin-credentials.ts");
 const { PluginCredentialError } = await import("../electron/main/plugin-credential-slots.ts");
-const { resolveTcpImapCredential } = await import("../electron/main/plugin-tcp-credentials.ts");
+const { resolveTcpCredential } = await import("../electron/main/plugin-tcp-credentials.ts");
 
 const SECRET_A = "synthetic-password-for-account-a";
 const SECRET_B = "synthetic-password-for-account-b";
@@ -228,6 +228,12 @@ test("a socket handshake carries the header of the instance it named", async () 
   assert.equal(connections[0].redactDiagnostics, true);
 });
 
+/** The endpoints the manifest declares; the slot scope decides which is allowed. */
+const MANIFEST_TCP = [
+  { host: "imap.example.com", port: 993, tls: true },
+  { host: "other.example.com", port: 993, tls: true },
+];
+
 test("IMAP login uses the account of the instance the reference named", async () => {
   const tcpRegistry = async (ref) => ({
     resolve: async (_pluginId, handed) => {
@@ -235,34 +241,41 @@ test("IMAP login uses the account of the instance the reference named", async ()
       return STORE[ref];
     },
   });
-  const endpoint = { host: "imap.example.com", port: 993, tls: true };
-  const first = await resolveTcpImapCredential(
+  const request = { endpoint: { host: "imap.example.com", port: 993 }, manifestTcp: MANIFEST_TCP };
+  const first = await resolveTcpCredential(
     "demo.multi",
     SLOTS,
     "mailbox#acc_00000001",
-    endpoint,
+    request,
     await tcpRegistry("mailbox#acc_00000001"),
   );
-  const second = await resolveTcpImapCredential(
+  const second = await resolveTcpCredential(
     "demo.multi",
     SLOTS,
     "mailbox#acc_00000002",
-    endpoint,
+    request,
     await tcpRegistry("mailbox#acc_00000002"),
   );
-  assert.deepEqual(first.imap, { username: "a@example.com", password: SECRET_A });
-  assert.deepEqual(second.imap, { username: "b@example.com", password: SECRET_B });
+  assert.deepEqual(
+    { username: first.login.username, password: first.login.password },
+    { username: "a@example.com", password: SECRET_A },
+  );
+  assert.deepEqual(
+    { username: second.login.username, password: second.login.password },
+    { username: "b@example.com", password: SECRET_B },
+  );
   assert.equal(first.instanceId, "acc_00000001");
   assert.equal(second.instanceId, "acc_00000002");
+  assert.equal(first.origin, "preset");
 });
 
 test("IMAP login refuses a multi-instance slot with no instance named", async () => {
   await assert.rejects(
-    resolveTcpImapCredential(
+    resolveTcpCredential(
       "demo.multi",
       SLOTS,
       "mailbox",
-      { host: "imap.example.com", port: 993, tls: true },
+      { endpoint: { host: "imap.example.com", port: 993 }, manifestTcp: MANIFEST_TCP },
       { resolve: async () => STORE["mailbox#acc_00000001"] },
     ),
     (error) => error.code === "CREDENTIAL_INSTANCE_REQUIRED",
@@ -271,11 +284,11 @@ test("IMAP login refuses a multi-instance slot with no instance named", async ()
 
 test("IMAP login still refuses an endpoint the slot does not admit", async () => {
   await assert.rejects(
-    resolveTcpImapCredential(
+    resolveTcpCredential(
       "demo.multi",
       SLOTS,
       "mailbox#acc_00000001",
-      { host: "other.example.com", port: 993, tls: true },
+      { endpoint: { host: "other.example.com", port: 993 }, manifestTcp: MANIFEST_TCP },
       { resolve: async () => STORE["mailbox#acc_00000001"] },
     ),
     (error) => error.code === "PERMISSION_DENIED",

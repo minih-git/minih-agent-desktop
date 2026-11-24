@@ -385,3 +385,94 @@ being idle and has nothing left for the work.
 - **Raise the TCP ceiling to "no limit".** Rejected: a bound is what keeps one
   plugin's loop from taking the host's descriptors down with it. Eight covers the
   idle-connection design with room for the work the connection exists for.
+
+## 5. A user-typed mail server (2026-11-24, 1.10.0)
+
+This section amends the endpoint rule in §3 and adds one declaration to §4.
+Everything else in this ADR stands.
+
+### The problem
+
+`net.tcp.connect` reaches only the literal endpoints in `manifest.net.tcp`, and
+an IMAP credential is injected only into the hosts in the slot's
+`scope.domains` — `net.anyHost` is deliberately not consulted for an injection.
+A mailbox plugin therefore cannot reach a self-hosted or company mail server,
+because no manifest can name a host the user has not chosen yet. The escape
+hatches that exist are all worse: a slot per server freezes the choice at
+authoring time, `net.anyHost` widens egress but still cannot carry the secret,
+and letting the plugin collect the server itself hands it the decision of where
+a stored password goes.
+
+### Decision
+
+1. `contributes.credentials[].userEndpoint: { protocols: ("imap" | "pop3")[] }`
+   may be declared, on an `imap` slot only, non-empty and without duplicates. It
+   reserves four **non-secret** field keys for the host — `server`, `port`,
+   `protocol`, `security` — and a slot that declares a field of one of those
+   keys is refused at install, so the plugin's own form can never write them.
+2. The server belongs to the credential instance: the user types it in the
+   host-owned form, next to the address and the password, and the host logs in
+   with that instance's password at the endpoint stored in the same instance.
+   The binding replaces the manifest allowlist and the slot scope for that
+   endpoint, which is the whole point — there is nothing left for a plugin to
+   point somewhere else.
+3. `net.tcp.connect` with a `credentialRef` naming such an instance may omit
+   `endpoint`; the host dials what the user stored. An endpoint the plugin does
+   supply must equal the stored host and port exactly, otherwise
+   `PERMISSION_DENIED`. A connection **without** a `credentialRef` can never
+   reach a user-typed endpoint, because that path still requires
+   `manifest.net.tcp`.
+4. Values are validated by the host at save time, not only in the renderer: a
+   bare hostname or IP literal (no scheme, port, path, whitespace or wildcard),
+   a port from 1 to 65535, a protocol the slot declares, and `tls` or
+   `starttls`. Private and LAN addresses stay valid — a company mail server is
+   exactly who this exists for — and cloud metadata hosts are refused by the
+   same list the egress policy uses. A blank `server` means "no custom server":
+   the instance keeps the preset path, and whatever the form prefilled for the
+   other three keys is dropped rather than stored.
+5. Transport security is implicit TLS or STARTTLS, and the host enforces the
+   upgrade instead of offering a fallback. A server that does not advertise
+   `STARTTLS` (IMAP) or `STLS` in `CAPA` (POP3) is refused with a distinct code;
+   the plaintext capabilities are discarded and re-read over TLS, so nothing an
+   unprotected exchange claimed can decide how the password is sent; and any
+   byte that arrives after the agreement aborts the connection, which is the
+   STARTTLS injection this contract exists to stop. Certificate verification is
+   never optional, and SNI is the server's name (an IP literal is verified as an
+   address instead).
+6. POP3 is a second login the host performs itself: `AUTH PLAIN` when `CAPA`
+   advertises `SASL PLAIN`, `USER`/`PASS` otherwise, and `-ERR` is
+   `CREDENTIAL_REJECTED`. After the server accepts, the stream belongs to the
+   plugin exactly as for IMAP. There is still no SMTP, no plaintext login and no
+   OAuth2.
+7. A slot **without** `userEndpoint` is byte-identical to 1.9.0: same storage
+   shape, same allowlist and scope checks, same connect result. No permission is
+   added — `net.tcp` and `credentials.use` remain the whole switch — and the
+   per-plugin connection ceiling still applies to a user-typed connection.
+
+### Consequences
+
+- A mailbox plugin can serve a self-hosted or company server without the host
+  ever learning the host name at authoring time, and without a new permission.
+- The credential becomes a two-part fact — a secret plus where it may be sent —
+  which is what makes the binding meaningful. A rotated password and a changed
+  server are saved together, so the pair cannot drift apart.
+- `credentials.list` reports the four endpoint values as `publicFields`, so a
+  plugin can name an account by its server without reading the password.
+- The form gains a section only for slots that opted in; every other slot renders
+  exactly as before.
+- Two more failure codes reach the plugin (`STARTTLS_UNAVAILABLE` and a TLS
+  refusal distinct from a refused credential), so a user-facing message can say
+  what to fix instead of "connection failed".
+
+### Alternatives
+
+- **Declare the servers in the manifest.** Rejected: it cannot know them, and a
+  `net.anyHost`-wide slot would carry the secret to any host the plugin names.
+- **Let the plugin collect the server with its own form and pass it in.** That is
+  precisely the redirection this design forbids: the plugin would choose where a
+  stored password is sent.
+- **Allow plaintext, since the user asked for it.** Rejected: a password on an
+  unencrypted stream is not a user preference, and STARTTLS covers the servers
+  that do not offer implicit TLS.
+- **Accept a self-signed certificate.** Rejected: it would make "the host
+  verified the peer" mean nothing on the one path where a password travels.

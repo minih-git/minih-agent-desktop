@@ -3,6 +3,17 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const ko = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    customServer: "내 메일 서버 사용",
+    customServerHint: "서버를 비워 두면 플러그인이 지정한 서버를 사용합니다. 서버를 입력하면 비밀번호는 해당 서버로만 전송됩니다.",
+    customServerServer: "서버",
+    customServerServerPlaceholder: "mail.example.com",
+    customServerProtocol: "프로토콜",
+    customServerProtocolImap: "IMAP",
+    customServerProtocolPop3: "POP3",
+    customServerSecurity: "암호화",
+    customServerSecurityTls: "SSL/TLS",
+    customServerSecurityStarttls: "STARTTLS",
+    customServerPort: "포트",
     add: "추가",
     cancel: "취소",
     remove: "삭제",

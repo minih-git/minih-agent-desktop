@@ -37,10 +37,17 @@ export type PluginSocketErrorCode =
   | "PERMISSION_DENIED"
   | "CREDENTIAL_REJECTED"
   | "CREDENTIAL_UNSUPPORTED"
+  | "CREDENTIAL_INVALID"
   | "LIMIT_EXCEEDED"
   | "NOT_FOUND"
   | "CONNECT_FAILED"
-  | "TIMEOUT";
+  | "TIMEOUT"
+  // A mail login that could not get a protected transport. Distinct codes so
+  // the plugin (and the user) can tell a missing upgrade from a bad
+  // certificate, and neither is ever reported as a plain connect failure.
+  | "TLS_FAILED"
+  | "STARTTLS_UNAVAILABLE"
+  | "STARTTLS_FAILED";
 
 /** Thrown for every refusal; `code` is what the plugin sees as `error`. */
 export class PluginSocketError extends Error {

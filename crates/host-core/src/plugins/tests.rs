@@ -3053,6 +3053,92 @@ fn credential_slots_must_render_and_inject_somewhere() {
     PluginManager::read_manifest(&scoped).unwrap();
 }
 
+/// An imap slot whose owner may type their own mail server.
+fn user_endpoint_slot(overrides: Value) -> Value {
+    let mut slot = json!({
+        "id": "mailbox",
+        "title": { "en": "Mailbox", "zh-CN": "邮箱" },
+        "kind": "imap",
+        "fields": [
+            { "key": "username", "label": { "en": "User", "zh-CN": "用户" } },
+            { "key": "password", "label": { "en": "Password", "zh-CN": "密码" }, "secret": true }
+        ],
+        "multiple": { "max": 5 },
+        "labelField": "username",
+        "userEndpoint": { "protocols": ["imap", "pop3"] },
+    });
+    for (key, value) in overrides.as_object().unwrap().clone() {
+        slot[key] = value;
+    }
+    slot
+}
+
+#[test]
+fn a_user_typed_mail_server_is_declared_only_where_it_can_be_served() {
+    let dir = tempdir().unwrap();
+    let grant = json!(["credentials.use"]);
+
+    let accepted = dir.path().join("user-endpoint");
+    write_plugin(
+        &accepted,
+        capability_manifest(
+            json!({ "credentials": [user_endpoint_slot(json!({}))] }),
+            grant.clone(),
+        ),
+        &[],
+    );
+    PluginManager::read_manifest(&accepted).unwrap();
+
+    for (name, overrides, expected) in [
+        (
+            "wrong-kind",
+            json!({ "kind": "basic" }),
+            "only an imap slot accepts a user-typed mail server",
+        ),
+        (
+            "no-protocol",
+            json!({ "userEndpoint": { "protocols": [] } }),
+            "userEndpoint needs at least one protocol",
+        ),
+        (
+            "duplicate-protocol",
+            json!({ "userEndpoint": { "protocols": ["imap", "imap"] } }),
+            "userEndpoint lists imap twice",
+        ),
+        (
+            "unknown-protocol",
+            json!({ "userEndpoint": { "protocols": ["smtp"] } }),
+            "userEndpoint protocols must be imap or pop3",
+        ),
+        (
+            "unknown-key",
+            json!({ "userEndpoint": { "protocols": ["imap"], "host": "mail.example.com" } }),
+            "userEndpoint has an unsupported key host",
+        ),
+        (
+            "reserved-field",
+            json!({ "fields": [
+                { "key": "username", "label": "User" },
+                { "key": "server", "label": "Server" }
+            ] }),
+            "field server is reserved for the user-typed mail server",
+        ),
+    ] {
+        let root = dir.path().join(name);
+        assert!(
+            refuse(
+                &root,
+                capability_manifest(
+                    json!({ "credentials": [user_endpoint_slot(overrides)] }),
+                    grant.clone(),
+                ),
+            )
+            .contains(expected),
+            "{name}"
+        );
+    }
+}
+
 #[test]
 fn webhook_receivers_stay_inside_their_bounds() {
     let dir = tempdir().unwrap();

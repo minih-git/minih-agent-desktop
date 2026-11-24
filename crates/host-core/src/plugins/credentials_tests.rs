@@ -462,3 +462,183 @@ fn a_failed_credential_purge_refuses_the_uninstall_and_keeps_the_value() {
     assert!(!secrets.has(&slot_ref(&plugin.id, "mailbox")));
     assert!(!secrets.has(&index_ref(&plugin.id)));
 }
+
+/// A mailbox slot whose owner may point it at their own mail server.
+pub(super) fn imap_slot_with_user_endpoint() -> Value {
+    json!({
+        "id": "mailbox",
+        "title": { "en": "Mailbox", "zh-CN": "邮箱" },
+        "kind": "imap",
+        "fields": [field("username", "User", false), field("password", "Password", true)],
+        "multiple": { "max": 5 },
+        "labelField": "username",
+        "userEndpoint": { "protocols": ["imap", "pop3"] },
+    })
+}
+
+/// The four values the host reserves for a user-typed mail server.
+pub(super) fn endpoint(
+    server: &str,
+    port: &str,
+    protocol: &str,
+    security: &str,
+) -> Vec<(&'static str, Value)> {
+    vec![
+        ("server", json!(server)),
+        ("port", json!(port)),
+        ("protocol", json!(protocol)),
+        ("security", json!(security)),
+    ]
+}
+
+fn instance_fields(extra: Vec<(&'static str, Value)>) -> Map<String, Value> {
+    let mut fields = filled();
+    for (key, value) in extra {
+        fields.insert(key.to_string(), value);
+    }
+    fields
+}
+
+#[test]
+fn a_user_typed_mail_server_is_stored_with_its_own_instance() {
+    let dir = tempdir().unwrap();
+    let (_plugins, plugin, _root) = install(
+        dir.path(),
+        "demo.custom-server",
+        json!({ "credentials": [imap_slot_with_user_endpoint()] }),
+    );
+    let secrets = SecretStore::open(dir.path()).unwrap();
+    let instance = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        instance_fields(endpoint(" Mail.Corp.Example ", "143", "imap", "starttls")),
+        None,
+    )
+    .unwrap()
+    .expect("a multi-instance slot answers the id it created");
+
+    // The host reads the endpoint back with the credential, normalized, and
+    // only for the instance that stored it.
+    let fields = resolve(&secrets, &plugin, &format!("mailbox#{instance}"), None).unwrap();
+    assert_eq!(fields.get("username").map(String::as_str), Some("alice"));
+    assert_eq!(fields.get("password").map(String::as_str), Some("hunter2"));
+    assert_eq!(
+        fields.get("server").map(String::as_str),
+        Some("mail.corp.example")
+    );
+    assert_eq!(fields.get("port").map(String::as_str), Some("143"));
+    assert_eq!(fields.get("protocol").map(String::as_str), Some("imap"));
+    assert_eq!(fields.get("security").map(String::as_str), Some("starttls"));
+
+    // The account list names the server and never the password.
+    let status = status(&secrets, &plugin, "en", None).unwrap();
+    let slot = &status["slots"][0];
+    assert_eq!(slot["userEndpoint"]["protocols"][1], "pop3");
+    let public = &slot["instances"][0]["publicFields"];
+    assert_eq!(public["server"], "mail.corp.example");
+    assert_eq!(public["protocol"], "imap");
+    assert!(public.get("password").is_none(), "{public}");
+    assert!(!serde_json::to_string(&status).unwrap().contains("hunter2"));
+}
+
+#[test]
+fn a_slot_without_a_user_endpoint_still_refuses_the_reserved_keys() {
+    let dir = tempdir().unwrap();
+    let (_plugins, plugin, _root) = install(
+        dir.path(),
+        "demo.preset-only",
+        json!({ "credentials": [mailbox_slot()] }),
+    );
+    let secrets = SecretStore::open(dir.path()).unwrap();
+    let error = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        instance_fields(endpoint("mail.example.com", "993", "imap", "tls")),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("does not declare field"),
+        "{error}"
+    );
+}
+
+#[test]
+fn an_unusable_mail_server_is_refused_at_save() {
+    let dir = tempdir().unwrap();
+    let (_plugins, plugin, _root) = install(
+        dir.path(),
+        "demo.custom-server-invalid",
+        json!({ "credentials": [imap_slot_with_user_endpoint()] }),
+    );
+    let secrets = SecretStore::open(dir.path()).unwrap();
+
+    for (label, extra) in [
+        (
+            "the port is missing",
+            vec![
+                ("server", json!("mail.example.com")),
+                ("protocol", json!("imap")),
+                ("security", json!("tls")),
+            ],
+        ),
+        (
+            "the server is not a bare host",
+            endpoint("https://mail.example.com", "993", "imap", "tls"),
+        ),
+        (
+            "the port is out of range",
+            endpoint("mail.example.com", "70000", "imap", "tls"),
+        ),
+        (
+            "the protocol is not declared",
+            endpoint("mail.example.com", "995", "smtp", "tls"),
+        ),
+        (
+            "the transport is plaintext",
+            endpoint("mail.example.com", "143", "imap", "none"),
+        ),
+        (
+            "the server is a cloud metadata endpoint",
+            endpoint("169.254.169.254", "993", "imap", "tls"),
+        ),
+    ] {
+        let error = set(&secrets, &plugin, "mailbox", instance_fields(extra), None).unwrap_err();
+        assert!(
+            matches!(error, CredentialError::Invalid(_)),
+            "{label}: {error}"
+        );
+        assert!(error.to_string().contains("CREDENTIAL_INVALID"), "{label}");
+    }
+
+    // Nothing was stored by any of them.
+    let status = status(&secrets, &plugin, "en", None).unwrap();
+    assert_eq!(status["slots"][0]["instances"], json!([]));
+}
+
+#[test]
+fn an_untouched_server_field_keeps_the_instance_on_its_preset_path() {
+    let dir = tempdir().unwrap();
+    let (_plugins, plugin, _root) = install(
+        dir.path(),
+        "demo.custom-server-blank",
+        json!({ "credentials": [imap_slot_with_user_endpoint()] }),
+    );
+    let secrets = SecretStore::open(dir.path()).unwrap();
+    let instance = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        // What an untouched form posts: the four keys, all empty.
+        instance_fields(endpoint("  ", "", "", "")),
+        None,
+    )
+    .unwrap()
+    .unwrap();
+
+    let fields = resolve(&secrets, &plugin, &format!("mailbox#{instance}"), None).unwrap();
+    assert_eq!(fields.len(), 2, "{fields:?}");
+    assert!(!fields.contains_key("server"));
+}

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { PluginCredentialStatus } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { Button, Input, PasswordInput, Select } from "../ui";
+import { CustomMailServerFields } from "./PluginCredentialEndpoint";
 
 type CredentialField = PluginCredentialStatus["fields"][number];
 
@@ -31,12 +32,15 @@ export function CredentialFieldsForm({
   onChange,
   locale,
   disabled,
+  userEndpoint,
 }: {
   fields: CredentialField[];
   values: CredentialValues;
   onChange: (key: string, value: string) => void;
   locale: string;
   disabled?: boolean;
+  /** Present when the user may name their own mail server for this slot. */
+  userEndpoint?: { protocols: readonly string[] };
 }) {
   const { t } = useTranslation();
   return (
@@ -80,6 +84,14 @@ export function CredentialFieldsForm({
           </div>
         );
       })}
+      {userEndpoint?.protocols.length ? (
+        <CustomMailServerFields
+          protocols={userEndpoint.protocols}
+          values={values}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      ) : null}
     </>
   );
 }
@@ -198,6 +210,7 @@ function SingleValueSlot({
         values={values}
         onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
         locale={locale}
+        userEndpoint={slot.userEndpoint}
       />
       {error ? <p role="alert" className="plugins-settings-error">{error}</p> : null}
       <div className="plugin-credential-actions">
@@ -293,6 +306,7 @@ function MultiValueSlot({
             onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
             locale={locale}
             disabled={busy}
+            userEndpoint={slot.userEndpoint}
           />
           <div className="plugin-credential-actions">
             <Button

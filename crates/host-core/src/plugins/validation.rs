@@ -7,6 +7,7 @@ mod provider_catalog;
 mod views;
 
 pub(crate) use contribution_ids::is_contrib_id;
+pub(crate) use host_capabilities::is_hostname;
 use labels::{is_optional_plugin_label, is_plugin_label, is_shortcut_shape};
 use views::validate_views;
 

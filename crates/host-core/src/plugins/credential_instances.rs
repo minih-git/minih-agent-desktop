@@ -133,7 +133,8 @@ fn public_fields(
     slot: &DeclaredSlot,
     values: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
-    slot.fields
+    let mut fields: BTreeMap<String, String> = slot
+        .fields
         .iter()
         .filter(|field| !field.secret)
         .filter_map(|field| {
@@ -141,7 +142,17 @@ fn public_fields(
                 .get(&field.key)
                 .map(|value| (field.key.clone(), value.clone()))
         })
-        .collect()
+        .collect();
+    // A user-typed mail server is part of how the account is identified, so a
+    // plugin may read back where it points. The password stays unreadable.
+    if !slot.user_endpoint_protocols.is_empty() {
+        for key in super::user_endpoint::RESERVED_KEYS {
+            if let Some(value) = values.get(key) {
+                fields.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    fields
 }
 
 /// Append one audit row about an instance-list change. Ids only.
@@ -534,14 +545,8 @@ pub(crate) fn resolve(
     if !credentials::covers(&stored, slot) {
         return Err(not_configured(plugin_id, &slot.id, instance_id));
     }
-    let mut fields = BTreeMap::new();
-    for key in slot.field_keys() {
-        let value = stored
-            .fields
-            .get(key)
-            .ok_or_else(|| not_configured(plugin_id, &slot.id, instance_id))?;
-        fields.insert(key.to_string(), value.clone());
-    }
+    let fields = credentials::injected_fields(slot, &stored)
+        .ok_or_else(|| not_configured(plugin_id, &slot.id, instance_id))?;
     credentials::remember_used(plugin_id, &slot.id);
     Ok(fields)
 }
