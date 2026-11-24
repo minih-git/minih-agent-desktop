@@ -153,7 +153,6 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.contextUsageDisplayUsed",
       "settings.linkOpenTarget",
       "settings.largePasteThreshold",
-      "settings.sessionTitleCard",
     ],
   },
   {

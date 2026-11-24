@@ -47,6 +47,7 @@ export const HIGH_RISK_PERMISSIONS = [
   "project.create",
   "session.read",
   "session.autoTitle",
+  "session.titleContext",
   // A paid, host-sent request the conversation never shows (ADR 0339).
   "session.keepWarm",
   "session.import",

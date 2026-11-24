@@ -99,6 +99,114 @@ fn relocated_project_memory_remains_readable_through_the_repository() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn project_memory_survives_relocation_through_a_parent_directory_alias() {
+    let temporary = tempfile::tempdir().unwrap();
+    let real_root = temporary.path().join("real");
+    fs::create_dir_all(&real_root).unwrap();
+    let alias_root = temporary.path().join("alias");
+    std::os::unix::fs::symlink(&real_root, &alias_root).unwrap();
+    let source = alias_root.join("old profile");
+    let destination = alias_root.join("new profile");
+    let project = source.join("projects/saved project");
+    fs::create_dir_all(&project).unwrap();
+    let database = Database::open_in_dir(&source).unwrap();
+    database
+        .set_project_memory(&project.to_string_lossy(), "Keep aliased memory")
+        .unwrap();
+    let old_key = crate::db::canonical_project_path(&project.to_string_lossy()).unwrap();
+    database
+        .kv_set(
+            "projectInstructions",
+            &old_key,
+            &json!({"content": "Keep instructions"}),
+        )
+        .unwrap();
+    database.conn().execute(
+        "INSERT INTO memory_entries (id,scope_kind,scope_key,kind,content,status,origin,evidence,fingerprint,created_at,updated_at) VALUES ('relocated-note','project',?1,'fact','Learned project fact','active','user_ui','user_stated','fact-fingerprint',1,1)",
+        params![old_key],
+    ).unwrap();
+    database.conn().execute(
+        "INSERT INTO memory_tombstones (scope_kind,scope_key,fingerprint,created_at) VALUES ('project',?1,'deleted-fingerprint',1)",
+        params![old_key],
+    ).unwrap();
+    let session = sessions::create_session(
+        &database,
+        Some("Migration fixture".into()),
+        None,
+        None,
+        None,
+        Some(project.to_string_lossy().into_owned()),
+    )
+    .unwrap();
+    database.conn().execute(
+        "INSERT INTO memory_session_state (session_id,scope_kind,scope_key,cursor_seq) VALUES (?1,'project',?2,42)",
+        params![session.id, old_key],
+    ).unwrap();
+    drop(database);
+    copy_directory(&source, &destination);
+    relocate(&source, &destination).unwrap();
+    let moved = destination.join("projects/saved project");
+    let key = crate::db::canonical_project_path(&moved.to_string_lossy()).unwrap();
+    let database = Database::open_in_dir(&destination).unwrap();
+    assert_eq!(
+        database
+            .get_project_memory(&moved.to_string_lossy())
+            .unwrap()
+            .content,
+        "Keep aliased memory"
+    );
+    assert_eq!(
+        database.kv_get("projectInstructions", &key).unwrap(),
+        Some(json!({"content": "Keep instructions"}))
+    );
+    let stored: String = database
+        .conn()
+        .query_row("SELECT path FROM projects", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(stored, key);
+    let scope = database
+        .learned_memory_scope_for_path(&moved.to_string_lossy())
+        .unwrap();
+    let notes = database
+        .list_memory_entries(&scope, None, None, 20, 0)
+        .unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].content, "Learned project fact");
+    for table in [
+        "memory_entries",
+        "memory_tombstones",
+        "memory_session_state",
+    ] {
+        let stored: String = database
+            .conn()
+            .query_row(&format!("SELECT scope_key FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            stored, key,
+            "{table} must use the repository's project identity"
+        );
+    }
+    let cursor: i64 = database
+        .conn()
+        .query_row("SELECT cursor_seq FROM memory_session_state", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(cursor, 42);
+    let original = Database::open_in_dir(&source).unwrap();
+    assert_eq!(
+        original
+            .get_project_memory(&project.to_string_lossy())
+            .unwrap()
+            .content,
+        "Keep aliased memory"
+    );
+}
+
 #[test]
 fn relocates_a_real_copied_profile_without_recovery_or_changing_user_content() {
     let temporary = tempfile::tempdir().unwrap();
@@ -240,7 +348,7 @@ fn relocates_a_real_copied_profile_without_recovery_or_changing_user_content() {
         .unwrap();
     assert_eq!(
         inside,
-        crate::db::normalize_project_path(&destination.join("project").to_string_lossy()).unwrap()
+        crate::db::canonical_project_path(&destination.join("project").to_string_lossy()).unwrap()
     );
     let outside: String = connection
         .query_row(
@@ -275,7 +383,7 @@ fn relocates_a_real_copied_profile_without_recovery_or_changing_user_content() {
         .unwrap();
     assert_eq!(
         memory_key,
-        crate::db::normalize_project_path(&destination.join("project").to_string_lossy()).unwrap()
+        crate::db::canonical_project_path(&destination.join("project").to_string_lossy()).unwrap()
     );
     let group: String = connection
         .query_row(
@@ -327,6 +435,12 @@ fn exact_path_boundaries_preserve_prose_prefix_neighbors_and_traversal() {
     assert_eq!(value["args"]["path"], json!(traversal));
     assert_eq!(value["userCode"]["content"]["path"], json!(inside));
     assert_eq!(value["text"], json!(inside));
+    assert_eq!(
+        roots.remap_project(&inside.to_string_lossy()),
+        crate::db::normalize_project_path(&roots.destination.join("nested/file").to_string_lossy())
+    );
+    assert!(roots.remap_project(&neighbor).is_none());
+    assert!(roots.remap_project(&traversal.to_string_lossy()).is_none());
 }
 
 #[test]

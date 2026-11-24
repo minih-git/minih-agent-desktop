@@ -45,7 +45,6 @@ import { registerComposerIpc } from "./composer-ipc";
 import { registerSpeechIpc } from "./speech-ipc";
 import { registerVoiceIpc } from "./voice-ipc";
 import { registerLiveVoiceIpc } from "./live-voice-ipc";
-import type { SessionTitleJob } from "../session-title-service";
 import type { LiveCallService } from "../live-voice/call-service";
 import type { LiveVoiceWidget } from "../live-voice/widget-window";
 import type { IpcRegistrar } from "./types";
@@ -54,11 +53,6 @@ import type { createTraySessions } from "../tray-sessions";
 import type { createTaskbarUnreadBadge } from "../taskbar-unread-badge";
 
 export type RegisterIpcDependencies = {
-  /**
-   * Built-in session title generator. One instance is shared with the settled
-   * turn retry so both triggers serialize on the same in-flight guard.
-   */
-  generateSessionTitle: (job: SessionTitleJob) => Promise<boolean>;
   /**
    * Built-in composer follow-up suggestions. `null` for every skip or
    * failure; the composer IPC turns that into `{ text: null }`.
@@ -141,7 +135,6 @@ function wrap<T>(fn: () => Promise<T>): Promise<Result<T>> {
 }
 export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
   const {
-    generateSessionTitle,
     generateFollowUpSuggestion,
     cancelMemoryExtraction,
     onLearnedMemorySettingsChanged,
@@ -516,9 +509,8 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     optionalWorkspaceRoot,
     composerCommandService,
     loadComposerTemplatesCached,
-    // One generator instance for the send path and the settled-turn retry, so
-    // both share the in-flight guard and never race each other.
-    generateSessionTitle,
+    // Plugins receive metadata only and decide whether to compose a title.
+    announcePromptSent: (payload) => plugins.broadcastEvent("session:promptSent", [payload]),
   });
 
   // Every user-initiated teardown asks the same question through one helper, so

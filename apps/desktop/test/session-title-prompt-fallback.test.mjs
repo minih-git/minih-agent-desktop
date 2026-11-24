@@ -44,38 +44,10 @@ test("a prompt that is only a pasted chip is never named after its path", () => 
   );
 });
 
-test("a generated or refreshed title reaches the sidebar and the remote client", () => {
-  // The host write alone is invisible: the renderer keeps its own session list,
-  // so Electron main must announce the change after the compare-and-set lands.
-  // A phone holding the session learns it from RACP instead, so the same
-  // callback also announces it to the Agent Host through the notifier.
-  assert.match(
-    main,
-    /onTitleChanged: \(sessionId\) => \{\s*sendToRenderer\(IPC\.event\.sessionsChanged, \{ reason: "session\.title" \}\);\s*void sessionChangeNotifier\.titleChanged\(sessionId\);\s*\}/,
-  );
-  assert.match(main, /createSessionTitleGenerator\(\{[\s\S]{0,600}dataDir,/);
-  assert.match(main, /createSessionRetitleGenerator\(\{[\s\S]{0,700}onTitleChanged/);
-  // Every entrance that writes a title in Main goes through one path: the two
-  // generators, the plugin service hook, and the rename/derive IPC hook.
-  assert.equal(main.match(/sessionChangeNotifier\.titleChanged\(/g)?.length, 4);
-});
-
-test("one generator instance serves the send path and the settled-turn retry", () => {
-  // Two instances would each hold their own run registry, so a retry could race
-  // the composition it is meant to complete and spend a second model call.
-  // The helper's own declaration is the other match; only index.ts constructs it.
-  assert.equal(main.match(/= createSessionTitleGenerator\(/g)?.length, 1);
-  assert.match(main, /const sessionTitleGenerator = createSessionTitleGenerator\(\{/);
-  assert.equal(main.match(/sessionTitleGenerator\.run,/g)?.length, 2);
-  assert.match(main, /generateSessionTitle: sessionTitleGenerator\.run,/);
-  assert.match(main, /isSessionTitleRunning: sessionTitleGenerator\.isRunning,/);
-  assert.match(main, /whenSessionTitleIdle: sessionTitleGenerator\.whenIdle,/);
-  assert.match(
-    main,
-    /generateSessionTitleJob &&[\s\S]{0,200}event\.type === "agent_end"[\s\S]{0,900}MAX_TITLE_RETRIES/,
-  );
-  assert.match(main, /await whenSessionTitleIdle\?\.\(retrySessionId\)/);
-  assert.match(main, /MAX_TITLE_RETRIES = 2/);
+test("plugin title writes announce the change to local and remote clients", () => {
+  assert.match(main, /announceTitleChange: \(sessionId\) => void sessionChangeNotifier\.titleChanged\(sessionId\)/);
+  assert.match(main, /announceSessionTitleChanged: \(sessionId\) => void sessionChangeNotifier\.titleChanged\(sessionId\)/);
+  assert.doesNotMatch(main, /createSessionTitleGenerator|createSessionRetitleGenerator/);
 });
 
 test("the first prompt becomes an immediate title, collapsed and capped", () => {

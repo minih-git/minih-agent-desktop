@@ -69,10 +69,6 @@ import { MainProcessState } from "./bootstrap/main-state";
 import { registerApplicationActivation } from "./bootstrap/app-activation";
 import { createHostRuntime } from "./runtime/host";
 import { createSidecarRuntime } from "./runtime/sidecar";
-import {
-  createSessionRetitleGenerator,
-  createSessionTitleGenerator,
-} from "./session-title-service";
 import { generateFollowUpSuggestion as generateFollowUpSuggestionImpl } from "./follow-up-suggestion-service";
 import { createSessionChangeNotifier } from "./session-change-notifier";
 import { createMemoryExtractionService } from "./memory/memory-extraction-service";
@@ -961,20 +957,6 @@ const memoryCurationService = createMemoryCurationService({
   isAnyTurnRunning: () => activeTurns.size > 0,
 });
 
-const sessionTitleGenerator = createSessionTitleGenerator({
-  getHost,
-  resolveRuntimeModel,
-  vendorOAuth,
-  logger,
-  dataDir,
-  // A title is durable in the host only; the sidebar renders its own copy and a
-  // phone holding the session learns about it from RACP.
-  onTitleChanged: (sessionId) => {
-    sendToRenderer(IPC.event.sessionsChanged, { reason: "session.title" });
-    void sessionChangeNotifier.titleChanged(sessionId);
-  },
-});
-
 // Renderer-triggered: the composer asks after a settled local turn, so the
 // display-side gates (empty draft, no pending ask or queue) stay renderer-owned
 // and main stays a stateless one-shot completion with the title generator's
@@ -993,9 +975,6 @@ const generateFollowUpSuggestion = async (sessionId: string) =>
   );
 
 const sidecarRuntime = createSidecarRuntime({
-  generateSessionTitle: sessionTitleGenerator.run,
-  isSessionTitleRunning: sessionTitleGenerator.isRunning,
-  whenSessionTitleIdle: sessionTitleGenerator.whenIdle,
   runtimeState,
   steeringReplies,
   logger,
@@ -1044,18 +1023,6 @@ const sidecarRuntime = createSidecarRuntime({
     conversationSummaryService.cancel(sessionId);
     memoryCurationService.cancelPending();
   },
-  generateSessionRetitle: createSessionRetitleGenerator({
-    getHost,
-    resolveRuntimeModel,
-    vendorOAuth,
-    logger,
-    // A compaction refresh lands in the host; the renderer keeps its own copy and
-    // a phone holding the session learns about it from RACP.
-    onTitleChanged: (sessionId) => {
-      sendToRenderer(IPC.event.sessionsChanged, { reason: "session.title" });
-      void sessionChangeNotifier.titleChanged(sessionId);
-    },
-  }),
 });
 emitAgentEvent = sidecarRuntime.emitAgentEvent;
 const { startSidecar } = sidecarRuntime;
@@ -1157,7 +1124,6 @@ function registerIpc() {
     draftHire: hireDrafter.draft,
     sessionCollaboration,
     taskChanges,
-    generateSessionTitle: sessionTitleGenerator.run,
     generateFollowUpSuggestion,
     announceSessionTitleChanged: (sessionId) => void sessionChangeNotifier.titleChanged(sessionId),
     // The extractor's lifecycle is Main's: a deleted session and a switch that

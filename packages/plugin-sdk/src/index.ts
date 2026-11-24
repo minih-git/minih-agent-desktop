@@ -447,6 +447,12 @@ export type PluginAutoTitleContext = {
   userPrompt: string;
   assistantReply?: string;
   modelKey?: string;
+  /** Bounded paste text and reference names require `session.titleContext`. */
+  pastedMaterial?: string;
+  referencedFiles?: string[];
+  /** Current compaction summary requires `session.titleContext`. */
+  summary?: string;
+  summaryFingerprint?: string;
 };
 
 /**
@@ -1149,6 +1155,8 @@ export type PluginCompleteInput = {
   system?: string;
   messages?: Array<{ role: "user" | "assistant"; content: string }>;
   includeSessionContext?: boolean;
+  /** Optional positive integer output cap, at most 65,536 tokens; model limits still apply. */
+  maxOutputTokens?: number;
 };
 
 export type PluginCompleteResult = {
@@ -1712,11 +1720,12 @@ export type PluginHostApi = {
   };
   session: {
     getLlmContext: () => Promise<PluginLlmContext>;
-    getAutoTitleContext: (input: { sessionId: string }) => Promise<PluginAutoTitleContext | null>;
+    getAutoTitleContext: (input: { sessionId: string; includeMaterial?: boolean; summaryFingerprint?: string }) => Promise<PluginAutoTitleContext | null>;
     setAutoTitle: (input: {
       sessionId: string;
       expectedTitle: string;
       title: string;
+      summaryFingerprint?: string;
     }) => Promise<{ updated: boolean }>;
     list: (input?: {
       limit?: number;
@@ -1983,6 +1992,7 @@ export const PLUGIN_PERMISSIONS = [
   "session.update.own",
   "session.delete.own",
   "session.autoTitle",
+  "session.titleContext",
   // Paid, host-sent request that refreshes one session's provider prompt cache
   // without adding anything to the conversation (ADR 0339). Install-time
   // consent only: the user has to see what it spends before it can spend it.
@@ -2077,6 +2087,7 @@ export const PLUGIN_PERMISSION_RISK = {
   "session.import": "high",
   "session.delete.own": "high",
   "session.autoTitle": "high",
+  "session.titleContext": "high",
   // Paid, host-sent, and invisible in the conversation.
   "session.keepWarm": "high",
   "memory.read": "high",

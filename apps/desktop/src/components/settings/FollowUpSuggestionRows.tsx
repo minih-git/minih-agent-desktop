@@ -16,7 +16,7 @@ import {
 import { SettingsRow } from "../../features/settings/primitives";
 import { SettingsToggle } from "../ui";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
-import { sessionTitleModelOptions } from "./SessionTitleRows";
+import { conversationModelOptions } from "../../lib/conversation-model-options";
 
 export function followUpSuggestionEnabled(settings: AppSettings): boolean {
   return settings.followUpSuggestion?.enabled !== false;
@@ -63,7 +63,7 @@ export function FollowUpSuggestionModelRow({
 }) {
   const { t } = useTranslation();
   const enabled = followUpSuggestionEnabled(settings);
-  const options = sessionTitleModelOptions(providers);
+  const options = conversationModelOptions(providers);
   const current = settings.followUpSuggestion?.modelKey ?? "";
   // An unknown stored key (removed provider or model) keeps rendering so the
   // user can see and replace it; the main process falls back to the session's

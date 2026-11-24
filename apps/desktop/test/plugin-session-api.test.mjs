@@ -615,3 +615,40 @@ test("plugin memory list is refused without the memory.read permission", async (
   assert.deepEqual(calls, []);
   assert.deepEqual(runtime.drainToasts(), ["list:PERMISSION_DENIED"]);
 });
+
+test("extended title context and refresh require an additional explicit grant", async (t) => {
+  for (const granted of [false, true]) {
+    const calls = [];
+    const runtime = new PluginRuntime({
+      hostEntry: hostProcessEntry, spawnProcess: forkPluginProcess,
+      session: {
+        getAutoTitleContext: async (_pluginId, input) => { calls.push(input); return null; },
+        setAutoTitle: async (_pluginId, input) => { calls.push(input); return { updated: false }; },
+      },
+    });
+    t.after(async () => { for (const loaded of runtime.listLoaded()) await runtime.unload(loaded.manifest.id); });
+    const permissions = ["session.autoTitle", ...(granted ? ["session.titleContext"] : [])];
+    const dir = writePlugin({
+      id: `demo.title-material-${granted}`, permissions,
+      main: `module.exports = { async onLoad() {
+        await pi.commands.register({ id: "extended", title: "Extended", run: async () => {
+          for (const call of [
+            () => pi.session.getAutoTitleContext({ sessionId: "s1", includeMaterial: true }),
+            () => pi.session.getAutoTitleContext({ sessionId: "s1", summaryFingerprint: "12345678" }),
+            () => pi.session.setAutoTitle({ sessionId: "s1", expectedTitle: "Old", title: "New", summaryFingerprint: "12345678" }),
+          ]) { try { await call(); } catch (e) { await pi.ui.showToast(e.code); } }
+          try { await pi.session.getAutoTitleContext({ sessionId: "s1", summaryFingerprint: 42 }); }
+          catch (e) { await pi.ui.showToast(e.code); }
+        } });
+      } };`,
+    });
+    await runtime.loadFromPath(dir, permissions); await runCommand(runtime, "extended");
+    assert.equal(calls.length, granted ? 3 : 0);
+    assert.deepEqual(runtime.drainToasts(), granted ? ["INVALID_PARAMS"] : ["PERMISSION_DENIED", "PERMISSION_DENIED", "PERMISSION_DENIED", "INVALID_PARAMS"]);
+    if (granted) {
+      assert.equal(calls[0].includeMaterial, true);
+      assert.equal(calls[1].summaryFingerprint, "12345678");
+      assert.equal(calls[2].summaryFingerprint, "12345678");
+    }
+  }
+});

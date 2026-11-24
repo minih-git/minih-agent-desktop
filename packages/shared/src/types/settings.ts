@@ -365,6 +365,8 @@ export type LearnedMemorySettings = {
   curate?: boolean;
 };
 
+/** Legacy built-in title preferences retained for persisted-data compatibility only.
+ * Model generation is owned by minih.session-titles and ignores this record. */
 export type SessionTitleSettings = {
   /** Absent and true enable generation. `false` keeps fallback titles only. */
   enabled?: boolean;

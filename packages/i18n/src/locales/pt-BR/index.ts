@@ -3292,6 +3292,7 @@ export const ptBR = {
       "memory.read": "Ler a memória aprendida",
       "conversation.read": "Ler o arquivo de conversas",
       "embeddings.run": "Criar embeddings com seus modelos",
+      "session.titleContext": "Ler material limitado e atualizar títulos automáticos",
       "session.autoTitle": "Ler o contexto do primeiro turno e atualizar títulos automáticos"
     },
     permissionHelp: {
@@ -3341,6 +3342,7 @@ export const ptBR = {
         "Lista suas conversas arquivadas — cada uma com seu resumo e, por sessão, a transcrição editada — para o plugin gravá-las nas suas notas. Desligar o arquivo oculta tudo. Resultados de ferramentas, raciocínio e anexos nunca são incluídos.",
       "embeddings.run":
         "Envia o texto que você passa para o modelo de embeddings que você configurar e consome a cota desse serviço; o plugin nunca vê a chave de API. Só o texto que você passa é enviado e só vetores retornam.",
+      "session.titleContext": "Pode ler trechos colados da primeira solicitação e o resumo atual para criar títulos. Requer session.autoTitle; não lê conversas completas nem arquivos arbitrários. Títulos manuais são preservados.",
       "session.autoTitle": "Pode ler apenas a primeira solicitação e resposta de sessões elegíveis e atualizar o título se ele não tiver sido alterado manualmente. Não pode ler a transcrição completa.",
     }
   },

@@ -3535,6 +3535,15 @@ export class PluginRuntime {
       case "session.getAutoTitleContext": {
         this.assertPermission(loaded, "session.autoTitle");
         const input = normalizePluginSessionInput(args[0] ?? {}, "other");
+        const includeMaterial = input.includeMaterial === true;
+        const summaryFingerprint = input.summaryFingerprint;
+        if (input.includeMaterial !== undefined && typeof input.includeMaterial !== "boolean") {
+          throw apiError("INVALID_PARAMS", "includeMaterial must be boolean");
+        }
+        if (summaryFingerprint !== undefined && (typeof summaryFingerprint !== "string" || !summaryFingerprint.trim() || summaryFingerprint.length > 128)) {
+          throw apiError("INVALID_PARAMS", "summaryFingerprint must be a non-empty bounded string");
+        }
+        if (includeMaterial || summaryFingerprint !== undefined) this.assertPermission(loaded, "session.titleContext");
         const sessionId = typeof input.sessionId === "string" ? input.sessionId.trim() : "";
         if (!sessionId || sessionId.length > 128) {
           throw apiError("INVALID_PARAMS", "sessionId must be a non-empty string");
@@ -3544,7 +3553,7 @@ export class PluginRuntime {
         }
         const context = await this.services.session.getAutoTitleContext(
           loaded.manifest.id,
-          { sessionId },
+          { sessionId, ...(includeMaterial ? { includeMaterial } : {}), ...(summaryFingerprint !== undefined ? { summaryFingerprint } : {}) },
         );
         this.services.audit?.({
           pluginId,
@@ -3558,6 +3567,11 @@ export class PluginRuntime {
       case "session.setAutoTitle": {
         this.assertPermission(loaded, "session.autoTitle");
         const input = normalizePluginSessionInput(args[0] ?? {}, "other");
+        const summaryFingerprint = input.summaryFingerprint;
+        if (summaryFingerprint !== undefined && (typeof summaryFingerprint !== "string" || !summaryFingerprint.trim() || summaryFingerprint.length > 128)) {
+          throw apiError("INVALID_PARAMS", "summaryFingerprint must be a non-empty bounded string");
+        }
+        if (summaryFingerprint !== undefined) this.assertPermission(loaded, "session.titleContext");
         const sessionId = typeof input.sessionId === "string" ? input.sessionId.trim() : "";
         const expectedTitle = typeof input.expectedTitle === "string" ? input.expectedTitle : "";
         const title = typeof input.title === "string" ? input.title : "";
@@ -3574,6 +3588,7 @@ export class PluginRuntime {
           sessionId,
           expectedTitle,
           title,
+          ...(summaryFingerprint !== undefined ? { summaryFingerprint } : {}),
         }) as { updated?: unknown };
         this.services.audit?.({
           pluginId,
@@ -5227,6 +5242,10 @@ export class PluginRuntime {
     if (!modelKey || !modelKey.includes("/")) {
       throw apiError("INVALID_ARGUMENT", "modelKey must be providerId/modelId");
     }
+    const maxOutputTokens = input.maxOutputTokens;
+    if (maxOutputTokens !== undefined && (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 65_536)) {
+      throw apiError("INVALID_ARGUMENT", "maxOutputTokens must be an integer between 1 and 65536");
+    }
     const system = typeof input.system === "string" ? input.system : "";
     if (system.length > MAX_COMPLETE_SYSTEM_CHARS) {
       throw apiError("INVALID_ARGUMENT", "system prompt exceeds 32 KiB");
@@ -5270,6 +5289,7 @@ export class PluginRuntime {
         system: system || undefined,
         messages,
         includeSessionContext,
+        ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
         sessionId: inFlight?.sessionId,
         stripToolName: inFlight?.toolName
           ? pluginToolName(loaded.manifest.id, inFlight.toolName)

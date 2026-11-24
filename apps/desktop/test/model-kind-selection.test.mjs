@@ -100,11 +100,10 @@ test("default, subagent, title and learning options all skip vector models", () 
   );
 });
 
-// The title row and the follow-up row share one option builder that lives in a
-// .tsx module; the rule is asserted where it is written.
-test("the title option builder filters on the same predicate", async () => {
+// The follow-up settings retain the same ready conversation-model predicate.
+test("the background-completion option builder filters on the same predicate", async () => {
   const source = await readFile(
-    new URL("../src/components/settings/SessionTitleRows.tsx", import.meta.url),
+    new URL("../src/lib/conversation-model-options.ts", import.meta.url),
     "utf8",
   );
   assert.match(source, /if \(!model\.id \|\| !isConversationModel\(model\)\) continue;/);

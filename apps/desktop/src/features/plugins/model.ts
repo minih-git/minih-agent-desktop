@@ -56,6 +56,7 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "project.create": "high",
   "session.read": "high",
   "session.autoTitle": "high",
+  "session.titleContext": "high",
   "session.import": "high",
   "session.delete.own": "high",
   "browser.cdp": "high",

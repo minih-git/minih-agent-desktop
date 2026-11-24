@@ -3335,6 +3335,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       "memory.read": "Öğrenilmiş belleği oku",
       "conversation.read": "Sohbet arşivini oku",
       "embeddings.run": "Kendi modellerinle gömme üret",
+      "session.titleContext": "Sınırlı başlık içeriğini oku ve otomatik başlıkları yenile",
       "session.autoTitle": "İlk tur başlık bağlamını oku ve otomatik başlıkları güncelle",
     },
     permissionHelp: {
@@ -3398,6 +3399,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
         "Arşivlenmiş sohbetlerinizi listeler — her biri özetiyle ve oturum bazında düzenlenmiş dökümüyle — böylece eklenti bunları notlarınıza yazabilir. Arşiv kapalıyken hepsi gizlenir. Araç sonuçları, akıl yürütme ve ekler hiçbir zaman yer almaz.",
       "embeddings.run":
         "Verdiğin metni yapılandırdığın gömme modeline gönderir ve o hizmetin kotasını kullanır; eklenti API anahtarını hiç görmez. Yalnızca verdiğin metin gönderilir, yalnızca vektörler döner.",
+      "session.titleContext": "Başlık üretmek için ilk isteğin yapıştırılmış metninin sınırlı bölümünü ve güncel özeti okuyabilir. session.autoTitle gerektirir; tam konuşmaları veya rastgele dosyaları okuyamaz. Elle verilen başlıklar korunur.",
       "session.autoTitle":
         "Yalnızca uygun oturumların ilk istemini ve ilk yanıtını okuyabilir; başlık elle değiştirilmemişse otomatik başlığı günceller. Tam dökümü okuyamaz.",
     },

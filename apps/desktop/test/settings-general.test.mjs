@@ -171,7 +171,7 @@ test("appearance, chat, and execution destinations own separate controls", () =>
   assert.match(chatSource, /enterToSend: !settings\.enterToSend/);
   assert.match(chatSource, /LargePasteThresholdRow/);
   assert.match(chatSource, /ContextUsageDisplayRow/);
-  assert.match(chatSource, /SessionTitleToggleRow/);
+  assert.doesNotMatch(chatSource, /SessionTitleToggleRow|SessionTitleModelRow|SessionTitleThinkingRow/);
   assert.doesNotMatch(chatSource, /defaultMode: value/);
   assert.doesNotMatch(chatSource, /settings\.defaultsTitle|settings\.executionTitle/);
   assert.doesNotMatch(chatSource, /PromptEnhancementCard|promptEnhancement/);

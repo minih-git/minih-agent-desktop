@@ -4,8 +4,7 @@ import test from "node:test";
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const { createSessionLaunchRuntime } = await import("../electron/main/runtime/session-launch.ts");
-const { generateSessionTitle, generateSessionRetitle } = await import("../electron/main/session-title-service.ts");
-const { summaryFingerprint } = await import("../electron/main/session-title-engine.ts");
+const { createPluginCompletionService } = await import("../electron/main/plugin-completion-service.ts");
 const { createMemoryExtractionService } = await import("../electron/main/memory/memory-extraction-service.ts");
 
 const sessionId = "project-session";
@@ -18,7 +17,6 @@ const skill = {
   path: `${projectPath}/.agents/skills/project-ops/SKILL.md`,
 };
 const body = "# Project operations\n\nInspect this project's runtime.";
-const summary = "The project runtime needs investigation.";
 const provider = {
   id: "fixture-provider",
   name: "Fixture provider",
@@ -32,7 +30,6 @@ const backgroundProvider = { ...provider, id: "background-provider", authKind: "
 const settings = {
   defaultProviderId: provider.id,
   defaultModelId: provider.defaultModelId,
-  sessionTitle: { modelKey: `${backgroundProvider.id}/${provider.defaultModelId}` },
   learnedMemory: { learn: true, model: `${backgroundProvider.id}/${provider.defaultModelId}` },
 };
 
@@ -45,6 +42,7 @@ async function fixture() {
     isAvailable: () => true,
     async call(method, input) {
       switch (method) {
+        case "settings.get": return settings;
         case "providers.list": return { providers: [provider, backgroundProvider] };
         case "providers.getSecret": return { value: "" };
         case "commandShells.list": {
@@ -60,15 +58,6 @@ async function fixture() {
         case "agents.disabledBuiltins": return { disabled: [] };
         case "agents.active": return { subagents: [] };
         case "mcp.active": return { servers: input.projectPath === projectPath ? projectServers : [] };
-        case "session.autoTitleContext": return {
-          expectedTitle: "New task", userPrompt: "Inspect the project runtime", modelKey: settings.sessionTitle.modelKey,
-        };
-        case "session.autoTitle":
-        case "session.retitleFromCompaction": return { updated: true };
-        case "session.get": return { session: { compaction: { summary } } };
-        case "session.retitleContext": return {
-          expectedTitle: "Inspect the project", summary, modelKey: settings.sessionTitle.modelKey,
-        };
         case "memory.extraction.budget": return { budget: { tokens: 0 } };
         case "memory.extraction.claim": return { claimed: true, state: { cursorSeq: 0, attempts: 0 } };
         case "memory.extraction.input": return { input: {
@@ -126,19 +115,15 @@ async function fixture() {
   };
 }
 
-test("first-title generation preserves the active session's project skill and MCP catalog", async () => {
+test("the plugin title completion preserves the active session's project, skills, MCP and authorization", async () => {
   const { deps, assertProjectSkillAvailable } = await fixture();
-  assert.equal(await generateSessionTitle(deps, {
-    sessionId, session: { providerId: provider.id, modelId: provider.defaultModelId }, settings,
-  }), true);
-  await assertProjectSkillAvailable();
-});
-
-test("compaction re-titling preserves the active session's project skill and MCP catalog", async () => {
-  const { deps, assertProjectSkillAvailable } = await fixture();
-  assert.equal(await generateSessionRetitle(deps, {
-    sessionId, summaryFingerprint: summaryFingerprint(summary), settings,
-  }), true);
+  const complete = createPluginCompletionService(deps);
+  const result = await complete({
+    modelKey: `${backgroundProvider.id}/${provider.defaultModelId}`,
+    messages: [{ role: "user", content: "Name this project investigation" }],
+    maxOutputTokens: 128,
+  });
+  assert.equal(result.text, "Inspect project runtime");
   await assertProjectSkillAvailable();
 });
 

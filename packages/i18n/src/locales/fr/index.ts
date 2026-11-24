@@ -3317,6 +3317,7 @@ sklm: {
       "memory.read": "Lire la mémoire apprise",
       "conversation.read": "Lire l'archive des conversations",
       "embeddings.run": "Créer des embeddings avec vos modèles",
+      "session.titleContext": "Lire les éléments limités et actualiser les titres automatiques",
       "session.autoTitle": "Lire le contexte du premier tour et modifier les titres automatiques"
     },
     "permissionHelp": {
@@ -3367,6 +3368,7 @@ sklm: {
         "Liste vos conversations archivées — chacune avec son résumé et, par session, sa transcription expurgée — pour que le plugin les écrive dans vos notes. L'archive désactivée masque tout. Les résultats d'outils, le raisonnement et les pièces jointes n'y figurent jamais.",
       "embeddings.run":
         "Envoie le texte que vous fournissez au modèle d'embedding que vous configurez et consomme le quota de ce service ; le plugin ne voit jamais la clé d'API. Seul le texte que vous fournissez est envoyé, seuls des vecteurs reviennent.",
+      "session.titleContext": "Peut lire des extraits collés de la première demande et le résumé actuel pour nommer la session. Nécessite session.autoTitle ; aucun accès à la conversation complète ni aux fichiers arbitraires. Les titres manuels sont conservés.",
       "session.autoTitle":
         "Peut lire uniquement le premier message et la première réponse des sessions admissibles, puis modifier le titre s'il n'a pas été changé manuellement. Ne peut pas lire la transcription complète.",
     }

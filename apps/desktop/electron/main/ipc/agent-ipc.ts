@@ -6,7 +6,6 @@ import { markTurnInterrupted, settleInterruptedTurn } from "../runtime/turn-inte
 import { expandSlashInvocation, visionFromModelConfig, type ComposerTemplate } from "@minih-agent/agent-runtime";
 import { appendPromptFallbackPaths, durableUserMessageId, preparePromptAttachments, type PreparedPromptAttachment } from "../prompt-attachments";
 import { resolveSessionReferences } from "../session-references";
-import type { SessionTitleJob } from "../session-title-service";
 import { executionFromResponse, resolveSessionMessageInput } from "@minih-agent/host-runtime";
 import type { AgentExtensionBridge } from "../agent-extensions";
 import type { AgentHostBridge } from "../agent-host-bridge";
@@ -54,8 +53,8 @@ export type AgentIpcDependencies = {
   optionalWorkspaceRoot: () => Promise<string | null>;
   composerCommandService: Pick<ComposerCommandService, "buildComposerCommands">;
   loadComposerTemplatesCached: (root: string | null) => Promise<ComposerTemplate[]>;
-  /** Built-in title generation (ADR 0323 amendment). Optional for tests. */
-  generateSessionTitle?: (job: SessionTitleJob) => Promise<boolean>;
+  /** Metadata-only notification after the user message is durable. */
+  announcePromptSent?: (payload: { sessionId: string; turnId: string }) => void;
 };
 
 function rejectNativeAgentOperation(sessionId: string): void {
@@ -113,7 +112,7 @@ export function registerAgentIpc({
   optionalWorkspaceRoot,
   composerCommandService,
   loadComposerTemplatesCached,
-  generateSessionTitle: generateSessionTitleJob,
+  announcePromptSent,
 }: AgentIpcDependencies): void {
   registerSideNotesIpc({ registrar, getHost, getSidecar, isTurnDispatchable });
   let host: HostProcess | null = null;
@@ -534,23 +533,7 @@ export function registerAgentIpc({
       event: { type: "message_end", message: userMessage },
     } satisfies AgentEventEnvelope);
 
-    // Built-in title generation (ADR 0323 amendment): once the first user
-    // message is durable, a model may name the session — once. The job asks
-    // the host's auto-title context first, so an already-named session costs
-    // nothing, and the naming input is always the first persisted user
-    // message, never the message that happened to trigger this send. The
-    // host CAS still refuses anything but a still-fallback title, so a manual
-    // rename always wins and a failure changes nothing the user sees.
-    if (generateSessionTitleJob) {
-      void generateSessionTitleJob({
-        sessionId: req.sessionId,
-        session: {
-          ...(session.providerId ? { providerId: session.providerId } : {}),
-          ...(session.modelId ? { modelId: session.modelId } : {}),
-        },
-        settings,
-      }).catch(() => undefined);
-    }
+    announcePromptSent?.({ sessionId: req.sessionId, turnId: durableTurnId });
 
     let result: { accepted: boolean; turnId: string };
     const isTrustedCompletionNotice =
