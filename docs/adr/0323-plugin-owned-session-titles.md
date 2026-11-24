@@ -1,7 +1,6 @@
 # ADR 0323: Make Session Title Generation a Standalone Plugin
 
-- Status: Accepted (core title generation restored by the 2026-10-17 amendment;
-  the standalone plugin is superseded)
+- Status: Accepted (standalone plugin ownership restored by the 2026-11-23 amendment)
 - Date: 2026-10-08
 - Supersedes: ADR 0186
 - Amended: 2026-10-08 (D654 restores the deterministic first-prompt fallback)
@@ -144,3 +143,41 @@ core regains title generation with a narrower trigger than the pre-0186 flow:
   binding passes the request's own `providerId/modelId`, because omitting the
   override fell back to the default provider and sent the naming input to a
   service the request never named.
+
+## Amendment 2026-11-23: plugin ownership restored
+
+The user requests independently configurable plugin-owned titles again. The
+2026-10-17/18 built-in generators and their Settings card are removed, not kept
+as a second implementation. `minih.session-titles` lives in the official
+`minih-agent-plugins` distribution repository and exposes a native model setting,
+thinking level, enable switch and optional post-compaction refresh.
+
+The host retains deterministic fallback derivation, title sources, manual-rename
+protection and the existing compare-and-set methods. Metadata-only
+`session:promptSent` and `session:compacted` events replace the internal model
+jobs; the existing terminal event supports bounded retries. No model call blocks
+a prompt. Existing `sessionTitle` preferences remain stored but inert; plugin
+installation, permission grants and model configuration remain explicit.
+
+Existing `session.autoTitle` grants are not broadened. A new high-risk
+`session.titleContext` permission gates optional bounded paste/reference input
+and compaction-summary access through the same title APIs. The broker checks
+the live checkpoint fingerprint before returning its summary and again before
+the retitle CAS. It exposes no arbitrary transcript/file read. The runtime spec
+and plugin API define the executable contracts and bounds.
+
+The plugin uses the public `agent.complete` service. This changes policy
+ownership, not the underlying HTTP transport: a connectivity failure in that
+shared service remains a separate defect. Moving provider execution or giving
+credentials/network access to the plugin was rejected as unnecessary scope
+and a new security/lifecycle burden.
+
+No title or settings data is deleted or reclassified. Without the plugin the
+first-prompt fallback remains available offline; successful plugin writes use
+the same desktop and remote notifications as other plugin title updates.
+
+Compatibility note: `engines.minihAgent` / catalog `minMinihAgent` currently
+declare the required host range but do not enforce an installation version gate.
+An old SDK rejects `session.titleContext` as unknown, which can produce a generic
+manifest error. Upgrade the host before installing this plugin; implementing a
+general engine-range gate is separate from this migration.

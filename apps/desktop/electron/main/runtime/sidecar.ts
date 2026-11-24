@@ -36,7 +36,6 @@ import type { RuntimeState } from "./context";
 import type { FinishTurn } from "./plans";
 import { formatSkillToolContent, type LoadedSkillDocument } from "../skill-document";
 import { currentSystemProxyRelayUrl } from "../network-proxy";
-import { retitleFingerprintForCompaction } from "../session-title-service";
 
 export type SidecarRuntimeDependencies = {
   runtimeState: RuntimeState;
@@ -75,38 +74,6 @@ export type SidecarRuntimeDependencies = {
   disabledBuiltinSkills: () => Promise<string[]>;
   pluginActiveInProject: (pluginId: string, projectPath: string | null | undefined) => boolean;
   currentNetworkProxy: () => any;
-  /**
-   * Post-compaction re-titling (ADR 0323 refinement). Fired for a persisted,
-   * summarized checkpoint so the sidebar name can follow the conversation's
-   * current subject; the job re-reads host state and compares fingerprints,
-   * so a stale or duplicated event costs nothing.
-   */
-  generateSessionRetitle?: (job: {
-    sessionId: string;
-    summaryFingerprint: string;
-    settings: AppSettings | null | undefined;
-  }) => Promise<boolean>;
-  /**
-   * Built-in first-title retry (ADR 0323 refinement). A title composed at send
-   * time can fail — the provider was not ready yet, or one completion errored —
-   * and the deterministic fallback then stayed forever. A still-`default`
-   * session gets a bounded second chance when its turn settles; the host's
-   * auto-title context answers nothing once any title landed, so a named
-   * session costs one cheap round-trip and no model call.
-   */
-  generateSessionTitle?: (job: {
-    sessionId: string;
-    session: { providerId?: string; modelId?: string } | null | undefined;
-    settings: AppSettings | null | undefined;
-  }) => Promise<boolean>;
-  /** Whether the send path is still composing a title for this session. */
-  isSessionTitleRunning?: (sessionId: string) => boolean;
-  /**
-   * Wait for the running composition and report its outcome. A settled-turn
-   * retry must not skip merely because the send path is slow: that composition
-   * can still fail after the turn ended and its retry would be lost.
-   */
-  whenSessionTitleIdle?: (sessionId: string) => Promise<boolean | undefined>;
   /**
    * Delivery ledger entry point for Main's built-in session tools (ADR
    * builtin-session-messaging). Plugin-only operations never come through here.
@@ -163,18 +130,11 @@ export function createSidecarRuntime({
   disabledBuiltinSkills,
   pluginActiveInProject,
   currentNetworkProxy,
-  generateSessionRetitle: generateSessionRetitleJob,
-  generateSessionTitle: generateSessionTitleJob,
-  isSessionTitleRunning,
-  whenSessionTitleIdle,
 }: SidecarRuntimeDependencies): {
   emitAgentEvent: (envelope: AgentEventEnvelope) => void;
   wireSidecar: (sidecar: AgentSidecar) => void;
   startSidecar: () => Promise<void>;
 } {
-  /** How many settled turns may still try to name a `default` session. */
-  const MAX_TITLE_RETRIES = 2;
-  const titleRetries = new Map<string, number>();
   const emitAgentEvent = (envelope: AgentEventEnvelope) => {
     // the current turn's state in Agent Host or the renderer. Persistence is a
     // separate call, so dropping it here still archives it as history.
@@ -326,75 +286,15 @@ export function createSidecarRuntime({
           },
         );
       }
-      // Built-in re-titling (ADR 0323 refinement): a persisted, summarized
-      // checkpoint means the conversation's subject may have drifted from the
-      // first prompt the title came from. Detached and gated — the job re-reads
-      // the host's current summary, compares fingerprints, and the host CAS
-      // refuses anything but a default/generated title, so a manual rename
-      // always wins and a failure changes nothing the user sees. A model-switch
-      // checkpoint never qualifies (see `retitleFingerprintForCompaction`).
-      const retitleFingerprint = retitleFingerprintForCompaction(event);
+      // Metadata only: plugins own title policy and model calls.
       if (
-        generateSessionRetitleJob &&
-        retitleFingerprint !== undefined &&
-        !envelope.parentToolCallId
+        !envelope.parentToolCallId && event.type === "compaction_end" &&
+        event.ok === true && event.reason !== "model_switch" && event.summaryFingerprint
       ) {
-        const retitleSessionId = envelope.sessionId;
-        void (async () => {
-          const settings = (await runtimeState.host?.call("settings.get")) as
-            | AppSettings
-            | null
-            | undefined;
-          await generateSessionRetitleJob({
-            sessionId: retitleSessionId,
-            summaryFingerprint: retitleFingerprint,
-            settings,
-          });
-        })().catch(() => undefined);
-      }
-      // Built-in first-title retry (ADR 0323 refinement): the title composed at
-      // send time can fail before the host has a provider ready, and the
-      // deterministic fallback would then stay forever. A settled root turn
-      // gives a still-default session one more chance, bounded per session;
-      // the host's auto-title context makes an already-named session free.
-      if (
-        generateSessionTitleJob &&
-        event.type === "agent_end" &&
-        !envelope.parentToolCallId
-      ) {
-        const retrySessionId = envelope.sessionId;
-        void (async () => {
-          // A composition started by the send path may still be running when
-          // the turn settles. Waiting for it — rather than skipping — is what
-          // keeps its later failure recoverable; only a landed title ends the
-          // work, and only a real attempt spends the budget below.
-          if (isSessionTitleRunning?.(retrySessionId)) {
-            const landed = await whenSessionTitleIdle?.(retrySessionId);
-            if (landed) {
-              titleRetries.delete(retrySessionId);
-              return;
-            }
-          }
-          const attempts = titleRetries.get(retrySessionId) ?? 0;
-          if (attempts >= MAX_TITLE_RETRIES) return;
-          // The budget is best-effort: a long-lived app must not keep one entry
-          // per session forever, and restarting every counter after a thousand
-          // sessions costs nothing the user can observe.
-          if (titleRetries.size > 1_000) titleRetries.clear();
-          titleRetries.set(retrySessionId, attempts + 1);
-          const settings = (await runtimeState.host?.call("settings.get")) as
-            | AppSettings
-            | null
-            | undefined;
-          // Another trigger may have started between the checks above.
-          if (isSessionTitleRunning?.(retrySessionId)) return;
-          const applied = await generateSessionTitleJob({
-            sessionId: retrySessionId,
-            session: {},
-            settings,
-          });
-          if (applied) titleRetries.delete(retrySessionId);
-        })().catch(() => undefined);
+        plugins.broadcastEvent("session:compacted", [{
+          sessionId: envelope.sessionId,
+          summaryFingerprint: event.summaryFingerprint,
+        }]);
       }
       emitAgentEvent(envelope);
       const persistedMessage = persistAgentEvent(envelope);

@@ -344,8 +344,27 @@ test("agent.complete keeps the classified provider code for the plugin", async (
 
 test("the plugin completion declares INVALID_ARGUMENT for empty model output", async () => {
   const source = await readFile(
-    new URL("../electron/main/services/plugin-services.ts", import.meta.url),
+    new URL("../electron/main/plugin-completion-service.ts", import.meta.url),
     "utf8",
   );
   assert.match(source, /emptyErrorCode: "INVALID_ARGUMENT"/);
+});
+
+test("plugin completions preserve an optional output cap and reject invalid bounds", async (t) => {
+  const calls = [];
+  const runtime = new PluginRuntime({
+    hostEntry: hostProcessEntry, spawnProcess: forkPluginProcess,
+    complete: async (input) => { calls.push(input); return { text: "Title", modelKey: input.modelKey }; },
+  });
+  t.after(async () => { for (const plugin of runtime.listLoaded()) await runtime.unload(plugin.manifest.id); });
+  const dir = writePlugin({ permissions: ["agent.complete"], main: `module.exports = { async onLoad() {
+    await pi.agent.complete({ modelKey: "p/m", messages: [{ role: "user", content: "Name this" }], maxOutputTokens: 128 });
+    for (const maxOutputTokens of [0, -1, 1.5, 65537, "128", null]) {
+      try { await pi.agent.complete({ modelKey: "p/m", maxOutputTokens }); }
+      catch (error) { await pi.ui.showToast(error.code); }
+    }
+  } };` });
+  await runtime.loadFromPath(dir, ["agent.complete"]);
+  assert.equal(calls.length, 1); assert.equal(calls[0].maxOutputTokens, 128);
+  assert.deepEqual(runtime.drainToasts(), Array(6).fill("INVALID_ARGUMENT"));
 });

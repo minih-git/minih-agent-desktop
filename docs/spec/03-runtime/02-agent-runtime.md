@@ -130,94 +130,66 @@ accepts it only while the stored title is still a placeholder with the `default`
 source, so the fallback never replaces a manual rename or an earlier automatic
 title, and the write does not change `updated_at`.
 
-That fallback keeps the source `default`: the derived text is not a user choice,
-so the session stays eligible for automatic replacement. Once the first user
-message is durable, Electron main may compose one model title for the session —
-once. Each send asks the host for the auto-title context first; a session whose
-title source is no longer `default` (a manual rename, or a generated title that
-already landed) answers nothing, costs no model call, and is never renamed
-again. The naming input is always the first persisted user message, never the
-message that happened to trigger a later send, so resending or continuing a
-conversation cannot rename the session.
+The fallback keeps the `default` source so an installed, enabled title plugin
+can replace it. The host never composes an AI title itself. The standalone
+`minih.session-titles` plugin owns prompts, model selection, thinking level,
+serialization, retry budgets and optional post-compaction refreshes.
 
-Composer file and paste chips serialize to `@path` tokens, so a first prompt can
-be nothing but a reference to a pasted document under
-`<data dir>/scratch/<session>/pasted/`. The fallback therefore strips those
-tokens and keeps only the user's own words; a prompt without any stays a
-placeholder instead of surfacing the scratch path as the task name, and the
-automatic title below names the session from pasted text or the referenced
-file names.
+After a user message is durable, the host broadcasts `session:promptSent`
+with `{ sessionId, turnId }`, without message text. The plugin also subscribes
+to `session:turnEnded`: it waits for an in-flight composition before retrying
+a failure. Only real model calls count toward its three-attempt ceiling per
+session/model/thinking configuration during an activation. Retry metadata is
+bounded to 1,000 entries; an evicted session or a reload gets a fresh budget.
+An already-generated or manually named session returns no first-title context
+and costs no model call. Later prompts never become the naming input.
 
-The naming input has four parts. The user's own words come first: the first
-message with its `@path` tokens removed. Pasted material follows when the
-message referenced a paste: Electron main reads at most three regular text files
-from that session's own `pasted/` directory, at most 2,000 code points each and
-3,000 in total, from the head of each file so a multi-megabyte paste still
-contributes its opening instead of being skipped. Only text extensions are read,
-and every step from the data root through `scratch/<session>/pasted/` must stay
-inside the previous one, so neither a file link nor a redirected `pasted/`
-directory can reach another session or an arbitrary path. Referenced workspace
-files contribute their bounded file names next (`@src/login.ts` names the
-session even with no typed text); their contents are never read. The language
-instruction comes last and belongs to the user's own words: the script is named
-outright only when it identifies the language (kana, Hangul, Thai), Han and the
-other shared writing systems are named as scripts so kanji-only Japanese is not
-renamed in Chinese, and the attachment decides only when the prompt has no
-words of its own. Latin-script requests keep the generic "the user's language"
-rule instead of a guess.
-
-The completion writes through a host compare-and-set that succeeds only while
-the exact title it read is still current with the `default` source. Manual
-renames and another generated title therefore win concurrent updates. A landed
-write emits one `sessionsChanged` event with reason `session.title`; the
-renderer's session list is its own copy, so without that announcement a
-generated name stayed invisible until the next reload. A refused write emits
-nothing. Host-core owns the title source in schema v23; this state survives
-renderer restart and does not expose a general transcript-read API.
+`session.autoTitle` retains its existing first-turn read and compare-and-set
+contract. A separately granted `session.titleContext` capability allows the
+plugin to opt into bounded paste excerpts and reference names: first-prompt
+words are capped at 1,000 code points; at most three session-owned pasted files
+contribute 2,000 each and 3,000 total; at most six reference names contribute
+60 each. The host reuses the session-scoped paste reader and its link/path
+checks; workspace file contents and arbitrary files are never exposed. Missing
+or unreadable paste material contributes no text. The plugin keeps the user's
+language and treats naming material as untrusted data, not instructions.
 
 ### 4.2 Re-titling after a context compaction
 
-A long conversation's subject legitimately drifts away from its first prompt,
-so the built-in title may stop describing the session. When a summarized
-compaction checkpoint persists, the runtime's `compaction_end` event carries a
-short fingerprint of the summary it installed. Electron main then runs the
-same one-shot title completion against the compaction summary instead of the
-first message, and writes through `session.retitleFromCompaction`: a
-compare-and-set that replaces a `default` or `generated` title — the
-session keeps following the conversation's current subject — but never a
-`manual` rename. The job re-reads the host's current summary and compares
-fingerprints before spending a model call, so a stale or duplicated event
-costs nothing, and a session is never re-titled twice for the same checkpoint.
-The event carries the fingerprint only, never summary text: everything the
-main process needs about the summary is re-read from the host. The prompt also
-carries the title being replaced, so a refresh keeps the language the session
-is already named in even when the checkpoint was summarized in another one; a
-landed refresh emits the same `sessionsChanged` announcement as a first title.
-A `model_switch` checkpoint (D669) never re-titles: it summarizes the same
-conversation for another model, so the subject has not moved and a title
-request would only add cost to a cost optimization.
+After a successful summarized root compaction, the host broadcasts
+`session:compacted` with `{ sessionId, summaryFingerprint }`. Failed, unsummarized,
+subagent and `model_switch` checkpoints do not trigger this event. No summary
+text is broadcast. With `session.autoTitle` and `session.titleContext`, the
+plugin requests the current non-manual title and at most 1,500 code points of
+the matching summary. The broker checks the fingerprint before returning text
+and rechecks it after the completion before issuing the host's retitle CAS.
+Manual titles always win; default and generated titles can be refreshed. The
+plugin serializes this with first-title generation and deduplicates successful
+refreshes for the same checkpoint. The current title carries the naming
+language even if the summary is in another language.
 
-### 4.3 One composition per session, and a second chance
+### 4.3 Ownership and compatibility
 
-The send path and the settled-turn retry share one generator instance. Its run
-registry is reserved before the composition's first await, so two triggers can
-never compose the same session concurrently, and the retry waits for a
-composition that is still running instead of skipping it — that one can fail
-after the turn ended, and its retry would otherwise be lost. Only a real attempt
-spends the retry budget (two per session), and an already-named session costs
-one host round-trip and no model call.
+Plugin settings expose `enabled`, `model`, `thinkingLevel` and
+`retitleAfterCompaction`. Empty model selection uses the session model, or the
+host default if the session has none. A missing explicitly selected model is
+an observable failure, never a silent fallback to another service. Disabling
+or unloading the plugin prevents late results from writing titles. Disabling
+the feature while a completion runs also prevents its write.
 
-The requested model always decides the provider. A caller without a session
-binding (the retry) passes the request's own `providerId/modelId` to the model
-resolver. Title generation, compaction re-titling, memory extraction, and plugin
-one-shot completions resolve only model configuration and credentials; they must
-not launch or reconfigure the session, replace its project mapping, refresh its
-MCP catalog, or change its runtime authorization bindings. Project skills remain
-loadable while these background completions run or fail.
+The old application `sessionTitle` record is retained without modification for
+data compatibility but is no longer read by a title engine or shown in Chat
+Experience. Users choose the model in the plugin's generated settings sheet;
+installing the plugin and granting its permissions is explicit, not automatic.
+Existing titles and title sources are unchanged, with no schema migration.
+Without the plugin only the deterministic fallback runs, spending no quota.
 
-Settings own the built-in generator's model and thinking level
-(`sessionTitle`); the standalone title plugin is superseded (ADR 0323
-amendment, 2026-10-17).
+The plugin uses `agent.complete`, not its own provider credentials or network
+client. This retains the host's one-shot transport and does not by itself fix
+connectivity failures. Background model resolution must not launch or
+reconfigure a session, change its project/skills/MCP mapping, or replace its
+runtime authorization. Successful plugin writes announce `sessionsChanged`
+and the remote title change; refused CAS writes announce nothing.
 
 ## 5. Prompt flow
 

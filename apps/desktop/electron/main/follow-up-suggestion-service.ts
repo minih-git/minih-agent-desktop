@@ -20,11 +20,11 @@ import {
   normalizeFollowUpSuggestion,
   type FollowUpSuggestionInputMessage,
 } from "./follow-up-suggestion-engine";
-import type { SessionTitleRequest } from "./session-title-engine";
 import {
-  sessionTitleModelsFromProviders,
-  titleLaunchOverrides,
-} from "./session-title-service";
+  type CompletionRequest as SessionTitleRequest,
+  completionModelsFromProviders as sessionTitleModelsFromProviders,
+  completionLaunchOverrides as titleLaunchOverrides,
+} from "./completion-models";
 import type {
   RuntimeModelResolver,
 } from "./runtime/model-resolution";

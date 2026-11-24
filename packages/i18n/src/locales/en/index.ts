@@ -3424,6 +3424,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       "memory.read": "Read learned memory",
       "conversation.read": "Read conversation archive",
       "embeddings.run": "Create embeddings with your models",
+      "session.titleContext": "Read bounded title material and refresh automatic titles",
       "session.autoTitle": "Read first-turn title context and update automatic titles",
       "tasks.read": "Read your task list",
       "tasks.manage": "Create and drive tasks",
@@ -3491,6 +3492,7 @@ importConfirm: "Imported extensions run inside the agent process with the same a
         "Lists your archived conversations — each with its summary, and its redacted transcript by session — so the plugin can write them into your notes. Turning the archive off hides all of it. Tool results, reasoning, and attachments are never included.",
       "embeddings.run":
         "Sends text to the embedding model you configure and spends that provider's quota; the plugin never sees the API key. Only text you pass in is sent, and only vectors come back.",
+      "session.titleContext": "Can read bounded pasted text from the first prompt and the current compaction summary for naming, and refresh non-manual titles. Requires session.autoTitle; never exposes a full transcript or arbitrary files.",
       "session.autoTitle":
         "Can read only the first prompt and reply for eligible sessions, then replace an automatic title if it has not been manually changed. It cannot read the full transcript.",
       "tasks.read": "Reads the employee roster and redacted task list, without conversation content.",

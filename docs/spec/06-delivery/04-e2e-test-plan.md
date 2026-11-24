@@ -1,5 +1,32 @@
 # 04. E2E Test Plan
 
+Run `node scripts/e2e-session-titles-plugin.mjs <official-plugin-directory>`
+from the request worktree after building its Desktop bundle; the isolated
+Electron journey uses a local synthetic provider and saves the native model
+picker screenshot in its reported scratch directory.
+
+## E2E-PLUGIN-session-titles-configurable-model
+
+- **Preconditions:** Isolated profile, the official `minih.session-titles`
+  plugin, all declared permissions granted, and local synthetic chat models.
+- **Steps:** Select a title model in the native plugin settings sheet; send a
+  first prompt and observe the fallback upgrade. Continue the session and
+  ensure no second first-title completion. Fail a composition until after the
+  root turn settles, then allow its retry. Rename manually during a completion.
+  Compact the session, replay the checkpoint event, supersede the summary while
+  composing, and disable/unload while a completion is in flight.
+- **Expected:** Configured model and thinking selection reach the provider;
+  fallback remains offline or on error. Three first-title attempts at most per
+  session/model/thinking configuration per activation (bounded 1,000-entry
+  metadata cache). No concurrent composition per session, no overwritten manual
+  title or post-disable write, no stale-summary refresh, and no full transcript
+  or cross-session paste access. Successful writes reach the sidebar and remote
+  client; refused writes do not announce success. Without the plugin the host
+  makes no AI title calls. Old `sessionTitle` data remains stored but inert.
+- **Coverage:** Plugin lifecycle/user-path tests, real plugin-process API tests,
+  bounded title-service tests and existing paste-safety/fallback tests. Desktop
+  installed-release UI acceptance and real-provider connectivity are separate.
+
 ## E2E-PLUGIN-notification-inbox
 
 - **Preconditions:** Isolated profile, synthetic plugins with `notify.center`,

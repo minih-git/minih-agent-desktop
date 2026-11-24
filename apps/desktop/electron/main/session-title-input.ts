@@ -1,5 +1,5 @@
 /**
- * Naming input for a built-in session title: the user's own words plus the
+ * Bounded naming material for a plugin-owned session title: the user's words plus
  * bounded text behind any pasted reference that prompt carries.
  *
  * Large pastes arrive as an `@<data dir>/scratch/<session>/pasted/pasted-*.txt`

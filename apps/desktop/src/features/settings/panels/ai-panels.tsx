@@ -13,11 +13,6 @@ import {
   FollowUpSuggestionToggleRow,
 } from "../../../components/settings/FollowUpSuggestionRows";
 import { LearnedMemoryCard } from "../../../components/settings/LearnedMemoryCard";
-import {
-  SessionTitleModelRow,
-  SessionTitleThinkingRow,
-  SessionTitleToggleRow,
-} from "../../../components/settings/SessionTitleRows";
 import { SettingsMenuSelect } from "../../../components/settings/SettingsMenuSelect";
 import { ShowThinkingRow } from "../../../components/settings/ShowThinkingRow";
 import { TranscriptDensityRow } from "../../../components/settings/TranscriptDensityRow";
@@ -69,20 +64,6 @@ export function ChatExperiencePanel({
         <ContextUsageDisplayRow settings={settings} saveSettings={saveSettings} />
         <LinkOpenTargetRow settings={settings} saveSettings={saveSettings} />
         <LargePasteThresholdRow settings={settings} saveSettings={saveSettings} />
-      </SettingsCard>
-
-      <SettingsCard title={t("settings.sessionTitleCard")}>
-        <SessionTitleToggleRow settings={settings} saveSettings={saveSettings} />
-        <SessionTitleModelRow
-          settings={settings}
-          providers={providers}
-          saveSettings={saveSettings}
-        />
-        <SessionTitleThinkingRow
-          settings={settings}
-          providers={providers}
-          saveSettings={saveSettings}
-        />
       </SettingsCard>
 
       <SettingsCard title={t("settings.followUpSuggestionCard")}>

@@ -431,6 +431,22 @@ pi.session.setAutoTitle(input: {
 手动重命名或另一项更新发生后返回 `{ updated: false }`。两个方法都需要高风险权限
 `session.autoTitle`，因为持有 `agent.complete` 的插件可能将首轮文本发送给模型。
 
+2026-11-23 additive extension: with a separate high-risk `session.titleContext`
+grant, `getAutoTitleContext` accepts `includeMaterial?: boolean` and
+`summaryFingerprint?: string`; `setAutoTitle` also accepts the fingerprint.
+Old calls and grants retain the contract above. Material is limited to 3,000
+code points from that session's own paste files and six bounded reference names;
+workspace contents are never read. Compaction mode returns only the matching
+current summary (1,500 code points), current title and model identity, not a
+transcript. A stale checkpoint or manual rename refuses the refresh write.
+Metadata-only events are `session:promptSent` (`sessionId`, `turnId`) and
+`session:compacted` (`sessionId`, `summaryFingerprint`); model switches are excluded.
+`agent.complete` additionally accepts optional integer `maxOutputTokens` in
+1..65,536, preserving existing calls when omitted; the title plugin uses 128.
+The official `minih.session-titles` plugin owns model selection and generation;
+the host no longer runs a built-in title completion. See the
+[canonical API contract](../../../spec/07-plugins/03-plugin-api.md#session-auto-title-requires-sessionautotitle).
+
 ### 插件拥有的会话（P0/P1；需要对应权限）
 
 插件只能导入和管理归属于自身的会话。来源必须在

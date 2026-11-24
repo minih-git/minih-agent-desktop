@@ -3317,6 +3317,7 @@ sklm: {
       "memory.read": "Gelerntes Gedächtnis lesen",
       "conversation.read": "Unterhaltungsarchiv lesen",
       "embeddings.run": "Embeddings mit deinen Modellen erzeugen",
+      "session.titleContext": "Begrenztes Titelmaterial lesen und automatische Titel aktualisieren",
       "session.autoTitle": "Kontext des ersten Durchlaufs lesen und automatische Titel ändern"
     },
     "permissionHelp": {
@@ -3367,6 +3368,7 @@ sklm: {
         "Listet deine archivierten Unterhaltungen auf — jeweils mit Zusammenfassung und, nach Sitzung, dem bereinigten Verlauf —, damit das Plugin sie in deine Notizen schreiben kann. Ist das Archiv aus, bleibt alles verborgen. Werkzeugergebnisse, Denkprozess und Anhänge sind nie enthalten.",
       "embeddings.run":
         "Sendet den übergebenen Text an das von dir konfigurierte Embedding-Modell und verbraucht dessen Kontingent; das Plugin sieht den API-Schlüssel nie. Nur übergebener Text wird gesendet, zurück kommen nur Vektoren.",
+      "session.titleContext": "Darf begrenzten eingefügten Text der ersten Anfrage und die aktuelle Zusammenfassung zur Benennung lesen. Benötigt session.autoTitle; keine vollständigen Verläufe oder beliebigen Dateien. Manuelle Titel bleiben erhalten.",
       "session.autoTitle":
         "Kann nur die erste Eingabe und Antwort geeigneter Sitzungen lesen und den Titel ändern, sofern er nicht manuell geändert wurde. Das vollständige Transkript bleibt unzugänglich.",
     }

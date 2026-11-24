@@ -58,9 +58,9 @@ export async function connectControl(dataDir) {
  * The main window's page. `run(fn, arg)` evaluates `fn(arg)` in the page and
  * returns its (awaited, JSON) value; `until` polls `run` until it is truthy.
  */
-export async function connectRenderer(port) {
+export async function connectRenderer(port, targetFilter = () => true) {
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-  const target = targets.find((entry) => entry.type === "page" && entry.webSocketDebuggerUrl);
+  const target = targets.find((entry) => entry.type === "page" && entry.webSocketDebuggerUrl && targetFilter(entry));
   if (!target) throw new Error("Missing Electron renderer target");
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {

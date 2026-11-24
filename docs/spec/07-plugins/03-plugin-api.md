@@ -553,6 +553,38 @@ update makes the result `{ updated: false }`. Both methods require
 `session.autoTitle`, which is high risk because the first-turn text can be sent
 to a model by a plugin holding `agent.complete`.
 
+With the additional high-risk `session.titleContext` grant,
+`getAutoTitleContext` accepts `includeMaterial?: boolean` and
+`summaryFingerprint?: string`; `setAutoTitle` also accepts the latter. These
+options require explicit authorization; old calls and old grants keep their
+original behavior. Invalid options fail with `INVALID_PARAMS`.
+
+`includeMaterial: true` strips reference tokens from `userPrompt` and adds
+`pastedMaterial?` (up to 3,000 code points from at most three session-owned paste
+files, 2,000 per file) and `referencedFiles?` (six names, 60 code points each).
+Only that session's pasted text is readable, following the existing directory
+and symlink boundaries. Workspace files contribute names, never contents.
+
+A `summaryFingerprint` requests compaction naming instead of first-turn naming.
+Only the matching current summary is returned as `summary?` (1,500 code points)
+with its `summaryFingerprint?`, current `expectedTitle`, session/model identity
+and an empty `userPrompt`. Manual, legacy, missing or stale sessions return
+null. A matching fingerprint on `setAutoTitle` rechecks the current checkpoint
+and writes through the host's default/generated-title CAS; a stale checkpoint
+or manual rename answers `{ updated: false }`. This is not a general transcript
+read, and summary text is never included in lifecycle broadcasts.
+
+Metadata-only events supporting title plugins:
+
+- `session:promptSent`: `{ sessionId, turnId }` after a durable user message.
+- `session:compacted`: `{ sessionId, summaryFingerprint }` after a successful
+  summarized root checkpoint, excluding model switches. Requires a live plugin
+  subscription; delivery has no replay or acknowledgement.
+
+The official `minih.session-titles` plugin configures its model using a native
+`type: "model"` setting and uses `agent.complete` without full session context.
+The host has no built-in title completion engine.
+
 ### plugin-owned sessions (P0/P1; requires the matching permission)
 
 Plugins may import and manage only sessions whose origin belongs to that same
@@ -921,6 +953,7 @@ pi.agent.complete(input: {
   system?: string
   messages?: Array<{ role: "user" | "assistant"; content: string }>
   includeSessionContext?: boolean
+  maxOutputTokens?: number // integer 1..65,536; optional cap, still bounded by model limits
 }): Promise<{
   text: string
   modelKey: string
@@ -939,6 +972,10 @@ rolling 60s (`RATE_LIMITED`); 90s budget (`TIMEOUT`). Provider 429 and other
 transient provider failures are retried inside the same call under the shared
 provider retry budget (ADR 0206) and a `Retry-After` header is honored. Empty
 model output is `INVALID_ARGUMENT`.
+
+`maxOutputTokens` is optional and preserves existing callers when omitted.
+Invalid values fail with `INVALID_ARGUMENT` before dispatch. The title plugin
+uses 128 to preserve the retired built-in generator's output budget.
 
 When the call still fails, the plugin receives the host's classified code
 rather than a single generic failure — `PROVIDER_RATE_LIMITED` once the retry

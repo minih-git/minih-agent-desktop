@@ -1,3 +1,5 @@
+import { createPluginCompletionService } from "../plugin-completion-service";
+import { createPluginTitleService } from "../plugin-session-titles";
 import { dialog, globalShortcut, shell, type BrowserWindow } from "electron";
 import { isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { realpath, stat } from "node:fs/promises";
@@ -16,21 +18,17 @@ import {
   type UiMessage,
 } from "@minih-agent/shared";
 import type {
-  PluginCompleteResult,
   PluginNativeNotificationInput,
   PluginNativeNotificationResult,
   PluginNotificationPermission,
 } from "@minih-agent/plugin-sdk";
 import {
-  asPluginThinkingLevel,
   listReadyPluginModels,
   parsePluginModelKey,
-  pluginCompleteContext,
   pluginSessionContextFromSession,
 } from "../plugin-agent-complete";
 import type { LegacyPromptEnhancementSettings } from "../plugin-prompt-enhancement-migration";
 import {
-  completeOneShot,
   type RuntimeProviderConfig,
 } from "@minih-agent/agent-runtime";
 import { createFsConsentService } from "../plugin-fs-consent";
@@ -177,7 +175,7 @@ export function createPluginServices({
         Number((result as { imported?: unknown })?.imported ?? 0) > 0) ||
       (method === "plugin.session.rename" &&
         (result as { updated?: unknown })?.updated === true) ||
-      (method === "plugin.session.setAutoTitle" &&
+      ((method === "plugin.session.setAutoTitle" || method === "session.retitleFromCompaction") &&
         (result as { updated?: unknown })?.updated === true) ||
       (method === "plugin.session.delete" &&
         (result as { deleted?: unknown })?.deleted === true);
@@ -186,13 +184,14 @@ export function createPluginServices({
       // A title a plugin wrote is durable in the host too: a phone holding the
       // session needs the same `session.changed` the desktop sidebar gets.
       const titled =
-        (method === "plugin.session.rename" || method === "plugin.session.setAutoTitle") &&
+        (method === "plugin.session.rename" || method === "plugin.session.setAutoTitle" || method === "session.retitleFromCompaction") &&
         (result as { updated?: unknown })?.updated === true;
       const sessionId = typeof input.sessionId === "string" ? input.sessionId : "";
       if (titled && sessionId) announceTitleChange?.(sessionId);
     }
     return result;
   };
+  const titleService = createPluginTitleService({ getHost, dataDir, callSession: callPluginSessionHost });
   const callPluginProjectHost = async (
     pluginId: string,
     input: Record<string, unknown>,
@@ -499,10 +498,8 @@ export function createPluginServices({
       get: (pluginId, input) => callPluginSessionHost("plugin.session.get", pluginId, input),
       listMessages: (pluginId, input) =>
         callPluginSessionHost("plugin.session.listMessages", pluginId, input),
-      getAutoTitleContext: (pluginId, input) =>
-        callPluginSessionHost("plugin.session.autoTitleContext", pluginId, input),
-      setAutoTitle: (pluginId, input) =>
-        callPluginSessionHost("plugin.session.setAutoTitle", pluginId, input),
+      getAutoTitleContext: titleService.getAutoTitleContext,
+      setAutoTitle: titleService.setAutoTitle,
       import: (pluginId, input) => callPluginSessionHost("plugin.session.import", pluginId, input),
       importBatch: (pluginId, input) =>
         callPluginSessionHost("plugin.session.importBatch", pluginId, input),
@@ -555,68 +552,7 @@ export function createPluginServices({
       transcript: (pluginId, input) =>
         callPluginSessionHost("plugin.conversations.transcript", pluginId, input),
     },
-    complete: async (input): Promise<PluginCompleteResult> => {
-      if (!getHost()) {
-        throw Object.assign(new Error("host unavailable"), { code: "UNSUPPORTED" });
-      }
-      const parsed = parsePluginModelKey(input.modelKey);
-      if (!parsed) {
-        throw Object.assign(new Error("modelKey must be providerId/modelId"), {
-          code: "INVALID_ARGUMENT",
-        });
-      }
-      const thinkingLevel = asPluginThinkingLevel(input.thinkingLevel);
-      const settings = await getHost()!.call<any>("settings.get");
-      const launchSessionId = input.sessionId || `plugin-complete:${crypto.randomUUID()}`;
-      const session = input.sessionId
-        ? (await getHost()!.call<{ session?: any }>("session.get", { id: input.sessionId })).session
-        : {};
-      const model = await resolveRuntimeModel(session ?? {}, settings, {
-        providerId: parsed.providerId,
-        modelId: parsed.modelId,
-        thinkingLevel,
-      });
-      const runtimeProvider = {
-        ...model.provider,
-        ...(model.provider.authKind === OAUTH_AUTH_KIND
-          ? { resolveAuth: () => vendorOAuth.resolveAuth(model.providerId) }
-          : {}),
-      } as RuntimeProviderConfig;
-      const sessionContext = input.includeSessionContext
-        ? pluginSessionContextFromSession(
-            String(input.sessionId ?? ""),
-            session,
-            input.stripToolName,
-          )
-        : undefined;
-      const context = pluginCompleteContext({
-        modelKey: input.modelKey,
-        thinkingLevel: input.thinkingLevel,
-        system: input.system,
-        messages: input.messages,
-        includeSessionContext: input.includeSessionContext,
-        sessionContext,
-      });
-      const result = await completeOneShot(
-        runtimeProvider,
-        context,
-        asPluginThinkingLevel(model.thinkingLevel),
-        {
-          signal: input.signal,
-          sessionId: launchSessionId,
-          // Spec 07-plugins/03-plugin-api.md: empty model output answers the
-          // plugin with INVALID_ARGUMENT, not the runtime's internal code.
-          emptyErrorCode: "INVALID_ARGUMENT",
-          emptyErrorMessage: "The model returned no text.",
-        },
-      );
-      return {
-        text: result.text,
-        modelKey: `${model.providerId}/${model.modelId}`,
-        thinkingLevel: model.thinkingLevel,
-        usage: result.usage,
-      };
-    },
+    complete: createPluginCompletionService({ getHost, resolveRuntimeModel, vendorOAuth }),
     // ---- embeddings -------------------------------------------------------
     // Resolving the model and making the call both happen here, in the process
     // that holds the credential; the runtime only sees the numbers back.

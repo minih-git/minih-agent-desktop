@@ -115,37 +115,33 @@ pi 消费排队输入时保留渲染器提供的消息 id；即使补充输入�
 限制在 48 个字符；host-core 只有在存储标题仍是占位标题且来源为 `default` 时才接受，因此
 该兜底永远不会覆盖手动重命名或更早的自动标题，也不会改动 `updated_at`。
 
-该兜底会保持 `default` 来源：派生文本不是用户的选择，所以该会话仍可被自动替换。当第一条
-用户消息持久化后，Electron 主进程可以为会话生成一次模型标题——且只有一次。每次发送都会先
-向主机查询自动标题上下文；标题来源不再是 `default` 的会话（手动重命名，或已落地的生成
-标题）不会得到任何上下文，不花费模型调用，也不会被再次命名。命名输入始终是首条持久化的
-用户消息，而不是恰好触发某次发送的消息，因此重发或继续对话都不会改变会话名称。
+The 2026-11-23 amendment restores plugin-owned AI naming. The host keeps the
+free deterministic fallback above but never composes a model title itself.
+`minih.session-titles` owns native model/thinking settings, same-session
+serialization, bounded retries and optional post-compaction refresh.
 
-补全通过主机比较并设置写入，只有在读取到的标题仍与当前一致且来源为 `default` 时才会成功。
-因此并发的手动重命名或另一项生成标题会胜出。host-core 在架构 v23 中拥有标题来源状态；该
-状态可跨渲染器重启保留，也不会开放通用转录读取 API。内置生成器的模型与思考级别由设置
-（`sessionTitle`）管理；独立标题插件已被取代（ADR 0323 修订，2026-10-17）。
+After persistence, metadata-only `session:promptSent` and `session:compacted`
+events notify the plugin; `session:turnEnded` supports retry after a slow or
+failed composition. Naming always uses the first persisted request. First-title
+calls are capped at three per session/model/thinking configuration per activation,
+with bounded 1,000-entry metadata caches. Reload or eviction resets that budget.
 
-### 4.2 上下文压缩后的重命名
+Existing `session.autoTitle` grants keep their original bounded first-turn/CAS
+contract. Additional `session.titleContext` authorization permits at most 3,000
+code points of session-owned pasted material (three files, 2,000 each), six
+reference names of 60 code points each, and 1,500 code points of the matching
+current compaction summary. No full transcript or arbitrary file read is added.
+The broker rechecks checkpoint identity before a refresh write; manual titles
+always win. Failed/unsummarized/subagent/model-switch checkpoints do not trigger
+a refresh. Successful writes notify local and remote clients.
 
-长对话的主题会自然偏离首条提示，内置标题可能不再描述会话。当一个带摘要的压缩检查点
-持久化后，运行时的 `compaction_end` 事件携带其安装摘要的短指纹。Electron 主进程随后对
-压缩摘要（而非首条消息）运行同款一次性标题补全，并通过 `session.retitleFromCompaction`
-写入：该比较并设置可替换 `default` 或 `generated` 标题——会话名称持续跟随对话当前主题——
-但绝不替换 `manual` 重命名。任务在花费模型调用之前会重新读取主机的当前摘要并比对指纹，
-因此过期或重复的事件零成本，同一检查点也不会重命名会话两次。事件只携带指纹、绝不携带
-摘要文本：主进程需要的摘要信息全部从主机重新读取。`model_switch` 检查点（D669）从不触发
-重命名：它只是为另一个模型摘要同一段对话，主题没有变化，再发一次标题请求只会给一项省钱
-优化增加开销。
-
-### 4.3 后台补全与项目上下文
-
-发送路径和回合结束后的重试共用标题生成器，同一会话不会并发生成多个标题；请求中选择的模型
-决定提供商。没有会话模型绑定的重试必须显式传入请求的 `providerId/modelId`。
-
-标题生成、压缩后重命名、记忆提取和插件一次性补全只解析模型配置与凭据，不得重新启动或配置
-会话，也不得覆盖项目映射、刷新项目 MCP 清单或修改运行时授权绑定。这些后台补全运行或失败时，
-项目技能仍应能够加载。
+The old application `sessionTitle` record remains stored but inert; installation
+and model configuration in plugin settings are explicit. Disabling or unloading
+prevents late results from writing. `agent.complete` keeps the host transport,
+so this migration alone does not repair a connection failure. Background model
+resolution must preserve project, skill, MCP and runtime authorization bindings.
+See the [canonical runtime contract](../../../spec/03-runtime/02-agent-runtime.md#41-session-title-generation)
+and ADR 0323 for the complete current bounds and compatibility rules.
 
 ## 5. 提示流程
 
