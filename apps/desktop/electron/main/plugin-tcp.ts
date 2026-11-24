@@ -35,8 +35,9 @@ import { connect as netConnect, type Socket } from "node:net";
 import { connect as tlsConnect } from "node:tls";
 import type { ImapCredentials } from "./plugin-tcp-imap-login";
 import { PluginTcpMailLogin, type PluginTcpLogin } from "./plugin-tcp-login";
+import { connectionMessage, tlsFailureCode } from "./plugin-tcp-errors";
 import { upgradeToTls } from "./plugin-tcp-starttls";
-import { PluginSocketError } from "./plugin-websocket";
+import { PluginSocketError, type PluginSocketErrorCode } from "./plugin-websocket";
 
 /**
  * Concurrent connections per plugin, in-flight connects included.
@@ -433,7 +434,7 @@ export class PluginTcpRegistry {
     if (!socket || !login || entry.finalized) {
       this.abort(
         entry,
-        new PluginSocketError("STARTTLS_FAILED", "the TLS upgrade could not be started"),
+        new PluginSocketError("TLS_FAILED", "the TLS upgrade could not be started"),
       );
       return;
     }
@@ -455,12 +456,8 @@ export class PluginTcpRegistry {
         this.watch(entry, secure);
       },
       (error: unknown) => {
-        this.abort(
-          entry,
-          error instanceof PluginSocketError
-            ? error
-            : new PluginSocketError("TLS_FAILED", "the TLS handshake with the mail server failed"),
-        );
+        const code = tlsFailureCode(error);
+        this.abort(entry, new PluginSocketError(code, connectionMessage(code)));
       },
     );
   }
@@ -506,17 +503,30 @@ export class PluginTcpRegistry {
     if (entry.finalized) return;
     const reported = (error as { code?: unknown }).code;
     const code = typeof reported === "string" ? reported : "SOCKET_ERROR";
+    // A credential-bearing TLS connection reports the classification a plugin
+    // shows, not Node's errno: a certificate problem and a broken handshake are
+    // different messages, and neither may quote the peer.
+    const pluginCode =
+      entry.credentialBearing && (entry.endpoint.tls || entry.starttls)
+        ? tlsFailureCode(error)
+        : code;
     // A connect that is still waiting learns the real reason, not just "closed",
     // and stops spending the plugin's budget the moment it is answered.
     if (entry.settle) {
       this.detach(entry);
-      this.decide(entry, new PluginSocketError("CONNECT_FAILED", entry.credentialBearing ? "IMAP connection failed" : error.message));
+      this.decide(
+        entry,
+        new PluginSocketError(
+          (entry.credentialBearing ? pluginCode : "CONNECT_FAILED") as PluginSocketErrorCode,
+          entry.credentialBearing ? connectionMessage(pluginCode) : error.message,
+        ),
+      );
     }
     this.deps.onEvent(entry.pluginId, {
       type: "error",
       connectionId: entry.connectionId,
-      code,
-      message: entry.credentialBearing ? "IMAP connection failed" : error.message,
+      code: pluginCode,
+      message: entry.credentialBearing ? connectionMessage(pluginCode) : error.message,
     });
     // A socket-level error is always fatal for this connection.
     entry.socket?.destroy();

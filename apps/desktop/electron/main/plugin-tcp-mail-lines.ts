@@ -45,7 +45,7 @@ export class MailLineReader {
   assertEmpty(): void {
     if (this.buffer.length) {
       throw new PluginSocketError(
-        "STARTTLS_FAILED",
+        "TLS_FAILED",
         "the server sent data before the TLS handshake",
       );
     }

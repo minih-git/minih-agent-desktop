@@ -1538,7 +1538,7 @@ Semantics:
   `PERMISSION_DENIED` before a socket exists; an undeclared slot, or one
   missing `username` / `password`, is `INVALID_ARGUMENT`, an unfilled slot is
   `CREDENTIAL_NOT_CONFIGURED` as above, and a value the login cannot encode
-  (CR, LF, NUL) is `CREDENTIAL_UNSUPPORTED`.
+  (CR, LF, NUL) is `CREDENTIAL_REJECTED`.
   The host speaks IMAP and nothing else, and only over implicit TLS: the
   manifest entry must carry `tls: true`, the host never writes `STARTTLS` and
   never upgrades a plain connection, so a `credentialRef` against a `tls: false`
@@ -1551,17 +1551,18 @@ Semantics:
   `AUTH=PLAIN` and `SASL-IR`, as `AUTHENTICATE PLAIN` plus a base64
   continuation line when only `AUTH=PLAIN` is advertised, and otherwise
   `LOGIN "user" "pass"`. A `LOGINDISABLED` server, or a username or password
-  outside ASCII when only LOGIN is available, is `CREDENTIAL_UNSUPPORTED`.
+  outside ASCII when only LOGIN is available, is `CREDENTIAL_REJECTED`.
   `connect` resolves only after the tagged `OK`, and then carries
   `authenticated: true`. The login is host-owned: no `data` event reports the
   greeting, the capability reply or the login exchange, and host-generated
   events, errors and audit entries carry neither the value nor the transcript.
   A `NO`, `BAD`, `BYE`, malformed greeting or login line above 64 KiB is
   `CREDENTIAL_REJECTED`, and the connection is dropped instead of being handed
-  over half-open; a TLS or socket failure is `CONNECT_FAILED` with a fixed
-  message rather than the peer's text. The one `timeoutMs` deadline covers the
-  dial, the TLS handshake and the login (default 15 s, capped at 60 s), and
-  expiry is `TIMEOUT`. A connecting socket still spends one of the four
+  over half-open; a TLS failure is `TLS_CERTIFICATE` or `TLS_FAILED` and a socket
+  failure is `CONNECT_FAILED`, each with a fixed message rather than the peer's
+  text. The one `timeoutMs` deadline covers the dial, the TLS handshake and the
+  login (default 15 s, capped at 60 s), and expiry is `CONNECT_FAILED`. A
+  connecting socket still spends one of the four
   connections. Login bytes count into the same per-endpoint daily totals as
   plugin traffic, and the audit entry records the endpoint, the slot id, the
   `imaps` scheme and the outcome — never the value or the transcript.
@@ -1580,15 +1581,29 @@ Semantics:
   `security: "starttls"` starts on the plaintext port, reads the greeting,
   requires `STARTTLS` in the capabilities (IMAP) or `STLS` in `CAPA` (POP3),
   sends the command and requires the agreement before upgrading with
-  certificate verification and SNI. A server that does not advertise the upgrade
-  is `STARTTLS_UNAVAILABLE` — the host never falls back to plaintext — and a
-  byte that arrives after the agreement is `STARTTLS_FAILED`. The plaintext
+  certificate verification and SNI. A server that does not advertise the upgrade,
+  or advertises it and then refuses the command, is `STARTTLS_UNAVAILABLE` — the
+  host never falls back to plaintext — and a byte that arrives after the
+  agreement is `TLS_FAILED`. The plaintext
   capabilities are discarded and read again over TLS, so a hostile pre-upgrade
   answer cannot pick a weaker login. POP3 authenticates with `AUTH PLAIN` when
   `CAPA` advertises `SASL PLAIN` and with `USER`/`PASS` otherwise; both
   protocols answer `CREDENTIAL_REJECTED` for a refused credential, and `connect`
   reports `protocol: "imap" | "pop3"` for a user-typed server. A connection
   without a `credentialRef` never reaches one.
+  **Failure codes.** A `net.tcp.connect` that fails after the request is accepted
+  reports one of these five names and nothing else, so a plugin can show one
+  message per case: `CONNECT_FAILED` (the TCP connection could not be made, or
+  the deadline expired), `TLS_CERTIFICATE` (expired, untrusted, or issued for
+  another name), `TLS_FAILED` (the TLS phase failed for any other reason,
+  including an upgrade that never started and bytes that arrived before the
+  handshake), `STARTTLS_UNAVAILABLE` (the server does not advertise the upgrade,
+  or refuses it; the host never falls back to plaintext), and
+  `CREDENTIAL_REJECTED` (the server refused the login, or the stored value
+  cannot be used for a login at all). Everything decided before a connection is
+  attempted keeps its own code: `INVALID_ARGUMENT`, `PERMISSION_DENIED`,
+  `CREDENTIAL_NOT_CONFIGURED`, `CREDENTIAL_INSTANCE_REQUIRED`,
+  `CREDENTIAL_INVALID`, `CREDENTIAL_LIMIT`, `LIMIT_EXCEEDED`, `NOT_FOUND`.
 - **Inbound webhooks deliver, they do not answer.** The host listens on port
   37124, or a persisted fallback port if occupied, only while an enabled and
   granted receiver exists. LAN and local-only bindings and source filtering are

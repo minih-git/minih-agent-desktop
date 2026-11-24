@@ -460,9 +460,10 @@ a stored password goes.
   plugin can name an account by its server without reading the password.
 - The form gains a section only for slots that opted in; every other slot renders
   exactly as before.
-- Two more failure codes reach the plugin (`STARTTLS_UNAVAILABLE` and a TLS
-  refusal distinct from a refused credential), so a user-facing message can say
-  what to fix instead of "connection failed".
+- A user-typed mail connection reports its failures with a closed set of names
+  (`CONNECT_FAILED`, `TLS_CERTIFICATE`, `TLS_FAILED`, `STARTTLS_UNAVAILABLE`,
+  `CREDENTIAL_REJECTED`), so a user-facing message can say what to fix instead of
+  "connection failed". Nothing in the upgrade phase invents a sixth name.
 
 ### Alternatives
 

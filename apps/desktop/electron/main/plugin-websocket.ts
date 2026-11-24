@@ -42,12 +42,13 @@ export type PluginSocketErrorCode =
   | "NOT_FOUND"
   | "CONNECT_FAILED"
   | "TIMEOUT"
-  // A mail login that could not get a protected transport. Distinct codes so
-  // the plugin (and the user) can tell a missing upgrade from a bad
-  // certificate, and neither is ever reported as a plain connect failure.
+  // A mail login that could not get a protected transport. These three names
+  // are a contract with the plugin's message table: a missing upgrade, a bad
+  // certificate and a broken handshake each say what to fix, and none of them
+  // is ever reported as a plain connect failure.
   | "TLS_FAILED"
-  | "STARTTLS_UNAVAILABLE"
-  | "STARTTLS_FAILED";
+  | "TLS_CERTIFICATE"
+  | "STARTTLS_UNAVAILABLE";
 
 /** Thrown for every refusal; `code` is what the plugin sees as `error`. */
 export class PluginSocketError extends Error {
