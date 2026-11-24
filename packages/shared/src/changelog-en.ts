@@ -7,6 +7,7 @@ export const enEntries: ChangelogEntry[] = [
     highlights: [
       "A mailbox account can now use your own mail server: the server, port, protocol (IMAP or POP3) and encryption (SSL/TLS or STARTTLS) are saved with the account, and the app sends that account's password only to the server saved with it. When STARTTLS is chosen it is required — there is no plaintext fallback — and an untrusted or mismatched certificate is refused.",
       "A mailbox account list is no longer capped at five: a plugin can list as many accounts as you have, and the app keeps its own guard at 100 per account list.",
+      "An account in Settings can be edited instead of only added and removed: what is not secret is prefilled, the password has to be typed again, and the account keeps its id, so a plugin does not lose what it kept for it.",
     ],
   },
   {

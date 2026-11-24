@@ -17,6 +17,7 @@ export const zhTW = {
     add: "新增",
     cancel: "取消",
     remove: "刪除",
+    edit: "編輯",
     addFailed: "無法新增此帳號，請檢查全部欄位後再試一次。",
     removeFailed: "無法刪除此帳號，請稍後再試一次。",
     limitReached: "此處最多允許 {{max}} 個帳號，已全部設定。",

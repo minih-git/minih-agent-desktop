@@ -17,6 +17,7 @@ export const ptBR = {
     add: "Adicionar",
     cancel: "Cancelar",
     remove: "Remover",
+    edit: "Editar",
     addFailed: "Não foi possível adicionar esta conta. Confira todos os campos.",
     removeFailed: "Não foi possível remover esta conta. Tente novamente mais tarde.",
     limitReached: "As {{max}} contas permitidas já estão configuradas.",

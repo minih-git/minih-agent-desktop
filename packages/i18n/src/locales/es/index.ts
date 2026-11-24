@@ -17,6 +17,7 @@ export const es = {
     add: "Añadir",
     cancel: "Cancelar",
     remove: "Eliminar",
+    edit: "Editar",
     addFailed: "No se pudo añadir esta cuenta. Revisa todos los campos.",
     removeFailed: "No se pudo eliminar esta cuenta. Inténtalo más tarde.",
     limitReached: "Las {{max}} cuentas permitidas ya están configuradas.",

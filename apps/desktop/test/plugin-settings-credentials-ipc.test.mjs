@@ -67,3 +67,31 @@ test("saving credentials never returns a host result or exposes host errors", as
   await assert.rejects(call(IPC.invoke.pluginCredentialsSet, input), (error) => !error.message.includes(secret) && /save plugin credentials/i.test(error.message));
   await assert.rejects(call(IPC.invoke.pluginCredentialsClear, input), (error) => !error.message.includes(secret) && /clear plugin credentials/i.test(error.message));
 });
+
+test("editing an account forwards its instance id and announces the change", async () => {
+  const requests = [];
+  const call = harness({ call: async (method, params) => {
+    requests.push({ method, params });
+    return { instanceId: params.instanceId };
+  } });
+  const saved = await call(IPC.invoke.pluginCredentialsSet, {
+    pluginId: "demo.multi",
+    slotId: "mailbox",
+    instanceId: "acc_00000001",
+    fields: { username: "a@example.com", password: "synthetic-password" },
+  });
+  // The id travels with the fields: the host replaces that account in place
+  // instead of adding a second one.
+  assert.deepEqual(requests, [{
+    method: "plugins.credentials.set",
+    params: {
+      pluginId: "demo.multi",
+      slotId: "mailbox",
+      instanceId: "acc_00000001",
+      fields: { username: "a@example.com", password: "synthetic-password" },
+    },
+  }]);
+  assert.deepEqual(saved, { instanceId: "acc_00000001" });
+  // The plugin is told to re-read its accounts, exactly as after an add.
+  assert.deepEqual(call.changed, [{ pluginId: "demo.multi", slotId: "mailbox" }]);
+});

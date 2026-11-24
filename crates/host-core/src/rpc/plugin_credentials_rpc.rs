@@ -30,6 +30,9 @@ struct SetRequest {
     plugin_id: String,
     slot_id: String,
     fields: Map<String, Value>,
+    /// One instance of a multi-instance slot: replace that one, keeping its id.
+    #[serde(default)]
+    instance_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -73,6 +76,23 @@ pub(super) async fn handle(
             let input: SetRequest = parse(params, "invalid credentials set request")?;
             let st = state.lock().await;
             let plugin = installed(&st, &input.plugin_id)?;
+            // Editing one account replaces that account: the id a plugin stored
+            // next to its own per-account state has to survive the change.
+            if let Some(instance_id) = input.instance_id.as_deref() {
+                credentials::update(
+                    &st.secrets,
+                    &plugin,
+                    &input.slot_id,
+                    instance_id,
+                    input.fields,
+                    Some(&st.db),
+                )
+                .map_err(credential_err)?;
+                return Ok(serde_json::json!({
+                    "configured": true,
+                    "instanceId": instance_id,
+                }));
+            }
             let instance = credentials::set(
                 &st.secrets,
                 &plugin,

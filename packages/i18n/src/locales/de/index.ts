@@ -17,6 +17,7 @@ export const de = {
     add: "Hinzufügen",
     cancel: "Abbrechen",
     remove: "Entfernen",
+    edit: "Bearbeiten",
     addFailed: "Das Konto konnte nicht hinzugefügt werden. Prüfe alle Felder.",
     removeFailed: "Das Konto konnte nicht entfernt werden. Versuche es später erneut.",
     limitReached: "Alle {{max}} erlaubten Konten sind eingerichtet.",

@@ -1449,8 +1449,15 @@ export const api = {
     }>(IPC.invoke.pluginTcpUsage, id),
   getPluginCredentials: (pluginId: string) =>
     invoke<{ slots: import("@minih-agent/shared").PluginCredentialStatus[] }>(IPC.invoke.pluginCredentialsStatus, { pluginId }),
-  setPluginCredential: (pluginId: string, slotId: string, fields: Record<string, string>) =>
-    invoke<{ instanceId?: string }>(IPC.invoke.pluginCredentialsSet, { pluginId, slotId, fields }),
+  setPluginCredential: (pluginId: string, slotId: string, fields: Record<string, string>, instanceId?: string) =>
+    invoke<{ instanceId?: string }>(IPC.invoke.pluginCredentialsSet, {
+      pluginId,
+      slotId,
+      fields,
+      // Present when editing one account: the host replaces that account in
+      // place, keeping its id.
+      ...(instanceId ? { instanceId } : {}),
+    }),
   clearPluginCredential: (pluginId: string, slotId: string, instanceId?: string) =>
     invoke<void>(IPC.invoke.pluginCredentialsClear, {
       pluginId,

@@ -57,7 +57,7 @@ export function registerPluginCredentialIpc(
     })) };
   });
   registrar.handleWithEvent(IPC.invoke.pluginCredentialsSet, async (event, input: {
-    pluginId: string; slotId: string; fields: Record<string, string>;
+    pluginId: string; slotId: string; fields: Record<string, string>; instanceId?: string;
   }) => {
     registrar.assertMainWindowSender(event);
     const host = getHost();
