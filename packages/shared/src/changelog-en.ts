@@ -3,9 +3,11 @@ import type { ChangelogEntry } from "./changelog.js";
 export const enEntries: ChangelogEntry[] = [
   {
     version: "1.11.1",
+    date: "2026-11-25",
     highlights: [
       "Fixed a plugin still showing the version it replaced: after a marketplace update — or installing a newer copy over an installed plugin from a folder or a package — the work-panel tab and the plugin window that were already open kept running the old page, with the old buttons and often a blank body. An upgrade now closes those pages before the new version loads, and an open tab reloads from the new files.",
       "Fixed the mailbox account form not offering the account's own proxy or its own outgoing server: the app knew the plugin declared them, but the settings sheet and the plugin's own add-account dialog only received the \"use your own mail server\" part, so those two sections never appeared. All three now show for an account whose plugin declares them.",
+      "Fixed a send through a plugin that could error the app: when the mail server dropped the connection as the session was closing, the late socket error had no listener and surfaced as an unhandled error in the main process. Cancelling a send while it is still being dialled now stops at once instead of waiting for the timeout, and a server that fails during the STARTTLS upgrade is reported as an ordinary failure.",
     ],
   },
   {

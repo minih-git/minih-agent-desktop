@@ -24,9 +24,7 @@ describe("changelog catalog", () => {
 
   it("lists stable releases from 0.1.1 newest-first without pre-releases", () => {
     const versions = CHANGELOG.en.map((e) => e.version);
-    // 1.11.1 holds the fix notes for the next patch release; the shipped line
-    // starts at 1.11.0 below it, and the entry moves into a dated release when
-    // that tag is cut.
+    // 1.11.1 is a shipped patch release and sits above 1.11.0, newest-first.
     expect(versions[0]).toBe("1.11.1");
     expect(versions.at(-1)).toBe(STABLE_FROM);
     // 0.11.1 is intentionally absent: that tag was pushed before the release
