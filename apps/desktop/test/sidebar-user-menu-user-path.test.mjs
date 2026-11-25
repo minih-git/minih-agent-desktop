@@ -27,6 +27,12 @@ await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
 const requests = [];
 const pending = [];
 const unexpected = [];
+const employeeReads = [];
+const legacyEmployees = ["前端逻辑", "Super Agent"].map((name, index) => ({
+  id: "legacy-employee-" + index, sessionId: "legacy-employee-" + index, title: name, role: "bot",
+  profile: { name, permissionMode: "ask", mustAsk: ["deploy", "delete", "spend"], observe: true },
+  createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
+}));
 let primeObserved = false;
 window.minihAgent = { platform: "linux", on() { return () => {}; },
   invoke(channel, input) {
@@ -35,10 +41,10 @@ window.minihAgent = { platform: "linux", on() { return () => {}; },
       return new Promise(resolve => pending.push({ id: input.providerId, resolve }));
     }
     if (channel === IPC.invoke.updatesGetState) return Promise.resolve({ ok: true, data: { status: "idle", currentVersion: "0.20.5" } });
-    // The sidebar also lists employees now; this fixture has none.
-    if (channel === IPC.invoke.botList) return Promise.resolve({ ok: true, data: { bots: [] } });
-    // The employee group also lists its tasks (ADR bot-sessions-and-steward §7).
-    if (channel === IPC.invoke.taskList) return Promise.resolve({ ok: true, data: { tasks: [] } });
+    if (channel === IPC.invoke.botList || channel === IPC.invoke.taskList) {
+      employeeReads.push(channel);
+      return Promise.resolve({ ok: true, data: channel === IPC.invoke.botList ? { bots: legacyEmployees } : { tasks: [] } });
+    }
     unexpected.push(channel);
     return Promise.resolve({ ok: false, error: { code: "TEST_UNEXPECTED", message: "Unexpected fixture request" } });
   } };
@@ -50,7 +56,9 @@ const makeProvider = (id, label) => ({
 });
 const first = makeProvider("router-a", "My account");
 const second = makeProvider("router-b", "Second account");
-useAppStore.setState({ providers: [first], sessions: [], openProjects: [], openProjectPaths: [],
+const ordinarySession = { id: "ordinary-chat", title: "Ordinary conversation", role: "user",
+  createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" };
+useAppStore.setState({ providers: [first], sessions: [ordinarySession, ...legacyEmployees], openProjects: [], openProjectPaths: [],
   workspace: null, activeProjectPath: null, activeSessionId: null, page: "chat", settingsTab: "general",
   settings: { theme: "light", defaultMode: "agent", enterToSend: true, onboardingDismissed: true },
   version: { version: "0.20.5" }, });
@@ -81,10 +89,22 @@ async function answer(id, data, error = false) {
 }
 const key = value => document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true }));
 async function open() { trigger().click(); await settle(); check(panel(), "popover opens"); }
-window.userMenuProbe = async ({ theme, locale }) => {
+window.employeeSidebarProbe = async ({ theme, locale }) => {
   document.documentElement.dataset.theme = theme;
   await i18n.changeLanguage(locale);
   await settle();
+  check(!document.querySelector('[data-sidebar-bot-group], [data-sidebar-bot-row], [data-bot-status]'), "employee sidebar entry is removed even with legacy employees");
+  for (const employee of legacyEmployees) {
+    check(!document.querySelector('[data-sidebar-session-row="' + employee.id + '"]'), "legacy employee does not become an ordinary conversation");
+    check(!document.querySelector(".sidebar").textContent.includes(employee.title), "legacy employee name is absent");
+  }
+  check(document.querySelector('[data-sidebar-session-row="ordinary-chat"]'), "ordinary conversation remains reachable");
+  check(document.querySelector('[data-sidebar-section="projects"]'), "project navigation remains reachable");
+  check(employeeReads.length === 0, "sidebar does not read employee rosters or tasks");
+  check(useAppStore.getState().sessions.length === 3, "removing the entry preserves stored session summaries");
+};
+window.userMenuProbe = async ({ theme, locale }) => {
+  await window.employeeSidebarProbe({ theme, locale });
   const startRequests = requests.length;
   check(requests.length === startRequests, "closed menu adds no request");
   for (const destination of ["scheduled", "plugins", "activity"]) {
@@ -216,6 +236,7 @@ test("Sidebar account menu: quotas, keyboard, navigation, stale replies and empt
     await writeFile(join(temp, "main.cjs"), `
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs/promises");
 app.setPath("userData", path.join(__dirname, "profile"));
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 800, height: 560,
@@ -226,6 +247,9 @@ app.whenReady().then(async () => {
     for (const [theme, locale, width, height] of [["light", "en", 800, 560], ["dark", "zh-CN", 1200, 900]]) {
       win.setContentSize(width, height);
       await win.loadFile(path.join(__dirname, "index.html"));
+      await win.webContents.executeJavaScript("window.employeeSidebarProbe(" + JSON.stringify({ theme, locale }) + ")");
+      const image = await win.webContents.capturePage();
+      await fs.writeFile(path.join(${JSON.stringify(process.env.PI_SCRATCH_DIR ?? temp)}, "sidebar-no-employees-" + theme + ".png"), image.toPNG());
       results.push(await win.webContents.executeJavaScript("window.userMenuProbe(" + JSON.stringify({ theme, locale }) + ")"));
     }
     console.log("USER_MENU_PROBE " + JSON.stringify(results)); app.exit(0);

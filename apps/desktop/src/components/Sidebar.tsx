@@ -29,8 +29,6 @@ import {
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { SessionHoverCard } from "../features/sessions/SessionHoverCard";
-import { BotSidebarGroup } from "../features/bots/BotSidebarGroup";
-import { useBotSidebarHandlers } from "../features/bots/use-task-composer";
 import { useSessionHoverCard } from "../features/sessions/useSessionHoverCard";
 import { isDefaultSessionTitle, useAppStore } from "../stores/app-store";
 import {
@@ -750,9 +748,8 @@ export function Sidebar({
     // that its row says where it came from (ADR persisted-session-origin); the
     // runs of one task fold into the newest one so a nightly task cannot bury
     // the project group.
-    // An employee is a session too, but it is entered from the employee group
-    // below (ADR bot-sessions-and-steward §1): listing it here as well would
-    // give one employee two rows with two different affordances.
+    // Employee identities remain host-owned records, not ordinary chats. Keep
+    // them filtered even though the built-in employee sidebar entry is gone.
     const candidates = sessions
       .filter((session) => !isEmployeeSession(session))
       .filter((session) => sessionMatchesOrigins(session, sessionOrigins))
@@ -1253,9 +1250,6 @@ export function Sidebar({
     },
     [showToast, t],
   );
-
-  // What a click on an employee or a task does lives with the employee feature.
-  const botHandlers = useBotSidebarHandlers(reportError);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => {
@@ -2890,10 +2884,6 @@ export function Sidebar({
             ) : null}
           </div>
         </section>
-
-        {/* Employees sit above the projects: they are who the person talks to,
-            and a bot session never appears in the lists below. */}
-        <BotSidebarGroup activeSessionId={activeSessionId} {...botHandlers} />
 
         <div
           className="sidebar-list-toolbar"

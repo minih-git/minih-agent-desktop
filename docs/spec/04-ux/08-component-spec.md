@@ -384,6 +384,12 @@ Plugins and Scheduled destinations beside Settings. Scheduled uses a clock
 action with a localized accessible name and active state. Projects is managed
 through Settings → Project archive.
 
+The built-in employee sidebar entry is removed, including its heading, roster,
+status dots, task rows and waiting count, even when historical employee records
+exist. The sidebar no longer loads employee rosters or tasks for that entry.
+Employee identity sessions remain excluded from ordinary conversation lists;
+their records, transcripts, tasks, memories and plugin APIs are unchanged.
+
 Section-level create and sort controls stay visually quiet at rest and reveal
 when the owning Sessions or Projects toolbar is hovered or keyboard-focused.
 Project-group `+` and overflow controls follow the same hover/focus treatment;
@@ -1459,8 +1465,9 @@ Every other row shows the creator's tag before its title when the creator was
 not the person — `Agent` for the built-in session-creation tool, 插件 for a
 plugin's session, 员工 for an employee's task session — with the dispatching
 session's title as the tooltip (`由「X」派发`, and a "deleted session" wording
-once that session is gone). An employee session itself is still entered from the
-employee group, and a session without `origin` from an older host reads as the
+once that session is gone). Employee identity sessions remain hidden from the
+built-in sidebar after removal of the employee group; task sessions keep their
+existing origin tags. A session without `origin` from an older host reads as the
 person's own.
 
 ### 6.2 Anatomy

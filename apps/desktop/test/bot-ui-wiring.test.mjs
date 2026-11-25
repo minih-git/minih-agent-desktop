@@ -39,5 +39,5 @@ test("an employee stays out of the ordinary session lists", () => {
   assert.match(origin, /export function isEmployeeSession\(/);
   const sidebar = read("src/components/Sidebar.tsx");
   assert.match(sidebar, /isEmployeeSession\(session\)/, "the sidebar filters employees out");
-  assert.match(sidebar, /<BotSidebarGroup/, "and mounts the employee group instead");
+  assert.doesNotMatch(sidebar, /BotSidebarGroup|useBotSidebarHandlers/, "the built-in employee sidebar entry is removed");
 });

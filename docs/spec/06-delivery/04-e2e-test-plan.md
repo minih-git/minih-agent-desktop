@@ -5,6 +5,28 @@ from the request worktree after building its Desktop bundle; the isolated
 Electron journey uses a local synthetic provider and saves the native model
 picker screenshot in its reported scratch directory.
 
+## E2E-SIDEBAR-legacy-employees-have-no-built-in-entry
+
+- **Preconditions:** Request worktree with reused dependencies and an isolated
+  Electron profile; existing employee identities named `前端逻辑` and
+  `Super Agent`, plus an ordinary conversation.
+- **Steps:** Mount the production Sidebar with those stored session summaries
+  and a host roster containing both employees. Inspect light/English and
+  dark/Chinese layouts, then operate the account menu, keyboard dismissal,
+  Scheduled, Plugins and Activity navigation.
+- **Expected:** No employee heading, employee rows, status dots, task rows or
+  waiting badge; employees do not leak into ordinary conversation lists. The
+  ordinary conversation and Projects remain visible. The sidebar makes no
+  employee-roster/task reads and removes no stored session summaries.
+- **Automation:** `apps/desktop/test/sidebar-user-menu-user-path.test.mjs`
+  exercises the real renderer and captures both layouts;
+  `bot-ui-wiring.test.mjs` guards the removed binding.
+- **Specs:** Component spec §3 and ADR 0341's sidebar-removal amendment.
+- **Status / scope:** Development regression coverage, not installed-app
+  acceptance. This supersedes employee-group navigation/status expectations
+  in older employee scenarios below; standalone employee-component probes do
+  not imply that the shell mounts that entry.
+
 ## E2E-PLUGIN-session-titles-configurable-model
 
 - **Preconditions:** Isolated profile, the official `minih.session-titles`
