@@ -679,8 +679,9 @@ attempt waits for its next local-time match. `last_run_at` is written at the
 start of an actual attempt, not at registration.
 
 **`mail.draft` and `notify.center` — writing into a host-owned list.** Neither
-sends anything: `mail.draft` has no send path, and `notify.center` writes one
-inbox row of the `plugin.%` family (`plugin.alert` for one event, `plugin.digest`
+sends anything: `mail.draft` writes a draft and stops there — sending is the
+separate `mail.send` grant, whose own bounds are below — and `notify.center`
+writes one inbox row of the `plugin.%` family (`plugin.alert` for one event, `plugin.digest`
 for a rolled-up batch) that the user can read, clear, and delete with the
 plugin. The inbox keeps its 200-row cap, so a plugin cannot use it as unbounded
 storage, and a plugin uninstall removes its rows. Both calls are rate-braked
@@ -812,6 +813,17 @@ matching, bounded concurrency, verified TLS, lifecycle cleanup and byte
 metering that counts the login exchange like any other traffic.
 `tasks.read` and `tasks.manage` use the scoped task policy above. `mail.draft`
 remains registered only; its manifest field is validated at installation.
+`mail.send` is implemented as a host-performed SMTP session: the plugin receives
+`accepted`, `rejected` and the server's queue id, never the password, the socket
+or the server's own text. The endpoint is either the declared `net.tcp` entry
+that the slot scope admits — where `tls: false` means a STARTTLS upgrade that
+must succeed — or the outgoing server stored in the same credential instance as
+the password, which a plugin cannot name. The envelope sender and the message's
+`From:` / `Sender:` must be the account's own address, a `Bcc:` header is refused,
+and one send is capped at 50 distinct recipients, 25 MiB, and 30 sends per plugin
+per rolling hour with an in-memory counter. The connection spends the plugin's
+`net.tcp` budget, is never visible to the plugin, dies with it, and its audit row
+records counts rather than the body, the subject or any address.
 
 
 Not enforced yet:

@@ -371,7 +371,10 @@ type PluginPermission =
  | "credentials.use"
  | "net.tcp"
  | "inbound.webhook"
+ // 草稿只写进宿主列表，从不发送；发送是另一份授权，
+ // 对应 contributes.credentials[].userSend。
  | "mail.draft"
+ | "mail.send"
  | "notify.center"
  | "scheduler"
  | "tasks.read"
@@ -883,3 +886,42 @@ userProxy?: { types: Array<"http" | "socks5"> }
 
 `credentials.status` 用 `userProxy: { types }` 报出声明；在代理功能之前保存的账号
 照常工作，只是没有代理。
+
+### 5.5.4 账号自己的发信服务器（`userSend`）
+
+`imap` 槽位可以声明
+
+```ts
+userSend?: { security: Array<"tls" | "starttls"> }
+```
+
+非空、无重复；其他传输方式、空列表、对象里的未知键、或声明了宿主保留字段键的插件
+字段，都会在安装时被拒。`mail.send` 就靠它从插件无法指定服务器的账号发信。
+
+它是**顶层**槽键，理由与 `userProxy` 相同：1.10.0 宿主会忽略不认识的顶层键，同一
+个包在那边照样装得上，只是继续走 `manifest.net.tcp` 的预设路径。
+
+宿主为该槽位保留三个字段键：
+
+| 键 | 含义 | 是否回传给插件 |
+| --- | --- | --- |
+| `sendServer` | 发信服务器的裸主机名或 IP 字面值 | 是 |
+| `sendPort` | 十进制端口，1..65535 | 是 |
+| `sendSecurity` | `tls`（隐式 TLS）或 `starttls`，必须是该槽声明之一 | 是 |
+
+插件不得声明上述任何一个字段键（安装时拒绝）：否则它自己的表单就能决定自己的信从
+哪里发出去。
+
+这些值由宿主在保存时校验，而不是由表单校验：
+
+* `sendServer` 留空表示「不自己发信」——另两个键被丢弃而不保存，账号继续走
+  `manifest.net.tcp` 路径（否则发不了：`MAIL_SEND_NOT_CONFIGURED`）；
+* 指定了服务器就必须有端口，且传输方式是该槽位声明的；
+* 裸主机名、云元数据拒绝与端口规则与自定义邮件服务器一致，发信服务器同样不可能成为
+  访问实例凭据服务的通道；
+* 用户名与密码沿用收信那份——能读这个邮箱的账号就是发信的账号，所以不再单独收集
+  第二个凭据。
+
+`credentials.status` 用 `userSend: { security }` 报出声明；在这个键之前保存的账号照常
+工作，只是没有自己的发信服务器。对这样的账号，`mail.send` 会拒绝插件传入的
+`endpoint`（`INVALID_ARGUMENT`），因为账号自己已经决定了从哪里发信。

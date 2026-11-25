@@ -509,3 +509,90 @@ B2 实现入站 webhook；B4 实现 `pi.notify.center`；B6 实现插件定时�
 （`SAVE_AS_BUSY`），因为插件可以在没有用户操作时调用。`refusedSavePath` 改用 `relative`
 比较，Windows 的分隔符与大小写因此成立，并在 Windows 上额外拒绝 `%SystemRoot%`、
 `C:\Windows`、`C:\Program Files( x86)` 与 `C:\ProgramData`。
+
+## 2026-11-25 —— 由宿主代发邮件（`mail.send`）
+
+背景：邮箱插件能读邮箱，却回不了信。读信是宿主代做的——插件点名一个
+`credentialRef`，宿主自己连接、登录，再把流交回去——但同一个插件没有任何发信
+通道，「写回去」只能停在草稿。现有的退路都比问题更糟：插件可以用 `net.tcp`
+自己开 socket 再向用户要一次密码（把秘密放进了凭据模型本来要挡住的那个进程），
+或者借用 `mail.draft`，而那份授权的全部含义正是「从不发送」。
+
+### 决定
+
+1. 新增第十个权限 **`mail.send`**，风险 **high**：宿主握着账号、会话和投递，
+   而发出去的信收不回来。`mail.draft` 含义不变，其条目改为「草稿从不发送，发送是
+   另一份授权」。
+2. API 为 `pi.mail.send({ credential, endpoint?, envelope, mime, timeoutMs })`
+   → `{ accepted, rejected, messageId? }`。插件只点名账号（声明的 `imap` 槽，
+   多实例槽再加实例 id）和报文，永远拿不到密码、socket、连接句柄或服务器原文。
+3. 发信端点与收信端点同源决定：
+   - **预设**：`endpoint` 必须是 `manifest.net.tcp` 的字面条目且落在槽
+     `scope.domains` 内，校验函数与 IMAP 预设路径共用。声明的 `tls: true` 走隐式
+     TLS；`tls: false` 走**必须成功的 STARTTLS**，绝不明文认证、也不留明文会话。
+   - **账号自己的服务器**：`contributes.credentials[].userSend: { security:
+     ("tls" | "starttls")[] }`（仅 `imap` 槽）为宿主保留三个非密字段键
+     `sendServer`、`sendPort`、`sendSecurity`，由宿主自己的凭据表单填写，与该账号的
+     密码存在同一个实例里。实例的密码只会被送到同一个实例里存的端点；这样的账号
+     插件再传 `endpoint` 一律 `INVALID_ARGUMENT`——比读信路径更严，因为插件没有
+     任何理由再点一次账号已经配置好的服务器。
+   - **两者都没有** → `MAIL_SEND_NOT_CONFIGURED`。
+   `userSend` 是**顶层**槽键，理由与 `userProxy` 相同：1.10.0 宿主会忽略不认识的
+   顶层键，同一个包在那边照样装得上，只是继续走预设路径。`sendServer` 留空表示
+   「不自己发信」，另两个键随之丢弃。发信用户名与密码沿用收信那份——能读邮箱的账号
+   就是发信的账号。
+4. 连接是**宿主内部连接**：`PluginTcpRegistry.acquireInternal` 与插件可见的连接共用
+   并发配额、超时、TLS 规则和按账号的代理，但不发任何 `net:tcp:*` 事件、不交出
+   `connectionId`，插件既列不出也关不掉；它随插件释放、禁用、重载、崩溃一起结束，
+   其 `signal` 能中断会话。配了代理的账号照旧走代理，不回退直连。
+5. 会话完全属于宿主：问候 → `EHLO` → `STARTTLS`（升级后重新读 capabilities；约定
+   之后到达的字节直接中断）→ `AUTH PLAIN`/`LOGIN` → `MAIL FROM` → 逐个 `RCPT TO`
+   → `DATA`（CRLF 规范化、行首点转义）→ `QUIT`，并受总超时与 abort 信号约束。
+   服务器没有 `8BITMIME` 时拒绝 8 位内容，否则服务器会改写报文。
+6. 防滥用（都在会话前或会话中强制）：信封发件人、报文 `From:` 与任何 `Sender:`
+   必须是账号自己的地址；不接受 `Bcc:` 头（密送写在信封里）；每封最多 50 个去重
+   收件人、25 MiB；单个插件滚动一小时内最多 30 封。计数在内存里，重启清零——它挡的
+   是一个失控的循环把账号变成中转站，不是拿账号向主人限量。审计只记插件、实例、
+   收件人数、字节数、结果和错误码，不记正文、主题和任何地址。
+7. 失败以封闭的码集回到插件：`MAIL_SEND_NOT_CONFIGURED`、`AUTH_FAILED`、
+   `RECIPIENT_REJECTED`（附被拒地址）、`SENDER_REJECTED`、`MESSAGE_REJECTED`、
+   `MAIL_FROM_MISMATCH`、`MAIL_BCC_HEADER`、`MAIL_TOO_LARGE`、
+   `MAIL_RATE_LIMITED`、`MAIL_EIGHT_BIT_UNSUPPORTED`、`SMTP_FAILED`，加上 TCP
+   一半已有的 `CONNECT_FAILED`、`TIMEOUT`、`TLS_FAILED`、`TLS_CERTIFICATE`、
+   `STARTTLS_UNAVAILABLE`、`PROXY_FAILED`、`PROXY_AUTH_FAILED` 与凭据类拒绝。
+   任何文案都不引用服务器原文。
+8. 纯增量：没有 `userSend` 的槽与 1.10.0 完全一致；没有声明 `mail.send` 的插件
+   触碰不到这些能力。
+
+### 影响
+
+- 邮箱插件可以回信，而全程不持有密码；用户也能在账号表单里看到自己的信从哪台
+  服务器发出。
+- 宿主多了一种需要拥有和拆除的长连接；它复用 TCP registry 的配额与释放路径，而不是
+  再加一套拨号逻辑。
+- 插件消息表多出十来个名字，每个都说清该修什么，而不是「发送失败」。
+- 同一个 `net.tcp` 条目现在按调用方有两种含义：`net.tcp.connect` 是透明流，
+  `mail.send` 是只能走 STARTTLS 的提交会话。这一点写在 manifest spec 与本 ADR 里，
+  也是 `tls: false` 的邮件端点绝不会明文使用的原因。
+- 预设账号仍可能把某个实例的凭据投往同槽 scope 里另一家的声明端点：绑定粒度是槽，
+  与既有 IMAP 预设登录一致。这个残余风险在这里写明，而不是悄悄继承。
+
+### 备选
+
+- **让插件用 `net.tcp` 自己跑 SMTP。** 否决：带 `credentialRef` 的 `net.tcp` 由
+  宿主登录后把透明流交给插件，而 SMTP 登录需要在会话开始前就拿到密码——这条路要么
+  把秘密交给插件，要么逼用户自己把密码告诉插件，正是凭据模型要避免的两种结果。
+- **给 `manifest.net.tcp` 条目加 `starttls: true`。** 否决：对这个调用方，`tls:
+  false` 已经表达「可连接、且凭证之前必须先升级」，第四个字段会让同一个端点在作者
+  记住哪个标志时出现三种含义；无论如何升级都是强制的。
+- **复用 `mail.draft`。** 否决：草稿之所以是 medium 风险，正是因为它发不出去；放宽
+  它等于把所有已安装它的插件静默升权。
+- **单独要一个 SMTP 密码。** 否决：对几乎所有账号它就是同一个服务商、同一个密码，
+  第二个字段只是多一种把账号存成半配置状态的方式。
+- **允许自填发信服务器账号接受插件点名的端点（读信路径的「必须完全一致」规则）。**
+  否决，属于多余面：发信是从插件已握着的报文组合出来的，不存在需要回指服务器的
+  断线重连场景。
+- **按固定小时桶计数。** 否决：09:00 发 30 封、09:30 再发 30 封就能过一个桶，而
+  服务商看到的是半小时 60 封。窗口是滚动的。
+- **持久化计数器。** 暂时否决：为一个「保护账号不被失控插件拖走」的上限加一次 schema
+  版本不值得；ADR 选择明确写出重启清零，而不是藏着它。

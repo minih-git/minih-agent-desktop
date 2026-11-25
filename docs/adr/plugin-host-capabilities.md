@@ -691,3 +691,123 @@ dialog per plugin at a time (`SAVE_AS_BUSY`), because a plugin can call without 
 user gesture. `refusedSavePath` compares with `relative`, so Windows separators
 and case work, and refuses `%SystemRoot%`, `C:\Windows`, `C:\Program Files( x86)`
 and `C:\ProgramData` there.
+
+## 2026-11-25 — host-sent mail (`mail.send`)
+
+Context: a mailbox plugin can read a mailbox and could not answer it. Reading is
+host-performed — the plugin names a `credentialRef`, the host dials, logs in and
+hands back the stream — but the same plugin had no way to *send*, so "write back"
+ended at a draft. The ways out were all worse than the problem: the plugin could
+open its own socket through `net.tcp` and ask the user for the password again
+(which puts the secret in the process the credential model exists to keep it out
+of), or the send could ride on `mail.draft`, whose whole grant is that it never
+sends anything.
+
+### Decision
+
+1. A tenth permission, **`mail.send`**, graded **high**: the host holds the
+   account, the session and the delivery, and a message that reaches a stranger
+   cannot be recalled. `mail.draft` keeps its meaning; its rows now say drafting
+   never sends and that sending is this separate grant.
+2. The API is `pi.mail.send({ credential, endpoint?, envelope, mime, timeoutMs })`
+   → `{ accepted, rejected, messageId? }`. It names an account (a declared `imap`
+   slot, plus the instance when the slot holds several) and a message; it never
+   receives a password, a socket, a connection handle or the server's own text.
+3. Where the message leaves from is decided exactly like where it is read from:
+   - **preset** — `endpoint` must be the literal entry in `manifest.net.tcp` that
+     the slot's `scope.domains` admits, checked by the same function the IMAP
+     preset path uses. A declared `tls: true` endpoint is reached over implicit
+     TLS; a declared `tls: false` endpoint is reached with **STARTTLS that must
+     succeed**. There is no plaintext login and no plaintext session.
+   - **the account's own server** — `contributes.credentials[].userSend:
+     { security: ("tls" | "starttls")[] }` on an `imap` slot reserves three
+     non-secret field keys (`sendServer`, `sendPort`, `sendSecurity`) that the
+     user fills in the host's own credential form, stored in the same instance as
+     the password. The instance's password is only ever sent to the endpoint
+     stored with it, and a plugin that names an `endpoint` for such an account is
+     refused with `INVALID_ARGUMENT` — stricter than the read path, because a
+     plugin has no reason to name a server the account already configured.
+   - **neither** is `MAIL_SEND_NOT_CONFIGURED`.
+   `userSend` is a **top-level** slot key for the same compatibility reason as
+   `userProxy`: a 1.10.0 host ignores an unknown top-level key, so the same
+   package still installs there and simply keeps the preset path. A blank
+   `sendServer` means "no own outgoing server" and drops the other two values.
+   The user name and password are the incoming ones — the account that reads a
+   mailbox is the account that sends from it.
+4. The connection is **host-internal**: `PluginTcpRegistry.acquireInternal`
+   dials with the same quota, deadline, TLS rules and per-account proxy as a
+   plugin-visible connect, but emits no `net:tcp:*` event, hands out no
+   `connectionId`, and cannot be listed or closed by the plugin. It dies with the
+   plugin — release, disable, reload, crash — and its `signal` abort reaches the
+   session. A proxied account sends through its proxy and never falls back.
+5. The session is the host's: greeting → `EHLO` → `STARTTLS` (capabilities
+   re-read over TLS, and a byte that arrives after the agreement aborts the
+   session) → `AUTH PLAIN`/`LOGIN` → `MAIL FROM` → one `RCPT TO` per recipient →
+   `DATA` (CRLF-normalized, dot-stuffed) → `QUIT`, bounded by a total deadline and
+   an abort signal. 8-bit content is refused unless the server advertised
+   `8BITMIME`, because a server that cannot take it would rewrite the message.
+6. Abuse bounds, all enforced before or during the session: the envelope sender,
+   the message's `From:` and any `Sender:` must be the account's own address; a
+   `Bcc:` header is refused (blind recipients belong in the envelope); at most 50
+   distinct recipients and 25 MiB per message; at most 30 sends per plugin in a
+   rolling hour. The counter is in memory and a restart clears it — it exists to
+   stop one runaway loop from turning an account into a relay, not to ration an
+   account against its owner. Audit records the plugin, the instance, the
+   recipient count, the size, the outcome and the error code, never the body, the
+   subject or an address.
+7. Failures reach the plugin as a closed set: `MAIL_SEND_NOT_CONFIGURED`,
+   `AUTH_FAILED`, `RECIPIENT_REJECTED` (with the refused addresses),
+   `SENDER_REJECTED`, `MESSAGE_REJECTED`, `MAIL_FROM_MISMATCH`,
+   `MAIL_BCC_HEADER`, `MAIL_TOO_LARGE`, `MAIL_RATE_LIMITED`,
+   `MAIL_EIGHT_BIT_UNSUPPORTED`, `SMTP_FAILED`, plus the transport names the TCP
+   half already reports (`CONNECT_FAILED`, `TIMEOUT`, `TLS_FAILED`,
+   `TLS_CERTIFICATE`, `STARTTLS_UNAVAILABLE`, `PROXY_FAILED`,
+   `PROXY_AUTH_FAILED`) and the credential refusals. No message quotes the server.
+8. The change is additive. A slot without `userSend` is byte-identical to 1.10.0;
+   a plugin that does not declare `mail.send` cannot reach any of it.
+
+### Consequences
+
+- A mailbox plugin can write back without ever holding the password, and a user
+  can see in the account form which server their mail leaves through.
+- The host gains a second long-lived session kind to own and tear down. It reuses
+  the TCP registry's quota and release path rather than adding a second dialer.
+- The plugin's message table grows by roughly a dozen names, each of which says
+  what to fix instead of "sending failed".
+- A preset endpoint declared for `net.tcp` now means two things depending on the
+  caller: a transparent stream for `net.tcp.connect`, a STARTTLS-only submission
+  session for `mail.send`. That is stated in the manifest spec and in this ADR,
+  and it is the reason a `tls: false` mail endpoint is never used in the clear.
+- A preset account can still be pointed at another *declared* endpoint inside the
+  same slot scope: the binding is the slot, exactly as it already is for the IMAP
+  preset login. The residual risk is unchanged and named here rather than
+  silently inherited.
+
+### Alternatives
+
+- **Let the plugin run SMTP itself over `net.tcp`.** Rejected: `net.tcp` with a
+  `credentialRef` performs the login in the host and then hands the plugin the
+  transparent stream. An SMTP login needs the password *before* the session
+  starts, so this path would either give the plugin the secret or push the user
+  to type it into the plugin — the two outcomes the credential model exists to
+  prevent.
+- **Add `starttls: true` to `manifest.net.tcp` entries.** Rejected: `tls: false`
+  already expresses "reachable, and upgraded before any credential" for this
+  caller, and a fourth field would let one endpoint mean three things depending
+  on which flag an author remembered. The upgrade is mandatory either way.
+- **Reuse `mail.draft`.** Rejected: drafting is medium risk precisely because it
+  cannot send. Widening it would silently upgrade every plugin already installed
+  with it.
+- **Ask for a separate SMTP password.** Rejected: it is the same credential at
+  the same provider for almost every account, and a second field is a second way
+  to save an account half-configured.
+- **Allow a plugin-named endpoint for an account that stores its own server (the
+  read path's "must match exactly" rule).** Rejected as unnecessary surface: a
+  send is composed from a message the plugin already holds, so there is no
+  reconnect-and-resume case that needs to name the server back.
+- **Count sends in a fixed hourly bucket.** Rejected: 30 at 09:00 and 30 at 09:30
+  would pass a bucket while the provider sees 60 in half an hour. The window
+  rolls.
+- **Persist the counter.** Rejected for now: it would need a schema version for a
+  bound that protects an account from a runaway plugin loop, not from its owner,
+  and the ADR states the reset behaviour instead of hiding it.

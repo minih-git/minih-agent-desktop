@@ -1141,10 +1141,19 @@ pi.inbound.getReceivers(): Promise<Array<{ id: string; url: string; enabled: boo
 // scheduler —— 没有上定时器的方法；时钟归宿主。
 // 事件：schedule:fire { scheduleId, firedAt, missed: number }
 
-// mail.draft —— 只写草稿，没有发送调用。
+// mail.draft —— 只写草稿，从不发送。
 pi.mail.draft.create(input: {
   to: string[]; cc?: string[]; subject: string; bodyText: string
 }): Promise<{ draftId: string }>
+
+// mail.send —— 宿主自己连接、登录、投递；插件只拿到结果。
+pi.mail.send(input: {
+  credential: { slot: string; instanceId?: string }
+  endpoint?: { host: string; port: number } // 必须是 manifest.net.tcp 里声明的条目
+  envelope: { from: string; to: string[]; cc?: string[]; bcc?: string[] }
+  mime: Uint8Array
+  timeoutMs?: number
+}): Promise<{ accepted: string[]; rejected: string[]; messageId?: string }>
 
 // notify.center —— 写一条持久通知中心记录，不是一次性横幅。
 pi.notify.center(input: {
@@ -1318,8 +1327,26 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   日期和星期字段都受限时按常规 cron 的 OR 语义匹配。宿主运行时最多每 15 秒轮询一次。
   没有符合条件的已加载定时器时，宿主不启动轮询时钟；确认退出时取消轮询及尚未
   完成的超时计时器，计时器句柄本身不会阻止进程退出。取消退出则保持调度器运行。
-- **`mail.draft` 从不发送。** 这个 API 里没有发送调用，也不存在由第二个权限打开
-  的发送调用；草稿落在宿主列表里，等用户审阅
+- **`mail.draft` 从不发送。** 草稿落在宿主列表里，等用户审阅；发送是另一份
+  `mail.send` 授权（见下），没有它的插件碰不到。
+- **`mail.send` 是由宿主完成的会话。** 插件点名账号（`credential.slot`，多实例槽
+  再加 `instanceId`）和报文；宿主决定端点、自己连接、用该账号自己的密码登录并投递。
+  回来的只有结果：没有密码、没有套接字、没有连接句柄，也没有服务器原文——被拒时只有
+  一个错误码，以及插件自己写下的被拒地址。
+  - `endpoint` 必须是 `manifest.net.tcp` 里的字面条目且落在槽 `scope.domains` 内；
+    `tls: true` 走隐式 TLS，`tls: false` 走 STARTTLS 且必须成功。自己存了发信服务器
+    （`userSend`）的账号必须不传 `endpoint`，传了就是 `INVALID_ARGUMENT`。两者都没
+    配置是 `MAIL_SEND_NOT_CONFIGURED`。
+  - `envelope.from`、报文的 `From:` 与任何 `Sender:` 必须是账号自己的地址
+    （`MAIL_FROM_MISMATCH`）。报文里出现 `Bcc:` 头会被拒（`MAIL_BCC_HEADER`）：
+    密送收件人写在 `envelope.bcc` 里，走 SMTP 信封而不是报文头。
+  - 单封最多 50 个去重后的收件人、25 MiB 报文，单插件滚动一小时最多 30 封
+    （`MAIL_RATE_LIMITED`）。计数在内存里，重启清零，这一点 ADR 已写明。
+  - 会话和任何连接一样占用插件的连接配额，并随插件结束（卸载、禁用、重载、崩溃）以及
+    `timeoutMs`（由宿主封顶）结束。
+  - 服务器没有声明 `8BITMIME` 时拒绝 8 位内容（`MAIL_EIGHT_BIT_UNSUPPORTED`），
+    而不是让服务器悄悄改写。
+  - `messageId` 是服务器自己给出的队列 id，服务器没给就没有；宿主不会编一个。
 - **`notify.center` 写的是持久通知中心。** 记录的 kind 是 `plugin.alert`（默认）
   或 `plugin.digest`，带上插件自己的标题与正文，于是它和回合结果一起出现在通知
   中心、计入未读徽标，用户不靠一次横幅也能看到。`alert` 是用户当下就该看到的一件
