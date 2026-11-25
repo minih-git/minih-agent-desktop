@@ -85,9 +85,11 @@ native reservation while visible (ADR 0122).
 7. **Views are cached, bounded, and tied to the plugin's lifetime.** A view
    survives tab switches so a plugin keeps its scroll position and in-page
    state, up to four live views, evicting the least recently shown and never the
-   one on screen. Disable, uninstall, reload, and crash all destroy the
-   plugin's views; the tab may outlive the page, so the renderer re-opens on the
-   lifecycle event rather than leaving a permanently blank pane.
+   one on screen. Disable, uninstall, reload, crash, and any install that
+   replaces the plugin's files — a marketplace upgrade, an applied update, a
+   folder or package install over an existing id — all destroy the plugin's
+   views and its panel window; the tab may outlive the page, so the renderer
+   re-opens on the lifecycle event rather than leaving a permanently blank pane.
 
 ## Consequences
 

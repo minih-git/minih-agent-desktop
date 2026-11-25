@@ -13,6 +13,7 @@ import {
   type PluginRuntime,
 } from "../plugin-runtime";
 import { PluginViewHost } from "../plugin-view-host";
+import type { PluginPanelHost } from "../plugin-panel-host";
 import { rendererCallError } from "../plugin-renderer-extension";
 import { pluginSchedulerFor } from "../plugin-scheduler-service";
 import { registerPluginCredentialIpc } from "./plugin-credentials-ipc";
@@ -28,6 +29,8 @@ export type PluginIpcDependencies = {
   agentExtensions: AgentExtensionBridge;
   browserHost: BrowserHost;
   pluginViews: PluginViewHost;
+  /** Host-owned panel windows: a version change replaces what they run. */
+  pluginPanels: PluginPanelHost;
   pluginScopes: Map<string, ActivationScope>;
   rememberPluginScopes: (list: any[]) => void;
   sendToRenderer: (channel: string, payload?: unknown) => void;
@@ -51,6 +54,7 @@ export function registerPluginIpc({
   agentExtensions,
   browserHost,
   pluginViews,
+  pluginPanels,
   pluginScopes,
   rememberPluginScopes,
   sendToRenderer,
@@ -71,6 +75,12 @@ export function registerPluginIpc({
       host = getHost();
       return fn(...args);
     });
+  };
+
+  /** Drop the surfaces a replaced plugin left running the previous revision. */
+  const discardLoadedUi = async (pluginId: string): Promise<void> => {
+    pluginViews.closePlugin(pluginId);
+    await pluginPanels.close(pluginId, { force: true });
   };
 
   /**
@@ -384,6 +394,11 @@ export function registerPluginIpc({
       path,
       enable: true,
     });
+    // An install over a running plugin replaced the files its page was loaded
+    // from; drop that page and its panel window before the new revision loads.
+    if (installed.result?.upgraded) {
+      await discardLoadedUi(String(installed.result?.plugin?.id ?? declaredId));
+    }
     if (installed.result?.plugin?.enabled && installed.result?.plugin?.path) {
       await plugins.loadFromPath(
         installed.result.plugin.path,
@@ -438,6 +453,12 @@ export function registerPluginIpc({
       // host refuses the install when the bytes changed in between.
       expectedShasum: inspection.shasum,
     });
+    // An install over a running plugin replaced the files its page was loaded
+    // from; drop that page and its panel window before the new revision loads,
+    // exactly as a reload does.
+    if (inspection.upgraded) {
+      await discardLoadedUi(String(installed.result?.plugin?.id ?? inspection.id));
+    }
     if (installed.result?.plugin?.enabled && installed.result?.plugin?.path) {
       await plugins.loadFromPath(
         installed.result.plugin.path,

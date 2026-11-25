@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.11.1",
+    highlights: [
+      "修复插件升级后仍显示旧版本的问题：从市场更新，或者用文件夹、安装包把新版覆盖装到已安装的插件上之后，已经打开的工作面板标签和插件窗口还在跑旧页面，按钮是旧的、正文常常一片空白。现在升级会在加载新版本之前关闭这些页面，打开的标签会按新文件重新加载。",
+    ],
+  },
+  {
     version: "1.11.0",
     date: "2026-11-25",
     highlights: [

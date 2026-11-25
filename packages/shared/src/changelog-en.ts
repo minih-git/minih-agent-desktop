@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.11.1",
+    highlights: [
+      "Fixed a plugin still showing the version it replaced: after a marketplace update — or installing a newer copy over an installed plugin from a folder or a package — the work-panel tab and the plugin window that were already open kept running the old page, with the old buttons and often a blank body. An upgrade now closes those pages before the new version loads, and an open tab reloads from the new files.",
+    ],
+  },
+  {
     version: "1.11.0",
     date: "2026-11-25",
     highlights: [

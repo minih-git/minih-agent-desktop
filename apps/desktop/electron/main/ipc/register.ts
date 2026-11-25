@@ -526,6 +526,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     agentExtensions,
     browserHost,
     pluginViews,
+    pluginPanels,
     pluginScopes,
     rememberPluginScopes,
     sendToRenderer,
@@ -618,6 +619,8 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     optionalWorkspaceRoot,
     pluginActiveInProject,
     sendToRenderer,
+    pluginViews,
+    pluginPanels,
     confirmInterruption,
   });
 

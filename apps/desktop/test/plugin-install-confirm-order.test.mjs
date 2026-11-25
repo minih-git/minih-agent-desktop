@@ -67,13 +67,15 @@ function loadPluginIpc({ picked = PACKAGE_PATH } = {}) {
  * A registration harness: captured channels, a host that answers by channel, and
  * a plugin runtime that records what was loaded.
  */
-function harness({ inspection, install, confirm, picked = PACKAGE_PATH }) {
+function harness({ inspection, install, installFromPath, confirm, picked = PACKAGE_PATH }) {
   const handlers = new Map();
   const hostCalls = [];
   const loaded = [];
   const unloaded = [];
   const rendered = [];
   const confirmed = [];
+  const closedViews = [];
+  const closedPanels = [];
 
   const host = {
     async call(channel, params) {
@@ -82,6 +84,10 @@ function harness({ inspection, install, confirm, picked = PACKAGE_PATH }) {
       if (channel === "plugins.installFromPackage") {
         if (typeof install === "function") return install(params);
         return install;
+      }
+      if (channel === "plugins.installFromPath") {
+        if (typeof installFromPath === "function") return installFromPath(params);
+        return installFromPath;
       }
       throw new Error(`unexpected host call: ${channel}`);
     },
@@ -106,7 +112,8 @@ function harness({ inspection, install, confirm, picked = PACKAGE_PATH }) {
     plugins,
     agentExtensions: {},
     browserHost: { disposeGuest: () => {} },
-    pluginViews: { closePlugin: () => {} },
+    pluginViews: { closePlugin: (id) => closedViews.push(id) },
+    pluginPanels: { close: async (id) => closedPanels.push(id) },
     pluginScopes: new Map(),
     rememberPluginScopes: () => {},
     sendToRenderer: (channel, payload) => rendered.push([channel, payload]),
@@ -124,8 +131,11 @@ function harness({ inspection, install, confirm, picked = PACKAGE_PATH }) {
     loaded,
     unloaded,
     rendered,
+    closedViews,
+    closedPanels,
     confirmed,
     install: () => handlers.get(IPC.invoke.pluginInstallFromPackage),
+    installPath: () => handlers.get(IPC.invoke.pluginInstallFromPath),
   };
 }
 
@@ -156,6 +166,7 @@ test("declining changes nothing: no install, no load, no unload", async () => {
   // Only the read-only question reached the host.
   assert.deepEqual(run.hostCalls, [["plugins.inspectPackage", { path: PACKAGE_PATH }]]);
   assert.deepEqual(run.loaded, []);
+  assert.deepEqual(run.closedViews, [], "a declined install closes nothing");
   assert.deepEqual(run.unloaded, []);
   assert.deepEqual(run.rendered, [], "a cancelled install must not announce a change");
 });
@@ -177,6 +188,9 @@ test("the prompt names the package's plugin, and accepting installs those bytes"
     expectedShasum: SHASUM,
   });
   assert.deepEqual(run.loaded, [["/data/plugins/installed/minih.terminal", ["ui.view"]]]);
+  // The page and the panel window were loaded from the version this replaced.
+  assert.deepEqual(run.closedViews, ["minih.terminal"]);
+  assert.deepEqual(run.closedPanels, ["minih.terminal"]);
   assert.equal(result.result.plugin.id, "minih.terminal");
 });
 
@@ -190,6 +204,7 @@ test("a package swapped after the prompt is refused, and nothing is loaded", asy
   });
   await assert.rejects(() => run.install()(), /checksum mismatch/);
   assert.deepEqual(run.loaded, [], "a refused install must not load anything");
+  assert.deepEqual(run.closedViews, [], "a refused install replaced nothing, so no page is dropped");
   assert.deepEqual(run.rendered, [], "and must not report a change it did not make");
 });
 
@@ -210,4 +225,53 @@ test("a dismissed file picker does nothing at all", async () => {
   assert.deepEqual(run.hostCalls, [], "no inspection without a chosen package");
   assert.deepEqual(run.confirmed, [], "no question without a package");
   assert.deepEqual(run.loaded, []);
+});
+
+test("a first install closes nothing, because nothing was replaced", async () => {
+  const run = harness({
+    inspection: { ...INSPECTION, installedVersion: null, upgraded: false },
+    install: INSTALLED,
+    confirm: true,
+  });
+  await run.install()();
+  assert.deepEqual(run.loaded.length, 1, "the new plugin is loaded");
+  assert.deepEqual(run.closedViews, [], "a first install has no page to drop");
+  assert.deepEqual(run.closedPanels, []);
+});
+
+const FOLDER_PATH = "/Users/me/plugins/folder-plugin";
+const FOLDER_UPGRADE = {
+  result: {
+    plugin: { id: "pi.folder", enabled: true, path: FOLDER_PATH, permissions: ["ui.view"] },
+    upgraded: true,
+    permission_diff: [],
+  },
+};
+
+test("reinstalling over a plugin from a folder drops the page the old copy ran", async () => {
+  const run = harness({
+    inspection: INSPECTION,
+    install: INSTALLED,
+    installFromPath: FOLDER_UPGRADE,
+    confirm: true,
+    picked: FOLDER_PATH,
+  });
+  await run.installPath()();
+  assert.deepEqual(run.confirmed, [["pi.folder"]], "the folder's declaration names the plugin");
+  assert.deepEqual(run.closedViews, ["pi.folder"]);
+  assert.deepEqual(run.closedPanels, ["pi.folder"]);
+  assert.deepEqual(run.loaded, [[FOLDER_PATH, ["ui.view"]]], "the new copy is what loads");
+});
+
+test("installing a plugin that was not there before closes nothing", async () => {
+  const run = harness({
+    inspection: INSPECTION,
+    install: INSTALLED,
+    installFromPath: { result: { ...FOLDER_UPGRADE.result, upgraded: false } },
+    confirm: true,
+    picked: FOLDER_PATH,
+  });
+  await run.installPath()();
+  assert.deepEqual(run.closedViews, [], "a first install has no page to drop");
+  assert.deepEqual(run.loaded.length, 1);
 });
