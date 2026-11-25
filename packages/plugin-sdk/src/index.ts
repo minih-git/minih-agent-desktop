@@ -1705,7 +1705,10 @@ export type PluginHostApi = {
      * name, the user picks the destination, and cancelling answers `null` and
      * writes nothing. One file per call, at most 50 MiB; the suggested name is
      * reduced to a single path segment, and the app's own data directory and a
-     * few system locations are refused. Needs the `fs.write` permission.
+     * few system locations are refused (on Windows: `%SystemRoot%`,
+     * `C:\Windows`, `C:\Program Files*`, `C:\ProgramData`). Needs the
+     * `fs.write` permission. Reachable from a panel too, and one dialog at a
+     * time per plugin: a call while another is open answers `SAVE_AS_BUSY`.
      */
     saveAs: (input: {
       suggestedName: string;

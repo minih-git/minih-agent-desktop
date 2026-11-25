@@ -2744,61 +2744,8 @@ export class PluginRuntime {
       // has to be, because a "pick a folder" button is panel UI by nature.
       case "fs.requestDirectory":
         return api.fs.requestDirectory();
-      case "fs.saveAs": {
-        // The dialog is the authorisation, so this one write is not inside the
-        // sandbox root: it is the single path the user picked. Everything else
-        // (size, name, the app's own directories) is still the host's business.
-        this.assertPermission(loaded, "fs.write");
-        const input = (payload ?? {}) as {
-          suggestedName?: unknown;
-          data?: unknown;
-          mimeType?: unknown;
-        };
-        const data =
-          input.data instanceof Uint8Array
-            ? input.data
-            : input.data instanceof ArrayBuffer
-              ? new Uint8Array(input.data)
-              : null;
-        if (!data) throw apiError("INVALID_ARGUMENT", "saveAs needs the file bytes");
-        try {
-          const answer = await saveAsOne(
-            {
-              choosePath: (options) =>
-                this.services.saveFile ? this.services.saveFile(options) : Promise.resolve(null),
-              ...(this.services.saveAsDataDir ? { dataDir: this.services.saveAsDataDir } : {}),
-            },
-            {
-              suggestedName:
-                typeof input.suggestedName === "string" && input.suggestedName.trim()
-                  ? input.suggestedName
-                  : "attachment",
-              data,
-              ...(typeof input.mimeType === "string" ? { mimeType: input.mimeType } : {}),
-            },
-          );
-          // The destination is the user's own file system: the audit row
-          // records that a save happened and how much was written, not where.
-          this.services.audit?.({
-            pluginId,
-            api: "fs.saveAs",
-            ok: true,
-            ts: Date.now(),
-            bytes: data.byteLength,
-            saved: answer !== null,
-          });
-          return answer;
-        } catch (error) {
-          this.services.audit?.({
-            pluginId,
-            api: "fs.saveAs",
-            ok: false,
-            ts: Date.now(),
-            errorCode: "SAVE_AS_FAILED",
-          });
-          throw apiError("SAVE_AS_FAILED", (error as Error).message);
-        }
-      }
+      case "fs.saveAs":
+        return this.saveAsFile(loaded, payload);
       case "clipboard.readText":
         return api.clipboard.readText();
       case "clipboard.writeText":
@@ -6057,6 +6004,73 @@ export class PluginRuntime {
     throw apiError("UNSUPPORTED", `host api not available: ${api}`);
   }
 
+  /**
+   * `pi.fs.saveAs`, reachable from the plugin process and from a panel.
+   *
+   * One dialog per plugin at a time: the call can arrive without any user
+   * gesture, and a native dialog is not something a plugin may stack up.
+   */
+  private readonly saveAsOpen = new Set<string>();
+
+  private async saveAsFile(
+    loaded: LoadedPlugin,
+    payload: unknown,
+  ): Promise<{ path: string; name: string } | null> {
+    this.assertPermission(loaded, "fs.write");
+    const pluginId = loaded.manifest.id;
+    const input = (payload ?? {}) as { suggestedName?: unknown; data?: unknown; mimeType?: unknown };
+    const data =
+      input.data instanceof Uint8Array
+        ? input.data
+        : input.data instanceof ArrayBuffer
+          ? new Uint8Array(input.data)
+          : null;
+    if (!data) throw apiError("INVALID_ARGUMENT", "saveAs needs the file bytes");
+    if (this.saveAsOpen.has(pluginId)) {
+      throw apiError("SAVE_AS_BUSY", "a save dialog is already open for this plugin");
+    }
+    this.saveAsOpen.add(pluginId);
+    try {
+      const answer = await saveAsOne(
+        {
+          choosePath: (options) =>
+            this.services.saveFile ? this.services.saveFile(options) : Promise.resolve(null),
+          ...(this.services.saveAsDataDir ? { dataDir: this.services.saveAsDataDir } : {}),
+        },
+        {
+          suggestedName:
+            typeof input.suggestedName === "string" && input.suggestedName.trim()
+              ? input.suggestedName
+              : "attachment",
+          data,
+          ...(typeof input.mimeType === "string" ? { mimeType: input.mimeType } : {}),
+        },
+      );
+      // The destination is the user's own file system: the audit row records
+      // that a save happened and how much was written, not where.
+      this.services.audit?.({
+        pluginId,
+        api: "fs.saveAs",
+        ok: true,
+        ts: Date.now(),
+        bytes: data.byteLength,
+        saved: answer !== null,
+      });
+      return answer;
+    } catch (error) {
+      this.services.audit?.({
+        pluginId,
+        api: "fs.saveAs",
+        ok: false,
+        ts: Date.now(),
+        errorCode: "SAVE_AS_FAILED",
+      });
+      throw apiError("SAVE_AS_FAILED", (error as Error).message);
+    } finally {
+      this.saveAsOpen.delete(pluginId);
+    }
+  }
+
   private hostApi(loaded: LoadedPlugin, browserContext?: { sessionId: string; tabId: string }) {
     const pluginId = loaded.manifest.id;
     const pluginPath = loaded.path;
@@ -6839,6 +6853,8 @@ export class PluginRuntime {
             path: rel,
           });
         },
+        saveAs: async (input: { suggestedName?: unknown; data?: unknown; mimeType?: unknown }) =>
+          this.saveAsFile(loaded, input),
         requestDirectory: async () => {
           this.assertPermission(loaded, "fs.read");
           const picker = this.services.pickDirectory;

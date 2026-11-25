@@ -683,3 +683,11 @@ an absolute path would hand it the user's whole file system.
 - **Save into a fixed "downloads" folder without asking.** Rejected: the user
   asked to save an attachment somewhere specific; a silent location is worse than
   a dialog.
+
+Revision 2026-11-25 (review): `saveAs` is implemented once and reached from both
+the plugin process (`pi.fs.saveAs`) and a panel channel — the plugin obtains
+attachment bytes in its own process, so the panel-only route was wrong. One
+dialog per plugin at a time (`SAVE_AS_BUSY`), because a plugin can call without a
+user gesture. `refusedSavePath` compares with `relative`, so Windows separators
+and case work, and refuses `%SystemRoot%`, `C:\Windows`, `C:\Program Files( x86)`
+and `C:\ProgramData` there.

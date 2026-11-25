@@ -17,7 +17,7 @@
  * - a cancelled dialog writes nothing and answers `null`.
  */
 import { writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { basename, isAbsolute, posix, relative, resolve, win32 } from "node:path";
 
 /** Largest file one `saveAs` may write (50 MiB). */
 export const MAX_SAVE_AS_BYTES = 50 * 1024 * 1024;
@@ -35,19 +35,49 @@ const MAX_NAME_LENGTH = 180;
  * system locations where a file of a plugin's choosing has consequences beyond
  * this app.
  */
-const REFUSED_PREFIXES = ["/System", "/bin", "/sbin", "/usr/bin", "/etc", "/private/etc", "/dev", "/proc", "/sys"];
+const REFUSED_UNIX = ["/System", "/bin", "/sbin", "/usr/bin", "/etc", "/private/etc", "/dev", "/proc", "/sys"];
+
+/**
+ * Windows locations where a file of a plugin's choosing has consequences beyond
+ * this app. `%SystemRoot%` is read from the environment because Windows is not
+ * always installed on `C:`.
+ */
+function refusedWindows(): string[] {
+  const root = process.env.SystemRoot ?? process.env.windir ?? "C:\\Windows";
+  return [
+    root,
+    "C:\\Windows",
+    "C:\\Program Files",
+    "C:\\Program Files (x86)",
+    "C:\\ProgramData",
+  ];
+}
+
+/** Whether `target` sits inside `root`, by the rules of the given path module. */
+function insideRoot(api: typeof posix | typeof win32, root: string, target: string): boolean {
+  const rel = api.relative(root, target);
+  return rel === "" || (!rel.startsWith("..") && !api.isAbsolute(rel));
+}
 
 /** The refusal for one destination, or `null` when the path is allowed. */
-export function refusedSavePath(path: string, dataDir: string | undefined): string | null {
-  const target = resolve(path);
+export function refusedSavePath(
+  path: string,
+  dataDir: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const windows = platform === "win32";
+  const api = windows ? win32 : posix;
+  // Windows compares paths without case; every other platform does not.
+  const fit = (value: string) => (windows ? value.toLowerCase() : value);
+  const target = fit(api.resolve(path));
   if (dataDir) {
-    const root = resolve(dataDir);
-    if (target === root || target.startsWith(`${root}/`)) {
+    if (insideRoot(api, fit(api.resolve(dataDir)), target)) {
       return "the app's own data directory";
     }
   }
-  if (REFUSED_PREFIXES.some((prefix) => target === prefix || target.startsWith(`${prefix}/`))) {
-    return "a system location";
+  const refused = windows ? refusedWindows() : REFUSED_UNIX;
+  for (const prefix of refused) {
+    if (insideRoot(api, fit(api.resolve(prefix)), target)) return "a system location";
   }
   return null;
 }

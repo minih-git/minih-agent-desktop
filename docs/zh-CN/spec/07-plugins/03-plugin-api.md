@@ -243,7 +243,11 @@ pi.fs.saveAs(input: { suggestedName: string; data: Uint8Array; mimeType?: string
 `fs.write`。插件只给一个建议文件名，宿主把它压成单个路径段（不含分隔符、控制字符，不以点
 开头，最长 180 字节，什么都不剩时用 `attachment`）；每次一个文件，最多 50 MiB；应用自己的
 数据目录与一小串系统位置以 `SAVE_AS_FAILED` 拒绝。用户取消返回 `null` 且不写任何东西。
-目标路径不会回显到其它任何界面，审计只记录字节数与是否真的写了文件，绝不记录路径。
+目标路径不会回显到其它任何界面，审计只记录字节数与是否真的写了文件，绝不记录路径。插件进程
+（`pi.fs.saveAs`）与面板通道走同一份实现，并且每个插件同时只能有一个对话框：已有对话框打开时
+再次调用返回 `SAVE_AS_BUSY`。Windows 上被拒绝的位置是应用数据目录、`%SystemRoot%`、
+`C:\Windows`、`C:\Program Files`、`C:\Program Files (x86)` 与 `C:\ProgramData`，
+比较时不区分大小写。
 
 `workspace.get` 回答主根——`path` 与其叶子 `name` 都保持不变——并在该文件夹属于某个项目组
 （ADR 0249）时额外给出 `projectId` 与 `roots`：项目组按自身顺序登记的全部文件夹，主文件夹在前，

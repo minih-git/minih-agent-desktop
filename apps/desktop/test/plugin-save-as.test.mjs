@@ -107,3 +107,20 @@ test("a destination the host refuses is an error, not a silent success", async (
   assert.throws(() => readFileSync(target));
   assert.equal(readFileSync(join(data, "keep.txt"), "utf8"), "keep");
 });
+
+test("Windows paths are judged by Windows rules", () => {
+  const data = "C:\\Users\\minih\\AppData\\Roaming\\Minih";
+  // The data directory and its children, case-insensitively.
+  assert.equal(refusedSavePath(`${data}\\state.db`, data, "win32"), "the app's own data directory");
+  assert.equal(
+    refusedSavePath("c:\\users\\MINIH\\appdata\\roaming\\minih\\state.db", data, "win32"),
+    "the app's own data directory",
+  );
+  // Windows system locations.
+  assert.equal(refusedSavePath("C:\\Windows\\System32\\drivers\\etc\\hosts", data, "win32"), "a system location");
+  assert.equal(refusedSavePath("C:\\Program Files\\Evil\\x.dll", data, "win32"), "a system location");
+  assert.equal(refusedSavePath("C:\\Program Files (x86)\\Evil\\x.dll", data, "win32"), "a system location");
+  // A user folder is fine, including one that merely shares a prefix.
+  assert.equal(refusedSavePath("C:\\Users\\minih\\Desktop\\report.pdf", data, "win32"), null);
+  assert.equal(refusedSavePath(`${data}-backup\\report.pdf`, data, "win32"), null);
+});

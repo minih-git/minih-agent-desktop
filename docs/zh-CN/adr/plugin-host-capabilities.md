@@ -503,3 +503,9 @@ B2 实现入站 webhook；B4 实现 `pi.notify.center`；B6 实现插件定时�
   而且 base64 会把 25 MiB 的附件膨胀成宿主还得解码的字符串。
 - **不问用户，直接存进固定的「下载」目录。** 否决：用户要的是存到自己指定的位置，静默的
   位置比一个对话框更糟。
+
+2026-11-25 修订（审查）：`saveAs` 只实现一份，插件进程（`pi.fs.saveAs`）与面板通道共用——
+附件字节是在插件进程里拿到的，只做面板通道是错的。每个插件同时只能有一个对话框
+（`SAVE_AS_BUSY`），因为插件可以在没有用户操作时调用。`refusedSavePath` 改用 `relative`
+比较，Windows 的分隔符与大小写因此成立，并在 Windows 上额外拒绝 `%SystemRoot%`、
+`C:\Windows`、`C:\Program Files( x86)` 与 `C:\ProgramData`。

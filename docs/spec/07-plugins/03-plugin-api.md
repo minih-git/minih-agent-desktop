@@ -294,7 +294,12 @@ most, `attachment` when nothing usable is left); one file per call, 50 MiB at
 most; the app's own data directory and a short list of system locations are
 refused with `SAVE_AS_FAILED`. A cancelled dialog answers `null` and writes
 nothing. The destination is not echoed to any other surface, and the audit row
-records the byte count and whether a file was written, never the path.
+records the byte count and whether a file was written, never the path. It is
+reachable from the plugin process (`pi.fs.saveAs`) and from a panel over the same
+implementation, and only one dialog per plugin may be open: a call while another
+is open answers `SAVE_AS_BUSY`. On Windows the refused destinations are the app's
+data directory, `%SystemRoot%`, `C:\Windows`, `C:\Program Files`,
+`C:\Program Files (x86)` and `C:\ProgramData`, compared without case.
 
 `workspace.get` answers with the primary root — `path` and its leaf `name`,
 both unchanged — plus, when that folder belongs to a project group (ADR 0249),

@@ -328,11 +328,8 @@ export function createPluginServices({
     // user picked in the native "save as" dialog. Cancelling writes nothing.
     saveFile: async ({ defaultPath }) => {
       const window = getMainWindow();
-      const options = {
-        defaultPath,
-        buttonLabel: "Save",
-        properties: ["createDirectory" as const],
-      };
+      // No `buttonLabel`: the system dialog already speaks the user's language.
+      const options = { defaultPath, properties: ["createDirectory" as const] };
       const answer = window
         ? await dialog.showSaveDialog(window, options)
         : await dialog.showSaveDialog(options);
