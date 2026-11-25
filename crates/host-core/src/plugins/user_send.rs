@@ -193,10 +193,14 @@ mod tests {
     #[test]
     fn a_named_server_without_the_rest_is_refused() {
         for missing in [PORT, SECURITY] {
-            let fields = submitted(&[(SERVER, "smtp.example.com"), (PORT, "587"), (SECURITY, "starttls")])
-                .into_iter()
-                .filter(|(key, _)| key != missing)
-                .collect::<BTreeMap<_, _>>();
+            let fields = submitted(&[
+                (SERVER, "smtp.example.com"),
+                (PORT, "587"),
+                (SECURITY, "starttls"),
+            ])
+            .into_iter()
+            .filter(|(key, _)| key != missing)
+            .collect::<BTreeMap<_, _>>();
             let error = from_fields(&fields, &both()).unwrap_err();
             assert!(error.contains(missing), "{error}");
         }
@@ -205,20 +209,34 @@ mod tests {
     #[test]
     fn only_declared_transports_are_accepted() {
         let starttls_only = declared_securities(Some(&json!({ "security": ["starttls"] })));
-        assert!(
-            from_fields(&submitted(&[(SERVER, "smtp.example.com"), (PORT, "465"), (SECURITY, "tls")]), &starttls_only)
-                .is_err()
-        );
-        assert!(
-            from_fields(&submitted(&[(SERVER, "smtp.example.com"), (PORT, "587"), (SECURITY, "none")]), &both())
-                .is_err()
-        );
+        assert!(from_fields(
+            &submitted(&[
+                (SERVER, "smtp.example.com"),
+                (PORT, "465"),
+                (SECURITY, "tls")
+            ]),
+            &starttls_only
+        )
+        .is_err());
+        assert!(from_fields(
+            &submitted(&[
+                (SERVER, "smtp.example.com"),
+                (PORT, "587"),
+                (SECURITY, "none")
+            ]),
+            &both()
+        )
+        .is_err());
     }
 
     #[test]
     fn a_slot_without_user_send_accepts_no_endpoint() {
         let error = from_fields(
-            &submitted(&[(SERVER, "smtp.example.com"), (PORT, "587"), (SECURITY, "starttls")]),
+            &submitted(&[
+                (SERVER, "smtp.example.com"),
+                (PORT, "587"),
+                (SECURITY, "starttls"),
+            ]),
             &[],
         )
         .unwrap_err();
@@ -228,7 +246,9 @@ mod tests {
     #[test]
     fn a_declaration_is_read_back_without_duplicates_or_unknown_values() {
         assert_eq!(
-            declared_securities(Some(&json!({ "security": ["tls", "TLS", "none", "starttls"] }))),
+            declared_securities(Some(
+                &json!({ "security": ["tls", "TLS", "none", "starttls"] })
+            )),
             vec!["tls".to_string(), "starttls".to_string()]
         );
         assert!(declared_securities(Some(&json!({}))).is_empty());

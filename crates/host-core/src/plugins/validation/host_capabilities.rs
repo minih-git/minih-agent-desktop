@@ -696,9 +696,7 @@ fn validate_user_send(
             .map(str::to_ascii_lowercase)
             .filter(|value| user_endpoint::SECURITIES.contains(&value.as_str()))
             .ok_or_else(|| {
-                anyhow!(
-                    "PLUGIN_INVALID: credential {id} userSend security must be tls or starttls"
-                )
+                anyhow!("PLUGIN_INVALID: credential {id} userSend security must be tls or starttls")
             })?;
         if seen.contains(&value) {
             bail!("PLUGIN_INVALID: credential {id} userSend lists {value} twice");

@@ -111,9 +111,6 @@ export function assertRequestedEndpoint(
   }
 }
 
-/** The three field keys a `userSend` slot reserves for the host. */
-export const USER_SEND_FIELD_KEYS = ["sendServer", "sendPort", "sendSecurity"] as const;
-
 /** One outgoing server the user typed for one account. */
 export type SendEndpoint = {
   server: string;
