@@ -371,6 +371,10 @@ test("a display name with a comma is still the account's own address", async () 
     'From: "Doe, John" <alice@example.test>',
     "From: alice@example.test (Doe, John)",
     'From: "alice@example.test"',
+    // An escaped quote does not end the display name.
+    'From: "a\\"b" <alice@example.test>',
+    // An apostrophe is an ordinary character, not a quote.
+    "From: O'Brien <alice@example.test>",
   ]) {
     await assert.rejects(
       send(ports, { endpoint: { host: "localhost", port: 587 }, mime: withHeader(header) }),
@@ -380,14 +384,21 @@ test("a display name with a comma is still the account's own address", async () 
       },
     );
   }
-  // The angle part is the address, whatever the quoted part claims to be.
-  await refusal(
-    send(ports, {
-      endpoint: { host: "localhost", port: 587 },
-      mime: withHeader('From: "alice@example.test" <other@example.test>'),
-    }),
-    "MAIL_FROM_MISMATCH",
-  );
+  // The bracket outside the quotes is the address, whatever the quoted text
+  // claims to be — including a bracket of its own, which is only display text.
+  for (const header of [
+    'From: "alice@example.test" <other@example.test>',
+    'From: "<alice@example.test>" <other@example.test>',
+    // Two addresses in one part, and a quote that never closes: unreadable, so
+    // refused rather than guessed.
+    "From: <alice@example.test> <other@example.test>",
+    'From: "alice@example.test <alice@example.test>',
+  ]) {
+    await refusal(
+      send(ports, { endpoint: { host: "localhost", port: 587 }, mime: withHeader(header) }),
+      "MAIL_FROM_MISMATCH",
+    );
+  }
 });
 
 test("a Bcc header is refused; blind recipients belong in the envelope", async () => {

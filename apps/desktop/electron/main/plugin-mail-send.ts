@@ -557,69 +557,106 @@ function parseHeaders(head: string): Array<{ name: string; value: string }> {
 }
 
 /**
- * Addresses named by one header value: `Name <a@b>`, a bare `a@b`, or a quoted
- * display name that carries a comma.
+ * Addresses named by one header value: `Name <a@b>`, a bare `a@b`, or a display
+ * name whose quotes and comments carry commas.
  *
- * Splitting on `,` alone is not enough: `"Doe, John" <me@x.com>` is one address,
- * and a comment after it (`me@x.com (Doe, John)`) carries commas too. A quoted
- * bare address (`"me@x.com"`) loses its quotes, but the angle part never does:
- * `"me@x.com" <other@y.com>` is still `other@y.com`, and the identity check
- * refuses it.
+ * The whole value is read in one pass, because the parts a naive split gets wrong
+ * are exactly the parts an attacker can use. A `,` inside quotes or a comment is
+ * not a separator, and an angle bracket *inside quotes* is display text rather
+ * than an address: `"<me@x.com>" <evil@y.com>` names `evil@y.com`. Taking the
+ * first bracket on the line would read that as `me@x.com` and let the message
+ * through under an address the account does not own.
+ *
+ * Anything this cannot read is refused instead of guessed: two addresses outside
+ * quotes in one part, an unterminated quote, an unterminated or stray bracket.
+ * The caller turns that refusal into `MAIL_FROM_MISMATCH`.
  */
 function theAddressesOf(value: string): string[] {
   const addresses: string[] = [];
-  for (const part of headerAddressParts(value)) {
-    const angle = /<([^<>]*)>/.exec(part);
-    const candidate = (angle ? angle[1] : quotedOf(part)).trim().toLowerCase();
-    if (candidate) addresses.push(candidate);
-  }
-  return addresses;
-}
-
-/** Split one header value on the commas that separate addresses. */
-function headerAddressParts(value: string): string[] {
-  const parts: string[] = [];
-  let current = "";
+  let bare = "";
+  let angle: string | null = null;
+  const angles: string[] = [];
   let quoted = false;
+  let escaped = false;
   let comment = 0;
+
+  const read = (text: string): void => {
+    if (angle !== null) angle += text;
+    else bare += text;
+  };
+
+  // One address is over: it is the bracket the user wrote, or the bare value.
+  const settle = (): void => {
+    if (quoted || escaped || comment > 0 || angle !== null || angles.length > 1) {
+      throw new PluginMailError(
+        "MAIL_FROM_MISMATCH",
+        "the message's sender header cannot be read as one address",
+      );
+    }
+    const candidate = (angles.length === 1 ? angles[0] : quotedOf(bare)).trim().toLowerCase();
+    if (candidate) addresses.push(candidate);
+    bare = "";
+    angles.length = 0;
+  };
+
   for (const char of value) {
     if (comment > 0) {
-      // A comment is not an address: its commas and angle brackets are prose.
+      // A comment is prose: its commas and brackets are not addresses.
       if (char === "(") comment += 1;
       else if (char === ")") comment -= 1;
       continue;
     }
     if (quoted) {
-      current += char;
-      if (char === '"') quoted = false;
+      read(char);
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
       continue;
     }
-    if (char === '"') {
-      quoted = true;
-      current += char;
-      continue;
+    switch (char) {
+      case '"':
+        quoted = true;
+        read(char);
+        break;
+      case "(":
+        comment = 1;
+        read(" ");
+        break;
+      case ",":
+        settle();
+        break;
+      case "<":
+        if (angle !== null) {
+          throw new PluginMailError(
+            "MAIL_FROM_MISMATCH",
+            "the message's sender header cannot be read as one address",
+          );
+        }
+        angle = "";
+        break;
+      case ">":
+        if (angle === null) {
+          throw new PluginMailError(
+            "MAIL_FROM_MISMATCH",
+            "the message's sender header cannot be read as one address",
+          );
+        }
+        angles.push(angle);
+        angle = null;
+        break;
+      default:
+        read(char);
     }
-    if (char === "(") {
-      comment = 1;
-      current += " ";
-      continue;
-    }
-    if (char === ",") {
-      parts.push(current);
-      current = "";
-      continue;
-    }
-    current += char;
   }
-  parts.push(current);
-  return parts;
+  settle();
+  return addresses;
 }
 
 /** The address inside a fully quoted bare value, or the value itself. */
-function quotedOf(part: string): string {
-  const trimmed = part.trim();
-  const quoted = /^"([^"]*)"$/.exec(trimmed);
-  return quoted ? quoted[1] : trimmed;
+function quotedOf(value: string): string {
+  const trimmed = value.trim();
+  const quoted = /^"((?:[^"\\]|\\.)*)"$/.exec(trimmed);
+  return quoted ? quoted[1].replace(/\\(.)/g, "$1") : trimmed;
 }
 
 /**
