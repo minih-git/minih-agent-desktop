@@ -145,6 +145,14 @@ function refusal(promise, code) {
   });
 }
 
+test("an account the user has not filled in cannot send", async () => {
+  const { ports } = fakePorts({});
+  await refusal(
+    send(ports, { endpoint: { host: "localhost", port: 587 } }),
+    "CREDENTIAL_NOT_CONFIGURED",
+  );
+});
+
 test("an endpoint outside the manifest declaration is refused", async () => {
   const { ports, calls } = fakePorts({ fields: { username: USER, password: PASSWORD } });
   await refusal(

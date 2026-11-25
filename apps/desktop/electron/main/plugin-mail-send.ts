@@ -586,4 +586,12 @@ const PASSTHROUGH_CODES = new Set<string>([
   "PROXY_FAILED",
   "PROXY_AUTH_FAILED",
   "SMTP_FAILED",
+  // A store refusal reaches the plugin as the code it already knows from the
+  // credential and TCP paths; the message is this host's own constant text.
+  "CREDENTIAL_NOT_CONFIGURED",
+  "CREDENTIAL_INSTANCE_REQUIRED",
+  "CREDENTIAL_INVALID",
+  "CREDENTIAL_UNAVAILABLE",
+  "PERMISSION_DENIED",
+  "INVALID_ARGUMENT",
 ]);
