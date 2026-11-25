@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.10.1",
+    date: "2026-11-25",
+    highlights: [
+      "修复同一个模型能正常聊天、会话标题却经常生成超时的问题：插件的模型调用改用 Node 传输，仍遵循你的代理设置，并保留取消和网关回退机制。",
+    ],
+  },
+  {
     version: "1.10.0",
     date: "2026-11-24",
     highlights: [

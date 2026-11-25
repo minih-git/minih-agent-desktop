@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.10.1",
+    date: "2026-11-25",
+    highlights: [
+      "Fixed session-title generation timing out even while the same model works in chat: plugin model completions now use the Node transport while preserving your proxy settings, cancellation and gateway fallback.",
+    ],
+  },
+  {
     version: "1.10.0",
     date: "2026-11-24",
     highlights: [

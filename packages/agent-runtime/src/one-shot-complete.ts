@@ -50,6 +50,8 @@ export type OneShotCompleteStream = (
 
 export type OneShotCompleteOptions = {
   signal?: AbortSignal;
+  /** Explicit host transport; do not inherit Electron's Chromium fetch. */
+  fetch?: typeof fetch;
   /** Preserve a runtime-selected extension model when supplying its stream. */
   model?: Model<Api>;
   stream?: OneShotCompleteStream;
@@ -116,7 +118,7 @@ export async function completeOneShot(
         reasoning: requestThinkingLevel(model, thinkingLevel),
         fetch: providerRequestFetch(
           model.api,
-          captureProviderResponse(undefined, (response, _requestBytes, failure) => {
+          captureProviderResponse(options.fetch, (response, _requestBytes, failure) => {
             providerStatus = response?.status;
             providerHeaders = response?.headers;
             providerFailure = failure;

@@ -7,7 +7,7 @@
  * plus the same undici `fetch` so the dispatcher and fetch implementation
  * stay on one package (OpenAI's undici mismatch warning).
  */
-import { connect as tlsConnect } from "node:tls";
+import { connect as tlsConnect, getCACertificates } from "node:tls";
 import { socks5Connect } from "./socks5.js";
 import {
   applyProxyEnvAssignments,
@@ -178,14 +178,39 @@ function createCustomProxyDispatchers(
   };
 }
 
+/** An explicitly owned provider transport, without changing process globals. */
+export function createSystemProxyFetch(relayUrl: string): {
+  fetch: typeof fetch;
+  close: () => Promise<void>;
+  destroy: () => Promise<void>;
+} {
+  const built = createSystemProxyDispatcher(relayUrl, [
+    ...new Set([...getCACertificates("default"), ...getCACertificates("system")]),
+  ]);
+  if (!built) throw new Error("invalid provider proxy relay");
+  return {
+    fetch: ((input: Parameters<typeof fetch>[0], init?: RequestInit) => undiciFetch(input as Parameters<typeof undiciFetch>[0], {
+      ...(init as Parameters<typeof undiciFetch>[1]),
+      dispatcher: built.dispatcher,
+    })) as unknown as typeof fetch,
+    close: async () => {
+      await Promise.all([built.dispatcher.close(), built.direct.close()]);
+    },
+    destroy: async () => {
+      await Promise.all([built.dispatcher.destroy(), built.direct.destroy()]);
+    },
+  };
+}
+
 /** Build an authenticated SOCKS dispatcher backed by Electron's system/PAC resolver. */
 function createSystemProxyDispatcher(
   relayUrl: string,
+  ca?: string[],
 ): CustomProxyDispatchers | null {
   const parsed = parseProxyUrl(relayUrl);
   if (!parsed.ok || !parsed.value.isSocks) return null;
   const dispatcher: Dispatcher = new Agent({
-    connect: socksConnector(parsed.value),
+    connect: socksConnector(parsed.value, ca),
   });
   return {
     dispatcher,
@@ -399,7 +424,7 @@ export function proxyBypassMatcher(bypass: string): ProxyBypassMatcher {
   };
 }
 
-function socksConnector(proxy: ParsedProxyUrl): buildConnector.connector {
+function socksConnector(proxy: ParsedProxyUrl, ca?: string[]): buildConnector.connector {
   return (options, callback) => {
     const hostname = options.hostname || options.host || "";
     const port = Number(options.port) || (options.protocol === "http:" ? 80 : 443);
@@ -410,6 +435,7 @@ function socksConnector(proxy: ParsedProxyUrl): buildConnector.connector {
             socket,
             host: hostname,
             servername: options.servername || hostname,
+            ...(ca ? { ca } : {}),
             ALPNProtocols: ["http/1.1"],
           });
           tlsSocket.once("secureConnect", () => callback(null, tlsSocket));

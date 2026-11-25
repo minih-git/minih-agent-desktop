@@ -135,6 +135,15 @@ can replace it. The host never composes an AI title itself. The standalone
 `minih.session-titles` plugin owns prompts, model selection, thinking level,
 serialization, retry budgets and optional post-compaction refreshes.
 
+Plugin `agent.complete` requests use an explicit Node/undici transport, not
+Electron main's global Chromium `net.fetch`. The existing authenticated local
+relay still resolves Direct, System/PAC, Custom and bypass rules through the
+active Chromium session. Proxy changes retire the old provider pool gracefully;
+shutdown aborts in-flight provider requests and destroys the pool before the
+relay. TLS retains Node's default roots plus system trust without changing
+process-wide defaults. Completion cancellation, bounded
+output, retries and tunnel-to-public fallback retain the supplied transport.
+
 After a user message is durable, the host broadcasts `session:promptSent`
 with `{ sessionId, turnId }`, without message text. The plugin also subscribes
 to `session:turnEnded`: it waits for an in-flight composition before retrying

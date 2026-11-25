@@ -27,6 +27,23 @@ picker screenshot in its reported scratch directory.
   bounded title-service tests and existing paste-safety/fallback tests. Desktop
   installed-release UI acceptance and real-provider connectivity are separate.
 
+## E2E-PLUGIN-completion-node-transport
+
+- **Preconditions:** Isolated Desktop profile, title plugin, synthetic SSE
+  provider and the normal configured proxy-resolution relay.
+- **Steps:** Generate a title through `agent.complete`; verify the provider's
+  output cap, complete stream and persisted title. In transport regression tests,
+  replace global fetch with a failing Chromium double, exercise direct and
+  proxied routes, abort an unanswered request and fail the primary endpoint.
+- **Expected:** Explicit Node transport completes without calling global fetch;
+  proxy policy is preserved, invalid routes fail closed, cancellation settles,
+  and fallback uses the same supplied transport. Settings changes retire the
+  old pool; shutdown aborts in-flight requests and destroys it before closing
+  the relay.
+- **Automation:** Existing title-plugin Electron journey plus
+  `one-shot-complete.test.ts`, `system-proxy-fetch.test.ts` and desktop network
+  proxy/service tests. Real-provider connectivity is a separate authorized check.
+
 ## E2E-PLUGIN-notification-inbox
 
 - **Preconditions:** Isolated profile, synthetic plugins with `notify.center`,
