@@ -3,6 +3,8 @@ import { builtinPaletteItems } from "../builtin-commands";
 import type { AgentExtensionBridge } from "../agent-extensions";
 import type { HostProcess } from "../host-process";
 import type { PluginRuntime } from "../plugin-runtime";
+import type { PluginPanelHost } from "../plugin-panel-host";
+import type { PluginViewHost } from "../plugin-view-host";
 import type { IpcRegistrar } from "./types";
 
 export type MarketIpcDependencies = {
@@ -13,6 +15,9 @@ export type MarketIpcDependencies = {
   optionalWorkspaceRoot: () => Promise<string | null>;
   pluginActiveInProject: (pluginId: string, projectPath: string | null | undefined) => boolean;
   sendToRenderer: (channel: string, payload?: unknown) => void;
+  /** Host-owned plugin surfaces: a version change replaces what they run. */
+  pluginViews: PluginViewHost;
+  pluginPanels: PluginPanelHost;
   /** Shared interruption check (spec 07-plugins/05 §3.0). */
   confirmInterruption: (ids: readonly string[]) => Promise<boolean>;
 };
@@ -26,6 +31,8 @@ export function registerMarketIpc({
   optionalWorkspaceRoot,
   pluginActiveInProject,
   sendToRenderer,
+  pluginViews,
+  pluginPanels,
   confirmInterruption,
 }: MarketIpcDependencies): void {
   let host: HostProcess | null = null;
@@ -35,6 +42,21 @@ export function registerMarketIpc({
       return fn(...args);
     });
   };
+
+  /**
+   * Drop what was loaded from files an install just replaced.
+   *
+   * A cached view and a panel window keep the revision they were opened with.
+   * Left alive across a version change they keep calling a runtime that now
+   * speaks the new manifest — the blank pane and the stale buttons in the
+   * report — so an upgrade tears them down exactly as a reload does; the
+   * renderer re-opens a tab that is still open when the lifecycle event lands.
+   */
+  const discardLoadedUi = async (pluginId: string): Promise<void> => {
+    pluginViews.closePlugin(pluginId);
+    await pluginPanels.close(pluginId, { force: true });
+  };
+
   handle(IPC.invoke.marketRefresh, async (payload?: { force?: boolean }) => {
     if (!host) throw new Error("host unavailable");
     return host.call("market.refresh", { force: payload?.force ?? true });
@@ -65,6 +87,9 @@ export function registerMarketIpc({
     // version, so ask before the download starts.
     if (!(await confirmInterruption([payload.id]))) return { canceled: true };
     const installed = await host.call<{ result: any }>("market.install", payload);
+    // Files replaced under a running plugin leave its view and its panel window
+    // on the previous revision; a fresh install has nothing to drop.
+    if (installed.result?.upgraded) await discardLoadedUi(payload.id);
     const plugin = installed.result?.plugin;
     if (plugin?.enabled && plugin?.path) {
       await plugins.loadFromPath(plugin.path, plugin.permissions ?? []);
@@ -100,6 +125,9 @@ export function registerMarketIpc({
     });
     for (const item of applied.results ?? []) {
       const plugin = item?.plugin;
+      // Only the plugins this batch actually replaced have a page running the
+      // previous revision; a skipped or unchanged one keeps what it has.
+      if (item?.upgraded && plugin?.id) await discardLoadedUi(String(plugin.id));
       if (plugin?.enabled && plugin?.path) {
         await plugins.loadFromPath(plugin.path, plugin.permissions ?? []);
       }

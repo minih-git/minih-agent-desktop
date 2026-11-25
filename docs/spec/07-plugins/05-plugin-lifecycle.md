@@ -174,6 +174,23 @@ The sequence is bounded — `onUnload` gets 1.5s per plugin and teardown 3s in
 total, after which the children are killed outright. A plugin's cleanup must
 never be the reason the app appears to hang on quit.
 
+### 3.2 Host-owned surfaces follow the files
+
+A plugin's work-panel view is a cached `WebContentsView` and its panel window is
+a separate page; each loads the plugin's files once, when it opens. Replacing
+those files under a running plugin therefore has to drop both before the new
+revision loads — otherwise the cached page keeps running the previous code and
+calls the new runtime through a bridge whose shape it no longer knows, which is
+how a tab ends up with stale controls and a blank body.
+
+The rule holds for every entry that replaces an installed plugin: disable,
+uninstall, manual and hot reload, crash teardown, a marketplace install over an
+installed id, `market.applyUpdates`, and installing over an existing plugin from
+a folder or a package. A dropped surface is not left blank: the tab outlives its
+page, so the renderer re-opens the view on the lifecycle event, and the reopened
+page is loaded from the files now on disk. A cancelled, refused, or first-time
+install replaced nothing and closes nothing.
+
 ## 4. Enable / disable semantics
 
 ### enable
