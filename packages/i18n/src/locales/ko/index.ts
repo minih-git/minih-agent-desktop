@@ -2103,7 +2103,8 @@ sklm: {
     browserProxyProfileName: "이름",
     browserProxyProfileUrl: "프록시 URL",
     browserProxyRules: "규칙",
-    browserProxyRulesDesc: "위에서 아래로 비교하며 첫 번째로 맞는 규칙이 적용되고, 맞는 규칙이 없으면 기본 출구를 씁니다.",
+    browserProxyRulesDesc:
+      "위에서 아래로 비교하며 첫 번째로 맞는 규칙이 적용되고, 맞는 규칙이 없으면 기본 출구를 씁니다. URL 규칙의 경로는 http에서만 동작합니다. https에서는 Chromium이 프록시 스크립트에 프로토콜, 호스트, 포트만 넘깁니다.",
     browserProxyAddRule: "규칙 추가",
     browserProxyRuleKind: "비교 방식",
     browserProxyRulePattern: "패턴",
@@ -2117,7 +2118,7 @@ sklm: {
     browserProxyTestPlaceholder: "https://example.com/path",
     browserProxyTestResult: "{{url}} → {{target}}",
     browserProxyTestInvalid: "http 또는 https 주소를 입력하세요.",
-    browserProxySaveError: "내장 브라우저 라우팅을 저장하지 못했습니다.",
+    browserProxyApplyFailed: "내장 브라우저 라우팅이 적용되지 않았습니다: {{reason}}",
     browserProxyRuleError: "규칙 {{index}}: {{reason}}",
     browserProxyProfileError: "프록시 {{index}}: {{reason}}",
     browserProxyDefaultError: "기본 출구: {{reason}}",

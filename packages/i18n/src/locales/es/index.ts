@@ -2092,7 +2092,7 @@ sklm: {
     "browserProxyProfileUrl": "URL del proxy",
     "browserProxyRules": "Reglas",
     "browserProxyRulesDesc":
-      "Se comparan de arriba abajo y gana la primera coincidencia; lo que no coincida usa la salida predeterminada.",
+      "Se comparan de arriba abajo y gana la primera coincidencia; lo que no coincida usa la salida predeterminada. Una ruta en una regla de URL solo funciona por http: con https Chromium entrega al script PAC solo esquema, host y puerto.",
     "browserProxyAddRule": "Añadir regla",
     "browserProxyRuleKind": "Comparación",
     "browserProxyRulePattern": "Patrón",
@@ -2106,7 +2106,7 @@ sklm: {
     "browserProxyTestPlaceholder": "https://example.com/path",
     "browserProxyTestResult": "{{url}} sale por {{target}}",
     "browserProxyTestInvalid": "Introduce una dirección http o https.",
-    "browserProxySaveError": "No se pudo guardar el enrutado del navegador integrado.",
+    "browserProxyApplyFailed": "El enrutado del navegador integrado no se aplicó: {{reason}}",
     "browserProxyRuleError": "Regla {{index}}: {{reason}}",
     "browserProxyProfileError": "Proxy {{index}}: {{reason}}",
     "browserProxyDefaultError": "Salida predeterminada: {{reason}}",

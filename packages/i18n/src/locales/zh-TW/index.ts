@@ -2087,7 +2087,8 @@ sklm: {
     browserProxyProfileName: "名稱",
     browserProxyProfileUrl: "代理 URL",
     browserProxyRules: "規則",
-    browserProxyRulesDesc: "由上而下比對，第一條命中即生效；都沒命中時走預設出口。",
+    browserProxyRulesDesc:
+      "由上而下比對，第一條命中即生效；都沒命中時走預設出口。依網址比對的路徑只對 http 生效：Chromium 交給代理腳本的 https 位址只保留通訊協定、主機與連接埠。",
     browserProxyAddRule: "新增規則",
     browserProxyRuleKind: "比對類型",
     browserProxyRulePattern: "比對內容",
@@ -2101,7 +2102,7 @@ sklm: {
     browserProxyTestPlaceholder: "https://example.com/path",
     browserProxyTestResult: "{{url}} 走 {{target}}",
     browserProxyTestInvalid: "請輸入 http 或 https 位址。",
-    browserProxySaveError: "無法儲存內建瀏覽器分流設定。",
+    browserProxyApplyFailed: "內建瀏覽器分流未生效：{{reason}}",
     browserProxyRuleError: "第 {{index}} 條規則：{{reason}}",
     browserProxyProfileError: "第 {{index}} 個代理：{{reason}}",
     browserProxyDefaultError: "預設出口：{{reason}}",

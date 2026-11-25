@@ -2110,7 +2110,8 @@ sklm: {
     browserProxyProfileName: "名称",
     browserProxyProfileUrl: "代理 URL",
     browserProxyRules: "规则",
-    browserProxyRulesDesc: "从上到下匹配，首条命中生效；都没有命中时走默认出口。",
+    browserProxyRulesDesc:
+      "从上到下匹配，首条命中生效；都没有命中时走默认出口。按网址匹配的路径只对 http 生效：Chromium 交给代理脚本的 https 地址只保留协议、主机和端口。",
     browserProxyAddRule: "添加规则",
     browserProxyRuleKind: "匹配类型",
     browserProxyRulePattern: "匹配内容",
@@ -2124,7 +2125,7 @@ sklm: {
     browserProxyTestPlaceholder: "https://example.com/path",
     browserProxyTestResult: "{{url}} 走 {{target}}",
     browserProxyTestInvalid: "请输入 http 或 https 地址。",
-    browserProxySaveError: "无法保存内置浏览器分流设置。",
+    browserProxyApplyFailed: "内置浏览器分流未生效：{{reason}}",
     browserProxyRuleError: "第 {{index}} 条规则：{{reason}}",
     browserProxyProfileError: "第 {{index}} 个代理：{{reason}}",
     browserProxyDefaultError: "默认出口：{{reason}}",

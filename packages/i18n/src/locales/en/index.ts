@@ -2137,7 +2137,7 @@ sklm: {
     browserProxyProfileUrl: "Proxy URL",
     browserProxyRules: "Rules",
     browserProxyRulesDesc:
-      "Matched top to bottom; the first hit wins, and anything unmatched takes the default exit.",
+      "Matched top to bottom; the first hit wins, and anything unmatched takes the default exit. A path in a URL rule only works over http: Chromium gives the PAC script just scheme, host, and port for https.",
     browserProxyAddRule: "Add rule",
     browserProxyRuleKind: "Matches",
     browserProxyRulePattern: "Pattern",
@@ -2151,7 +2151,7 @@ sklm: {
     browserProxyTestPlaceholder: "https://example.com/path",
     browserProxyTestResult: "{{url}} goes to {{target}}",
     browserProxyTestInvalid: "Enter an http or https address.",
-    browserProxySaveError: "Couldn't save the built-in browser routing.",
+    browserProxyApplyFailed: "Built-in browser routing did not take effect: {{reason}}",
     browserProxyRuleError: "Rule {{index}}: {{reason}}",
     browserProxyProfileError: "Proxy {{index}}: {{reason}}",
     browserProxyDefaultError: "Default exit: {{reason}}",

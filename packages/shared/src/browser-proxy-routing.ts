@@ -371,14 +371,51 @@ export function browserProxyRequestForUrl(raw: string): BrowserProxyRequest | nu
   if (url.protocol !== "http:" && url.protocol !== "https:") return null;
   const host = normalizeBrowserProxyHost(url.hostname);
   if (!host) return null;
-  return { url: `${url.protocol}//${url.host}${url.pathname}${url.search}`, host };
+  return { url: pacRequestUrl(url), host };
+}
+
+/**
+ * The URL Chromium actually hands to `FindProxyForURL`.
+ *
+ * For `https` (and `wss`) it strips the path, the query, and any userinfo
+ * before calling the script, so a rule that matches a path can never fire
+ * there. Trimming here keeps the settings preview and the PAC looking at the
+ * same input instead of promising a match Chromium will not make.
+ */
+function pacRequestUrl(url: URL): string {
+  if (url.protocol === "https:" || url.protocol === "wss:") {
+    return `${url.protocol}//${url.host}/`;
+  }
+  return `${url.protocol}//${url.host}${url.pathname}${url.search}`;
 }
 
 export type BrowserProxyRoute =
   | { kind: "rule"; rule: BrowserProxyRule; target: string }
+  /** No rule matched; this host stays direct on Chromium's own rule. */
+  | { kind: "bypass"; target: typeof BROWSER_PROXY_DIRECT }
   | { kind: "default"; target: string };
 
-/** First matching rule wins; falling through picks the default exit. */
+/**
+ * Loopback, private ranges, and single-label hosts, exactly as the compiled
+ * PAC treats them. Chromium counts an IPv6 literal here too — `<local>` is
+ * "no dot in the name" — which is why an IPv6 address needs an explicit rule.
+ */
+export function isLocalBrowserProxyHost(host: string): boolean {
+  const value = normalizeBrowserProxyHost(host);
+  if (!value) return false;
+  if (value === "localhost" || value === "::1") return true;
+  if (!value.includes(".")) return true;
+  return BROWSER_PROXY_LOCAL_NETWORKS.some((network) => {
+    const cidr = parseCidr(network);
+    return cidr ? ipInCidr(value, cidr) : false;
+  });
+}
+
+/**
+ * First matching rule wins; otherwise the loopback/private bypass, then the
+ * default exit. This mirrors `FindProxyForURL` so the settings preview never
+ * promises a route the browser will not take.
+ */
 export function matchBrowserProxyRoute(
   routing: BrowserProxyRouting,
   request: BrowserProxyRequest,
@@ -389,6 +426,9 @@ export function matchBrowserProxyRoute(
     if (matcher && matcher({ url: request.url, host })) {
       return { kind: "rule", rule, target: rule.target };
     }
+  }
+  if (isLocalBrowserProxyHost(host)) {
+    return { kind: "bypass", target: BROWSER_PROXY_DIRECT };
   }
   return { kind: "default", target: routing.defaultTarget };
 }
@@ -509,4 +549,64 @@ export function removeBrowserProxyProfile(
         ? BROWSER_PROXY_DIRECT
         : routing.defaultTarget,
   };
+}
+
+/** Strip `user:pass@` from whatever a failure message happens to quote. */
+export function scrubProxyCredentials(text: string): string {
+  return text.replace(/\/\/[^\s/@]*@/g, "//***@");
+}
+
+export type BrowserProxyRoutingSwitch = {
+  /** Publish the new table; rejects when it cannot take effect. */
+  apply: () => Promise<void>;
+  /** Hand the session back to the global proxy. */
+  revert: () => Promise<void>;
+  /** Where the operator reads what happened (stderr in Electron main). */
+  log: (message: string) => void;
+};
+
+export type BrowserProxyRoutingSwitchResult =
+  | { ok: true }
+  | { ok: false; error: Error };
+
+/**
+ * Apply a routing table and, when it cannot take effect, turn routing off and
+ * report why.
+ *
+ * The settings write has already landed by the time this runs, so the browser
+ * must not keep a route the user can no longer see, and the caller must not be
+ * told the switch worked. Startup paths only log; the settings page surfaces
+ * `error`, which never carries proxy credentials.
+ */
+export async function applyBrowserProxyRoutingWithFallback(
+  routing: BrowserProxyRoutingSwitch,
+): Promise<BrowserProxyRoutingSwitchResult> {
+  try {
+    await routing.apply();
+    return { ok: true };
+  } catch (cause) {
+    const detail = scrubProxyCredentials(
+      cause instanceof Error ? cause.message : String(cause),
+    );
+    routing.log(
+      `[browser-proxy-routing] apply failed, falling back to the global proxy: ${detail}`,
+    );
+    try {
+      await routing.revert();
+    } catch (revertCause) {
+      const revertDetail = scrubProxyCredentials(
+        revertCause instanceof Error ? revertCause.message : String(revertCause),
+      );
+      routing.log(
+        `[browser-proxy-routing] fallback failed, the previous route stays: ${revertDetail}`,
+      );
+    }
+    return {
+      ok: false,
+      error: Object.assign(
+        new Error(`built-in browser routing did not take effect: ${detail}`),
+        { errorCode: "BROWSER_PROXY_ROUTING_FAILED" },
+      ),
+    };
+  }
 }

@@ -9,6 +9,7 @@
  */
 import { app, net, session, type Session } from "electron";
 import {
+  applyBrowserProxyRoutingWithFallback,
   applyProxyEnvAssignments,
   chromiumProxyConfig,
   normalizeNetworkProxy,
@@ -146,8 +147,18 @@ export async function applyNetworkProxy(
   return next;
 }
 
+export type ApplyNetworkProxyOptions = {
+  /**
+   * Settings writes report a failed built-in browser routing to the caller, so
+   * the settings page can say the switch did not take effect. Startup paths
+   * leave this off: they only log, and must not block on a proxy problem.
+   */
+  reportRoutingFailure?: boolean;
+};
+
 export async function applyNetworkProxyFromAppSettings(
   settings: unknown,
+  options: ApplyNetworkProxyOptions = {},
 ): Promise<NetworkProxySettings> {
   // The network policy, the proxy, and the built-in browser's routing ride the
   // same settings write, so one call site mirrors all three.
@@ -156,26 +167,41 @@ export async function applyNetworkProxyFromAppSettings(
     settings && typeof settings === "object"
       ? (settings as { networkProxy?: unknown; browserProxyRouting?: unknown })
       : {};
-  // Routing owns the work-browser session, so settle it before the global
-  // pass: enabling installs the PAC that pass then preserves, and disabling
-  // lets the global config land on that session again. A write that does not
-  // carry the section at all keeps what is in force — settings writes are
-  // patches, and the startup fallback carries only `mode`.
+  // A write that does not carry the routing section keeps what is in force:
+  // settings writes are patches, and the startup fallback carries only `mode`.
+  let routingFailure: Error | null = null;
   if ("browserProxyRouting" in record) {
-    try {
-      await configureBrowserProxyRouting(record.browserProxyRouting);
-    } catch (error) {
-      // The write already landed. Keep the browser on the global proxy rather
-      // than on rules whose relays could not start, and say why.
-      process.stderr.write(
-        `[browser-proxy-routing] apply failed: ${
-          error instanceof Error ? error.name : "unknown error"
-        }\n`,
-      );
-      await configureBrowserProxyRouting({ enabled: false });
-    }
+    // Both directions publish the session config themselves and only then
+    // retire relays, so no request resolves to a port that just closed.
+    const outcome = await applyBrowserProxyRoutingWithFallback({
+      apply: () =>
+        configureBrowserProxyRouting(
+          record.browserProxyRouting,
+          publishWorkBrowserProxy,
+        ),
+      revert: () =>
+        configureBrowserProxyRouting({ enabled: false }, publishWorkBrowserProxy),
+      log: (message) => {
+        process.stderr.write(`${message}\n`);
+      },
+    });
+    if (!outcome.ok) routingFailure = outcome.error;
   }
-  return applyNetworkProxy(record.networkProxy ?? { mode: "system" });
+  const next = await applyNetworkProxy(record.networkProxy ?? { mode: "system" });
+  // The write landed and the global proxy is applied; only the routing section
+  // did not take effect, and the settings page has to hear about it.
+  if (routingFailure && options.reportRoutingFailure) throw routingFailure;
+  return next;
+}
+
+/** Hand the work-browser session to the routing table, or back to the global proxy. */
+async function publishWorkBrowserProxy(
+  config: ChromiumProxyConfig | null,
+): Promise<void> {
+  await applyToSession(
+    session.fromPartition(WORK_BROWSER_PARTITION),
+    config ?? chromiumConfigFromApplied(),
+  );
 }
 
 function installSessionHook(): void {

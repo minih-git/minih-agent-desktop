@@ -2065,7 +2065,7 @@ export const ptBR = {
     browserProxyProfileUrl: "URL do proxy",
     browserProxyRules: "Regras",
     browserProxyRulesDesc:
-      "Comparadas de cima para baixo, a primeira que casar vale; o resto usa a saída padrão.",
+      "Comparadas de cima para baixo, a primeira que casar vale; o resto usa a saída padrão. Um caminho numa regra de URL só funciona em http: no https o Chromium entrega ao script PAC apenas esquema, host e porta.",
     browserProxyAddRule: "Adicionar regra",
     browserProxyRuleKind: "Comparação",
     browserProxyRulePattern: "Padrão",
@@ -2079,7 +2079,7 @@ export const ptBR = {
     browserProxyTestPlaceholder: "https://example.com/path",
     browserProxyTestResult: "{{url}} sai por {{target}}",
     browserProxyTestInvalid: "Informe um endereço http ou https.",
-    browserProxySaveError: "Não foi possível salvar o roteamento do navegador integrado.",
+    browserProxyApplyFailed: "O roteamento do navegador integrado não entrou em vigor: {{reason}}",
     browserProxyRuleError: "Regra {{index}}: {{reason}}",
     browserProxyProfileError: "Proxy {{index}}: {{reason}}",
     browserProxyDefaultError: "Saída padrão: {{reason}}",
