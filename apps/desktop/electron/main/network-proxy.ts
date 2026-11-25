@@ -28,11 +28,11 @@ import {
   type AuthenticatedProxyRelay,
 } from "@minih-agent/agent-runtime";
 import { applyUserEndpointPolicyFromAppSettings } from "./endpoint-policy";
+import { WORK_BROWSER_PARTITION } from "../shared/work-browser-partition";
 import {
   activeWorkBrowserProxyConfig,
   configureBrowserProxyRouting,
   isWorkBrowserSession,
-  WORK_BROWSER_PARTITION,
 } from "./browser-proxy-routing";
 import {
   startSystemProxyRelay,

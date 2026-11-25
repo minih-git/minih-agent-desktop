@@ -75,6 +75,14 @@ compiled into a `FindProxyForURL` function, plus one default exit. SwitchyOmega
    preview uses the same rule, so an IPv6 address reads as direct unless a rule
    names it.
 
+   One set of addresses is unreachable by any rule, because Chromium answers
+   them itself before the script runs: `localhost`, `*.localhost`,
+   `127.0.0.0/8`, `::1`, `169.254.0.0/16`, and `fe80::/10` (verified on
+   Electron 43 under a proxy-everything table). The matcher reports those as
+   `implicit-bypass` ahead of the rules, so the preview says direct instead of
+   showing a rule that can never fire; the compiled script repeats the same
+   check so it cannot disagree.
+
 7. **Lifecycle.** One relay per referenced credentialed profile, reused while
    its upstream URL is unchanged and closed when the profile stops being
    referenced or its URL changes. Applying installs the new PAC on the session

@@ -30,7 +30,7 @@ import {
   type AuthenticatedProxyRelay,
 } from "@minih-agent/agent-runtime";
 
-export const WORK_BROWSER_PARTITION = "persist:work-browser";
+import { WORK_BROWSER_PARTITION } from "../shared/work-browser-partition";
 
 type RelayEntry = {
   /** Canonical upstream URL the relay currently forwards to. */

@@ -24,7 +24,9 @@ const hostProxy = await readFile(
 );
 
 test("Electron main applies Chromium proxy and net.fetch", () => {
-  assert.match(electronProxy, /ses\.setProxy\(config\)/);
+  // Every write goes through the routing override: with the built-in browser
+  // routing enabled that session keeps its own PAC (ADR 0342).
+  assert.match(electronProxy, /ses\.setProxy\(routed \?\? config\)/);
   assert.match(electronProxy, /net\.fetch\.bind\(net\)/);
   assert.match(electronProxy, /session-created/);
   assert.match(electronProxy, /minih-agent-desktop\/network\/testProxy|PROXY_TEST_URL/);
