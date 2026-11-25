@@ -516,6 +516,7 @@ async function smtpServer(t, options = {}) {
     offerStarttls = true,
     advertise = ["8BITMIME", "AUTH PLAIN LOGIN"],
     stall = [],
+    quitBehaviour = "reply",
   } = options;
   const state = { lines: [], chunks: [], sockets: [], delivered: undefined };
   const secureContext = tls.createSecureContext({ cert: LOCALHOST_CERT, key: LOCALHOST_KEY });
@@ -571,6 +572,20 @@ async function smtpServer(t, options = {}) {
           dataMode = true;
           return;
         case "QUIT":
+          // The session has to survive a peer that leaves while the QUIT write
+          // is still in flight: `destroy` closes abruptly, `end` only
+          // half-closes, and neither is answered. An RST cannot be produced
+          // from here — `resetAndDestroy` needs the raw handle, which a
+          // `TLSSocket` does not hand over — but both of these leave the same
+          // write pending on a connection that is going away.
+          if (quitBehaviour === "destroy") {
+            socket.destroy();
+            return;
+          }
+          if (quitBehaviour === "end") {
+            socket.end();
+            return;
+          }
           reply("221 2.0.0 bye");
           return;
         default:
@@ -804,7 +819,10 @@ async function harness(t, specs, options = {}) {
       return {
         postMessage: (message) => {
           record(message);
-          if (child.connected) child.send(message);
+          // A reply that races the sidecar's exit is a delivery error, not an
+          // uncaught exception: `connected` is still true for a channel that is
+          // already gone, and with no callback Node emits EPIPE on the child.
+          if (child.connected) child.send(message, () => {});
         },
         onMessage: (handler) =>
           child.on("message", (message) => {
@@ -917,8 +935,34 @@ test("a plugin that is unloaded mid-send loses the session", async (t) => {
   });
   assert.ok(Date.now() - started < 5_000, "the session ended with the plugin, not on its deadline");
   assert.deepEqual(registry.list(pluginId), [], "the connection was released with the plugin");
-
 });
+
+test("a server that vanishes while the session closes still reports the message as sent", async (t) => {
+  // DATA already answered 250: the message is the server's responsibility, so a
+  // peer that disappears at QUIT cannot turn a delivered message into a failure —
+  // and the EPIPE that follows the teardown must stay inside the session.
+  for (const quitBehaviour of ["destroy", "end"]) {
+    const server = await smtpServer(t, { mode: "tls", quitBehaviour });
+    const pluginId = `test.send-${quitBehaviour}`;
+    const { call, host, settings, audits } = await harness(t, [
+      { id: pluginId, endpoints: [{ host: "localhost", port: server.port, tls: true }] },
+    ]);
+    await settings.save(pluginId, "mailbox", { username: USER, password: PASSWORD });
+
+    const result = await call(pluginId, "send", {
+      credential: { slot: "mailbox", instanceId: await lastInstance(host, pluginId) },
+      endpoint: { host: "localhost", port: server.port },
+      envelope: { from: USER, to: ["bob@example.test"] },
+      mime: MESSAGE,
+    });
+
+    assert.deepEqual(result.accepted, ["bob@example.test"], quitBehaviour);
+    assert.equal(result.messageId, "Q7", quitBehaviour);
+    const success = audits.find((entry) => entry.api === "mail.send" && entry.ok === true);
+    assert.equal(success?.recipients, 1, quitBehaviour);
+  }
+});
+
 test("a spent connection budget fails the send instead of overrunning it", async (t) => {
   const listener = net.createServer((socket) => socket.on("error", () => {}));
   const port = await listen(listener);

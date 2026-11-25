@@ -102,6 +102,13 @@ export async function sendSmtpMail(request: SmtpMailRequest): Promise<SmtpMailRe
   const { signal } = request;
   if (signal?.aborted) throw abortError();
   const transport = await request.dial(request.endpoint);
+  // A cancellation that arrives while the socket is still being dialed has no
+  // listener yet: without this check it would be lost, and the send would sit
+  // until the deadline instead of ending when the caller asked.
+  if (signal?.aborted) {
+    transport.destroy();
+    throw abortError();
+  }
   const channel = new SmtpChannel(transport);
   let expired: PluginMailError | null = null;
   let onAbort: (() => void) | null = null;

@@ -399,9 +399,66 @@ test("an aborted send stops mid-session", async (t) => {
   assert.equal(server.named("MAIL").length, 0);
 });
 
+test("a cancel that lands while the socket is dialing still ends the send", async (t) => {
+  // The abort listener is registered only after the dial, so a signal that
+  // fires during it has to be noticed once more; otherwise the session starts
+  // and the caller waits for a deadline it never asked for.
+  const server = await smtpServer(t, { mode: "tls" });
+  const controller = new AbortController();
+  const dialing = async (request) => {
+    const transport = await dialer("tls")(request);
+    controller.abort();
+    return transport;
+  };
+  const started = Date.now();
+  await refusal(
+    send(server, "tls", { dial: dialing, signal: controller.signal, timeoutMs: 5_000 }),
+    "CONNECT_FAILED",
+  );
+  assert.ok(Date.now() - started < 2_000, "the cancel ended the send, not the deadline");
+  assert.equal(server.named("EHLO").length, 0, "the session never started");
+});
+
 test("a server that never answers is stopped by the deadline", async (t) => {
   const server = await smtpServer(t, { mode: "tls", stall: ["EHLO"] });
   const started = Date.now();
   await refusal(send(server, "tls", { timeoutMs: 50 }), "TIMEOUT");
   assert.ok(Date.now() - started < 2_000, "the deadline ended the session");
+});
+
+test("an error that arrives after teardown is swallowed, not thrown", async (t) => {
+  // A write that was in flight when the session ended fails with EPIPE one tick
+  // after `destroy`. With no listener left it would surface as an uncaught
+  // exception in the host process, which is what made this suite flaky.
+  const server = net.createServer((socket) => socket.on("error", () => {}));
+  const port = await listen(server);
+  t.after(() => server.close());
+  const socket = net.connect({ host: "127.0.0.1", port });
+  await new Promise((resolve, reject) => {
+    const failed = (error) => reject(error);
+    socket.once("error", failed);
+    socket.once("connect", () => {
+      // The dial's own listener has to go: leaving it attached would swallow the
+      // very error this test emits.
+      socket.removeListener("error", failed);
+      resolve();
+    });
+  });
+  const failures = [];
+  const transport = socketTransport(socket, { host: "127.0.0.1" });
+  transport.listen({
+    data: () => undefined,
+    failure: (error) => failures.push(error),
+    close: () => undefined,
+  });
+  transport.destroy();
+
+  // `emit` runs the listeners synchronously: without a permanent error listener
+  // this throws here, which is the regression.
+  socket.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+  assert.deepEqual(failures, [], "a closed session must not report a late failure");
+
+  // Writing after teardown is a no-op rather than another failure.
+  transport.write(Buffer.from("QUIT\r\n"));
+  assert.deepEqual(failures, []);
 });
