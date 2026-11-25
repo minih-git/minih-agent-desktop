@@ -3,6 +3,18 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const ko = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    proxy: "프록시",
+    proxyHint: "이 계정의 연결을 프록시로 보냅니다. 예를 들어 로컬 Clash나 사내 게이트웨이입니다. 유형을 비우면 직접 연결합니다.",
+    proxyType: "프록시 유형",
+    proxyTypeNone: "프록시 사용 안 함",
+    proxyTypeHttp: "HTTP (CONNECT)",
+    proxyTypeSocks5: "SOCKS5",
+    proxyHost: "프록시 서버",
+    proxyHostPlaceholder: "127.0.0.1",
+    proxyPort: "프록시 포트",
+    proxyUsername: "프록시 사용자 이름",
+    proxyPassword: "프록시 비밀번호",
+    proxyLoginHint: "프록시 사용자 이름과 비밀번호를 모두 입력하거나 모두 비워 두세요. 저장된 프록시 로그인은 다시 표시되지 않으므로 저장할 때 다시 입력해야 합니다.",
     customServer: "내 메일 서버 사용",
     customServerHint: "서버를 비워 두면 플러그인이 지정한 서버를 사용합니다. 서버를 입력하면 비밀번호는 해당 서버로만 전송됩니다.",
     customServerServer: "서버",

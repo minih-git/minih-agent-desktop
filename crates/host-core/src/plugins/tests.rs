@@ -3105,6 +3105,30 @@ fn a_multi_instance_slot_may_leave_its_maximum_open() {
     }
 }
 
+/// A slot key this host does not know is ignored, not refused.
+///
+/// This is the compatibility rule a newer plugin relies on: 1.10.0 must install
+/// and run a slot that carries a key introduced later (`userProxy` in 1.11.0),
+/// simply without that feature. Only keys *inside* a known object — such as
+/// `userEndpoint` — are closed.
+#[test]
+fn an_unknown_top_level_slot_key_is_ignored() {
+    let dir = tempdir().unwrap();
+    let grant = json!(["credentials.use"]);
+    for key in ["userProxy", "someFutureSlotKey"] {
+        let root = dir.path().join(format!("unknown-key-{key}"));
+        let mut slot = user_endpoint_slot(json!({}));
+        slot[key] = json!({ "types": ["http", "socks5"] });
+        write_plugin(
+            &root,
+            capability_manifest(json!({ "credentials": [slot] }), grant.clone()),
+            &[],
+        );
+        PluginManager::read_manifest(&root)
+            .unwrap_or_else(|error| panic!("{key} must be ignored, got {error}"));
+    }
+}
+
 #[test]
 fn a_user_typed_mail_server_is_declared_only_where_it_can_be_served() {
     let dir = tempdir().unwrap();
@@ -3163,6 +3187,85 @@ fn a_user_typed_mail_server_is_declared_only_where_it_can_be_served() {
                 capability_manifest(
                     json!({ "credentials": [user_endpoint_slot(overrides)] }),
                     grant.clone(),
+                ),
+            )
+            .contains(expected),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_mail_proxy_is_declared_only_where_it_can_be_served() {
+    let dir = tempdir().unwrap();
+    let grant = json!(["credentials.use"]);
+
+    // A preset-provider account (Gmail and friends) needs a proxy just as much
+    // as a self-hosted one, so `userProxy` does not require `userEndpoint`.
+    let accepted = dir.path().join("user-proxy");
+    let mut preset = user_endpoint_slot(json!({}));
+    preset.as_object_mut().unwrap().remove("userEndpoint");
+    preset["userProxy"] = json!({ "types": ["http", "socks5"] });
+    write_plugin(
+        &accepted,
+        capability_manifest(json!({ "credentials": [preset] }), grant.clone()),
+        &[],
+    );
+    PluginManager::read_manifest(&accepted).unwrap();
+
+    let proxied = |overrides: Value| {
+        // No `userEndpoint` here: each case must fail (or pass) on the proxy
+        // rule alone, not on the mail-server rule that runs first.
+        let mut slot = user_endpoint_slot(json!({}));
+        slot.as_object_mut().unwrap().remove("userEndpoint");
+        slot["userProxy"] = json!({ "types": ["http", "socks5"] });
+        for (key, value) in overrides.as_object().unwrap().clone() {
+            slot[key] = value;
+        }
+        slot
+    };
+    for (name, overrides, expected) in [
+        (
+            "wrong-kind",
+            json!({ "kind": "basic" }),
+            "only an imap slot accepts a proxy",
+        ),
+        (
+            "no-type",
+            json!({ "userProxy": { "types": [] } }),
+            "userProxy needs at least one type",
+        ),
+        (
+            "duplicate-type",
+            json!({ "userProxy": { "types": ["http", "http"] } }),
+            "userProxy lists http twice",
+        ),
+        (
+            "unknown-type",
+            json!({ "userProxy": { "types": ["socks4"] } }),
+            "userProxy types must be http or socks5",
+        ),
+        (
+            "unknown-key",
+            json!({ "userProxy": { "types": ["http"], "host": "127.0.0.1" } }),
+            "userProxy has an unsupported key host",
+        ),
+        (
+            "reserved-field",
+            json!({ "fields": [
+                { "key": "username", "label": "User" },
+                { "key": "proxyPassword", "label": "Proxy password" }
+            ] }),
+            "field proxyPassword is reserved for the mail proxy",
+        ),
+    ] {
+        let root = dir.path().join(name);
+        assert!(
+            refuse(
+                &root,
+                capability_manifest(
+                    json!({ "credentials": [proxied(overrides)] }),
+                    grant.clone()
                 ),
             )
             .contains(expected),

@@ -529,3 +529,71 @@ is "as many mailboxes as I have".
 - **Raise `MAX_CONNECTIONS_PER_PLUGIN` to match.** Rejected: the ceiling bounds
   descriptors and buffers, and a plugin needs to schedule its own connections
   rather than expect a socket per account.
+
+## 2026-11-25 — a proxy per mail account
+
+Context: a mailbox that is only reachable through a tunnel (Gmail IMAP behind a
+local Clash, a company server behind a LAN gateway) could not be used at all. The
+host dials raw TCP itself and consults no proxy — the system proxy settings
+describe HTTP requests, and a raw socket is not one — so the only workaround was a
+TUN-mode proxy on the whole machine.
+
+### Decision
+
+1. `contributes.credentials[]` with `kind: "imap"` may declare a **top-level**
+   `userProxy: { types: ("http" | "socks5")[] }`. Top-level on purpose: a 1.10.0
+   host ignores an unknown top-level slot key, so the same package still installs
+   and runs there without a proxy, while an unknown key *inside* `userEndpoint`
+   would have been refused.
+2. The proxy belongs to the credential instance, exactly like a user-typed
+   server: the host dials it only for a connection carrying that instance's
+   `credentialRef`, and a connection without one can never reach it. `userProxy`
+   is independent of `userEndpoint`, because the account that needs a tunnel
+   (Gmail) is precisely the one that keeps the preset server.
+3. The host owns five reserved field keys — `proxyType`, `proxyHost`,
+   `proxyPort`, `proxyUsername`, `proxyPassword` — and refuses a manifest that
+   declares a field of one of them. The first three are published back through
+   `publicFields` (an account card can say "via 127.0.0.1:7897"); the two
+   credential keys never are, and the renderer cannot prefill them either.
+4. Values are validated at save time by the host, not by the form: all-or-nothing
+   (no type means no proxy, and the other keys are dropped), loopback and
+   private/LAN addresses allowed (that is the feature), cloud metadata hosts
+   refused by the same list the custom server uses, no CR/LF/NUL, and at most 255
+   bytes per proxy credential (RFC 1929).
+5. HTTP opens a `CONNECT host:port` tunnel with optional `Proxy-Authorization:
+   Basic`; SOCKS5 offers no-auth and, when the account has a login, RFC 1929
+   sub-negotiation, then `CONNECT` with the address as a name unless the account
+   stored an IP literal. Nothing is resolved locally: the name is what the proxy
+   is for. Bytes a proxy reply carried past its own length belong to the next
+   stage — for STARTTLS that is the greeting.
+6. TLS is untouched: implicit TLS verifies the certificate against the mail
+   host's name (never the proxy's), and STARTTLS negotiates on the tunnelled
+   plaintext socket. There is no fallback to a direct dial, so a failing proxy
+   fails the connection instead of quietly using another route.
+7. Two closed failure codes join the five: `PROXY_FAILED` (unreachable, bad
+   handshake, refused tunnel) and `PROXY_AUTH_FAILED` (407, SOCKS auth rejected).
+   Constant messages; neither quotes a proxy reply or a credential.
+
+### Consequences
+
+- A user can point one mailbox at a local or LAN proxy without changing anything
+  for the rest of the app, and without the plugin learning where its password
+  went.
+- Two more error names reach a plugin's message table, so a proxied account can
+  say "your proxy is not answering" or "your proxy login is wrong".
+- A proxy login travels unencrypted to the proxy hop. That is a property of both
+  protocols, it is documented in the spec and said in the form hint, and it is
+  why the feature is aimed at the user's own or their LAN's proxy rather than a
+  remote one.
+
+### Alternatives
+
+- **Put the proxy inside `userEndpoint`.** Rejected: 1.10.0 refuses unknown keys
+  there, so the same package would fail to install on the host the plugin still
+  supports.
+- **Use the system proxy settings.** Rejected: they describe HTTP requests, not
+  raw sockets, and they are a machine-wide decision for an account-level problem.
+- **Fall back to a direct dial when the proxy fails.** Rejected: it would report a
+  working mailbox while the password left by a route the user did not choose.
+- **Resolve the mail host locally and connect through the proxy by address.**
+  Rejected: local DNS is exactly what a proxy in this position exists to bypass.

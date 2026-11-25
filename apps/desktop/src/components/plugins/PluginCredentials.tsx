@@ -4,6 +4,7 @@ import type { PluginCredentialInstanceStatus, PluginCredentialStatus } from "@mi
 import { api } from "../../lib/api";
 import { Button, Input, PasswordInput, Select } from "../ui";
 import { CustomMailServerFields } from "./PluginCredentialEndpoint";
+import { CustomMailProxyFields } from "./PluginCredentialProxy";
 
 type CredentialField = PluginCredentialStatus["fields"][number];
 
@@ -33,6 +34,7 @@ export function CredentialFieldsForm({
   locale,
   disabled,
   userEndpoint,
+  userProxy,
 }: {
   fields: CredentialField[];
   values: CredentialValues;
@@ -41,6 +43,8 @@ export function CredentialFieldsForm({
   disabled?: boolean;
   /** Present when the user may name their own mail server for this slot. */
   userEndpoint?: { protocols: readonly string[] };
+  /** Present when the user may reach this account through their own proxy. */
+  userProxy?: { types: readonly string[] };
 }) {
   const { t } = useTranslation();
   return (
@@ -87,6 +91,14 @@ export function CredentialFieldsForm({
       {userEndpoint?.protocols.length ? (
         <CustomMailServerFields
           protocols={userEndpoint.protocols}
+          values={values}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      ) : null}
+      {userProxy?.types.length ? (
+        <CustomMailProxyFields
+          types={userProxy.types}
           values={values}
           onChange={onChange}
           disabled={disabled}
@@ -220,6 +232,7 @@ function SingleValueSlot({
         onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
         locale={locale}
         userEndpoint={slot.userEndpoint}
+        userProxy={slot.userProxy}
       />
       {error ? <p role="alert" className="plugins-settings-error">{error}</p> : null}
       <div className="plugin-credential-actions">
@@ -338,6 +351,7 @@ function MultiValueSlot({
             locale={locale}
             disabled={busy}
             userEndpoint={slot.userEndpoint}
+            userProxy={slot.userProxy}
           />
           <div className="plugin-credential-actions">
             <Button

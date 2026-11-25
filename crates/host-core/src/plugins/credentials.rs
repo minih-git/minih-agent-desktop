@@ -27,6 +27,7 @@
 
 use super::credential_instances::{self, split_ref, InstanceMeta};
 use super::user_endpoint;
+use super::user_proxy;
 use super::{is_contrib_id, plugin_display_locale, PluginSummary};
 use crate::db::Database;
 use crate::secrets::SecretStore;
@@ -135,6 +136,10 @@ pub(crate) struct DeclaredSlot {
     /// four reserved endpoint keys and what a stored instance is checked
     /// against.
     pub user_endpoint_protocols: Vec<String>,
+    /// `userProxy.types`; empty when the slot offers no proxy. A non-empty list
+    /// is what makes the slot accept the five reserved proxy keys and what a
+    /// stored instance's proxy type is checked against.
+    pub user_proxy_types: Vec<String>,
 }
 
 impl DeclaredSlot {
@@ -329,6 +334,7 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
         let multiple_declared_max = multiple_bounds.and_then(|(_, declared)| declared);
         let label_field = label_field_of(id, entry, &declared_fields, plugin)?;
         let user_endpoint_protocols = user_endpoint::declared_protocols(entry.get("userEndpoint"));
+        let user_proxy_types = user_proxy::declared_types(entry.get("userProxy"));
         let domains = entry
             .get("scope")
             .and_then(Value::as_object)
@@ -358,6 +364,7 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
             multiple_declared_max,
             label_field,
             user_endpoint_protocols,
+            user_proxy_types,
         });
     }
     Ok(slots)
@@ -702,6 +709,9 @@ pub(crate) fn status(
         if !slot.user_endpoint_protocols.is_empty() {
             entry["userEndpoint"] = json!({ "protocols": slot.user_endpoint_protocols });
         }
+        if !slot.user_proxy_types.is_empty() {
+            entry["userProxy"] = json!({ "types": slot.user_proxy_types });
+        }
         slots.push(entry);
     }
     Ok(json!({ "slots": slots }))
@@ -751,7 +761,7 @@ pub(crate) fn set(
     db: Option<&Database>,
 ) -> Result<Option<String>, CredentialError> {
     let slot = declared_slot(plugin, slot_id)?;
-    let values = validated_fields(&slot, fields)?;
+    let values = credential_instances::validated_fields(&slot, fields)?;
     if slot.multiple_max.is_some() {
         credential_instances::instances(secrets, &plugin.id, &slot, db)?;
         return credential_instances::add(secrets, &plugin.id, &slot, &values, db).map(Some);
@@ -789,7 +799,7 @@ pub(crate) fn update(
             "{CREDENTIAL_INVALID}: credential slot {slot_id} holds a single value"
         )));
     }
-    let values = validated_fields(&slot, fields)?;
+    let values = credential_instances::validated_fields(&slot, fields)?;
     credential_instances::update(secrets, &plugin.id, &slot, instance_id, &values, db)
 }
 
@@ -899,59 +909,6 @@ pub(crate) fn purge_plugin(data_dir: &Path, plugin_id: &str) -> Result<usize, Cr
     Ok(removed)
 }
 
-/// The submitted map must be exactly the slot's declared fields, each a
-/// non-empty string, plus the four reserved endpoint keys of a slot that
-/// declares `userEndpoint`. Anything else is refused as a whole.
-fn validated_fields(
-    slot: &DeclaredSlot,
-    fields: Map<String, Value>,
-) -> Result<BTreeMap<String, String>, CredentialError> {
-    let takes_endpoint = !slot.user_endpoint_protocols.is_empty();
-    if let Some(key) = fields.keys().find(|key| {
-        !slot.field_keys().any(|declared| declared == *key)
-            && !(takes_endpoint && user_endpoint::is_reserved(key))
-    }) {
-        return Err(CredentialError::Invalid(format!(
-            "{CREDENTIAL_INVALID}: credential slot {} does not declare field {key}",
-            slot.id
-        )));
-    }
-    let mut values = BTreeMap::new();
-    for key in slot.field_keys() {
-        let value = fields.get(key).ok_or_else(|| {
-            CredentialError::Invalid(format!(
-                "{CREDENTIAL_INVALID}: credential slot {} is missing field {key}",
-                slot.id
-            ))
-        })?;
-        let value = value.as_str().ok_or_else(|| {
-            CredentialError::Invalid(format!(
-                "{CREDENTIAL_INVALID}: credential slot {} field {key} must be a string",
-                slot.id
-            ))
-        })?;
-        if value.trim().is_empty() {
-            return Err(CredentialError::Invalid(format!(
-                "{CREDENTIAL_INVALID}: credential slot {} field {key} is empty",
-                slot.id
-            )));
-        }
-        if value.len() > MAX_FIELD_BYTES {
-            return Err(CredentialError::Invalid(format!(
-                "{CREDENTIAL_INVALID}: credential slot {} field {key} exceeds {MAX_FIELD_BYTES} bytes",
-                slot.id
-            )));
-        }
-        values.insert(key.to_string(), value.to_string());
-    }
-    if takes_endpoint {
-        if let Some(endpoint) = credential_instances::validated_endpoint(slot, &fields)? {
-            values.extend(endpoint.to_fields());
-        }
-    }
-    Ok(values)
-}
-
 #[cfg(test)]
 #[path = "credentials_tests.rs"]
 mod tests;
@@ -959,3 +916,7 @@ mod tests;
 #[cfg(test)]
 #[path = "credential_instances_tests.rs"]
 mod instance_tests;
+
+#[cfg(test)]
+#[path = "credential_proxy_tests.rs"]
+mod proxy_tests;

@@ -155,6 +155,7 @@ import {
 import type { PluginTcpEndpoint, PluginTcpEvent, PluginTcpRegistry } from "./plugin-tcp";
 import { resolveTcpCredential } from "./plugin-tcp-credentials";
 import { tcpFailureCode } from "./plugin-tcp-errors";
+import type { TcpProxy } from "./plugin-tcp-proxy";
 import type { PluginTcpLogin } from "./plugin-tcp-login";
 import { declaredSlots, slotHoldsInstances } from "./plugin-credential-slots";
 import type {
@@ -3297,10 +3298,16 @@ export class PluginRuntime {
         let auditScheme = hasCredential ? "imaps" : undefined;
         let auditInstance: string | undefined;
         let userProtocol: "imap" | "pop3" | undefined;
+        // Declared outside the try: the refusal path reports the proxy too, and
+        // a catch block cannot see a binding made inside its own try.
+        let proxy: TcpProxy | undefined;
+        let auditProxy: { type: string; host: string; port: number } | undefined;
         try {
           this.assertPermission(loaded, "net.tcp");
           const registry = this.services.pluginTcp;
           if (!registry) throw apiError("UNSUPPORTED", "TCP connections are unavailable in this host");
+          // A credentialRef is the `credentials.use` permission, checked before
+          // the store is read.
           if (hasCredential) this.assertPermission(loaded, "credentials.use");
           let endpoint: PluginTcpEndpoint;
           let login: PluginTcpLogin | undefined;
@@ -3319,6 +3326,13 @@ export class PluginRuntime {
             auditPeer = { host: plan.endpoint.host, port: plan.endpoint.port };
             auditScheme = plan.scheme;
             auditInstance = plan.instanceId;
+            // The proxy travels with the credential, so it is part of the same
+            // decision as the endpoint; the audit row records where it points
+            // and never who it logs in as.
+            proxy = plan.proxy ?? undefined;
+            auditProxy = plan.proxy
+              ? { type: plan.proxy.type, host: plan.proxy.host, port: plan.proxy.port }
+              : undefined;
             // Only a user-typed server reports the protocol it spoke; the preset
             // path answers exactly what it always has.
             userProtocol = plan.origin === "userEndpoint" ? plan.login.protocol : undefined;
@@ -3335,21 +3349,26 @@ export class PluginRuntime {
             if (!declared) throw apiError("PERMISSION_DENIED", "TCP endpoint is not declared in manifest.net.tcp");
             endpoint = declared;
           }
-          if (this.loaded.get(pluginId) !== loaded || loaded.disposing) throw apiError("CONNECT_FAILED", "the plugin is no longer loaded");
+          // Unloading may have happened while the credential was resolved: a
+          // socket created after that would outlive the plugin's release.
+          if (this.loaded.get(pluginId) !== loaded || loaded.disposing) {
+            throw apiError("CONNECT_FAILED", "the plugin is no longer loaded");
+          }
           const result = await registry.connect({
             pluginId,
             endpoint,
             timeoutMs: descriptor.timeoutMs,
             ...(login ? { login } : {}),
+            ...(proxy ? { proxy } : {}),
           });
-          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: true, ts: Date.now(), host: endpoint.host, port: endpoint.port, connectionId: result.connectionId, ...(hasCredential ? { ...(auditSlot ? { credential: auditSlot } : {}), ...(auditInstance ? { credentialInstance: auditInstance } : {}), scheme: auditScheme } : {}) });
+          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: true, ts: Date.now(), host: endpoint.host, port: endpoint.port, connectionId: result.connectionId, ...(auditProxy ? { proxy: auditProxy } : {}), ...(hasCredential ? { ...(auditSlot ? { credential: auditSlot } : {}), ...(auditInstance ? { credentialInstance: auditInstance } : {}), scheme: auditScheme } : {}) });
           return userProtocol ? { ...result, protocol: userProtocol } : result;
         } catch (error) {
           const reported = (error as { code?: string }).code ?? "CONNECT_FAILED";
           // The plugin shows one message per case, so the transport family is
           // folded here rather than exposed as Node's errno or the deadline.
           const code = tcpFailureCode(reported);
-          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: false, errorCode: code, ...(auditPeer ? { host: auditPeer.host, port: auditPeer.port } : {}), ...(hasCredential ? { scheme: auditScheme, ...(auditSlot ? { credential: auditSlot } : {}), ...(auditInstance ? { credentialInstance: auditInstance } : {}) } : {}), ts: Date.now() });
+          this.services.audit?.({ pluginId, api: "net.tcp.connect", ok: false, errorCode: code, ...(auditPeer ? { host: auditPeer.host, port: auditPeer.port } : {}), ...(auditProxy ? { proxy: auditProxy } : {}), ...(hasCredential ? { scheme: auditScheme, ...(auditSlot ? { credential: auditSlot } : {}), ...(auditInstance ? { credentialInstance: auditInstance } : {}) } : {}), ts: Date.now() });
           throw apiError(code, (error as Error).message);
         }
       }

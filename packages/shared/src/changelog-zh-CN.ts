@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.11.0",
+    date: "2026-11-25",
+    highlights: [
+      "每个邮箱账号现在可以单独走代理：在账号表单里选 HTTP（CONNECT）或 SOCKS5，可填代理用户名和密码，只有这个账号的连接会走它。邮件服务器的名字交给代理去解析，证书仍按邮件服务器校验；代理失败时连接就失败，不会悄悄改成直连。代理登录是明文到达代理本身的，所以请只对自己或局域网内的代理使用。",
+    ],
+  },
+  {
     version: "1.10.1",
     date: "2026-11-25",
     highlights: [

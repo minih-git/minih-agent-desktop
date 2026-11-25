@@ -1605,7 +1605,34 @@ Semantics:
   cannot be used for a login at all). Everything decided before a connection is
   attempted keeps its own code: `INVALID_ARGUMENT`, `PERMISSION_DENIED`,
   `CREDENTIAL_NOT_CONFIGURED`, `CREDENTIAL_INSTANCE_REQUIRED`,
-  `CREDENTIAL_INVALID`, `CREDENTIAL_LIMIT`, `LIMIT_EXCEEDED`, `NOT_FOUND`.
+  `CREDENTIAL_INVALID`, `CREDENTIAL_LIMIT`, `LIMIT_EXCEEDED`, `NOT_FOUND`. Two
+  more names belong to the account's proxy: `PROXY_FAILED` (the proxy could not be
+  reached, its handshake failed, or it refused the tunnel) and
+  `PROXY_AUTH_FAILED` (it refused the proxy credential). Both carry constant text
+  and never quote the proxy's reply or a credential.
+- **A proxy the user configured for one account.** A slot that declares
+  `userProxy` (02 §5.5.3) stores the proxy inside the account, and the host dials
+  it only for a connection carrying that instance's `credentialRef`: the proxy,
+  like the custom server, is unreachable without one. It changes *how* the
+  authorised endpoint is reached, never *which* endpoint it is — the manifest and
+  scope checks for a preset endpoint, or the stored endpoint for a user-typed one,
+  are decided exactly as before. There is no fallback: if the account has a proxy
+  and the proxy fails, the connection fails. HTTP opens a `CONNECT host:port`
+  tunnel (optional `Proxy-Authorization: Basic`, any 2xx accepted, 407 is
+  `PROXY_AUTH_FAILED`); SOCKS5 offers no-auth and, when the account has a login,
+  username/password (RFC 1929), then `CONNECT` with the address as a name
+  (`ATYP 0x03`) unless the account stored an IP literal. The mail host's **name is
+  sent to the proxy** and never resolved locally, and any byte the proxy's reply
+  carried past its own length is treated as the mail server's — for STARTTLS that
+  is the greeting, so nothing is lost between the two stages. TLS is unchanged:
+  implicit TLS verifies the certificate against the *mail* host's name (never the
+  proxy's), and STARTTLS negotiates on the tunnelled plaintext socket. One
+  deadline covers the proxy handshake, the TLS handshake and the login, the
+  connection counts against the same per-plugin ceiling while it is in flight, and
+  the audit entry records the proxy type, host and port — never its credential.
+  Note the protocol property this does not hide: a proxy login travels
+  unencrypted to the proxy hop, which is why this is meant for the user's own or
+  their LAN's proxy.
 - **Inbound webhooks deliver, they do not answer.** The host listens on port
   37124, or a persisted fallback port if occupied, only while an enabled and
   granted receiver exists. LAN and local-only bindings and source filtering are

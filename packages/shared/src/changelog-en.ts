@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.11.0",
+    date: "2026-11-25",
+    highlights: [
+      "Each mailbox account can now go through its own proxy: choose HTTP (CONNECT) or SOCKS5 in the account form, with an optional proxy user name and password, and that account's connection — and only that one — uses it. The mail server's name is handed to the proxy instead of being resolved here, the certificate is still checked against the mail server, and a failing proxy fails the connection instead of quietly connecting directly. The proxy login is sent unencrypted to the proxy itself, so use it for your own or your network's proxy.",
+    ],
+  },
+  {
     version: "1.10.1",
     date: "2026-11-25",
     highlights: [

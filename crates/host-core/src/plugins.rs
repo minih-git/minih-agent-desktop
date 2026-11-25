@@ -31,6 +31,7 @@ mod registry;
 mod renderer;
 pub(crate) mod settings;
 pub(crate) mod user_endpoint;
+pub(crate) mod user_proxy;
 mod validation;
 
 pub use manifest::PluginManifest;

@@ -1,5 +1,17 @@
 export const en = {
   pluginCredentials: {
+    proxy: "Proxy",
+    proxyHint: "Send this account's connection through a proxy, for example a local Clash or a gateway on your network. Leave the type empty to connect directly.",
+    proxyType: "Proxy type",
+    proxyTypeNone: "No proxy",
+    proxyTypeHttp: "HTTP (CONNECT)",
+    proxyTypeSocks5: "SOCKS5",
+    proxyHost: "Proxy server",
+    proxyHostPlaceholder: "127.0.0.1",
+    proxyPort: "Proxy port",
+    proxyUsername: "Proxy user name",
+    proxyPassword: "Proxy password",
+    proxyLoginHint: "Fill in both the proxy user name and the proxy password, or neither. A saved proxy login is not shown again, so type it when you save.",
     title: "Credentials",
     hint: "Saving replaces the entire credential. Enter every field again to change it; saved values are not shown.",
     configured: "Configured",

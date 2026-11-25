@@ -1255,7 +1255,7 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   选中更弱的登录方式。POP3 在 `CAPA` 声明 `SASL PLAIN` 时用 `AUTH PLAIN`，否则用
   `USER`/`PASS`；两种协议对凭据被拒都回答 `CREDENTIAL_REJECTED`，用户自填服务器成功时
   `connect` 会带 `protocol: "imap" | "pop3"`。没有 `credentialRef` 的连接永远到不了它。
-  **失败码。** 请求已被接受、但连接失败的 `net.tcp.connect` 只用下面这五个名字、别无其它，
+  **失败码。** 请求已被接受、但连接失败的 `net.tcp.connect` 只用下面这些名字、别无其它，
   插件因此能为每种情况给一句提示：`CONNECT_FAILED`（TCP 连不上，或超时到期）、
   `TLS_CERTIFICATE`（证书过期、不受信任，或名字不匹配）、`TLS_FAILED`（TLS 阶段因其它原因
   失败，包括升级根本没有开始、以及握手之前到达的字节）、`STARTTLS_UNAVAILABLE`（服务器
@@ -1263,7 +1263,24 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   了登录，或存下的值根本无法用于登录）。连接尝试之前就已决定的拒绝保留各自的码：
   `INVALID_ARGUMENT`、`PERMISSION_DENIED`、`CREDENTIAL_NOT_CONFIGURED`、
   `CREDENTIAL_INSTANCE_REQUIRED`、`CREDENTIAL_INVALID`、`CREDENTIAL_LIMIT`、
-  `LIMIT_EXCEEDED`、`NOT_FOUND`。
+  `LIMIT_EXCEEDED`、`NOT_FOUND`。另有两个名字属于账号的代理：`PROXY_FAILED`（连不上
+  代理、握手失败，或代理拒绝建立隧道）与 `PROXY_AUTH_FAILED`（代理拒绝了代理凭据）。
+  两者都是固定文案，绝不引用代理的原始应答或任何凭据。
+- **用户为某个账号配置的代理。** 声明了 `userProxy` 的槽位（02 §5.5.3）把代理存
+  在账号里，宿主只在带该实例 `credentialRef` 的连接上才走它：代理和自填服务器
+  一样，没有凭据引用就到不了。它改变的是**怎么**到达已授权的端点，而不是**哪个**
+  端点——预设端点的清单与 scope 检查、自填端点的存值一致检查，都与原来完全一样。
+  没有退路：账号有代理而代理失败，连接就失败。HTTP 用 `CONNECT host:port` 建隧道
+  （可带 `Proxy-Authorization: Basic`，任何 2xx 都算成功，407 是
+  `PROXY_AUTH_FAILED`）；SOCKS5 先声明无认证，账号有代理登录时再加用户名/密码
+  （RFC 1929），随后 `CONNECT`；除非账号存的是 IP 字面量，地址按域名（`ATYP 0x03`）
+  交给代理解析。**邮件服务器的主机名交给代理**，绝不在本地解析；代理应答之后多出来
+  的字节一律当作邮件服务器的数据——STARTTLS 时那就是问候语，因此两个阶段之间不会
+  丢字节。TLS 不变：隐式 TLS 用**邮件服务器**的名字校验证书（绝不用代理的名字），
+  STARTTLS 仍在隧道上的明文套接字里协商。同一个 deadline 覆盖代理握手、TLS 握手和
+  登录，飞行中的连接同样占用每插件的连接上限，审计记录代理类型、主机和端口——绝不
+  记录它的凭据。协议本身无法隐藏的一点也写明：代理登录是明文到达代理这一跳的，所以
+  这个功能面向用户自己的或局域网内的代理。
 - **入站 webhook 只投递，不回答。** 存在启用且获授权的接收器时，宿主监听 37124；
   端口占用时使用持久化的回退端口。绑定和来源过滤见
   [ADR plugin-webhook-listener-boundary](/zh-CN/adr/plugin-webhook-listener-boundary)。

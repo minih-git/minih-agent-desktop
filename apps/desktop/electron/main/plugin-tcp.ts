@@ -28,15 +28,27 @@
  *   to `onUsage` on close and in periodic batches. A failed write is retried,
  *   never dropped, and `flush` / `dispose` are the caller's shutdown path.
  *
- * The user's HTTP proxy is not consulted, exactly as the install review says:
- * a raw socket is not an HTTP request, so proxying it would be a lie.
+ * A connection goes direct unless the credential instance it logs in with names
+ * a proxy: a mailbox reachable only through the user's own Clash or a LAN
+ * gateway is dialled through it, and the proxy is a property of that account,
+ * not of the machine. The system's HTTP proxy settings are still never
+ * consulted — a raw socket is not an HTTP request — so there is nothing here a
+ * plugin could use to reroute a connection it was not given a credential for.
  */
 import { connect as netConnect, type Socket } from "node:net";
-import { connect as tlsConnect } from "node:tls";
+import { connect as tlsConnect, type TLSSocket } from "node:tls";
 import type { ImapCredentials } from "./plugin-tcp-imap-login";
 import { PluginTcpMailLogin, type PluginTcpLogin } from "./plugin-tcp-login";
 import { connectionMessage, tlsFailureCode } from "./plugin-tcp-errors";
 import { upgradeToTls } from "./plugin-tcp-starttls";
+import { httpProxyHandshake } from "./plugin-tcp-http-proxy";
+import { socks5ProxyHandshake } from "./plugin-tcp-socks5-proxy";
+import {
+  PROXY_FAILED_MESSAGE,
+  proxyFailure,
+  type ProxyTarget,
+  type TcpProxy,
+} from "./plugin-tcp-proxy";
 import { PluginSocketError, type PluginSocketErrorCode } from "./plugin-websocket";
 
 /**
@@ -138,6 +150,8 @@ type Entry = {
   /** Set once a STARTTLS connection has been upgraded to TLS. */
   starttls: boolean;
   credentialBearing: boolean;
+  /** Set when this account dials through its own proxy. */
+  proxy: TcpProxy | null;
 };
 
 export class PluginTcpRegistry {
@@ -181,6 +195,8 @@ export class PluginTcpRegistry {
     imap?: ImapCredentials;
     /** A mail login the host performs, for a user-typed server. */
     login?: PluginTcpLogin;
+    /** The proxy this account dials through, when it has one. */
+    proxy?: TcpProxy;
   }): Promise<{ connectionId: string; authenticated?: true }> {
     const { pluginId } = request;
     if (typeof pluginId !== "string" || !pluginId.trim()) {
@@ -215,6 +231,7 @@ export class PluginTcpRegistry {
       login: null,
       starttls: false,
       credentialBearing: Boolean(request.imap ?? request.login),
+      proxy: request.proxy ?? null,
     };
     const login = request.login;
     if (login || request.imap) {
@@ -380,6 +397,10 @@ export class PluginTcpRegistry {
   }
 
   private dial(entry: Entry): void {
+    if (entry.proxy) {
+      this.dialThroughProxy(entry);
+      return;
+    }
     const { host, port, tls } = entry.endpoint;
     let socket: Socket;
     try {
@@ -410,6 +431,100 @@ export class PluginTcpRegistry {
       if (!entry.login) this.open(entry);
     });
     this.watch(entry, socket);
+  }
+
+  /**
+   * Dial the account's proxy, then open a tunnel to the authorised endpoint.
+   *
+   * The proxy belongs to one credential instance, so this path only exists for a
+   * connection that carries that instance's `credentialRef`. There is no direct
+   * retry: an account was given a proxy because the direct dial does not work,
+   * and a silent fallback would report a working mailbox while the password
+   * travelled by a route the user did not choose.
+   */
+  private dialThroughProxy(entry: Entry): void {
+    const proxy = entry.proxy as TcpProxy;
+    let socket: Socket;
+    try {
+      socket = netConnect({ host: proxy.host, port: proxy.port });
+    } catch {
+      this.detach(entry);
+      this.decide(entry, new PluginSocketError("PROXY_FAILED", PROXY_FAILED_MESSAGE));
+      this.finalize(entry, true);
+      return;
+    }
+    entry.socket = socket;
+    const unreachable = (): void => {
+      if (entry.finalized) return;
+      this.abort(entry, new PluginSocketError("PROXY_FAILED", PROXY_FAILED_MESSAGE));
+    };
+    socket.once("error", unreachable);
+    socket.once("close", unreachable);
+    socket.once("connect", () => {
+      socket.removeListener("error", unreachable);
+      socket.removeListener("close", unreachable);
+      void this.tunnel(entry, socket, proxy);
+    });
+  }
+
+  /**
+   * Run the proxy handshake, then continue exactly as a direct dial would.
+   *
+   * The proxy only changes how the endpoint is reached. Implicit TLS is still
+   * `tls.connect` with the mail host as SNI and verification target — never the
+   * proxy's name — and STARTTLS still negotiates on the plaintext socket, so
+   * nothing an unprotected hop said can decide how the mail credential is sent.
+   */
+  private async tunnel(entry: Entry, socket: Socket, proxy: TcpProxy): Promise<void> {
+    const target: ProxyTarget = { host: entry.endpoint.host, port: entry.endpoint.port };
+    try {
+      if (proxy.type === "http") await httpProxyHandshake(socket, target, proxy);
+      else await socks5ProxyHandshake(socket, target, proxy);
+    } catch (error) {
+      if (!entry.finalized) this.abort(entry, proxyFailure(error));
+      return;
+    }
+    if (entry.finalized || entry.state !== "connecting") {
+      socket.destroy();
+      return;
+    }
+    if (entry.endpoint.tls) {
+      let secure: TLSSocket;
+      try {
+        // The handshake reader left the socket paused; the TLS layer reads from
+        // here on, and anything it unshifted comes with it.
+        socket.resume();
+        secure = tlsConnect({
+          socket,
+          servername: target.host,
+          rejectUnauthorized: true,
+          ...(this.deps.tlsCa === undefined ? {} : { ca: this.deps.tlsCa }),
+        });
+      } catch {
+        socket.destroy();
+        this.abort(entry, new PluginSocketError("TLS_FAILED", connectionMessage("TLS_FAILED")));
+        return;
+      }
+      entry.socket = secure;
+      // A TLS socket answers `connect` before the handshake; only
+      // `secureConnect` means the mail server is verified and usable.
+      secure.once("secureConnect", () => {
+        if (entry.finalized || entry.state !== "connecting") return;
+        if (!entry.login) this.open(entry);
+      });
+      this.watch(entry, secure);
+      return;
+    }
+    this.watch(entry, socket);
+    socket.resume();
+    if (entry.login) {
+      // Any byte the proxy reply carried past its own length already belongs to
+      // the mail server — for STARTTLS that is the greeting — and
+      // `ProxyStream.release` put it back. Resuming hands it to the login
+      // machine as if it had just arrived.
+      return;
+    }
+    this.open(entry);
   }
 
   /** Route one socket's traffic to this connection; the caller owns the socket. */
