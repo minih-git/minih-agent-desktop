@@ -7,6 +7,7 @@ import {
   browserProxyRequestForUrl,
   browserProxyTargetForRequest,
   emptyBrowserProxyRouting,
+  matchBrowserProxyRoute,
   moveBrowserProxyRule,
   normalizeBrowserProxyRouting,
   normalizeBrowserProxyHost,
@@ -156,11 +157,11 @@ describe("ip cidr", () => {
 
   it("matches IPv6 ranges but not names", () => {
     const value = routing({
-      rules: [{ id: "r1", kind: "ip-cidr", pattern: "fe80::/10", target: "office" }],
+      rules: [{ id: "r1", kind: "ip-cidr", pattern: "2001:db8::/32", target: "office" }],
     });
-    expect(targetFor(value, "http://[fe80::1]/")).toBe("office");
-    expect(targetFor(value, "http://[2001:db8::1]/")).toBe(BROWSER_PROXY_DIRECT);
-    expect(targetFor(value, "http://fe80.test/")).toBe(BROWSER_PROXY_DIRECT);
+    expect(targetFor(value, "http://[2001:db8::1]/")).toBe("office");
+    expect(targetFor(value, "http://[2001:db9::1]/")).toBe(BROWSER_PROXY_DIRECT);
+    expect(targetFor(value, "http://db8.test/")).toBe(BROWSER_PROXY_DIRECT);
   });
 
   it("does not match across address families", () => {
@@ -585,10 +586,10 @@ describe("ipv6 ranges", () => {
   });
 
   it("handles a prefix that is not on a byte boundary", () => {
-    const value = cidrRouting("fe80::/10");
-    expect(targetFor(value, "http://[fe80::1]/")).toBe("office");
-    expect(targetFor(value, "http://[febf::1]/")).toBe("office");
-    expect(targetFor(value, "http://[fec0::1]/")).toBe(BROWSER_PROXY_DIRECT);
+    const value = cidrRouting("2001:db8::/33");
+    expect(targetFor(value, "http://[2001:db8::1]/")).toBe("office");
+    expect(targetFor(value, "http://[2001:db8:7fff::1]/")).toBe("office");
+    expect(targetFor(value, "http://[2001:db8:8000::1]/")).toBe(BROWSER_PROXY_DIRECT);
   });
 
   it("does not leak a /7 into loopback or global addresses", () => {
@@ -663,6 +664,50 @@ describe("local bypass parity", () => {
   });
 
 });
+describe("chromium implicit bypass", () => {
+  // Even a rule that names these networks cannot win: Chromium answers them
+  // itself before the PAC script is consulted.
+  const value = routing({
+    rules: [
+      { id: "r1", kind: "ip-cidr", pattern: "fe80::/10", target: "office" },
+      { id: "r2", kind: "ip-cidr", pattern: "127.0.0.0/8", target: "office" },
+      { id: "r3", kind: "host-wildcard", pattern: "*.localhost", target: "office" },
+    ],
+    defaultTarget: "home",
+  });
+  const pac = compileBrowserProxyPac(value, {
+    office: "PROXY 10.1.1.1:3128",
+    home: "SOCKS5 127.0.0.1:7891",
+  });
+  const findProxy = evaluatePac(pac);
+
+  it("keeps link-local, loopback, and localhost direct even when a rule matches", () => {
+    for (const url of [
+      "http://[fe80::1]/",
+      "http://[febf::1]/",
+      "http://127.0.0.1/",
+      "http://127.9.9.9/",
+      "http://169.254.1.1/",
+      "http://[::1]/",
+      "http://localhost:3000/",
+      "http://app.localhost/",
+    ]) {
+      const request = browserProxyRequestForUrl(url);
+      if (!request) throw new Error(`not routable: ${url}`);
+      expect(matchBrowserProxyRoute(value, request).kind).toBe("implicit-bypass");
+      expect(browserProxyTargetForRequest(value, request)).toBe(
+        BROWSER_PROXY_DIRECT,
+      );
+      expect(findProxy(request.url, request.host)).toBe("DIRECT");
+    }
+  });
+
+  it("leaves ordinary addresses to the rules and the default exit", () => {
+    expect(targetFor(value, "http://example.com/")).toBe("home");
+    expect(targetFor(value, "http://192.0.2.5/")).toBe("home");
+  });
+});
+
 describe("routing failure fallback", () => {
   it("returns ok and touches nothing when the table applies", async () => {
     const calls: string[] = [];

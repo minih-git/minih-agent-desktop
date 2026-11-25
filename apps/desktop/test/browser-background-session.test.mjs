@@ -296,7 +296,7 @@ test("BrowserPreview temp file roots and containment stay untouched", async () =
     assert.equal(resolveLocalFile("page.html", temp), realpathSync(file));
     assert.equal(resolveLocalFile("../outside.html", temp), null);
     assert.match(view, /isWithinRoot\(real, root\)/);
-    assert.match(view, /partition: PARTITION/);
+    assert.match(view, /partition: WORK_BROWSER_PARTITION/);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

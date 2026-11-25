@@ -389,9 +389,37 @@ function pacRequestUrl(url: URL): string {
   return `${url.protocol}//${url.host}${url.pathname}${url.search}`;
 }
 
+/**
+ * Hosts Chromium never asks a proxy about.
+ *
+ * These are matched by Chromium's own bypass rules *before* the PAC script
+ * runs, so no rule can route them and the preview has to say `direct` even
+ * when a rule pattern matches. Verified against Electron 43 (`resolveProxy`
+ * returns `DIRECT` for all of them under a proxy-everything PAC).
+ */
+export const CHROMIUM_IMPLICIT_BYPASS_NETWORKS = [
+  "127.0.0.0/8",
+  "::1/128",
+  "169.254.0.0/16",
+  "fe80::/10",
+] as const;
+
+/** True for `localhost`, `*.localhost`, and the networks above. */
+export function isChromiumImplicitBypassHost(host: string): boolean {
+  const value = normalizeBrowserProxyHost(host);
+  if (!value) return false;
+  if (value === "localhost" || value.endsWith(".localhost")) return true;
+  return CHROMIUM_IMPLICIT_BYPASS_NETWORKS.some((network) => {
+    const cidr = parseCidr(network);
+    return cidr ? ipInCidr(value, cidr) : false;
+  });
+}
+
 export type BrowserProxyRoute =
   | { kind: "rule"; rule: BrowserProxyRule; target: string }
-  /** No rule matched; this host stays direct on Chromium's own rule. */
+  /** Chromium keeps this host direct before the script is consulted. */
+  | { kind: "implicit-bypass"; target: typeof BROWSER_PROXY_DIRECT }
+  /** No rule matched; this host stays direct on the routing table's own rule. */
   | { kind: "bypass"; target: typeof BROWSER_PROXY_DIRECT }
   | { kind: "default"; target: string };
 
@@ -412,15 +440,19 @@ export function isLocalBrowserProxyHost(host: string): boolean {
 }
 
 /**
- * First matching rule wins; otherwise the loopback/private bypass, then the
- * default exit. This mirrors `FindProxyForURL` so the settings preview never
- * promises a route the browser will not take.
+ * Chromium's implicit bypass first, then the first matching rule, then the
+ * loopback/private bypass, then the default exit. This mirrors the browser so
+ * the settings preview never promises a route it will not take — including the
+ * addresses no rule can reach at all.
  */
 export function matchBrowserProxyRoute(
   routing: BrowserProxyRouting,
   request: BrowserProxyRequest,
 ): BrowserProxyRoute {
   const host = normalizeBrowserProxyHost(request.host);
+  if (isChromiumImplicitBypassHost(host)) {
+    return { kind: "implicit-bypass", target: BROWSER_PROXY_DIRECT };
+  }
   for (const rule of routing.rules) {
     const matcher = compileRuleMatcher(rule);
     if (matcher && matcher({ url: request.url, host })) {
