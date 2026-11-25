@@ -24,7 +24,7 @@ await i18n.use(initReactI18next).init({ lng: "zh-CN", fallbackLng: "en", keySepa
 let configured = false;
 let stored = "";
 window.minihAgent = { platform: "darwin", on() { return () => {}; }, async invoke(channel, input) {
-  if (channel === IPC.invoke.pluginCredentialsStatus) return { ok: true, data: { slots: [{ id: "mail", title: "邮件", kind: "bearer", fields: [{ key: "token", label: "令牌", secret: true }], configured, lastUsedAt: null }] } };
+  if (channel === IPC.invoke.pluginCredentialsStatus) return { ok: true, data: { slots: [{ id: "mail", title: "邮件", kind: "bearer", fields: [{ key: "token", label: "令牌", secret: true }], configured, lastUsedAt: null, userEndpoint: { protocols: ["imap"] }, userProxy: { types: ["http", "socks5"] }, userSend: { security: ["tls", "starttls"] } }] } };
   if (channel === IPC.invoke.pluginCredentialsSet) { stored = input.fields.token; configured = true; return { ok: true, data: undefined }; }
   if (channel === IPC.invoke.pluginCredentialsClear) { stored = ""; configured = false; return { ok: true, data: undefined }; }
   throw new Error("unexpected IPC");
@@ -36,6 +36,12 @@ window.probe = async () => {
   await until(() => document.body.textContent.includes("未配置"), "missing unconfigured state");
   const clear = [...document.querySelectorAll("button")].find((button) => button.textContent === "清除凭据");
   if (!clear || !clear.disabled) throw new Error("clear must be disabled for an unconfigured slot");
+  // The declaration reaches the sheet: a slot that names its own server, proxy
+  // and outgoing server shows all three sections (the component test covers the
+  // other half — a slot that declares none shows none).
+  for (const section of ["使用自己的邮件服务器", "代理", "用我自己的服务器发信"]) {
+    if (!document.body.textContent.includes(section)) throw new Error("missing section: " + section);
+  }
   const input = document.querySelector('input[aria-label="令牌"]');
   if (!input || input.type !== "password") throw new Error("secret must be masked");
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;

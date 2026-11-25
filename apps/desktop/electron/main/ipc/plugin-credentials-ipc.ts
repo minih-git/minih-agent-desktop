@@ -54,6 +54,11 @@ export function registerPluginCredentialIpc(
         : {}),
       ...(slot.labelField ? { labelField: slot.labelField } : {}),
       ...(slot.userEndpoint ? { userEndpoint: slot.userEndpoint } : {}),
+      // The other two account-scoped declarations the sheet renders: the
+      // account's own proxy and its outgoing server. Declared metadata only —
+      // the saved proxy login and the account password stay in the host.
+      ...(slot.userProxy ? { userProxy: { types: slot.userProxy.types } } : {}),
+      ...(slot.userSend ? { userSend: { security: slot.userSend.security } } : {}),
     })) };
   });
   registrar.handleWithEvent(IPC.invoke.pluginCredentialsSet, async (event, input: {

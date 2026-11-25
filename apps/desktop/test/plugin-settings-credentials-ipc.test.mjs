@@ -95,3 +95,84 @@ test("editing an account forwards its instance id and announces the change", asy
   // The plugin is told to re-read its accounts, exactly as after an add.
   assert.deepEqual(call.changed, [{ pluginId: "demo.multi", slotId: "mailbox" }]);
 });
+
+const MAILBOX_SLOT = {
+  id: "mailbox",
+  title: "Mail",
+  kind: "imap",
+  configured: true,
+  lastUsedAt: 1_700_000_000_000,
+  multiple: true,
+  max: 5,
+  limit: 100,
+  labelField: "username",
+  fields: [
+    { key: "username", label: "Address", secret: false },
+    { key: "password", label: "Password", secret: true },
+    {
+      key: "provider",
+      label: "Provider",
+      secret: false,
+      type: "select",
+      options: [{ value: "custom", label: "Custom" }],
+    },
+  ],
+  instances: [
+    {
+      instanceId: "acc_00000001",
+      label: "alice@example.test",
+      configured: true,
+      publicFields: { username: "alice@example.test", proxyHost: "proxy.example.test" },
+      password: "synthetic-account-password-for-ipc-test",
+      proxyPassword: "synthetic-proxy-password-for-ipc-test",
+    },
+  ],
+  userEndpoint: { protocols: ["imap", "pop3"] },
+  userProxy: { types: ["http", "socks5"] },
+  userSend: { security: ["tls", "starttls"] },
+};
+
+test("a mailbox slot's proxy and outgoing-server declarations reach the sheet", async () => {
+  const call = harness({ call: async () => ({ slots: [MAILBOX_SLOT] }) });
+  const result = await call(IPC.invoke.pluginCredentialsStatus, { pluginId: "demo.mailbox" });
+  const slot = result.slots[0];
+
+  // Without these three the sheet cannot offer the sections the manifest
+  // declared, whatever the form itself knows how to render.
+  assert.deepEqual(slot.userEndpoint, { protocols: ["imap", "pop3"] });
+  assert.deepEqual(slot.userProxy, { types: ["http", "socks5"] });
+  assert.deepEqual(slot.userSend, { security: ["tls", "starttls"] });
+  assert.deepEqual(slot.fields[2].options, [{ value: "custom", label: "Custom" }]);
+
+  // Declared metadata only: no stored value rides along, and an instance is
+  // still just what a plugin may read back.
+  const text = JSON.stringify(result);
+  assert.equal(text.includes("synthetic-account-password-for-ipc-test"), false, text);
+  assert.equal(text.includes("synthetic-proxy-password-for-ipc-test"), false, text);
+  assert.deepEqual(Object.keys(slot.instances[0]).sort(), [
+    "configured",
+    "instanceId",
+    "label",
+    "publicFields",
+  ]);
+  assert.deepEqual(slot.instances[0].publicFields, {
+    username: "alice@example.test",
+    proxyHost: "proxy.example.test",
+  });
+});
+
+test("a slot that declares no proxy and no outgoing server carries neither key", async () => {
+  const basic = {
+    id: "mail",
+    title: "Mail",
+    kind: "bearer",
+    configured: false,
+    lastUsedAt: null,
+    fields: [{ key: "token", label: "Token", secret: true }],
+  };
+  const call = harness({ call: async () => ({ slots: [basic] }) });
+  const result = await call(IPC.invoke.pluginCredentialsStatus, { pluginId: "demo.mail" });
+  assert.equal("userProxy" in result.slots[0], false);
+  assert.equal("userSend" in result.slots[0], false);
+  assert.equal("userEndpoint" in result.slots[0], false);
+});
