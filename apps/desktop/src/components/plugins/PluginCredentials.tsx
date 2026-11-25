@@ -5,6 +5,7 @@ import { api } from "../../lib/api";
 import { Button, Input, PasswordInput, Select } from "../ui";
 import { CustomMailServerFields } from "./PluginCredentialEndpoint";
 import { CustomMailProxyFields } from "./PluginCredentialProxy";
+import { CustomMailSendFields } from "./PluginCredentialSend";
 
 type CredentialField = PluginCredentialStatus["fields"][number];
 
@@ -35,6 +36,7 @@ export function CredentialFieldsForm({
   disabled,
   userEndpoint,
   userProxy,
+  userSend,
 }: {
   fields: CredentialField[];
   values: CredentialValues;
@@ -45,6 +47,8 @@ export function CredentialFieldsForm({
   userEndpoint?: { protocols: readonly string[] };
   /** Present when the user may reach this account through their own proxy. */
   userProxy?: { types: readonly string[] };
+  /** Present when the user may name the server their mail is sent through. */
+  userSend?: { security: readonly string[] };
 }) {
   const { t } = useTranslation();
   return (
@@ -99,6 +103,14 @@ export function CredentialFieldsForm({
       {userProxy?.types.length ? (
         <CustomMailProxyFields
           types={userProxy.types}
+          values={values}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      ) : null}
+      {userSend?.security.length ? (
+        <CustomMailSendFields
+          security={userSend.security}
           values={values}
           onChange={onChange}
           disabled={disabled}
@@ -233,6 +245,7 @@ function SingleValueSlot({
         locale={locale}
         userEndpoint={slot.userEndpoint}
         userProxy={slot.userProxy}
+        userSend={slot.userSend}
       />
       {error ? <p role="alert" className="plugins-settings-error">{error}</p> : null}
       <div className="plugin-credential-actions">
@@ -352,6 +365,7 @@ function MultiValueSlot({
             disabled={busy}
             userEndpoint={slot.userEndpoint}
             userProxy={slot.userProxy}
+            userSend={slot.userSend}
           />
           <div className="plugin-credential-actions">
             <Button

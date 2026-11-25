@@ -452,7 +452,10 @@ type PluginPermission =
  | "credentials.use"
  | "net.tcp"
  | "inbound.webhook"
+ // Drafting writes into the host's list and never sends. Sending is its own
+ // grant, and `contributes.credentials[].userSend` answers to it.
  | "mail.draft"
+ | "mail.send"
  | "notify.center"
  | "scheduler"
  | "tasks.read"
@@ -564,6 +567,12 @@ socket at all**.
 - `net.anyHost` does not cover raw sockets (unless the grant is extended to
   them): the answer for a host the user types in is a manifest update, not a
   blanket grant
+- `mail.send` may use the same entries. There `tls: true` means implicit TLS and
+  `tls: false` means **STARTTLS is required**: the upgrade is negotiated before
+  any credential, the capabilities are re-read over TLS, and a server that does
+  not offer it fails the send. A declared endpoint is therefore never used in the
+  clear, even though `net.tcp.connect` would accept the same `tls: false` entry
+  as a transparent plaintext stream.
 - See [03-plugin-api.md](03-plugin-api.md) §3 for the connection contract and
   [04-plugin-security.md](04-plugin-security.md) §8.3 for the enforcement
 
@@ -1046,3 +1055,52 @@ The values are validated by the host at save time, not by the form:
 
 `credentials.status` reports the declaration as `userProxy: { types }`, and an
 account saved before the proxy existed keeps working with no proxy at all.
+
+### 5.5.4 An outgoing server (`userSend`)
+
+An `imap` slot may declare
+
+```ts
+userSend?: { security: Array<"tls" | "starttls"> }
+```
+
+non-empty and without duplicates; any other transport, an empty list, an unknown
+key inside the object, or a declared field of a reserved key is refused at
+install. It is what `mail.send` uses to send from an account the plugin cannot
+name a server for.
+
+It is a **top-level** slot key for the same reason as `userProxy`: a 1.10.0 host
+ignores an unknown top-level key, so the same package still installs there and
+simply keeps the path `manifest.net.tcp` presets.
+
+The host reserves three field keys for the slot:
+
+| Key | Meaning | Published to the plugin |
+| --- | --- | --- |
+| `sendServer` | bare hostname or IP literal of the outgoing server | yes |
+| `sendPort` | decimal port, 1..65535 | yes |
+| `sendSecurity` | `tls` (implicit TLS) or `starttls`, one this slot declares | yes |
+
+A plugin may not declare a field with any of those keys (install refusal): its
+own form would otherwise decide where its own message leaves from.
+
+The values are validated by the host at save time, not by the form:
+
+* a blank `sendServer` means "no outgoing server of my own" — the other two keys
+  are dropped rather than stored, and the account keeps the `manifest.net.tcp`
+  path **unless it stores its own incoming server**: an account whose
+  `userEndpoint` names a server has its password bound to that server for
+  reading, so it cannot send through a declared endpoint either and answers
+  `MAIL_SEND_NOT_CONFIGURED` until it stores an outgoing server too;
+* a named server needs a port and a transport this slot declares;
+* the same bare-hostname, cloud-metadata and port rules as the custom mail
+  server apply, so an outgoing server can never become a way to reach an
+  instance-credential service;
+* the user name and the password are the incoming ones — the account that reads
+  the mailbox is the account that sends from it, so a second credential is not
+  collected.
+
+`credentials.status` reports the declaration as `userSend: { security }`, and an
+account saved before this key existed keeps working with no outgoing server of
+its own. `mail.send` refuses a plugin-supplied `endpoint` for such an account
+(`INVALID_ARGUMENT`), because the account already decided where it sends from.

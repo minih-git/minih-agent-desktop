@@ -143,6 +143,7 @@ export function PluginCredentialDialog() {
                 disabled={busy}
                 userEndpoint={slot.userEndpoint}
                 userProxy={slot.userProxy}
+                userSend={slot.userSend}
               />
             ) : (
               <p role="alert">{error ?? t("pluginCredentials.loadFailed")}</p>

@@ -1446,10 +1446,19 @@ pi.inbound.getReceivers(): Promise<Array<{ id: string; url: string; enabled: boo
 // scheduler — no method arms the timer; the host owns the clock.
 // event: schedule:fire { scheduleId, firedAt, missed: number }
 
-// mail.draft — drafting only; there is no send call.
+// mail.draft — drafting only; it never sends.
 pi.mail.draft.create(input: {
   to: string[]; cc?: string[]; subject: string; bodyText: string
 }): Promise<{ draftId: string }>
+
+// mail.send — the host dials, logs in and delivers; the plugin gets the outcome.
+pi.mail.send(input: {
+  credential: { slot: string; instanceId?: string }
+  endpoint?: { host: string; port: number } // a declared manifest.net.tcp entry
+  envelope: { from: string; to: string[]; cc?: string[]; bcc?: string[] }
+  mime: Uint8Array
+  timeoutMs?: number
+}): Promise<{ accepted: string[]; rejected: string[]; messageId?: string }>
 
 // notify.center — one durable inbox row, not a toast.
 pi.notify.center(input: {
@@ -1688,9 +1697,37 @@ Semantics:
   With no eligible loaded schedules the host does not start the polling clock;
   a confirmed quit cancels polling and outstanding deadlines, and timer handles
   do not keep the process alive. Cancelling the quit leaves the scheduler running.
-- **`mail.draft` never sends.** There is no send call in this API and none
-  behind a second permission; the draft lands in the host's list, where the
-  user reviews it.
+- **`mail.draft` never sends.** The draft lands in the host's list, where the
+  user reviews it; sending is the separate `mail.send` grant below, which a
+  plugin without it cannot reach.
+- **`mail.send` is a host-performed session.** The plugin names an account
+  (`credential.slot`, plus `instanceId` for a multi-instance slot) and a message;
+  the host decides the endpoint, dials it, logs in with that account's own
+  password and delivers. Only the outcome comes back: no password, no socket, no
+  connection handle and no server text — a refusal carries a code and, for
+  refused recipients, the addresses the plugin itself named.
+  - `endpoint` must be a literal `manifest.net.tcp` entry that the slot's
+    `scope.domains` admits; `tls: true` means implicit TLS and `tls: false` means
+    STARTTLS, which has to succeed. An account that stores its own outgoing
+    server (`userSend`) must omit `endpoint`: naming one is `INVALID_ARGUMENT`.
+    An account that stores its own **incoming** server is refused entirely until
+    it also stores an outgoing one, because its password is bound to the mailbox
+    the user typed and belongs to no manifest endpoint. Neither configured is
+    `MAIL_SEND_NOT_CONFIGURED`.
+  - `envelope.from`, the message's `From:` and any `Sender:` must be the
+    account's own address (`MAIL_FROM_MISMATCH`). A `Bcc:` header is refused
+    (`MAIL_BCC_HEADER`): blind recipients go in `envelope.bcc`, which travels in
+    the SMTP envelope instead of the headers.
+  - At most 50 distinct recipients after deduplication, 25 MiB of message, and 30
+    sends per plugin in a rolling hour (`MAIL_RATE_LIMITED`). The counter lives
+    in memory; a restart clears it, which the ADR states.
+  - The session spends the plugin's connection budget like any other connection,
+    and dies with the plugin (unload, disable, reload, crash) as well as with
+    `timeoutMs`, which the host caps.
+  - 8-bit content is refused when the server does not advertise `8BITMIME`
+    (`MAIL_EIGHT_BIT_UNSUPPORTED`) rather than being silently rewritten.
+  - `messageId` is the queue id the server named, when it named one; the host
+    never invents an identifier.
 - **`notify.center` writes the durable inbox.** The row's kind is
   `plugin.alert` (default) or `plugin.digest`, with the plugin's own title and
   body, so it appears in the notification center next to turn outcomes, counts

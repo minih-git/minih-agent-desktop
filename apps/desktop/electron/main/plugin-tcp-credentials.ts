@@ -103,8 +103,8 @@ export async function resolveTcpCredential(
     return presetPlan(pluginId, slot, identity, request, port);
   }
 
-  const fields = await readFields(pluginId, ref.raw, port);
-  if (!hasStoredEndpoint(fields)) {
+  const fields = await readCredentialFields(pluginId, ref.raw, port);
+  if (!hasStoredUserEndpoint(fields)) {
     // The user left the custom server empty: this instance keeps the plugin's
     // preset path, including its manifest and scope checks.
     return presetPlan(pluginId, slot, identity, request, port, fields);
@@ -133,6 +133,30 @@ async function presetPlan(
   port: PluginCredentialHostPort,
   preloaded?: Record<string, unknown>,
 ): Promise<TcpCredentialPlan> {
+  const endpoint = authorizePresetTcpEndpoint(slot, request, true);
+  const fields =
+    preloaded ??
+    (await readCredentialFields(
+      pluginId,
+      identity.instanceId ? `${identity.slotId}#${identity.instanceId}` : identity.slotId,
+      port,
+    ));
+  return {
+    ...identity,
+    origin: "preset",
+    endpoint,
+    login: { ...credentialsOf(fields), protocol: "imap", security: "tls" },
+    scheme: "imaps",
+    proxy: readTcpProxy(fields, slot.userProxyTypes ?? []),
+  };
+}
+
+/** Authorize a literal manifest endpoint against the credential's scope. */
+export function authorizePresetTcpEndpoint(
+  slot: DeclaredSlot,
+  request: TcpCredentialRequest,
+  requireImplicitTls: boolean,
+): PluginTcpEndpoint {
   const host = request.endpoint?.host;
   const requestedPort = request.endpoint?.port;
   if (typeof host !== "string" || !Number.isInteger(requestedPort)) {
@@ -150,7 +174,7 @@ async function presetPlan(
       "TCP endpoint is not declared in manifest.net.tcp",
     );
   }
-  if (!endpoint.tls) {
+  if (requireImplicitTls && !endpoint.tls) {
     throw new PluginCredentialError("PERMISSION_DENIED", "IMAP authentication requires TLS");
   }
   const scope = parseNetDomains(slot.scope.domains);
@@ -160,25 +184,16 @@ async function presetPlan(
       "the credential slot does not admit this endpoint",
     );
   }
-  const fields =
-    preloaded ??
-    (await readFields(
-      pluginId,
-      identity.instanceId ? `${identity.slotId}#${identity.instanceId}` : identity.slotId,
-      port,
-    ));
-  return {
-    ...identity,
-    origin: "preset",
-    endpoint,
-    login: { ...credentialsOf(fields), protocol: "imap", security: "tls" },
-    scheme: "imaps",
-    proxy: readTcpProxy(fields, slot.userProxyTypes ?? []),
-  };
+  return endpoint;
 }
 
-/** Whether one stored instance carries its own mail server. */
-function hasStoredEndpoint(fields: Record<string, unknown>): boolean {
+/**
+ * Whether one stored instance carries its own mail server.
+ *
+ * Exported because the sending half asks the same question: an account that
+ * reads from a server it stores must not send through a manifest preset.
+ */
+export function hasStoredUserEndpoint(fields: Record<string, unknown>): boolean {
   return typeof fields.server === "string" && fields.server.trim().length > 0;
 }
 
@@ -195,8 +210,13 @@ function credentialsOf(fields: Record<string, unknown>): { username: string; pas
   return { username: fields.username, password: fields.password };
 }
 
-/** Read one slot through the host, with a credential-path refusal on failure. */
-async function readFields(
+/**
+ * Read one slot through the host, with a credential-path refusal on failure.
+ *
+ * Exported because the SMTP half resolves an account the same way: one store
+ * read, one refusal shape, everywhere a credential is used.
+ */
+export async function readCredentialFields(
   pluginId: string,
   rawRef: string,
   port: PluginCredentialHostPort,

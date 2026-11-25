@@ -106,6 +106,52 @@ export type PluginNetFetchResult = {
 };
 
 /**
+ * One `mail.send` call (`mail.send`). The host performs the whole SMTP session:
+ * it dials, logs in with the account's own password and delivers. The plugin
+ * never sees the password, the socket, or the server's own text — only which
+ * addresses were accepted and, when the server named one, the queue id.
+ */
+export type PluginMailSendInput = {
+  /**
+   * The account to send from: a declared `imap` slot, plus the instance when the
+   * slot holds several. The message goes out as that instance's own address and
+   * with its own password.
+   */
+  credential: { slot: string; instanceId?: string };
+  /**
+   * The outgoing server a manifest presets in `manifest.net.tcp`. A declared
+   * endpoint with `tls: false` is reached with STARTTLS and never in the clear.
+   * Omit it for an account that stores its own server (`userSend`); naming one
+   * there is `INVALID_ARGUMENT`.
+   */
+  endpoint?: { host: string; port: number };
+  /**
+   * Who the message is from and to. `from` must be the account's own address,
+   * and it must match the message's own `From:` header; `bcc` is delivered
+   * without a `Bcc:` header in the message.
+   */
+  envelope: {
+    from: string;
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+  };
+  /** The RFC 5322 message, exactly as it should arrive. */
+  mime: Uint8Array;
+  /** Give up after this long; the host caps it. */
+  timeoutMs?: number;
+};
+
+export type PluginMailSendResult = {
+  /** Addresses the server accepted for delivery. */
+  accepted: string[];
+  /** Addresses the server refused; the message was not retried with them. */
+  rejected: string[];
+  /** The queue id the server named for this message, when it named one. */
+  messageId?: string;
+};
+
+/**
  * Manifest id shape frozen by docs/spec/07-plugins/02-plugin-manifest-schema.md:
  * a lowercase dotted namespace such as `demo.hello` or `pi.browser`.
  */
@@ -1913,6 +1959,16 @@ export type PluginHostApi = {
     };
   };
   /**
+   * One message out through a mail account the user configured (`mail.send`).
+   * The host owns the whole session — endpoint, login, TLS, DATA and the
+   * delivery result — so no password, socket or server reply reaches this
+   * process. Bounded by the host: recipient count, message size and messages
+   * per hour, and the account has to be one the user filled in.
+   */
+  mail: {
+    send: (input: PluginMailSendInput) => Promise<PluginMailSendResult>;
+  };
+  /**
    * Declared credential slots (`credentials.use`). `list` answers status answer
    * only — whether the user filled a slot, plus the non-secret fields of a
    * multi-instance slot — because the host injects the value into the egress
@@ -2062,8 +2118,14 @@ export const PLUGIN_PERMISSIONS = [
   "net.tcp",
   // A host-owned webhook receiver. The host owns the listener and the token.
   "inbound.webhook",
-  // Writing a mail draft into the host's draft list. Sending is not offered.
+  // Writing a mail draft into the host's draft list. Drafting does not send;
+  // `mail.send` is the separate grant for that.
   "mail.draft",
+  // Sending one message through a mail account the user configured: the host
+  // dials, logs in and delivers, and the plugin sees only the outcome. The
+  // server is the one the manifest declares or the one the account stores, never
+  // one the plugin names for an account that has its own.
+  "mail.send",
   // Entries in the notification center, apart from the toast/native `notify`.
   "notify.center",
   // Plugin-owned timers (`contributes.schedules`), independent of scheduled
@@ -2134,6 +2196,9 @@ export const PLUGIN_PERMISSION_RISK = {
   "net.tcp": "high",
   "inbound.webhook": "high",
   "tasks.manage": "high",
+  // Sending spends the account's reputation and leaves the machine: a message
+  // that reaches a stranger cannot be recalled.
+  "mail.send": "high",
 
   // Medium — reads or writes something the user owns, but inside a bound the
   // host enforces, with no path to arbitrary code or arbitrary egress.

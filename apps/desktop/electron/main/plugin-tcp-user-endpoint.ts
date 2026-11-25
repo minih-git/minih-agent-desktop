@@ -111,6 +111,45 @@ export function assertRequestedEndpoint(
   }
 }
 
+/** One outgoing server the user typed for one account. */
+export type SendEndpoint = {
+  server: string;
+  port: number;
+  security: MailSecurity;
+};
+
+/**
+ * Read the outgoing server out of a resolved credential instance.
+ *
+ * `declared` is the manifest's `userSend.security`, used exactly like
+ * `userEndpoint.protocols` above: a stored transport the current manifest no
+ * longer declares is refused, because the user picked it under a declaration the
+ * plugin has since narrowed.
+ *
+ * A blank `sendServer` is not a failure: it means this account sends through the
+ * plugin's preset path instead, so the answer is `null` and the caller decides
+ * what that means (`MAIL_SEND_NOT_CONFIGURED`, unless it declared an endpoint).
+ */
+export function readSendEndpoint(
+  fields: Record<string, unknown>,
+  declared: readonly string[],
+): SendEndpoint | null {
+  const rawServer = typeof fields.sendServer === "string" ? fields.sendServer.trim() : "";
+  if (!rawServer) return null;
+  const unusable = () =>
+    new PluginCredentialError(
+      "CREDENTIAL_INVALID",
+      "the stored outgoing mail server of this account is not usable",
+    );
+  const server = rawServer.toLowerCase();
+  if (isIP(server) === 0 && !isHostname(server)) throw unusable();
+  const port = typeof fields.sendPort === "string" ? Number(fields.sendPort.trim()) : NaN;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw unusable();
+  const security = typeof fields.sendSecurity === "string" ? fields.sendSecurity.trim().toLowerCase() : "";
+  if (!declared.includes(security)) throw unusable();
+  return { server, port, security: security as MailSecurity };
+}
+
 function normalizeHost(raw: string): string {
   return raw.trim().toLowerCase().replace(/\.$/, "");
 }

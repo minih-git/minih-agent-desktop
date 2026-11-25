@@ -110,6 +110,27 @@ export type PluginTcpConnectionInfo = {
   state: "connecting" | "open" | "closing" | "closed";
 };
 
+/**
+ * A connection the host dials for itself.
+ *
+ * The SMTP session behind `mail.send` carries a password and the server's own
+ * replies, so the plugin must not see it. This connection spends that plugin's
+ * concurrency budget and dies with it — released, disabled, reloaded, crashed —
+ * exactly like a plugin-visible one, but nothing is forwarded and no handle is
+ * handed out: only host code holds `socket`, and `signal` aborts the moment the
+ * plugin goes away.
+ */
+export type PluginInternalConnection = {
+  /** The dialed, verified stream. Never exposed to a plugin. */
+  socket: Socket;
+  /** Aborted when the owning plugin is released, disabled or reloaded. */
+  signal: AbortSignal;
+  /** Account bytes the host writes; the host owns the stream, not the counter. */
+  sent: (bytes: number) => void;
+  /** Give the descriptor back; safe to call more than once. */
+  release: () => void;
+};
+
 export type PluginTcpDependencies = {
   /** One event per plugin; the runtime forwards it to that plugin's process. */
   onEvent: (pluginId: string, event: PluginTcpEvent) => void;
@@ -152,6 +173,13 @@ type Entry = {
   credentialBearing: boolean;
   /** Set when this account dials through its own proxy. */
   proxy: TcpProxy | null;
+  /**
+   * Set for a connection the host dials for itself (`acquireInternal`): it spends
+   * the plugin's budget and dies with it, but nothing is forwarded to the plugin
+   * and no `net:tcp:*` event is emitted. The controller is what tells the host
+   * session that the plugin went away.
+   */
+  internal: AbortController | null;
 };
 
 export class PluginTcpRegistry {
@@ -232,6 +260,7 @@ export class PluginTcpRegistry {
       starttls: false,
       credentialBearing: Boolean(request.imap ?? request.login),
       proxy: request.proxy ?? null,
+      internal: null,
     };
     const login = request.login;
     if (login || request.imap) {
@@ -272,6 +301,94 @@ export class PluginTcpRegistry {
       return {
         connectionId: entry.connectionId,
         ...(entry.credentialBearing ? { authenticated: true as const } : {}),
+      };
+    } catch (error) {
+      throw error instanceof PluginSocketError
+        ? error
+        : new PluginSocketError("CONNECT_FAILED", describe(error));
+    } finally {
+      if (entry.timer) {
+        clearTimeout(entry.timer);
+        entry.timer = null;
+      }
+      entry.settle = null;
+    }
+  }
+
+  /**
+   * Dial one connection for the host's own use.
+   *
+   * The quota, the deadline, the TLS rules and the proxy are the ones a
+   * plugin-visible connect has, because this connection costs the host the same
+   * descriptor. What it does not have is a plugin on the other end: no event is
+   * emitted, no `connectionId` is handed out, and the plugin cannot list or close
+   * it, so the traffic stays where the password already is.
+   */
+  async acquireInternal(request: {
+    pluginId: string;
+    endpoint: PluginTcpEndpoint;
+    /** The account's own proxy, when it has one; never a fallback dial. */
+    proxy?: TcpProxy | null;
+    timeoutMs?: number;
+  }): Promise<PluginInternalConnection> {
+    const { pluginId } = request;
+    if (typeof pluginId !== "string" || !pluginId.trim()) {
+      throw new PluginSocketError("INVALID_ARGUMENT", "pluginId is required");
+    }
+    const endpoint = parseEndpoint(request.endpoint);
+    const timeoutMs = parseTimeout(request.timeoutMs, this.defaultTimeoutMs);
+    if (this.countFor(pluginId) >= this.maxPerPlugin) {
+      throw new PluginSocketError(
+        "LIMIT_EXCEEDED",
+        `a plugin may hold at most ${this.maxPerPlugin} connections`,
+      );
+    }
+    const controller = new AbortController();
+    const entry: Entry = {
+      pluginId,
+      connectionId: `tcp-${this.nextId++}`,
+      endpoint,
+      socket: null,
+      state: "connecting",
+      settle: null,
+      opened: Promise.resolve(),
+      finalized: false,
+      timer: null,
+      graceTimer: null,
+      login: null,
+      starttls: false,
+      credentialBearing: false,
+      proxy: request.proxy ?? null,
+      internal: controller,
+    };
+    entry.opened = new Promise<void>((resolve, reject) => {
+      entry.settle = (error) => (error ? reject(error) : resolve());
+    });
+    // Registered before dialing, so a connect in flight spends the budget.
+    this.connections.set(entryKey(pluginId, entry.connectionId), entry);
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      this.abort(
+        entry,
+        new PluginSocketError(
+          "TIMEOUT",
+          `connection to ${endpoint.host}:${endpoint.port} timed out after ${timeoutMs}ms`,
+        ),
+      );
+    }, timeoutMs);
+    entry.timer.unref?.();
+    try {
+      this.dial(entry);
+      await entry.opened;
+      const socket = entry.socket;
+      if (!socket) {
+        throw new PluginSocketError("CONNECT_FAILED", "the connection closed before it opened");
+      }
+      return {
+        socket,
+        signal: controller.signal,
+        sent: (bytes: number) => this.count(entry, 0, bytes),
+        release: () => this.release(entry, "the host released the connection"),
       };
     } catch (error) {
       throw error instanceof PluginSocketError
@@ -351,7 +468,9 @@ export class PluginTcpRegistry {
   /** Connections this plugin currently holds, in creation order. */
   list(pluginId: string): PluginTcpConnectionInfo[] {
     return [...this.connections.values()]
-      .filter((entry) => entry.pluginId === pluginId)
+      // A host-internal connection is the host's own traffic; the plugin that
+      // pays for it cannot see or name it.
+      .filter((entry) => entry.pluginId === pluginId && !entry.internal)
       .map((entry) => ({
         connectionId: entry.connectionId,
         host: entry.endpoint.host,
@@ -530,7 +649,13 @@ export class PluginTcpRegistry {
   /** Route one socket's traffic to this connection; the caller owns the socket. */
   private watch(entry: Entry, socket: Socket): void {
     socket.setNoDelay(true);
-    socket.on("data", (chunk: Buffer) => this.receive(entry, chunk));
+    if (entry.internal) {
+      // The host reads this stream itself. The counter still sees the traffic, so
+      // a host-performed session is accounted like any other.
+      socket.on("data", (chunk: Buffer) => this.count(entry, chunk.byteLength, 0));
+    } else {
+      socket.on("data", (chunk: Buffer) => this.receive(entry, chunk));
+    }
     socket.on("error", (error: Error) => this.failed(entry, error));
     socket.on("close", (hadError: boolean) => this.finalize(entry, hadError));
   }
@@ -593,6 +718,8 @@ export class PluginTcpRegistry {
     entry.login = null;
     entry.state = "open";
     this.decide(entry, null);
+    // A host-internal connection has no plugin on the other end to tell.
+    if (entry.internal) return;
     this.deps.onEvent(entry.pluginId, { type: "open", connectionId: entry.connectionId });
   }
 
@@ -649,12 +776,16 @@ export class PluginTcpRegistry {
         ),
       );
     }
-    this.deps.onEvent(entry.pluginId, {
-      type: "error",
-      connectionId: entry.connectionId,
-      code: pluginCode,
-      message: entry.credentialBearing ? connectionMessage(pluginCode) : error.message,
-    });
+    // A host-internal session has no plugin listening; its failure reaches the
+    // caller through the session (`signal`), not through an event.
+    if (!entry.internal) {
+      this.deps.onEvent(entry.pluginId, {
+        type: "error",
+        connectionId: entry.connectionId,
+        code: pluginCode,
+        message: entry.credentialBearing ? connectionMessage(pluginCode) : error.message,
+      });
+    }
     // A socket-level error is always fatal for this connection.
     entry.socket?.destroy();
   }
@@ -704,17 +835,22 @@ export class PluginTcpRegistry {
         `the connection to ${entry.endpoint.host}:${entry.endpoint.port} closed before it opened`,
       ),
     );
-    this.deps.onEvent(entry.pluginId, {
-      type: "close",
-      connectionId: entry.connectionId,
-      hadError,
-    });
+    if (!entry.internal) {
+      this.deps.onEvent(entry.pluginId, {
+        type: "close",
+        connectionId: entry.connectionId,
+        hadError,
+      });
+    }
     this.flushInBackground();
   }
 
   /** Idempotent: the entry stops counting once the socket is really gone. */
   private detach(entry: Entry): void {
     this.connections.delete(entryKey(entry.pluginId, entry.connectionId));
+    // The host session this connection serves learns here that its plugin is
+    // gone: disabled, reloaded, crashed, or the connection ended underneath it.
+    entry.internal?.abort();
     if (entry.timer) {
       clearTimeout(entry.timer);
       entry.timer = null;
@@ -731,7 +867,9 @@ export class PluginTcpRegistry {
    */
   private require(pluginId: string, connectionId: string): Entry {
     const entry = this.connections.get(entryKey(pluginId, connectionId));
-    if (!entry || entry.state === "closing") {
+    // A host-internal connection is never addressable by the plugin whose budget
+    // it spends, so an id this plugin did not get from `connect` is NOT_FOUND.
+    if (!entry || entry.state === "closing" || entry.internal) {
       throw new PluginSocketError(
         "NOT_FOUND",
         `no open connection for this plugin: ${connectionId}`,

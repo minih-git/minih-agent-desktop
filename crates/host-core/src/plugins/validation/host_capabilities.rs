@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use super::labels::is_plugin_label;
 use super::{array_of, is_contrib_id, require_permission, PluginManifest};
 
-use crate::plugins::{user_endpoint, user_proxy};
+use crate::plugins::{user_endpoint, user_proxy, user_send};
 
 /// Hard ceiling on how many instances one credential slot may hold, mirroring
 /// `MAX_INSTANCES` in `plugins/credentials.rs` and `MAX_CREDENTIAL_INSTANCES` in
@@ -123,6 +123,7 @@ fn validate_credentials(map: &Map<String, Value>, manifest: &PluginManifest) -> 
         validate_label_field(id, obj.get("labelField"), fields)?;
         validate_user_endpoint(id, kind, obj.get("userEndpoint"), &keys)?;
         validate_user_proxy(id, kind, obj.get("userProxy"), &keys)?;
+        validate_user_send(id, kind, obj.get("userSend"), &keys)?;
         if let Some(scope) = obj.get("scope") {
             let scope = scope.as_object().ok_or_else(|| {
                 anyhow!("PLUGIN_INVALID: credential {id} scope must be an object")
@@ -644,6 +645,71 @@ fn validate_user_proxy(
         .find(|key| user_proxy::RESERVED_KEYS.contains(key))
     {
         bail!("PLUGIN_INVALID: credential {id} field {key} is reserved for the mail proxy");
+    }
+    Ok(())
+}
+
+/// `contributes.credentials[].userSend`: a mailbox slot may let the user name
+/// the server their mail is sent through.
+///
+/// The declaration names the transports the form may offer — implicit TLS, an
+/// agreed upgrade, or both — and nothing else: where the server is and which
+/// port it listens on is decided per account at save time by the host
+/// (`user_send::from_fields`), never by the manifest.
+///
+/// As with `userEndpoint`, only an `imap` slot may declare it, and the three
+/// keys the host reserves for it stay out of the plugin's own field list: a
+/// field of that key would let a plugin-authored form choose where its own
+/// message leaves from.
+fn validate_user_send(
+    id: &str,
+    kind: &str,
+    raw: Option<&Value>,
+    field_keys: &[&str],
+) -> Result<()> {
+    let Some(raw) = raw else {
+        return Ok(());
+    };
+    if kind != "imap" {
+        bail!(
+            "PLUGIN_INVALID: credential {id} declares userSend with kind {kind}; only an imap slot accepts an outgoing mail server"
+        );
+    }
+    let obj = raw
+        .as_object()
+        .ok_or_else(|| anyhow!("PLUGIN_INVALID: credential {id} userSend must be an object"))?;
+    if let Some(unknown) = obj.keys().find(|key| key.as_str() != "security") {
+        bail!("PLUGIN_INVALID: credential {id} userSend has an unsupported key {unknown}");
+    }
+    let securities = match obj.get("security") {
+        Some(value) => array_of(value, "credential userSend.security")?,
+        None => &[],
+    };
+    if securities.is_empty() {
+        bail!("PLUGIN_INVALID: credential {id} userSend needs at least one security");
+    }
+    let mut seen: Vec<String> = Vec::new();
+    for security in securities {
+        let value = security
+            .as_str()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .filter(|value| user_endpoint::SECURITIES.contains(&value.as_str()))
+            .ok_or_else(|| {
+                anyhow!("PLUGIN_INVALID: credential {id} userSend security must be tls or starttls")
+            })?;
+        if seen.contains(&value) {
+            bail!("PLUGIN_INVALID: credential {id} userSend lists {value} twice");
+        }
+        seen.push(value);
+    }
+    if let Some(key) = field_keys
+        .iter()
+        .find(|key| user_send::RESERVED_KEYS.contains(key))
+    {
+        bail!(
+            "PLUGIN_INVALID: credential {id} field {key} is reserved for the outgoing mail server"
+        );
     }
     Ok(())
 }

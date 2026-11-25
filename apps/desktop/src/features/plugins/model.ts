@@ -98,6 +98,8 @@ export const PERMISSION_RISK: Record<string, RiskTier> = {
   "net.tcp": "high",
   "inbound.webhook": "high",
   "tasks.manage": "high",
+  // Sending spends the account's reputation and a message cannot be recalled.
+  "mail.send": "high",
   "audio.playback.background": "medium",
   "keyboard.globalShortcut": "medium",
   "bus.publish": "medium",

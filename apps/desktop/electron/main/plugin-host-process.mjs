@@ -464,6 +464,15 @@ function buildApi() {
       getReceivers: () => call("inbound.getReceivers"),
     },
     /**
+     * Sending (`mail.send`). The host performs the whole SMTP session: it dials,
+     * logs in with the account's own password and delivers. This process names an
+     * account and a message and learns which addresses were accepted — never a
+     * password, a socket, or the server's own text.
+     */
+    mail: {
+      send: (input) => call("mail.send", [input ?? {}]),
+    },
+    /**
      * Declared credential slots (`credentials.use`). Status only: the host
      * injects the value into the request a `credentialRef` names, so nothing
      * here can return a secret to this process.

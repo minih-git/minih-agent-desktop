@@ -31,6 +31,8 @@ export const HIGH_RISK_PERMISSIONS = [
   "net.tcp",
   "credentials.use",
   "inbound.webhook",
+  // Sending leaves the machine and cannot be recalled (ADR plugin-host-capabilities).
+  "mail.send",
   "fs.write",
   "fs.delete",
   "fs.write.workspace",
@@ -121,6 +123,8 @@ export const PERMISSION_API_HINTS: Record<string, string[]> = {
   // warning-free. The two dialog calls are here so the host-process API surface
   // test probes them the way it probes every other capability.
   "credentials.use": ["credentials.list", "credentials.requestAdd", "credentials.requestRemove"],
+  // The whole session is one call: the host dials, logs in and delivers.
+  "mail.send": ["mail.send"],
   "browser.cdp": [
     "browser.navigate",
     "browser.snapshot",

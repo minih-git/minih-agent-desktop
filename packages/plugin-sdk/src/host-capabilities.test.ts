@@ -16,12 +16,13 @@ import {
 
 const base = { schemaVersion: 1, id: "demo.x", name: "X", version: "0.1.0", main: "main.js" };
 
-/** The eight host capabilities registered by B-0. */
+/** The host capability permissions registered so far, in declaration order. */
 const HOST_CAPABILITY_PERMISSIONS = [
   "credentials.use",
   "net.tcp",
   "inbound.webhook",
   "mail.draft",
+  "mail.send",
   "notify.center",
   "scheduler",
   "tasks.read",
@@ -53,6 +54,8 @@ describe("host capability permissions", () => {
     expect(pluginPermissionRisk("net.tcp")).toBe("high");
     expect(pluginPermissionRisk("inbound.webhook")).toBe("high");
     expect(pluginPermissionRisk("tasks.manage")).toBe("high");
+    // Sending spends the account's reputation; a message cannot be recalled.
+    expect(pluginPermissionRisk("mail.send")).toBe("high");
     expect(pluginPermissionRisk("mail.draft")).toBe("medium");
     expect(pluginPermissionRisk("notify.center")).toBe("medium");
     expect(pluginPermissionRisk("scheduler")).toBe("medium");
@@ -253,6 +256,53 @@ describe("contributes.credentials: userEndpoint", () => {
     ];
     expect(validateCredentialContributions([imap({ fields })])).toMatch(
       /field server is reserved for the user-typed mail server/,
+    );
+  });
+});
+
+describe("contributes.credentials: userSend", () => {
+  const imap = (overrides: Record<string, unknown> = {}) =>
+    slot({ kind: "imap", userSend: { security: ["tls", "starttls"] }, ...overrides });
+
+  it("accepts an imap slot that lets the user name an outgoing server", () => {
+    expect(validateCredentialContributions([imap()])).toBe(undefined);
+    // Sending through a user-typed server does not require receiving from one.
+    expect(validateCredentialContributions([imap({ userEndpoint: undefined })])).toBe(undefined);
+  });
+
+  it("refuses userSend on any other kind", () => {
+    expect(validateCredentialContributions([slot({ userSend: { security: ["tls"] } })])).toMatch(
+      /only an imap slot/,
+    );
+  });
+
+  it("needs at least one transport, and only protected ones", () => {
+    expect(validateCredentialContributions([imap({ userSend: { security: [] } })])).toMatch(
+      /at least one security/,
+    );
+    expect(validateCredentialContributions([imap({ userSend: { security: ["plain"] } })])).toMatch(
+      /tls or starttls/,
+    );
+    expect(
+      validateCredentialContributions([imap({ userSend: { security: ["tls", "tls"] } })]),
+    ).toMatch(/lists tls twice/);
+    expect(
+      validateCredentialContributions([
+        imap({ userSend: { security: ["tls"], host: "smtp.example.com" } }),
+      ]),
+    ).toMatch(/unsupported key host/);
+    expect(validateCredentialContributions([imap({ userSend: "yes" })])).toMatch(
+      /userSend must be an object/,
+    );
+  });
+
+  it("refuses a declared field that collides with a reserved key", () => {
+    const fields = [
+      { key: "username", label: "User" },
+      { key: "sendPort", label: "Outgoing port" },
+    ];
+    expect(validateCredentialContributions([imap({ fields })])).toMatch(
+      /field sendPort is reserved for the outgoing mail server/,
     );
   });
 });
