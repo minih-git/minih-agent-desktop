@@ -14,7 +14,9 @@
  * id channel.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { register } from "node:module";
 import test from "node:test";
 
@@ -44,8 +46,15 @@ function jsonResponse(body, status = 200) {
 }
 
 /** Register the real handlers against one row and one served model list. */
-async function handlersFor(t, row, body) {
-  const catalog = new ModelsDevCatalog({ catalogPath });
+async function handlersFor(t, row, body, snapshot) {
+  let fixturePath = catalogPath;
+  if (snapshot) {
+    const directory = mkdtempSync(join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "provider-catalog-"));
+    fixturePath = join(directory, "api.json");
+    writeFileSync(fixturePath, JSON.stringify(snapshot));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+  }
+  const catalog = new ModelsDevCatalog({ catalogPath: fixturePath });
   assert.equal(await catalog.ensureLoaded(), true, "the bundled snapshot must load");
 
   const original = globalThis.fetch;
@@ -199,6 +208,20 @@ test("a relay enriches official IDs, strips safe deployment labels, and preserve
     stripped as a fallback; semantic variants and release dates stay distinct.
   */
   const row = rowOf({ id: "row-4", name: "Relay", baseUrl: "https://relay.example/v1" });
+  // Pin this rule's official publisher: refreshed snapshots can remove older
+  // models, leaving reseller records with deliberately conflicting limits.
+  const snapshot = structuredClone(publishedSnapshot);
+  snapshot.xiaomi.models["mimo-v2.5-pro"] = {
+    id: "mimo-v2.5-pro", name: "MiMo fixture", family: "mimo",
+    tool_call: true, reasoning: true,
+    modalities: { input: ["text"], output: ["text"] },
+    limit: { context: 1_048_576, output: 131_072 },
+  };
+  snapshot.xiaomi.models["mimo-v2.5-tts"] = {
+    id: "mimo-v2.5-tts", name: "MiMo speech fixture", family: "mimo",
+    modalities: { input: ["text"], output: ["audio"] },
+    limit: { context: 8_192, output: 8_192 },
+  };
   const { result } = await handlersFor(t, row, {
     data: [
       { id: "deepseek-v4-flash" },
@@ -208,7 +231,7 @@ test("a relay enriches official IDs, strips safe deployment labels, and preserve
       { id: "gemini-2.5-pro-1m" },
       { id: "claude-sonnet-4-5" },
     ],
-  });
+  }, snapshot);
 
   const byId = new Map(result.models.map((model) => [model.modelId, model]));
 
@@ -228,7 +251,7 @@ test("a relay enriches official IDs, strips safe deployment labels, and preserve
     assert.equal(mimo.maxTokens, 131_072);
   }
 
-  // Matching Xiaomi reseller records agree on the published speech limits.
+  // The pinned official speech record supplies audio capabilities and limits.
   const tts = byId.get("mimo-v2.5-tts");
   assert.equal(tts.source, "discovered");
   assert.equal(tts.catalogSource, "models.dev");
