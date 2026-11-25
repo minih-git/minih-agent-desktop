@@ -218,11 +218,13 @@ import {
   normalizeMode,
   normalizeNetworkProxy,
   normalizeNetworkPolicy,
+  normalizeBrowserProxyRouting,
   resolveFontScale,
   normalizeChatContentMaxWidth,
   validateEasyTierSettings,
   validateNetworkPolicy,
   validateNetworkProxy,
+  validateBrowserProxyRouting,
   validateSpeechSettings,
   JEV_API_KEY_SECRET_REF,
 } from "@minih-agent/shared";
@@ -517,6 +519,9 @@ export function normalizeSettings(settings: AppSettings): AppSettings {
     networkProxy: normalizeNetworkProxy(
       (settings as { networkProxy?: unknown }).networkProxy,
     ),
+    browserProxyRouting: normalizeBrowserProxyRouting(
+      (settings as { browserProxyRouting?: unknown }).browserProxyRouting,
+    ),
     networkPolicy: normalizeNetworkPolicy(
       (settings as { networkPolicy?: unknown }).networkPolicy,
     ),
@@ -654,6 +659,15 @@ export function validateSettingsWrite(settings: AppSettings): AppSettings {
       });
     }
     value.networkProxy = proxy.value;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "browserProxyRouting")) {
+    const routing = validateBrowserProxyRouting(value.browserProxyRouting);
+    if (!routing.ok) {
+      throw Object.assign(new Error(routing.issue.message), {
+        errorCode: "INVALID_ARGUMENT",
+      });
+    }
+    value.browserProxyRouting = routing.value;
   }
   if (Object.prototype.hasOwnProperty.call(value, "networkPolicy")) {
     const policy = validateNetworkPolicy(value.networkPolicy);

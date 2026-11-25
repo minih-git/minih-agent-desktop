@@ -274,9 +274,16 @@ export function resolveCustomProxyUrl(
   return { url: savedUrl ?? DEFAULT_CUSTOM_PROXY_URL, fromDraft: false };
 }
 
+/**
+ * Chromium proxy config for one session.
+ *
+ * The PAC variant is per-session (ADR 0342): only the built-in browser gets
+ * one, and the global `networkProxy` setting never compiles to a PAC script.
+ */
 export type ChromiumProxyConfig =
   | { mode: "system" }
   | { mode: "direct" }
+  | { mode: "pac_script"; pacScript: string }
   | { proxyRules: string; proxyBypassRules: string };
 
 export function chromiumProxyConfig(

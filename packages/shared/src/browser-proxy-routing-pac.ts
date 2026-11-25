@@ -1,0 +1,173 @@
+/**
+ * PAC compilation for the built-in browser's proxy routing (ADR 0342).
+ *
+ * Chromium decides a session's route through `FindProxyForURL`. This module
+ * turns a routing table into that script — ordered rules first (explicit
+ * intent wins), then the loopback/private bypass, then the default exit — and
+ * wraps it in the `data:` URL `session.setProxy` accepts.
+ *
+ * The generated script is ES5 on purpose: it runs inside Chromium's PAC
+ * sandbox, where `isInNet` and `isInNetEx` exist but nothing else may be
+ * assumed.
+ */
+import {
+  BROWSER_PROXY_DIRECT,
+  BROWSER_PROXY_LOCAL_NETWORKS,
+  type BrowserProxyRouting,
+} from "./browser-proxy-routing.js";
+import {
+  hostWildcardRegExpSource,
+  ipv4Mask,
+  maskedNetwork,
+  parseCidr,
+  safeRegExp,
+  urlWildcardRegExpSource,
+} from "./browser-proxy-pattern.js";
+
+const DEFAULT_PROXY_PORTS: Record<string, number> = {
+  http: 80,
+  https: 443,
+  socks: 1080,
+  socks4: 1080,
+  socks4a: 1080,
+  socks5: 1080,
+  socks5h: 1080,
+};
+
+/**
+ * PAC result string for one proxy: `PROXY`, `HTTPS` or `SOCKS5` plus
+ * `host:port`. Userinfo is dropped — a PAC result cannot carry credentials, so
+ * credentialed proxies reach Chromium through a loopback relay (ADR 0177).
+ */
+export function pacProxyDirective(proxy: {
+  scheme: string;
+  host: string;
+  port: number | null;
+  isSocks: boolean;
+}): string {
+  const host =
+    proxy.host.includes(":") && !proxy.host.startsWith("[")
+      ? `[${proxy.host}]`
+      : proxy.host;
+  const port = proxy.port ?? DEFAULT_PROXY_PORTS[proxy.scheme] ?? 80;
+  const address = `${host}:${port}`;
+  if (proxy.isSocks) return `SOCKS5 ${address}`;
+  if (proxy.scheme === "https") return `HTTPS ${address}`;
+  return `PROXY ${address}`;
+}
+
+export type BrowserProxyPacEndpoints = Record<string, string>;
+
+/**
+ * Compile the routing table into a PAC script.
+ *
+ * `endpoints` maps every referenced profile id to its PAC result string; a
+ * missing entry is a programming error, not a directive to fall back, because
+ * silently sending traffic direct is exactly what the user did not ask for.
+ */
+export function compileBrowserProxyPac(
+  routing: BrowserProxyRouting,
+  endpoints: BrowserProxyPacEndpoints,
+): string {
+  const endpointFor = (target: string): string => {
+    if (target === BROWSER_PROXY_DIRECT) return "DIRECT";
+    const directive = endpoints[target];
+    if (!directive) {
+      throw new Error(`browser proxy routing has no endpoint for '${target}'`);
+    }
+    return directive;
+  };
+
+  const regexps: string[] = [];
+  const lines: string[] = [];
+  for (const rule of routing.rules) {
+    const directive = JSON.stringify(endpointFor(rule.target));
+    if (rule.kind === "ip-cidr") {
+      const cidr = parseCidr(rule.pattern);
+      if (!cidr) continue;
+      const network = JSON.stringify(maskedNetwork(cidr));
+      if (cidr.network.family === 4) {
+        const mask = JSON.stringify(ipv4Mask(cidr.prefix));
+        lines.push(
+          `  if (_isIpv4(h) && isInNet(h, ${network}, ${mask})) return ${directive};`,
+        );
+      } else {
+        const prefix = JSON.stringify(`${maskedNetwork(cidr)}/${cidr.prefix}`);
+        lines.push(
+          `  if (h.indexOf(":") >= 0 && typeof isInNetEx === "function" && isInNetEx(h, ${prefix})) return ${directive};`,
+        );
+      }
+      continue;
+    }
+    const source =
+      rule.kind === "host-wildcard"
+        ? hostWildcardRegExpSource(rule.pattern)
+        : rule.kind === "url-wildcard"
+          ? urlWildcardRegExpSource(rule.pattern)
+          : rule.pattern;
+    if (source === null) continue;
+    if (rule.kind === "host-regex" && !safeRegExp(rule.pattern, "i")) continue;
+    if (rule.kind === "url-regex" && !safeRegExp(rule.pattern, "")) continue;
+    const hostSubject = rule.kind === "host-wildcard" || rule.kind === "host-regex";
+    const flags = JSON.stringify(hostSubject ? "i" : "");
+    const index = regexps.length;
+    regexps.push(`new RegExp(${JSON.stringify(source)}, ${flags})`);
+    lines.push(
+      `  if (_re[${index}].test(${hostSubject ? "h" : "url"})) return ${directive};`,
+    );
+  }
+
+  const defaultDirective = JSON.stringify(endpointFor(routing.defaultTarget));
+  // Chromium's PAC sandbox ships `isInNet` and `isInNetEx`; a sandbox without
+  // them keeps the local ranges on the proxy rather than throwing.
+  const localNetworks = BROWSER_PROXY_LOCAL_NETWORKS.map((network) => {
+    const cidr = parseCidr(network);
+    if (!cidr) throw new Error(`invalid built-in network '${network}'`);
+    if (cidr.network.family === 4) {
+      const value = JSON.stringify(maskedNetwork(cidr));
+      const mask = JSON.stringify(ipv4Mask(cidr.prefix));
+      return `(typeof isInNet === "function" && isInNet(host, ${value}, ${mask}))`;
+    }
+    const prefix = JSON.stringify(`${maskedNetwork(cidr)}/${cidr.prefix}`);
+    return `(typeof isInNetEx === "function" && isInNetEx(host, ${prefix}))`;
+  });
+
+  return [
+    "// Generated by Minih-Agent-Desktop for the work-panel browser (ADR 0342).",
+    "// Ordered: the first matching rule wins, then loopback/private hosts, then the default exit.",
+    `var _re = [${regexps.length ? `\n${regexps.map((value) => `  ${value}`).join(",\n")}\n` : ""}];`,
+    "function _host(value) {",
+    '  var host = String(value).toLowerCase();',
+    '  if (host.charAt(0) === "[" && host.charAt(host.length - 1) === "]") {',
+    "    host = host.substring(1, host.length - 1);",
+    "  }",
+    "  return host;",
+    "}",
+    'function _isIpv4(host) { return /^\\d{1,3}(\\.\\d{1,3}){3}$/.test(host); }',
+    "function _isLocal(host) {",
+    '  if (host === "localhost" || host === "::1") return true;',
+    '  if (host.indexOf(".") < 0) return true;',
+    "  if (!_isIpv4(host)) return false;",
+    `  return ${localNetworks.join(" ||\n    ")};`,
+    "}",
+    "function FindProxyForURL(url, host) {",
+    "  var h = _host(host);",
+    ...(lines.length ? lines : ["  // no rules configured"]),
+    '  if (_isLocal(h)) return "DIRECT";',
+    `  return ${defaultDirective};`,
+    "}",
+    "",
+  ].join("\n");
+}
+
+/**
+ * `data:` PAC URL, base64 encoded so no decoder mangles the source. Chromium
+ * accepts these for `setProxy`, so the routing table needs no local HTTP
+ * server, no listening port, and no file on disk.
+ */
+export function pacScriptDataUrl(source: string): string {
+  const bytes = new TextEncoder().encode(source);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `data:application/x-ns-proxy-autoconfig;base64,${btoa(binary)}`;
+}

@@ -28,6 +28,12 @@ import {
 } from "@minih-agent/agent-runtime";
 import { applyUserEndpointPolicyFromAppSettings } from "./endpoint-policy";
 import {
+  activeWorkBrowserProxyConfig,
+  configureBrowserProxyRouting,
+  isWorkBrowserSession,
+  WORK_BROWSER_PARTITION,
+} from "./browser-proxy-routing";
+import {
   startSystemProxyRelay,
   type SystemProxyRelay,
 } from "@minih-agent/agent-runtime/system-proxy-relay";
@@ -143,13 +149,32 @@ export async function applyNetworkProxy(
 export async function applyNetworkProxyFromAppSettings(
   settings: unknown,
 ): Promise<NetworkProxySettings> {
-  // The network policy and the proxy ride the same settings write, so one call
-  // site mirrors both.
+  // The network policy, the proxy, and the built-in browser's routing ride the
+  // same settings write, so one call site mirrors all three.
   applyUserEndpointPolicyFromAppSettings(settings);
   const record =
     settings && typeof settings === "object"
-      ? (settings as { networkProxy?: unknown })
+      ? (settings as { networkProxy?: unknown; browserProxyRouting?: unknown })
       : {};
+  // Routing owns the work-browser session, so settle it before the global
+  // pass: enabling installs the PAC that pass then preserves, and disabling
+  // lets the global config land on that session again. A write that does not
+  // carry the section at all keeps what is in force — settings writes are
+  // patches, and the startup fallback carries only `mode`.
+  if ("browserProxyRouting" in record) {
+    try {
+      await configureBrowserProxyRouting(record.browserProxyRouting);
+    } catch (error) {
+      // The write already landed. Keep the browser on the global proxy rather
+      // than on rules whose relays could not start, and say why.
+      process.stderr.write(
+        `[browser-proxy-routing] apply failed: ${
+          error instanceof Error ? error.name : "unknown error"
+        }\n`,
+      );
+      await configureBrowserProxyRouting({ enabled: false });
+    }
+  }
   return applyNetworkProxy(record.networkProxy ?? { mode: "system" });
 }
 
@@ -181,7 +206,7 @@ function installMainFetch(): void {
 async function applyResolvedConfig(config: ChromiumProxyConfig): Promise<void> {
   await applyToSession(session.defaultSession, config);
   try {
-    await applyToSession(session.fromPartition("persist:work-browser"), config);
+    await applyToSession(session.fromPartition(WORK_BROWSER_PARTITION), config);
   } catch {
     // Partition may not exist yet; session-created will catch it.
   }
@@ -213,7 +238,13 @@ async function applyToSession(
   ses: Session,
   config: ChromiumProxyConfig,
 ): Promise<void> {
-  await ses.setProxy(config);
+  // The built-in browser follows its own per-address routing when that is
+  // enabled, so a global pass (or the session-created hook) must not overwrite
+  // it (ADR 0342). Every other session keeps taking `config`.
+  const routed = isWorkBrowserSession(ses)
+    ? activeWorkBrowserProxyConfig()
+    : null;
+  await ses.setProxy(routed ?? config);
 }
 
 type ResolvedChromiumProxy = {

@@ -190,6 +190,22 @@ to appearance.
     decides what applies, and the values come back with Custom instead of the
     built-in `socks5://127.0.0.1:1080` (issue #1541). Nothing applies them
     while another mode is selected.
+  - **Built-in browser routing**: one switch persisting as
+    `AppSettings.browserProxyRouting.enabled` (**off** when absent) with a
+    proxy list (name + URL), an ordered rule list (match type, pattern, exit),
+    and a default exit. On, the work-panel and Agent browser pick an exit per
+    address — company proxy for the intranet, personal proxy for the rest,
+    straight out for local services — and no longer follow the Proxy control
+    above; model calls, the marketplace, updates, and plugin panels keep
+    following it (ADR 0342). Match types are host wildcard (`*.corp.example`,
+    `**.corp.example` for subdomains only, `.corp.example` as `*.`), URL
+    wildcard, host/URL regular expression, and IP range. Rules evaluate top to
+    bottom with the first hit winning; loopback and private addresses stay
+    direct unless a rule names them. Each row can be added, edited, reordered,
+    and deleted, and a Test field shows which exit a given URL would take. An
+    unusable table — an unparsable regular expression, an address without a
+    range prefix, or a rule pointing at a deleted proxy — is refused with the
+    rule named, and never half-applied.
   - **Relaxed network mode**: one switch persisting as
     `AppSettings.networkPolicy.mode` (`relaxed` | `strict`), **on by default**.
     When it is on, an endpoint the user typed themselves — a model base URL, an

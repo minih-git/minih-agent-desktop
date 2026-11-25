@@ -3,6 +3,7 @@ import type { CommandShellId } from "../command-shells.js";
 import type { KeybindingOverrides } from "../keyboard-shortcuts.js";
 import type { NetworkPolicySettings } from "../network-policy.js";
 import type { NetworkProxySettings } from "../network-proxy.js";
+import type { BrowserProxyRouting } from "../browser-proxy-routing.js";
 import type { Mode } from "./common.js";
 import type { LiveVoiceSettings } from "./live-voice.js";
 import type { SessionThinkingLevel, ThinkingLevel } from "./models.js";
@@ -253,6 +254,13 @@ export type AppSettings = {
    * is set. See `network-proxy.ts`.
    */
   networkProxy?: NetworkProxySettings;
+  /**
+   * Per-address proxy routing for the built-in browser (ADR 0342). Absent or
+   * disabled keeps `persist:work-browser` on `networkProxy`; enabled compiles
+   * the ordered rules into a PAC script for that session only. Model calls,
+   * the sidecar, host-core, updates, and plugin panels never read it.
+   */
+  browserProxyRouting?: BrowserProxyRouting;
   /**
    * Trust policy for the network endpoints the user enters themselves: how a
    * user-supplied model base URL, MCP server, or market source is judged.

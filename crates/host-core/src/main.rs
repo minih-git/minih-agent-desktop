@@ -3,6 +3,7 @@ mod agent_capabilities;
 mod artifacts;
 mod audit;
 mod background_tasks;
+mod browser_proxy_routing;
 mod cli;
 mod config_sync;
 mod conversation_archive;
