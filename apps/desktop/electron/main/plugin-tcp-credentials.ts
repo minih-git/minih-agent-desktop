@@ -33,6 +33,7 @@ import {
   endpointScheme,
   readUserEndpoint,
 } from "./plugin-tcp-user-endpoint";
+import { readTcpProxy, type TcpProxy } from "./plugin-tcp-proxy";
 
 /** What one `net.tcp.connect` asks a credential for. */
 export type TcpCredentialRequest = {
@@ -50,6 +51,8 @@ export type TcpCredentialPlan = {
   origin: "preset" | "userEndpoint";
   /** Where to dial: the manifest endpoint, or the one the user stored. */
   endpoint: PluginTcpEndpoint;
+  /** The proxy this account dials through, or `null` for a direct dial. */
+  proxy: TcpProxy | null;
   /** The login the host performs before the plugin sees the socket. */
   login: PluginTcpLogin;
   /** Audit scheme: `imaps`, `imap+starttls`, `pop3s`, `pop3+starttls`. */
@@ -115,6 +118,9 @@ export async function resolveTcpCredential(
     endpoint: dialTarget(stored),
     login: { ...credentials, protocol: stored.protocol, security: stored.security },
     scheme: endpointScheme(stored.protocol, stored.security),
+    // The proxy belongs to the same instance as the password, so it is read
+    // from the same map and nowhere else.
+    proxy: readTcpProxy(fields, slot.userProxyTypes ?? []),
   };
 }
 
@@ -167,6 +173,7 @@ async function presetPlan(
     endpoint,
     login: { ...credentialsOf(fields), protocol: "imap", security: "tls" },
     scheme: "imaps",
+    proxy: readTcpProxy(fields, slot.userProxyTypes ?? []),
   };
 }
 

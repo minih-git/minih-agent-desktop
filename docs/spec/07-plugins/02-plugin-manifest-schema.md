@@ -998,3 +998,51 @@ never passed through (D018).
 - A future `schemaVersion: 2` needs a migrator
 - The host should reject a too-high major version
 - Unknown optional fields may be ignored; unknown required permissions must fail
+
+### 5.5.3 A per-account proxy (`userProxy`)
+
+An `imap` slot may declare
+
+```ts
+userProxy?: { types: Array<"http" | "socks5"> }
+```
+
+non-empty and without duplicates; any other type, an empty list, an unknown key
+inside the object, or a declared field of a reserved key is refused at install.
+
+It is a **top-level** slot key, deliberately not a member of `userEndpoint`: the
+two are independent, so a preset-provider account (Gmail and friends) can use a
+proxy without a custom server, and a self-hosted account can use either, both, or
+neither. A 1.10.0 host ignores an unknown top-level slot key, which is what lets
+a manifest that declares `userProxy` still install there — simply without a
+proxy.
+
+The host reserves five field keys for the slot:
+
+| Key | Meaning | Published to the plugin |
+| --- | --- | --- |
+| `proxyType` | `""` for a direct connection, otherwise a declared type | yes |
+| `proxyHost` | bare hostname or IP literal of the proxy | yes |
+| `proxyPort` | decimal port, 1..65535 | yes |
+| `proxyUsername` | optional proxy login name | no |
+| `proxyPassword` | optional proxy login secret | no |
+
+A plugin may not declare a field with any of those keys (install refusal): its
+own form would otherwise decide how, and through where, a stored password
+leaves the machine.
+
+The values are validated by the host at save time, not by the form:
+
+* a blank `proxyType` means "no proxy" — the other four keys are dropped rather
+  than stored, so an untouched form posts exactly what it rendered;
+* a chosen type needs a type this slot declares, a usable host and port;
+* loopback and private/LAN addresses are allowed on purpose — a local Clash on
+  `127.0.0.1:7897` is what this exists for — while cloud metadata hosts are
+  refused by the same list the custom mail server uses;
+* `proxyUsername` and `proxyPassword` are both set or both empty, carry no CR,
+  LF or NUL, and are each at most 255 bytes (RFC 1929);
+* the proxy is stored inside the account, so editing an account re-enters the
+  proxy login exactly like the mail password.
+
+`credentials.status` reports the declaration as `userProxy: { types }`, and an
+account saved before the proxy existed keeps working with no proxy at all.

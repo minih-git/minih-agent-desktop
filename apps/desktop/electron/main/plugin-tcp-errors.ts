@@ -73,6 +73,10 @@ export function connectionMessage(code: PluginSocketErrorCode | string): string 
       return "the mail server does not offer STARTTLS";
     case "CREDENTIAL_REJECTED":
       return "the mail server rejected the credential";
+    case "PROXY_FAILED":
+      return "the mail proxy could not be reached";
+    case "PROXY_AUTH_FAILED":
+      return "the mail proxy rejected the proxy credential";
     default:
       return "the connection to the mail server failed";
   }

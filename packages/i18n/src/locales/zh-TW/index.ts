@@ -3,6 +3,18 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const zhTW = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    proxy: "代理",
+    proxyHint: "讓這個帳號的連線走代理，例如本機的 Clash 或區域網路裡的閘道。類型留空表示直連。",
+    proxyType: "代理類型",
+    proxyTypeNone: "不使用代理",
+    proxyTypeHttp: "HTTP（CONNECT）",
+    proxyTypeSocks5: "SOCKS5",
+    proxyHost: "代理伺服器",
+    proxyHostPlaceholder: "127.0.0.1",
+    proxyPort: "代理連接埠",
+    proxyUsername: "代理使用者名稱",
+    proxyPassword: "代理密碼",
+    proxyLoginHint: "代理使用者名稱與密碼要嘛都填、要嘛都不填。儲存後不再顯示，修改時請重新輸入。",
     customServer: "使用自己的郵件伺服器",
     customServerHint: "留空則使用外掛預設的伺服器。填寫伺服器後，密碼只會傳送到這台伺服器。",
     customServerServer: "伺服器",

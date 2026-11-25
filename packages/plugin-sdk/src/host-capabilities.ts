@@ -44,6 +44,23 @@ export type PluginMailSecurity = (typeof PLUGIN_MAIL_SECURITIES)[number];
  */
 export const PLUGIN_USER_ENDPOINT_FIELD_KEYS = ["server", "port", "protocol", "security"] as const;
 
+/** Proxy protocols a slot may offer the user for one mail account. */
+export const PLUGIN_PROXY_TYPES = ["http", "socks5"] as const;
+export type PluginProxyType = (typeof PLUGIN_PROXY_TYPES)[number];
+
+/**
+ * Field keys a `userProxy` slot reserves for the host. As with the mail server,
+ * a plugin field of one of these keys would let its own form decide how, and
+ * through where, a stored password leaves the machine.
+ */
+export const PLUGIN_USER_PROXY_FIELD_KEYS = [
+  "proxyType",
+  "proxyHost",
+  "proxyPort",
+  "proxyUsername",
+  "proxyPassword",
+] as const;
+
 /** One option of a `select` credential field. */
 export type PluginCredentialFieldOption = {
   /** Stored verbatim as the field value. */
@@ -118,6 +135,19 @@ export type PluginCredentialContrib = {
    * stored secret.
    */
   userEndpoint?: { protocols: PluginMailProtocol[] };
+  /**
+   * Let the user reach each account through their own HTTP or SOCKS5 proxy —
+   * a local Clash, or a gateway on their LAN — instead of a direct connection.
+   * Only an `imap` slot may declare it.
+   *
+   * The proxy belongs to the credential instance, exactly like a user-typed
+   * server: the host dials it only for a connection carrying that instance's
+   * `credentialRef`, hands the mail host's *name* to the proxy instead of
+   * resolving it locally, and checks the certificate against the mail host.
+   * A proxy that fails ends the connection; it never falls back to a direct
+   * dial.
+   */
+  userProxy?: { types: PluginProxyType[] };
 };
 
 /** Largest request body a webhook receiver accepts (256 KiB). */
@@ -242,6 +272,43 @@ function credentialFieldControlError(
  * reserved keys are refused as declared fields here too: a plugin field of one
  * of them would let its own form decide where its stored password is sent.
  */
+/**
+ * `userProxy`: only an `imap` slot may offer the user a proxy, for the same
+ * reason as `userEndpoint` — that is the kind whose connection the host dials
+ * itself. The five reserved keys are refused as declared fields too.
+ */
+function credentialUserProxyError(slot: Partial<PluginCredentialContrib>): string | undefined {
+  const at = `credential "${slot.id}"`;
+  if (slot.kind !== "imap") {
+    return `${at} declares userProxy with kind ${String(slot.kind)}; only an imap slot accepts a proxy`;
+  }
+  const proxy = slot.userProxy as { types?: unknown } | undefined;
+  if (!proxy || typeof proxy !== "object" || Array.isArray(proxy)) {
+    return `${at} userProxy must be an object`;
+  }
+  const unknown = Object.keys(proxy).find((key) => key !== "types");
+  if (unknown) return `${at} userProxy has an unsupported key ${unknown}`;
+  const types = proxy.types;
+  if (!Array.isArray(types) || types.length === 0) {
+    return `${at} userProxy needs at least one type`;
+  }
+  const seen = new Set<string>();
+  for (const type of types) {
+    if (typeof type !== "string" || !(PLUGIN_PROXY_TYPES as readonly string[]).includes(type)) {
+      return `${at} userProxy types must be http or socks5`;
+    }
+    if (seen.has(type)) return `${at} userProxy lists ${type} twice`;
+    seen.add(type);
+  }
+  const reserved = (slot.fields ?? []).find((field) =>
+    (PLUGIN_USER_PROXY_FIELD_KEYS as readonly string[]).includes(field.key),
+  );
+  if (reserved) {
+    return `${at} field ${reserved.key} is reserved for the mail proxy`;
+  }
+  return undefined;
+}
+
 function credentialUserEndpointError(
   slot: Partial<PluginCredentialContrib>,
 ): string | undefined {
@@ -332,6 +399,10 @@ export function validateCredentialContributions(raw: unknown): string | undefine
     if (slot.userEndpoint !== undefined) {
       const endpointError = credentialUserEndpointError(slot);
       if (endpointError) return endpointError;
+    }
+    if (slot.userProxy !== undefined) {
+      const proxyError = credentialUserProxyError(slot);
+      if (proxyError) return proxyError;
     }
     if (slot.multiple !== undefined) {
       const multiple = slot.multiple as { max?: unknown };

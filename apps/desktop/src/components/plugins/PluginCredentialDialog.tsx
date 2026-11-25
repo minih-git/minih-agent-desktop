@@ -142,6 +142,7 @@ export function PluginCredentialDialog() {
                 locale={locale}
                 disabled={busy}
                 userEndpoint={slot.userEndpoint}
+                userProxy={slot.userProxy}
               />
             ) : (
               <p role="alert">{error ?? t("pluginCredentials.loadFailed")}</p>

@@ -112,7 +112,7 @@ pub(crate) fn from_fields(
         return Err("this credential slot accepts no custom mail server".to_string());
     }
     let server = normalize_server(value(fields, SERVER))?;
-    let port = normalize_port(value(fields, PORT))?;
+    let port = normalize_endpoint_port(value(fields, PORT))?;
     let protocol = value(fields, PROTOCOL).trim().to_ascii_lowercase();
     if !protocols.iter().any(|declared| declared == &protocol) {
         return Err("the custom mail server protocol is not one this slot allows".to_string());
@@ -136,23 +136,31 @@ fn value<'a>(fields: &'a BTreeMap<String, String>, key: &str) -> &'a str {
 /// A bare hostname or IP literal: no scheme, port, path, whitespace or
 /// wildcard. Lowercased, with one trailing root dot removed, so the stored
 /// value and a plugin's spelling of the same server compare equal.
-fn normalize_server(raw: &str) -> Result<String, String> {
+///
+/// `what` names the thing being validated in the refusal ("custom mail server",
+/// "proxy"): the rule is shared, the message stays about the field the user
+/// just filled in.
+pub(crate) fn normalize_host(raw: &str, what: &str) -> Result<String, String> {
     let trimmed = raw.trim().to_ascii_lowercase();
     let value = trimmed.strip_suffix('.').unwrap_or(&trimmed).to_string();
     if value.is_empty() {
-        return Err("the custom mail server needs a hostname or IP address".to_string());
+        return Err(format!("the {what} needs a hostname or IP address"));
     }
     if value.len() > 253 {
-        return Err("the custom mail server is not a valid hostname or IP address".to_string());
+        return Err(format!("the {what} is not a valid hostname or IP address"));
     }
     let is_ip = value.parse::<IpAddr>().is_ok();
     if !is_ip && !is_hostname(&value) {
-        return Err("the custom mail server is not a valid hostname or IP address".to_string());
+        return Err(format!("the {what} is not a valid hostname or IP address"));
     }
     if is_metadata_host(&value) {
-        return Err("the custom mail server must not be a cloud metadata endpoint".to_string());
+        return Err(format!("the {what} must not be a cloud metadata endpoint"));
     }
     Ok(value)
+}
+
+fn normalize_server(raw: &str) -> Result<String, String> {
+    normalize_host(raw, "custom mail server")
 }
 
 /// Whether `server` is a cloud metadata endpoint, by the same list the plugin
@@ -175,16 +183,20 @@ fn is_metadata_host(server: &str) -> bool {
 /// A port is a decimal number from 1 to 65535, and nothing else: a sign, a
 /// space or a fraction would make the stored value something other than what
 /// the user read back.
-fn normalize_port(raw: &str) -> Result<u16, String> {
+pub(crate) fn normalize_port(raw: &str, what: &str) -> Result<u16, String> {
     let value = raw.trim();
     let digits = value.strip_prefix('+').unwrap_or(value);
     if digits.is_empty() || digits.len() > 5 || !digits.chars().all(|c| c.is_ascii_digit()) {
-        return Err("the custom mail server port must be a number from 1 to 65535".to_string());
+        return Err(format!("the {what} port must be a number from 1 to 65535"));
     }
     match digits.parse::<u16>() {
         Ok(port) if port >= 1 => Ok(port),
-        _ => Err("the custom mail server port must be a number from 1 to 65535".to_string()),
+        _ => Err(format!("the {what} port must be a number from 1 to 65535")),
     }
+}
+
+fn normalize_endpoint_port(raw: &str) -> Result<u16, String> {
+    normalize_port(raw, "custom mail server")
 }
 
 /// Parse the manifest's `userEndpoint.protocols` for one slot.

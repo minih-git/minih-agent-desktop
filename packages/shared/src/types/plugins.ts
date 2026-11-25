@@ -389,6 +389,13 @@ export type PluginCredentialStatus = {
    * field keys `server`, `port`, `protocol` and `security` for it.
    */
   userEndpoint?: { protocols: Array<"imap" | "pop3"> };
+  /**
+   * Present only for a slot whose manifest declares `userProxy`: each account
+   * may dial through the user's own HTTP or SOCKS5 proxy, and the host reserves
+   * the field keys `proxyType`, `proxyHost`, `proxyPort`, `proxyUsername` and
+   * `proxyPassword` for it.
+   */
+  userProxy?: { types: Array<"http" | "socks5"> };
   /** Field whose value names an instance. */
   labelField?: string;
 };

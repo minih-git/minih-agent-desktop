@@ -564,6 +564,18 @@ author whether a connection is encrypted.
   verification plus SNI apply exactly as on the manifest path. Cloud metadata
   hosts are refused when the value is saved, so an account cannot be pointed at
   instance credentials.
+- **A per-account proxy is bound to one credential instance too.** When the
+  manifest declares `userProxy` (02 §5.5.3), the proxy is stored inside the
+  account and only a connection carrying that instance's `credentialRef` uses it;
+  the proxy changes how an already-authorised endpoint is reached and never which
+  endpoint it is. There is no direct fallback, so a failing proxy fails the
+  connection rather than quietly sending the password by another route. The mail
+  host's name is handed to the proxy and is not resolved locally, the certificate
+  is verified against the mail host (never the proxy), and the two proxy
+  credential keys are never published to the plugin. The proxy's own login is
+  sent unencrypted to the proxy hop — a property of HTTP CONNECT and SOCKS5 — so
+  this is meant for the user's own or their LAN's proxy; the mail password is
+  still only ever written after TLS is up.
 - The user's outbound HTTP proxy is not consulted for raw sockets. The install
   review says so, because an author expecting proxy enforcement would otherwise
   assume it.

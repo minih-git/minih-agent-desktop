@@ -3,6 +3,18 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const ptBR = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    proxy: "Proxy",
+    proxyHint: "Envia a conexão desta conta por um proxy, por exemplo um Clash local ou um gateway da sua rede. Sem tipo, a conexão é direta.",
+    proxyType: "Tipo de proxy",
+    proxyTypeNone: "Sem proxy",
+    proxyTypeHttp: "HTTP (CONNECT)",
+    proxyTypeSocks5: "SOCKS5",
+    proxyHost: "Servidor proxy",
+    proxyHostPlaceholder: "127.0.0.1",
+    proxyPort: "Porta do proxy",
+    proxyUsername: "Usuário do proxy",
+    proxyPassword: "Senha do proxy",
+    proxyLoginHint: "Preencha o usuário e a senha do proxy, ou nenhum dos dois. O acesso salvo não é exibido novamente, digite ao salvar.",
     customServer: "Usar seu próprio servidor de e-mail",
     customServerHint: "Deixe o servidor vazio para usar os que o plugin define. Ao informar um servidor, a senha só é enviada para ele.",
     customServerServer: "Servidor",

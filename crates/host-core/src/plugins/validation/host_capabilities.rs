@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use super::labels::is_plugin_label;
 use super::{array_of, is_contrib_id, require_permission, PluginManifest};
 
-use crate::plugins::user_endpoint;
+use crate::plugins::{user_endpoint, user_proxy};
 
 /// Hard ceiling on how many instances one credential slot may hold, mirroring
 /// `MAX_INSTANCES` in `plugins/credentials.rs` and `MAX_CREDENTIAL_INSTANCES` in
@@ -122,6 +122,7 @@ fn validate_credentials(map: &Map<String, Value>, manifest: &PluginManifest) -> 
         validate_multiple(id, obj.get("multiple"))?;
         validate_label_field(id, obj.get("labelField"), fields)?;
         validate_user_endpoint(id, kind, obj.get("userEndpoint"), &keys)?;
+        validate_user_proxy(id, kind, obj.get("userProxy"), &keys)?;
         if let Some(scope) = obj.get("scope") {
             let scope = scope.as_object().ok_or_else(|| {
                 anyhow!("PLUGIN_INVALID: credential {id} scope must be an object")
@@ -582,6 +583,67 @@ fn validate_user_endpoint(
         bail!(
             "PLUGIN_INVALID: credential {id} field {key} is reserved for the user-typed mail server"
         );
+    }
+    Ok(())
+}
+
+/// `contributes.credentials[].userProxy`: a mailbox slot may let the user reach
+/// its server through their own HTTP or SOCKS5 proxy.
+///
+/// The declaration only names the protocols the form may offer. Where the proxy
+/// points, and whether it takes a login, is decided per account at save time by
+/// the host (`user_proxy::from_fields`), never by the manifest.
+///
+/// As with `userEndpoint`, only an `imap` slot may declare it, and the five keys
+/// the host reserves for it stay out of the plugin's own field list: a field of
+/// that key would let a plugin-authored form change where the connection goes.
+fn validate_user_proxy(
+    id: &str,
+    kind: &str,
+    raw: Option<&Value>,
+    field_keys: &[&str],
+) -> Result<()> {
+    let Some(raw) = raw else {
+        return Ok(());
+    };
+    if kind != "imap" {
+        bail!(
+            "PLUGIN_INVALID: credential {id} declares userProxy with kind {kind}; only an imap slot accepts a proxy"
+        );
+    }
+    let obj = raw
+        .as_object()
+        .ok_or_else(|| anyhow!("PLUGIN_INVALID: credential {id} userProxy must be an object"))?;
+    if let Some(unknown) = obj.keys().find(|key| key.as_str() != "types") {
+        bail!("PLUGIN_INVALID: credential {id} userProxy has an unsupported key {unknown}");
+    }
+    let types = match obj.get("types") {
+        Some(value) => array_of(value, "credential userProxy.types")?,
+        None => &[],
+    };
+    if types.is_empty() {
+        bail!("PLUGIN_INVALID: credential {id} userProxy needs at least one type");
+    }
+    let mut seen: Vec<String> = Vec::new();
+    for kind in types {
+        let value = kind
+            .as_str()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .filter(|value| user_proxy::TYPES.contains(&value.as_str()))
+            .ok_or_else(|| {
+                anyhow!("PLUGIN_INVALID: credential {id} userProxy types must be http or socks5")
+            })?;
+        if seen.contains(&value) {
+            bail!("PLUGIN_INVALID: credential {id} userProxy lists {value} twice");
+        }
+        seen.push(value);
+    }
+    if let Some(key) = field_keys
+        .iter()
+        .find(|key| user_proxy::RESERVED_KEYS.contains(key))
+    {
+        bail!("PLUGIN_INVALID: credential {id} field {key} is reserved for the mail proxy");
     }
     Ok(())
 }

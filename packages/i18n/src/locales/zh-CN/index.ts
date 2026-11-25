@@ -2,6 +2,18 @@ import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhCN = {
   pluginCredentials: {
+    proxy: "代理",
+    proxyHint: "让这个账号的连接走代理，例如本机的 Clash 或局域网里的网关。类型留空表示直连。",
+    proxyType: "代理类型",
+    proxyTypeNone: "不使用代理",
+    proxyTypeHttp: "HTTP（CONNECT）",
+    proxyTypeSocks5: "SOCKS5",
+    proxyHost: "代理服务器",
+    proxyHostPlaceholder: "127.0.0.1",
+    proxyPort: "代理端口",
+    proxyUsername: "代理用户名",
+    proxyPassword: "代理密码",
+    proxyLoginHint: "代理用户名和密码要么都填，要么都不填。保存后不再显示，改动时请重新输入。",
     customServer: "使用自己的邮件服务器",
     customServerHint: "留空则使用插件预设的服务器。填写服务器后，密码只会发往这台服务器。",
     customServerServer: "服务器",

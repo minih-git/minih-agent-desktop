@@ -48,7 +48,12 @@ export type PluginSocketErrorCode =
   // is ever reported as a plain connect failure.
   | "TLS_FAILED"
   | "TLS_CERTIFICATE"
-  | "STARTTLS_UNAVAILABLE";
+  | "STARTTLS_UNAVAILABLE"
+  // The account dials through its own proxy, and that hop is what failed. Two
+  // names, because "your proxy is not answering" and "your proxy login is
+  // wrong" send the user to different settings.
+  | "PROXY_FAILED"
+  | "PROXY_AUTH_FAILED";
 
 /** Thrown for every refusal; `code` is what the plugin sees as `error`. */
 export class PluginSocketError extends Error {

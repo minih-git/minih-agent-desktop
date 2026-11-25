@@ -3,6 +3,18 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const fr = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    proxy: "Proxy",
+    proxyHint: "Fait passer la connexion de ce compte par un proxy, par exemple un Clash local ou une passerelle du réseau. Sans type, la connexion est directe.",
+    proxyType: "Type de proxy",
+    proxyTypeNone: "Sans proxy",
+    proxyTypeHttp: "HTTP (CONNECT)",
+    proxyTypeSocks5: "SOCKS5",
+    proxyHost: "Serveur proxy",
+    proxyHostPlaceholder: "127.0.0.1",
+    proxyPort: "Port du proxy",
+    proxyUsername: "Identifiant du proxy",
+    proxyPassword: "Mot de passe du proxy",
+    proxyLoginHint: "Renseignez l'identifiant et le mot de passe du proxy, ou aucun des deux. L'accès enregistré n'est plus affiché : saisissez-le à nouveau pour enregistrer.",
     customServer: "Utiliser votre propre serveur de messagerie",
     customServerHint: "Laissez le serveur vide pour utiliser ceux prédéfinis par l’extension. Dès que vous en indiquez un, le mot de passe n’est envoyé qu’à ce serveur.",
     customServerServer: "Serveur",

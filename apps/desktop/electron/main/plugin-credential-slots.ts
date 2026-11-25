@@ -17,6 +17,7 @@
 import {
   MAX_CREDENTIAL_INSTANCES,
   PLUGIN_MAIL_PROTOCOLS,
+  PLUGIN_PROXY_TYPES,
   isNetHostAllowed,
   parseNetDomains,
   type PluginCredentialContrib,
@@ -128,6 +129,12 @@ export type DeclaredSlot = {
    * four endpoint keys are then not reserved at all.
    */
   userEndpointProtocols?: string[];
+  /**
+   * `userProxy.types`: the proxy protocols the user may pick per account.
+   * Absent keeps every account on a direct connection, and the five proxy keys
+   * are then not reserved at all.
+   */
+  userProxyTypes?: string[];
 };
 
 /**
@@ -392,6 +399,17 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
         declaredProtocols.push(protocol);
       }
     }
+    // The same for `userProxy`: the types the form may offer, read with the
+    // same tolerance so a manifest this build cannot parse means "no proxy".
+    const proxyTypes: string[] = [];
+    for (const type of slot.userProxy?.types ?? []) {
+      if (
+        (PLUGIN_PROXY_TYPES as readonly string[]).includes(type) &&
+        !proxyTypes.includes(type)
+      ) {
+        proxyTypes.push(type);
+      }
+    }
     slots.push({
       id: slot.id,
       kind: slot.kind as PluginCredentialKind,
@@ -402,6 +420,7 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
         ? { labelField: slot.labelField }
         : {}),
       ...(declaredProtocols.length ? { userEndpointProtocols: declaredProtocols } : {}),
+      ...(proxyTypes.length ? { userProxyTypes: proxyTypes } : {}),
     });
   }
   return slots;

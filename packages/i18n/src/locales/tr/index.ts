@@ -3,6 +3,18 @@ import { en, type EnglishCatalog } from "../en/index.js";
 export const tr = {
   pluginCredentials: {
     ...en.pluginCredentials,
+    proxy: "Proxy",
+    proxyHint: "Bu hesabın bağlantısını bir proxy üzerinden gönderin; örneğin yerel Clash veya ağınızdaki bir geçit. Tür boşsa doğrudan bağlanır.",
+    proxyType: "Proxy türü",
+    proxyTypeNone: "Proxy yok",
+    proxyTypeHttp: "HTTP (CONNECT)",
+    proxyTypeSocks5: "SOCKS5",
+    proxyHost: "Proxy sunucusu",
+    proxyHostPlaceholder: "127.0.0.1",
+    proxyPort: "Proxy bağlantı noktası",
+    proxyUsername: "Proxy kullanıcı adı",
+    proxyPassword: "Proxy parolası",
+    proxyLoginHint: "Proxy kullanıcı adı ve parolasını ya ikisini birden girin ya da hiçbirini. Kaydedilen proxy oturumu yeniden gösterilmez, kaydederken tekrar yazın.",
     customServer: "Kendi posta sunucunuzu kullanın",
     customServerHint: "Sunucuyu boş bırakırsanız eklentinin önceden tanımladığı sunucular kullanılır. Bir sunucu girdiğinizde parola yalnızca o sunucuya gönderilir.",
     customServerServer: "Sunucu",
