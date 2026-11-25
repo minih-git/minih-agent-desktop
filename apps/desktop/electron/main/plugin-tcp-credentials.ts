@@ -104,7 +104,7 @@ export async function resolveTcpCredential(
   }
 
   const fields = await readCredentialFields(pluginId, ref.raw, port);
-  if (!hasStoredEndpoint(fields)) {
+  if (!hasStoredUserEndpoint(fields)) {
     // The user left the custom server empty: this instance keeps the plugin's
     // preset path, including its manifest and scope checks.
     return presetPlan(pluginId, slot, identity, request, port, fields);
@@ -187,8 +187,13 @@ export function authorizePresetTcpEndpoint(
   return endpoint;
 }
 
-/** Whether one stored instance carries its own mail server. */
-function hasStoredEndpoint(fields: Record<string, unknown>): boolean {
+/**
+ * Whether one stored instance carries its own mail server.
+ *
+ * Exported because the sending half asks the same question: an account that
+ * reads from a server it stores must not send through a manifest preset.
+ */
+export function hasStoredUserEndpoint(fields: Record<string, unknown>): boolean {
   return typeof fields.server === "string" && fields.server.trim().length > 0;
 }
 

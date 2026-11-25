@@ -1335,8 +1335,10 @@ pi.tasks.stop(input: { taskId: string }): Promise<void>
   一个错误码，以及插件自己写下的被拒地址。
   - `endpoint` 必须是 `manifest.net.tcp` 里的字面条目且落在槽 `scope.domains` 内；
     `tls: true` 走隐式 TLS，`tls: false` 走 STARTTLS 且必须成功。自己存了发信服务器
-    （`userSend`）的账号必须不传 `endpoint`，传了就是 `INVALID_ARGUMENT`。两者都没
-    配置是 `MAIL_SEND_NOT_CONFIGURED`。
+    （`userSend`）的账号必须不传 `endpoint`，传了就是 `INVALID_ARGUMENT`。存了自填
+    **收信**服务器的账号在也存下发信服务器之前一律被拒，因为它的密码绑定在用户填写
+    的邮箱服务器上，不属于任何 manifest 端点。两者都没配置是
+    `MAIL_SEND_NOT_CONFIGURED`。
   - `envelope.from`、报文的 `From:` 与任何 `Sender:` 必须是账号自己的地址
     （`MAIL_FROM_MISMATCH`）。报文里出现 `Bcc:` 头会被拒（`MAIL_BCC_HEADER`）：
     密送收件人写在 `envelope.bcc` 里，走 SMTP 信封而不是报文头。

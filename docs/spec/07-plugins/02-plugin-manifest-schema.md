@@ -1088,7 +1088,10 @@ The values are validated by the host at save time, not by the form:
 
 * a blank `sendServer` means "no outgoing server of my own" — the other two keys
   are dropped rather than stored, and the account keeps the `manifest.net.tcp`
-  path (or cannot send at all: `MAIL_SEND_NOT_CONFIGURED`);
+  path **unless it stores its own incoming server**: an account whose
+  `userEndpoint` names a server has its password bound to that server for
+  reading, so it cannot send through a declared endpoint either and answers
+  `MAIL_SEND_NOT_CONFIGURED` until it stores an outgoing server too;
 * a named server needs a port and a transport this slot declares;
 * the same bare-hostname, cloud-metadata and port rules as the custom mail
   server apply, so an outgoing server can never become a way to reach an

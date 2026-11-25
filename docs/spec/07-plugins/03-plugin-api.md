@@ -1710,7 +1710,10 @@ Semantics:
     `scope.domains` admits; `tls: true` means implicit TLS and `tls: false` means
     STARTTLS, which has to succeed. An account that stores its own outgoing
     server (`userSend`) must omit `endpoint`: naming one is `INVALID_ARGUMENT`.
-    Neither configured is `MAIL_SEND_NOT_CONFIGURED`.
+    An account that stores its own **incoming** server is refused entirely until
+    it also stores an outgoing one, because its password is bound to the mailbox
+    the user typed and belongs to no manifest endpoint. Neither configured is
+    `MAIL_SEND_NOT_CONFIGURED`.
   - `envelope.from`, the message's `From:` and any `Sender:` must be the
     account's own address (`MAIL_FROM_MISMATCH`). A `Bcc:` header is refused
     (`MAIL_BCC_HEADER`): blind recipients go in `envelope.bcc`, which travels in

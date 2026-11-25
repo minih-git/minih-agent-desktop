@@ -728,6 +728,15 @@ sends anything.
      refused with `INVALID_ARGUMENT` — stricter than the read path, because a
      plugin has no reason to name a server the account already configured.
    - **neither** is `MAIL_SEND_NOT_CONFIGURED`.
+   The preset path is also closed to an account that stores its **incoming**
+   server (`userEndpoint`): reading is locked to that stored endpoint, and
+   sending has to be locked with it. Without this rule the same password would
+   reach whichever *declared* SMTP a plugin named — a different provider from the
+   one the user typed — which is exactly the redirection the custom-server model
+   exists to stop, and wider than the "another declared endpoint of the same
+   slot" risk accepted below. Such an account sends only once it also stores its
+   outgoing server; until then the answer is `MAIL_SEND_NOT_CONFIGURED` and
+   nothing is dialed.
    `userSend` is a **top-level** slot key for the same compatibility reason as
    `userProxy`: a 1.10.0 host ignores an unknown top-level key, so the same
    package still installs there and simply keeps the preset path. A blank

@@ -818,7 +818,9 @@ remains registered only; its manifest field is validated at installation.
 or the server's own text. The endpoint is either the declared `net.tcp` entry
 that the slot scope admits — where `tls: false` means a STARTTLS upgrade that
 must succeed — or the outgoing server stored in the same credential instance as
-the password, which a plugin cannot name. The envelope sender and the message's
+the password, which a plugin cannot name. An account that stores its own incoming
+server is refused outright until it stores an outgoing one too, so a password
+typed for one provider never leaves through another. The envelope sender and the message's
 `From:` / `Sender:` must be the account's own address, a `Bcc:` header is refused,
 and one send is capped at 50 distinct recipients, 25 MiB, and 30 sends per plugin
 per rolling hour with an in-memory counter. The connection spends the plugin's

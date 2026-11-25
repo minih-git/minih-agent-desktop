@@ -32,7 +32,7 @@ import {
 import { PluginMailError, type PluginMailErrorCode } from "./plugin-mail-errors";
 import { sendSmtpMail, type SmtpDialer, type SmtpSecurity } from "./plugin-smtp";
 import { socketTransport } from "./plugin-smtp-transport";
-import { authorizePresetTcpEndpoint, readCredentialFields } from "./plugin-tcp-credentials";
+import { authorizePresetTcpEndpoint, hasStoredUserEndpoint, readCredentialFields } from "./plugin-tcp-credentials";
 import type { PluginInternalConnection, PluginTcpEndpoint } from "./plugin-tcp";
 import { readTcpProxy, type TcpProxy } from "./plugin-tcp-proxy";
 import { readSendEndpoint } from "./plugin-tcp-user-endpoint";
@@ -323,11 +323,19 @@ async function resolveAccount(
 /**
  * Which server this send uses, decided before anything is dialed.
  *
- * A stored `userSend` endpoint wins and refuses a plugin-supplied one: the
- * account was configured for that server, and a plugin naming another is asking
- * to send a stored password somewhere it was never configured for. Otherwise the
- * declared `manifest.net.tcp` endpoint is authorised exactly as an IMAP preset is
- * — a `tls: false` entry is reached with STARTTLS, never in the clear.
+ * The order mirrors the IMAP path, for the same reason:
+ *
+ * 1. a stored `userSend` endpoint wins and refuses a plugin-supplied one — the
+ *    account was configured for that server, and a plugin naming another is
+ *    asking to send a stored password somewhere it was never configured for;
+ * 2. an account that stores its **incoming** server (`userEndpoint`) is refused
+ *    here entirely: its password belongs to the mailbox the user typed, and no
+ *    manifest preset was ever approved for it. Reading is locked to that stored
+ *    endpoint, so sending has to be locked too — otherwise the same password
+ *    would be handed to whichever declared SMTP the plugin named;
+ * 3. only an account with neither of its own may use a declared
+ *    `manifest.net.tcp` endpoint, authorised exactly as an IMAP preset is — a
+ *    `tls: false` entry is reached with STARTTLS, never in the clear.
  */
 function resolveSendEndpoint(input: {
   slot: DeclaredSlot;
@@ -350,6 +358,15 @@ function resolveSendEndpoint(input: {
       port: declared.port,
       security: declared.security,
     };
+  }
+  if (hasStoredUserEndpoint(input.fields)) {
+    // The password in this instance belongs to a server the user typed, and no
+    // manifest endpoint was ever approved for it. Sending has to say "not
+    // configured" rather than fall back to a preset the mailbox never agreed to.
+    throw new PluginMailError(
+      "MAIL_SEND_NOT_CONFIGURED",
+      "this mail account reads from its own server and stores no outgoing server",
+    );
   }
   if (!input.requested) {
     throw new PluginMailError("MAIL_SEND_NOT_CONFIGURED", "this mail account has no outgoing server");
@@ -539,15 +556,70 @@ function parseHeaders(head: string): Array<{ name: string; value: string }> {
   return headers;
 }
 
-/** Addresses named by one header value: `Name <a@b>` or a bare `a@b`. */
+/**
+ * Addresses named by one header value: `Name <a@b>`, a bare `a@b`, or a quoted
+ * display name that carries a comma.
+ *
+ * Splitting on `,` alone is not enough: `"Doe, John" <me@x.com>` is one address,
+ * and a comment after it (`me@x.com (Doe, John)`) carries commas too. A quoted
+ * bare address (`"me@x.com"`) loses its quotes, but the angle part never does:
+ * `"me@x.com" <other@y.com>` is still `other@y.com`, and the identity check
+ * refuses it.
+ */
 function theAddressesOf(value: string): string[] {
   const addresses: string[] = [];
-  for (const part of value.split(",")) {
+  for (const part of headerAddressParts(value)) {
     const angle = /<([^<>]*)>/.exec(part);
-    const candidate = (angle ? angle[1] : part).trim().toLowerCase();
+    const candidate = (angle ? angle[1] : quotedOf(part)).trim().toLowerCase();
     if (candidate) addresses.push(candidate);
   }
   return addresses;
+}
+
+/** Split one header value on the commas that separate addresses. */
+function headerAddressParts(value: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+  let comment = 0;
+  for (const char of value) {
+    if (comment > 0) {
+      // A comment is not an address: its commas and angle brackets are prose.
+      if (char === "(") comment += 1;
+      else if (char === ")") comment -= 1;
+      continue;
+    }
+    if (quoted) {
+      current += char;
+      if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+      current += char;
+      continue;
+    }
+    if (char === "(") {
+      comment = 1;
+      current += " ";
+      continue;
+    }
+    if (char === ",") {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts;
+}
+
+/** The address inside a fully quoted bare value, or the value itself. */
+function quotedOf(part: string): string {
+  const trimmed = part.trim();
+  const quoted = /^"([^"]*)"$/.exec(trimmed);
+  return quoted ? quoted[1] : trimmed;
 }
 
 /**

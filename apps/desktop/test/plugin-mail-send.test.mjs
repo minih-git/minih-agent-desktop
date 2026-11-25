@@ -153,6 +153,122 @@ test("an account the user has not filled in cannot send", async () => {
   );
 });
 
+test("an account that reads from its own server cannot send through a preset either", async () => {
+  // A mailbox the user pointed at their company's server: the password belongs
+  // to *that* server, and no declared SMTP was ever approved for it. Reading is
+  // locked to the stored endpoint, so sending has to be locked too.
+  const stored = {
+    username: USER,
+    password: PASSWORD,
+    server: "imap.mycompany.example",
+    port: "993",
+    protocol: "imap",
+    security: "tls",
+  };
+  const readOnly = [mailSlot({ userEndpoint: { protocols: ["imap", "pop3"] } })];
+  const alsoSending = [
+    mailSlot({
+      userEndpoint: { protocols: ["imap", "pop3"] },
+      userSend: { security: ["tls", "starttls"] },
+    }),
+  ];
+  for (const slots of [readOnly, alsoSending]) {
+    const { ports, calls } = fakePorts({ fields: stored });
+    for (const input of [
+      { endpoint: { host: "localhost", port: 587 } },
+      {},
+    ]) {
+      await refusal(
+        sendPluginMail(ports, {
+          pluginId: "test.mail",
+          slots,
+          manifestTcp: [{ host: "localhost", port: 587, tls: false }],
+          input: {
+            credential: { slot: "mailbox", instanceId: "acc_1" },
+            envelope: { from: USER, to: ["bob@example.test"] },
+            mime: MESSAGE,
+            ...input,
+          },
+        }),
+        "MAIL_SEND_NOT_CONFIGURED",
+      );
+    }
+    assert.ok(!calls.includes("acquire"), "nothing was dialed for a preset the account never agreed to");
+  }
+});
+
+test("the same account sends through its own outgoing server once it stores one", async () => {
+  const slots = [
+    mailSlot({
+      userEndpoint: { protocols: ["imap", "pop3"] },
+      userSend: { security: ["tls", "starttls"] },
+    }),
+  ];
+  const fields = {
+    username: USER,
+    password: PASSWORD,
+    server: "imap.mycompany.example",
+    port: "993",
+    protocol: "imap",
+    security: "tls",
+    sendServer: "smtp.mycompany.example",
+    sendPort: "465",
+    sendSecurity: "tls",
+  };
+  const sendAs = (input) =>
+    sendPluginMail(
+      fakePorts({
+        fields,
+        acquire: () => {
+          throw Object.assign(new Error("stop before the socket"), { code: "CONNECT_FAILED" });
+        },
+      }).ports,
+      {
+        pluginId: "test.mail",
+        slots,
+        manifestTcp: [{ host: "localhost", port: 587, tls: false }],
+        input: {
+          credential: { slot: "mailbox", instanceId: "acc_1" },
+          envelope: { from: USER, to: ["bob@example.test"] },
+          mime: MESSAGE,
+          ...input,
+        },
+      },
+    );
+
+  // A declared preset is still refused: the stored server is the only one.
+  await refusal(sendAs({ endpoint: { host: "localhost", port: 587 } }), "INVALID_ARGUMENT");
+
+  // And without one, the session goes to the server stored with the account.
+  const opened = fakePorts({
+    fields,
+    acquire: () => {
+      throw Object.assign(new Error("stop before the socket"), { code: "CONNECT_FAILED" });
+    },
+  });
+  await refusal(
+    sendPluginMail(opened.ports, {
+      pluginId: "test.mail",
+      slots,
+      manifestTcp: [{ host: "localhost", port: 587, tls: false }],
+      input: {
+        credential: { slot: "mailbox", instanceId: "acc_1" },
+        envelope: { from: USER, to: ["bob@example.test"] },
+        mime: MESSAGE,
+      },
+    }),
+    "CONNECT_FAILED",
+  );
+  const dial = opened.calls.at(-1);
+  assert.deepEqual(dial, {
+    acquire: {
+      pluginId: "test.mail",
+      endpoint: { host: "smtp.mycompany.example", port: 465, tls: true },
+      proxy: null,
+    },
+  });
+});
+
 test("an endpoint outside the manifest declaration is refused", async () => {
   const { ports, calls } = fakePorts({ fields: { username: USER, password: PASSWORD } });
   await refusal(
@@ -241,6 +357,35 @@ test("a message whose From or Sender header is another address is refused", asyn
   );
   await refusal(
     send(ports, { endpoint: { host: "localhost", port: 587 }, mime: senderHeader }),
+    "MAIL_FROM_MISMATCH",
+  );
+});
+
+test("a display name with a comma is still the account's own address", async () => {
+  const { ports } = fakePorts({ fields: { username: USER, password: PASSWORD } });
+  const withHeader = (header) => Buffer.from(`${header}\r\n\r\nbody\r\n`, "latin1");
+  // A quoted display name and a comment both carry commas that do not separate
+  // addresses, and a fully quoted bare address is still that address. Refusing
+  // any of them would lock those users out of sending.
+  for (const header of [
+    'From: "Doe, John" <alice@example.test>',
+    "From: alice@example.test (Doe, John)",
+    'From: "alice@example.test"',
+  ]) {
+    await assert.rejects(
+      send(ports, { endpoint: { host: "localhost", port: 587 }, mime: withHeader(header) }),
+      (error) => {
+        assert.notEqual(error.code, "MAIL_FROM_MISMATCH", `${header} was read as another address`);
+        return true;
+      },
+    );
+  }
+  // The angle part is the address, whatever the quoted part claims to be.
+  await refusal(
+    send(ports, {
+      endpoint: { host: "localhost", port: 587 },
+      mime: withHeader('From: "alice@example.test" <other@example.test>'),
+    }),
     "MAIL_FROM_MISMATCH",
   );
 });
