@@ -70,14 +70,26 @@ export function browserProxyRoutingEnabled(): boolean {
 }
 
 /**
+ * Point the work-browser session at the new table, before the relays it
+ * replaces are closed: a request must never land on a port we just shut down.
+ * `null` means "no PAC; hand the session back to the global proxy".
+ */
+export type PublishWorkBrowserProxy = (
+  config: ChromiumProxyConfig | null,
+) => Promise<void>;
+
+/**
  * Apply a routing table from the settings blob. A table that cannot be used
  * turns routing off rather than leaving the previous rules in force: sending
  * traffic through a route the user no longer configured is the worse failure.
- * Throws only when relays could not be started, so the caller can report it.
+ * Throws when relays could not be started, so the caller can report it.
  */
-export function configureBrowserProxyRouting(value: unknown): Promise<void> {
+export function configureBrowserProxyRouting(
+  value: unknown,
+  publish?: PublishWorkBrowserProxy,
+): Promise<void> {
   const next = normalizeBrowserProxyRouting(value);
-  const run = queue.then(() => applyRouting(next));
+  const run = queue.then(() => applyRouting(next, publish));
   queue = run.then(
     () => undefined,
     () => undefined,
@@ -85,10 +97,16 @@ export function configureBrowserProxyRouting(value: unknown): Promise<void> {
   return run;
 }
 
-async function applyRouting(next: BrowserProxyRouting): Promise<void> {
+async function applyRouting(
+  next: BrowserProxyRouting,
+  publish?: PublishWorkBrowserProxy,
+): Promise<void> {
   if (!next.enabled) {
     applied = next;
     activeConfig = null;
+    // Leave the PAC before the relays go away, so nothing resolves to a port
+    // that is about to close.
+    await publish?.(null);
     await closeRelays(relays.keys(), relays);
     return;
   }
@@ -126,6 +144,8 @@ async function applyRouting(next: BrowserProxyRouting): Promise<void> {
     applied = next;
     activeConfig = config;
     for (const [id, entry] of started) relays.set(id, entry);
+    // Chromium holds the new PAC before the old relays close.
+    await publish?.(config);
     await closeRelays(plan.relaysToClose, relays);
   } catch (error) {
     await closeRelays(started.keys(), started);

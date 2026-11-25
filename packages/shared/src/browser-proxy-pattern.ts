@@ -115,6 +115,11 @@ function parseIpv4(text: string): number[] | null {
   return bytes;
 }
 
+/**
+ * Sixteen bytes, in the same shape {@link parseIpv4} produces: {@link ipInCidr}
+ * and {@link maskedNetwork} index the array by byte, so `::1/128` must not
+ * arrive as one 16-bit group and shift every later comparison.
+ */
 function parseIpv6(text: string): number[] | null {
   if (!text.includes(":")) return null;
   const body = text.split("%")[0];
@@ -140,12 +145,16 @@ function parseIpv6(text: string): number[] | null {
   const head = groupsOf(halves[0]);
   const tail = halves.length === 2 ? groupsOf(halves[1]) : [];
   if (!head || !tail) return null;
+  let groups: number[];
   if (halves.length === 1) {
-    return head.length === 8 ? head : null;
+    if (head.length !== 8) return null;
+    groups = head;
+  } else {
+    const missing = 8 - head.length - tail.length;
+    if (missing < 1) return null;
+    groups = [...head, ...new Array<number>(missing).fill(0), ...tail];
   }
-  const missing = 8 - head.length - tail.length;
-  if (missing < 1) return null;
-  return [...head, ...new Array<number>(missing).fill(0), ...tail];
+  return groups.flatMap((group) => [group >> 8, group & 0xff]);
 }
 
 function parseIp(text: string): ParsedIp | null {

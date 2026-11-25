@@ -14,7 +14,10 @@ export type SettingsIpcDependencies = {
   normalizeSettings: (settings: unknown) => unknown;
   validateSettingsWrite: (settings: unknown) => any;
   testNetworkProxy: (settings: unknown) => Promise<unknown>;
-  applyNetworkProxyFromAppSettings: (settings: unknown) => Promise<unknown>;
+  applyNetworkProxyFromAppSettings: (
+    settings: unknown,
+    options?: { reportRoutingFailure?: boolean },
+  ) => Promise<unknown>;
   currentNetworkProxy: () => unknown;
   applyApplicationMenuSettings: (settings?: {
     language?: unknown;
@@ -134,7 +137,17 @@ export function registerSettingsIpc({
       applyPreventScreenSleep(validatedSettings as { preventScreenSleep: boolean });
     }
     // Settings writes are patches; omitted network sections keep their values.
-    await applyNetworkProxyFromAppSettings(prospectiveSettings);
+    // A built-in browser routing failure is reported to the caller, but only
+    // once the rest of the write has been applied: the settings page still
+    // needs its sidecar, menu, and developer-mode updates.
+    let routingError: unknown = null;
+    try {
+      await applyNetworkProxyFromAppSettings(prospectiveSettings, {
+        reportRoutingFailure: true,
+      });
+    } catch (error) {
+      routingError = error;
+    }
     if (sidecar) {
       try {
         await sidecar.call("sidecar.configure", {
@@ -156,6 +169,7 @@ export function registerSettingsIpc({
       } | null,
     );
     applyDeveloperMode(validatedSettings as { developerMode?: unknown } | null);
+    if (routingError) throw routingError;
     return result;
   });
 

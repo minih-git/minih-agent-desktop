@@ -2093,7 +2093,7 @@ sklm: {
     "browserProxyProfileUrl": "Proxy-URL",
     "browserProxyRules": "Regeln",
     "browserProxyRulesDesc":
-      "Von oben nach unten geprüft, der erste Treffer gilt; alles Übrige nimmt den Standardausgang.",
+      "Von oben nach unten geprüft, der erste Treffer gilt; alles Übrige nimmt den Standardausgang. Ein Pfad in einer URL-Regel wirkt nur über http: für https gibt Chromium dem PAC-Skript nur Schema, Host und Port.",
     "browserProxyAddRule": "Regel hinzufügen",
     "browserProxyRuleKind": "Vergleich",
     "browserProxyRulePattern": "Muster",
@@ -2107,7 +2107,7 @@ sklm: {
     "browserProxyTestPlaceholder": "https://example.com/path",
     "browserProxyTestResult": "{{url}} geht über {{target}}",
     "browserProxyTestInvalid": "Bitte eine http- oder https-Adresse eingeben.",
-    "browserProxySaveError": "Das Routing des integrierten Browsers konnte nicht gespeichert werden.",
+    "browserProxyApplyFailed": "Das Routing des integrierten Browsers ist nicht in Kraft: {{reason}}",
     "browserProxyRuleError": "Regel {{index}}: {{reason}}",
     "browserProxyProfileError": "Proxy {{index}}: {{reason}}",
     "browserProxyDefaultError": "Standardausgang: {{reason}}",

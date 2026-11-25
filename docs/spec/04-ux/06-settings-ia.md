@@ -201,7 +201,9 @@ to appearance.
     `**.corp.example` for subdomains only, `.corp.example` as `*.`), URL
     wildcard, host/URL regular expression, and IP range. Rules evaluate top to
     bottom with the first hit winning; loopback and private addresses stay
-    direct unless a rule names them. Each row can be added, edited, reordered,
+    direct unless a rule names them. A URL rule's path and query only match
+    over `http`: Chromium hands the PAC script just scheme, host, and port for
+    `https`, and the Test field reports the same trimmed result. Each row can be added, edited, reordered,
     and deleted, and a Test field shows which exit a given URL would take. An
     unusable table — an unparsable regular expression, an address without a
     range prefix, or a rule pointing at a deleted proxy — is refused with the

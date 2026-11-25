@@ -5698,20 +5698,27 @@ window; opening a normal panel afterward must still work.
   with credentials as the default exit; add a rule pointing at a deleted proxy
   and confirm it is refused with that rule named. 3) Load a page on a rule
   host, a page on the default exit, and a page on `127.0.0.1`, then reorder two
-  rules and reload. 4) Change the global Proxy selection and reload the
-  built-in browser. 5) Clear the SOCKS5 password while keeping the profile and
-  confirm the row reports the invalid URL instead of saving. 6) Disable the
-  switch and reload. 7) Restart the app with routing enabled.
+  rules and reload. Add an IP-range rule for an IPv6 prefix and a URL rule whose
+  pattern carries a path, then load that path over `http` and over `https` and
+  read the card's Test field for both. 4) Change the global Proxy selection and
+  reload the built-in browser. 5) Clear the SOCKS5 password while keeping the
+  profile and confirm the row reports the invalid URL instead of saving.
+  6) Disable the switch and reload. 7) Restart the app with routing enabled.
 - **Expected**: While off, `persist:work-browser` resolves exactly like every
   other Chromium session. While on, the rule hosts reach the mapped proxy, the
   default exit takes everything else, and loopback/private hosts stay direct;
-  the first match wins after reordering. A global Proxy change updates the
-  model, marketplace, updater, and plugin sessions and leaves the built-in
-  browser on its rules. An invalid table is refused with the offending rule or
-  proxy index and never partially applied; the previously applied table stays
-  in force. Disabling restores the global proxy on that session and closes the
-  loopback relay the credentialed profile held. The stored table survives a
-  restart and takes effect without changing any other setting.
+  the first match wins after reordering. A URL rule's path matches over `http`
+  only — `https` reaches the script as scheme, host, and port — and the Test
+  field reports the same exit the browser takes, including the direct bypass
+  for loopback, private, and IPv6 literal hosts that no rule names. A global
+  Proxy change updates the model, marketplace, updater, and plugin sessions and
+  leaves the built-in browser on its rules. An invalid table is refused with the
+  offending rule or proxy index and never partially applied; the previously
+  applied table stays in force, and a table that cannot take effect at runtime
+  turns routing off and reports it in the settings page instead of leaving a
+  route the user cannot see. Disabling restores the global proxy on that session
+  and closes the loopback relay the credentialed profile held. The stored table
+  survives a restart and takes effect without changing any other setting.
 - **Specs linked**: `04-ux/06-settings-ia.md`, `03-runtime/04-data-storage.md`, ADR 0342, ADR 0177
 - **Acceptance**: Quality, Security
 - **Milestone**: M5

@@ -107,8 +107,15 @@ export function BrowserProxyRoutingSection({
     setIssue(null);
     try {
       await saveSettings({ browserProxyRouting: result.value });
-    } catch {
-      showToast(t("settings.browserProxySaveError"), { variant: "error" });
+    } catch (error) {
+      // The write may have landed while the route did not: say so with the
+      // reason main reported instead of a generic failure.
+      showToast(
+        t("settings.browserProxyApplyFailed", {
+          reason: error instanceof Error ? error.message : String(error),
+        }),
+        { variant: "error" },
+      );
     }
   };
 

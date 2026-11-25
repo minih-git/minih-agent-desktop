@@ -43,6 +43,13 @@ compiled into a `FindProxyForURL` function, plus one default exit. SwitchyOmega
    `|` alternatives, host patterns case-insensitive, `ip-cidr` matching literal
    IP hosts only. First match wins.
 
+   The URL a rule sees is the URL Chromium hands the script, not the one in
+   the address bar: for `https` (and `wss`) it keeps only scheme, host, and
+   port, dropping the path, query, and userinfo (verified on Electron 43).
+   A path or query rule therefore fires over `http` only. The settings preview
+   applies the same trimming, so it reports where a request really goes instead
+   of promising a match the browser will not make.
+
 4. **Delivery is a PAC data URL.** Electron main compiles the table into
    `FindProxyForURL` and calls `session.setProxy({ mode: "pac_script",
    pacScript })` on the work-browser session. `data:` PAC URLs are fetched
@@ -64,13 +71,21 @@ compiled into a `FindProxyForURL` function, plus one default exit. SwitchyOmega
    single-label hosts) mirrors the default `networkProxy.bypass`: a local model
    server, NAS, or MCP endpoint must not start failing because a proxy is now
    in the path. Rules are evaluated before the bypass, so an explicit rule wins.
+   Chromium's `<local>` also covers IPv6 literals (no dot in the name); the
+   preview uses the same rule, so an IPv6 address reads as direct unless a rule
+   names it.
 
 7. **Lifecycle.** One relay per referenced credentialed profile, reused while
    its upstream URL is unchanged and closed when the profile stops being
-   referenced or its URL changes. Applies are serialized so overlapping
-   settings writes cannot interleave relay ownership. A routing table that
-   cannot be applied (relay start failure) turns routing off and logs, rather
-   than leaving the previous rules in force.
+   referenced or its URL changes. Applying installs the new PAC on the session
+   first and only then closes the relays it replaced, so no request can land on
+   a port that just closed. Applies are serialized so overlapping settings
+   writes cannot interleave relay ownership. A table that cannot be applied
+   (relay start failure) turns routing off — the previous rules are not left in
+   force — and the settings write reports the reason to the renderer, which
+   shows it: the write landed, the switch did not. Startup paths only log, so a
+   proxy problem never blocks launching, and the message has credentials
+   scrubbed before it is logged or shown.
 
 8. **Persistence and validation.** Optional key in the existing host settings
    blob; no schema version bump and no migration. host-core validates the table

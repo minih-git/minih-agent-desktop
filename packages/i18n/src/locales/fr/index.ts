@@ -2092,7 +2092,7 @@ sklm: {
     "browserProxyProfileUrl": "URL du proxy",
     "browserProxyRules": "Règles",
     "browserProxyRulesDesc":
-      "Comparées de haut en bas, la première correspondance l'emporte ; le reste prend la sortie par défaut.",
+      "Comparées de haut en bas, la première correspondance l'emporte ; le reste prend la sortie par défaut. Un chemin dans une règle d'URL ne fonctionne qu'en http : pour https, Chromium ne transmet au script PAC que le schéma, l'hôte et le port.",
     "browserProxyAddRule": "Ajouter une règle",
     "browserProxyRuleKind": "Comparaison",
     "browserProxyRulePattern": "Motif",
@@ -2106,7 +2106,7 @@ sklm: {
     "browserProxyTestPlaceholder": "https://example.com/path",
     "browserProxyTestResult": "{{url}} passe par {{target}}",
     "browserProxyTestInvalid": "Saisissez une adresse http ou https.",
-    "browserProxySaveError": "Impossible d'enregistrer le routage du navigateur intégré.",
+    "browserProxyApplyFailed": "Le routage du navigateur intégré n'a pas pris effet : {{reason}}",
     "browserProxyRuleError": "Règle {{index}} : {{reason}}",
     "browserProxyProfileError": "Proxy {{index}} : {{reason}}",
     "browserProxyDefaultError": "Sortie par défaut : {{reason}}",

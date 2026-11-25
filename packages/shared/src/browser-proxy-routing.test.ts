@@ -1,7 +1,9 @@
+import { BlockList } from "node:net";
 import { describe, expect, it } from "vitest";
 import {
   BROWSER_PROXY_DIRECT,
   BROWSER_PROXY_LOCAL_NETWORKS,
+  applyBrowserProxyRoutingWithFallback,
   browserProxyRequestForUrl,
   browserProxyTargetForRequest,
   emptyBrowserProxyRouting,
@@ -114,14 +116,14 @@ describe("url wildcard", () => {
 
   it("matches a path fragment anywhere", () => {
     const value = wildcardRule("*://*/api/*", "url-wildcard");
-    expect(targetFor(value, "https://svc.test/api/v1")).toBe("office");
-    expect(targetFor(value, "https://svc.test/v1")).toBe(BROWSER_PROXY_DIRECT);
+    expect(targetFor(value, "http://svc.test/api/v1")).toBe("office");
+    expect(targetFor(value, "http://svc.test/v1")).toBe(BROWSER_PROXY_DIRECT);
   });
 
   it("matches the query string but not the fragment", () => {
     const value = wildcardRule("*token=abc*", "url-wildcard");
-    expect(targetFor(value, "https://svc.test/?token=abc")).toBe("office");
-    expect(targetFor(value, "https://svc.test/#token=abc")).toBe(BROWSER_PROXY_DIRECT);
+    expect(targetFor(value, "http://svc.test/?token=abc")).toBe("office");
+    expect(targetFor(value, "http://svc.test/#token=abc")).toBe(BROWSER_PROXY_DIRECT);
   });
 });
 
@@ -138,8 +140,8 @@ describe("regular expressions", () => {
     const value = routing({
       rules: [{ id: "r1", kind: "url-regex", pattern: "/admin", target: "home" }],
     });
-    expect(targetFor(value, "https://example.com/admin")).toBe("home");
-    expect(targetFor(value, "https://example.com/ADMIN")).toBe(BROWSER_PROXY_DIRECT);
+    expect(targetFor(value, "http://example.com/admin")).toBe("home");
+    expect(targetFor(value, "http://example.com/ADMIN")).toBe(BROWSER_PROXY_DIRECT);
   });
 });
 
@@ -336,41 +338,49 @@ describe("pac compilation", () => {
   });
 });
 
-describe("compiled pac behaviour", () => {
-  // The PAC runs in Chromium's sandbox; evaluating it here with the two
-  // isInNet helpers stubbed checks that the generated code answers the same
-  // way the TypeScript matcher does.
-  function evaluatePac(source: string): (url: string, host: string) => string {
-    const toBytes = (text: string): number[] | null => {
-      const parts = text.split(".");
-      if (parts.length !== 4) return null;
-      const bytes = parts.map((part) => Number(part));
-      return bytes.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
-        ? bytes
-        : null;
-    };
-    const inNet = (host: string, network: string, mask: string) => {
-      const address = toBytes(host);
-      const base = toBytes(network);
-      const netmask = toBytes(mask);
-      if (!address || !base || !netmask) return false;
-      return address.every((byte, index) => (byte & netmask[index]) === (base[index] & netmask[index]));
-    };
-    const inNetEx = (host: string, prefix: string) => {
-      const [network, bits] = prefix.split("/");
-      return host === network && Number(bits) === 128;
-    };
-    const factory = new Function(
-      "isInNet",
-      "isInNetEx",
-      `${source}\nreturn FindProxyForURL;`,
-    ) as (
-      net: typeof inNet,
-      netEx: typeof inNetEx,
-    ) => (url: string, host: string) => string;
-    return factory(inNet, inNetEx);
-  }
+// The PAC runs in Chromium's sandbox; evaluating it here with `isInNet` and
+// `isInNetEx` backed by Node's own `BlockList` checks the generated script
+// against an implementation this module does not share.
+function evaluatePac(source: string): (url: string, host: string) => string {
+  const blockList = (host: string, network: string, prefix: number): boolean => {
+    const family = network.includes(":") ? "ipv6" : "ipv4";
+    if (!Number.isInteger(prefix) || prefix < 0) return false;
+    if (family === "ipv6" && !host.includes(":")) return false;
+    const list = new BlockList();
+    try {
+      list.addSubnet(network, prefix, family);
+      return list.check(host, family);
+    } catch {
+      return false;
+    }
+  };
+  const maskPrefix = (mask: string): number => {
+    const octets = mask.split(".").map((part) => Number(part));
+    if (octets.length !== 4) return -1;
+    return octets.reduce((bits, octet) => {
+      let oneBits = 0;
+      for (let bit = 0; bit < 8; bit += 1) oneBits += (octet >> bit) & 1;
+      return bits + oneBits;
+    }, 0);
+  };
+  const inNet = (host: string, network: string, mask: string) =>
+    blockList(host, network, maskPrefix(mask));
+  const inNetEx = (host: string, prefix: string) => {
+    const [network, bits] = prefix.split("/");
+    return blockList(host, network, Number(bits));
+  };
+  const factory = new Function(
+    "isInNet",
+    "isInNetEx",
+    `${source}\nreturn FindProxyForURL;`,
+  ) as (
+    net: typeof inNet,
+    netEx: typeof inNetEx,
+  ) => (url: string, host: string) => string;
+  return factory(inNet, inNetEx);
+}
 
+describe("compiled pac behaviour", () => {
   const value = routing({
     rules: [
       { id: "r1", kind: "host-wildcard", pattern: "*.corp.example", target: "office" },
@@ -388,7 +398,7 @@ describe("compiled pac behaviour", () => {
   it("routes exactly like the matcher", () => {
     for (const url of [
       "https://www.corp.example/",
-      "https://example.com/api/v1",
+      "http://example.com/api/v1",
       "http://10.20.30.40/",
       "https://www.example.org/",
     ]) {
@@ -520,9 +530,191 @@ describe("host normalization", () => {
   });
 
   it("drops the fragment the way the PAC sandbox does", () => {
-    expect(browserProxyRequestForUrl("https://example.com/a?b=1#c")?.url).toBe(
-      "https://example.com/a?b=1",
+    expect(browserProxyRequestForUrl("http://example.com/a?b=1#c")?.url).toBe(
+      "http://example.com/a?b=1",
     );
     expect(browserProxyRequestForUrl("http://[::1]:8080/")?.host).toBe("::1");
+  });
+});
+
+describe("https requests lose their path before the pac runs", () => {
+  it("keeps only scheme, host, and port for https", () => {
+    expect(browserProxyRequestForUrl("https://example.com/api/v1?x=1#f")?.url).toBe(
+      "https://example.com/",
+    );
+    expect(browserProxyRequestForUrl("https://example.com:8443/a/b")?.url).toBe(
+      "https://example.com:8443/",
+    );
+    expect(browserProxyRequestForUrl("HTTPS://Example.COM/a")?.url).toBe(
+      "https://example.com/",
+    );
+  });
+
+  it("keeps the path for http", () => {
+    expect(browserProxyRequestForUrl("http://example.com:8080/api/v1?x=1")?.url).toBe(
+      "http://example.com:8080/api/v1?x=1",
+    );
+  });
+
+  it("makes a path rule unreachable over https instead of pretending it works", () => {
+    const value = wildcardRule("*://example.com/api/*", "url-wildcard");
+    expect(targetFor(value, "http://example.com/api/v1")).toBe("office");
+    expect(targetFor(value, "https://example.com/api/v1")).toBe(BROWSER_PROXY_DIRECT);
+  });
+
+  it("still matches https by host and port", () => {
+    const byPort = wildcardRule("*://example.com:8443/*", "url-wildcard");
+    expect(targetFor(byPort, "https://example.com:8443/")).toBe("office");
+    expect(targetFor(byPort, "https://example.com/")).toBe(BROWSER_PROXY_DIRECT);
+    const byHost = wildcardRule("*.example.com");
+    expect(targetFor(byHost, "https://www.example.com/api/v1")).toBe("office");
+  });
+});
+
+describe("ipv6 ranges", () => {
+  function cidrRouting(pattern: string): BrowserProxyRouting {
+    return routing({
+      rules: [{ id: "r1", kind: "ip-cidr", pattern, target: "office" }],
+    });
+  }
+
+  it("matches inside the prefix and not outside it", () => {
+    const value = cidrRouting("2001:db8::/32");
+    expect(targetFor(value, "http://[2001:db8::5]/")).toBe("office");
+    expect(targetFor(value, "http://[2001:db9::5]/")).toBe(BROWSER_PROXY_DIRECT);
+  });
+
+  it("handles a prefix that is not on a byte boundary", () => {
+    const value = cidrRouting("fe80::/10");
+    expect(targetFor(value, "http://[fe80::1]/")).toBe("office");
+    expect(targetFor(value, "http://[febf::1]/")).toBe("office");
+    expect(targetFor(value, "http://[fec0::1]/")).toBe(BROWSER_PROXY_DIRECT);
+  });
+
+  it("does not leak a /7 into loopback or global addresses", () => {
+    const value = cidrRouting("fc00::/7");
+    expect(targetFor(value, "http://[fc00::5]/")).toBe("office");
+    expect(targetFor(value, "http://[fd00::5]/")).toBe("office");
+    expect(targetFor(value, "http://[::1]/")).toBe(BROWSER_PROXY_DIRECT);
+    expect(targetFor(value, "http://[2001:db8::5]/")).toBe(BROWSER_PROXY_DIRECT);
+    expect(targetFor(value, "http://[2001:db9::5]/")).toBe(BROWSER_PROXY_DIRECT);
+  });
+
+  it("writes the masked network into the pac", () => {
+    const pac = compileBrowserProxyPac(cidrRouting("2001:db8::/32"), {
+      office: "PROXY 10.1.1.1:3128",
+    });
+    expect(pac).toContain('isInNetEx(h, "2001:db8::/32")');
+    const loopback = compileBrowserProxyPac(routing(), {
+      office: "PROXY 10.1.1.1:3128",
+    });
+    expect(loopback).toContain('isInNetEx(host, "::1/128")');
+  });
+
+  it("routes ipv6 addresses through the compiled pac", () => {
+    const value = cidrRouting("2001:db8::/32");
+    const pac = compileBrowserProxyPac(value, {
+      office: "PROXY 10.1.1.1:3128",
+    });
+    const findProxy = evaluatePac(pac);
+    expect(findProxy("http://[2001:db8::5]/", "2001:db8::5")).toBe(
+      "PROXY 10.1.1.1:3128",
+    );
+    expect(findProxy("http://[2001:db9::5]/", "2001:db9::5")).toBe("DIRECT");
+    expect(findProxy("http://[fec0::1]/", "fec0::1")).toBe("DIRECT");
+  });
+});
+
+describe("local bypass parity", () => {
+  const value = routing({ defaultTarget: "home" });
+  const pac = compileBrowserProxyPac(value, {
+    office: "PROXY 10.1.1.1:3128",
+    home: "SOCKS5 127.0.0.1:7891",
+  });
+  const findProxy = evaluatePac(pac);
+
+  it("keeps the preview and the pac on the same page for local hosts", () => {
+    for (const url of [
+      "http://127.0.0.1:11434/",
+      "http://localhost:3000/",
+      "http://nas/",
+      "http://192.168.1.10/",
+      "http://[2001:db9::5]/",
+    ]) {
+      const request = browserProxyRequestForUrl(url);
+      if (!request) throw new Error(`not routable: ${url}`);
+      expect(browserProxyTargetForRequest(value, request)).toBe(
+        BROWSER_PROXY_DIRECT,
+      );
+      expect(findProxy(request.url, request.host)).toBe("DIRECT");
+    }
+    // A routable host still takes the default exit.
+    expect(targetFor(value, "https://example.org/")).toBe("home");
+  });
+
+  it("still lets a rule name a private host", () => {
+    const named = routing({
+      rules: [
+        { id: "r1", kind: "ip-cidr", pattern: "192.168.0.0/16", target: "office" },
+      ],
+      defaultTarget: "home",
+    });
+    expect(targetFor(named, "http://192.168.1.10/")).toBe("office");
+  });
+
+});
+describe("routing failure fallback", () => {
+  it("returns ok and touches nothing when the table applies", async () => {
+    const calls: string[] = [];
+    const result = await applyBrowserProxyRoutingWithFallback({
+      apply: async () => {
+        calls.push("apply");
+      },
+      revert: async () => {
+        calls.push("revert");
+      },
+      log: (message) => calls.push(`log:${message}`),
+    });
+    expect(result).toEqual({ ok: true });
+    expect(calls).toEqual(["apply"]);
+  });
+
+  it("turns routing off and reports the reason without the credentials", async () => {
+    const calls: string[] = [];
+    const result = await applyBrowserProxyRoutingWithFallback({
+      apply: async () => {
+        throw new Error("connect ECONNREFUSED socks5://user:s3cret@10.0.0.9:1080");
+      },
+      revert: async () => {
+        calls.push("revert");
+      },
+      log: (message) => calls.push(`log:${message}`),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a failure");
+    expect(calls).toContain("revert");
+    const logged = calls.join("\n");
+    expect(logged).toContain("//***@");
+    expect(logged).not.toContain("s3cret");
+    expect(result.error.message).toContain("did not take effect");
+    expect(result.error.message).not.toContain("s3cret");
+    expect(
+      (result.error as Error & { errorCode?: string }).errorCode,
+    ).toBe("BROWSER_PROXY_ROUTING_FAILED");
+  });
+
+  it("still reports the failure when the fallback fails too", async () => {
+    const calls: string[] = [];
+    const result = await applyBrowserProxyRoutingWithFallback({
+      apply: async () => {
+        throw new Error("relay start failed");
+      },
+      revert: async () => {
+        throw new Error("session.setProxy: net::ERR_FAILED");
+      },
+      log: (message) => calls.push(message),
+    });
+    expect(result.ok).toBe(false);
+    expect(calls.some((message) => message.includes("fallback failed"))).toBe(true);
   });
 });

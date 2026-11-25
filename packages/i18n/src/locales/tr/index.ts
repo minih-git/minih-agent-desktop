@@ -2098,7 +2098,7 @@ sklm: {
     browserProxyProfileUrl: "Proxy URL'si",
     browserProxyRules: "Kurallar",
     browserProxyRulesDesc:
-      "Yukarıdan aşağıya karşılaştırılır, ilk eşleşen geçerlidir; eşleşmeyenler varsayılan çıkışı kullanır.",
+      "Yukarıdan aşağıya karşılaştırılır, ilk eşleşen geçerlidir; eşleşmeyenler varsayılan çıkışı kullanır. URL kuralındaki yol yalnızca http üzerinde çalışır: https için Chromium proxy betiğine yalnızca şema, ana makine ve bağlantı noktasını verir.",
     browserProxyAddRule: "Kural ekle",
     browserProxyRuleKind: "Eşleşme",
     browserProxyRulePattern: "Kalıp",
@@ -2112,7 +2112,7 @@ sklm: {
     browserProxyTestPlaceholder: "https://example.com/path",
     browserProxyTestResult: "{{url}} → {{target}}",
     browserProxyTestInvalid: "Bir http veya https adresi girin.",
-    browserProxySaveError: "Yerleşik tarayıcı yönlendirmesi kaydedilemedi.",
+    browserProxyApplyFailed: "Yerleşik tarayıcı yönlendirmesi devreye girmedi: {{reason}}",
     browserProxyRuleError: "Kural {{index}}: {{reason}}",
     browserProxyProfileError: "Proxy {{index}}: {{reason}}",
     browserProxyDefaultError: "Varsayılan çıkış: {{reason}}",
