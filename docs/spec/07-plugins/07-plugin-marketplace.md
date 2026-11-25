@@ -265,6 +265,12 @@ Client rules for v2:
   visible in version history with its reason, and an installed copy of a yanked
   version is surfaced as needing attention.
 - `minMinihAgent` blocks install when the running app is older, before download.
+  It is a *range*, and the two spellings that mean "at least X.Y.Z" are
+  `">=X.Y.Z"` (what producers write) and a bare `X.Y.Z`. Any other range is
+  not something this host can compare, so it is logged and treated as no floor
+  — the permissive answer, kept deliberately rather than hiding a plugin from
+  every host that cannot parse its spelling. The same gate decides the
+  installable flag in a listing and whether an update is offered.
 - `provenance` is stored with the installed plugin and shown in the detail sheet,
   so an installed marketplace plugin can be traced back to a repository and
   commit.

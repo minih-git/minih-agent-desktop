@@ -2986,6 +2986,8 @@ sklm: {
   },
   plugins: {
     ...en.plugins,
+    hostTooOld: "此外掛需要 Minih-Agent-Desktop {{required}} 或更新版本。請先升級應用程式，再重新安裝。",
+    hostTooOldGeneric: "此外掛需要更新版本的 Minih-Agent-Desktop。請先升級應用程式，再重新安裝。",
     webhook: en.plugins.webhook,
     schedules: en.plugins.schedules,
     interruptionTitle: "外掛仍有工作正在進行",

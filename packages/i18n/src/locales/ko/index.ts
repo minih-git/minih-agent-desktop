@@ -3006,6 +3006,8 @@ sklm: {
   },
   plugins: {
     ...en.plugins,
+    hostTooOld: "이 플러그인은 Minih-Agent-Desktop {{required}} 이상이 필요합니다. 앱을 업데이트한 뒤 다시 설치하세요.",
+    hostTooOldGeneric: "이 플러그인은 더 새로운 Minih-Agent-Desktop이 필요합니다. 앱을 업데이트한 뒤 다시 설치하세요.",
     webhook: en.plugins.webhook,
     schedules: en.plugins.schedules,
     interruptionTitle: "플러그인 작업이 종료됩니다",

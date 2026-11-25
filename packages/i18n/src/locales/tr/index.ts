@@ -3002,6 +3002,8 @@ sklm: {
   },
   plugins: {
     ...en.plugins,
+    hostTooOld: "Bu eklenti Minih-Agent-Desktop {{required}} veya daha yenisini gerektirir. Uygulamayı güncelleyip yeniden kurun.",
+    hostTooOldGeneric: "Bu eklenti daha yeni bir Minih-Agent-Desktop gerektirir. Uygulamayı güncelleyip yeniden kurun.",
     webhook: en.plugins.webhook,
     schedules: en.plugins.schedules,
     interruptionTitle: "Eklenti çalışması sona erecek",

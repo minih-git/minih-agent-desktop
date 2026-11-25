@@ -73,6 +73,26 @@ export function canCancelInstall(job: PluginInstallJob): boolean {
   return job.status === "running" && !job.cancelling && job.phase === "download";
 }
 
+/** The refusal code and message the host uses for a catalog host floor. */
+const HOST_TOO_OLD_MARKER = "PLUGIN_HOST_TOO_OLD";
+
+/**
+ * The host floor a failed install demanded, when that is the reason.
+ *
+ * `null` means "not a host-floor refusal". `{ required: undefined }` means the
+ * host refused for that reason without naming a version, which is still worth a
+ * clear message instead of the raw code.
+ */
+export function hostTooOldRequired(error: unknown): { required?: string } | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = (error as { code?: unknown; data?: { errorCode?: unknown } } | null)?.data?.errorCode;
+  const coded = code === HOST_TOO_OLD_MARKER || (error as { code?: unknown } | null)?.code === HOST_TOO_OLD_MARKER;
+  if (!coded && !message.includes(HOST_TOO_OLD_MARKER)) return null;
+  // The host phrases it as "... requires Minih-Agent-Desktop <version> or newer".
+  const required = /requires Minih-Agent-Desktop\s+(\S+)/i.exec(message)?.[1];
+  return required ? { required } : {};
+}
+
 /**
  * The user's own cancellation, which is not a failure to report. The host marks
  * it in the JSON-RPC error code and in the message.

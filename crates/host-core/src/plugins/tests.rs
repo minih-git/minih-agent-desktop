@@ -1,3 +1,4 @@
+use super::marketplace::{host_supports_version, required_host_version};
 use super::*;
 use crate::activation::ActivationMode;
 use tempfile::tempdir;
@@ -3500,4 +3501,63 @@ fn task_permission_ceiling_is_known_and_granted() {
     manifest["tasks"] = json!({ "manage": { "maxPermission": "accept-edits" } });
     write_plugin(&granted, manifest, &[]);
     PluginManager::read_manifest(&granted).unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace host-version gate
+// ---------------------------------------------------------------------------
+
+/// One catalog version, with only the host floor varied.
+fn market_version(min_minih_agent: Option<&str>) -> MarketVersion {
+    let mut value = json!({ "version": "0.3.0", "publishedAt": "2026-11-24", "permissions": [] });
+    if let Some(min) = min_minih_agent {
+        value["minMinihAgent"] = json!(min);
+    }
+    serde_json::from_value(value).expect("a catalog version")
+}
+
+#[test]
+fn a_catalog_host_floor_is_read_through_its_range_prefix() {
+    // The spelling the catalog actually ships, and the older bare one.
+    assert_eq!(required_host_version(">=1.10.0").as_deref(), Some("1.10.0"));
+    assert_eq!(
+        required_host_version("  >= 1.10.0 ").as_deref(),
+        Some("1.10.0")
+    );
+    assert_eq!(required_host_version("1.9.0").as_deref(), Some("1.9.0"));
+    assert_eq!(required_host_version("v1.9.0").as_deref(), Some("v1.9.0"));
+    // Anything this host cannot compare stays unreadable, which callers treat
+    // as "no floor" — the same permissive answer 1.10.0 gave every constraint.
+    assert_eq!(required_host_version(""), None);
+    assert_eq!(required_host_version("   "), None);
+    assert_eq!(required_host_version("^1.10"), None);
+    assert_eq!(required_host_version(">=1.10 <2"), None);
+}
+
+#[test]
+fn a_catalog_floor_above_this_host_is_no_longer_ignored() {
+    // The regression: `>=1.10.0` used to parse as nothing, so 1.9.0 installed
+    // plugin 0.3.0 and broke. Reading the prefix is what closes that hole.
+    let required = required_host_version(">=1.10.0").expect("a readable floor");
+    assert_eq!(compare_plugin_versions("1.9.0", &required), Ordering::Less);
+    assert_eq!(
+        compare_plugin_versions("1.10.0", &required),
+        Ordering::Equal
+    );
+    assert_eq!(
+        compare_plugin_versions("1.11.0", &required),
+        Ordering::Greater
+    );
+
+    // Against this host: a floor at or below it installs, a higher one does not.
+    assert!(host_supports_version(&market_version(Some(">=0.1.0"))));
+    assert!(host_supports_version(&market_version(Some(&format!(
+        ">={}",
+        crate::state::HOST_VERSION
+    )))));
+    assert!(!host_supports_version(&market_version(Some(">=99.0.0"))));
+    // No declaration is still "no floor".
+    assert!(host_supports_version(&market_version(None)));
+    // An unreadable range keeps the permissive answer.
+    assert!(host_supports_version(&market_version(Some("^99.0"))));
 }

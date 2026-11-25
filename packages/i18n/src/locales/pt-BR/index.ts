@@ -2963,6 +2963,8 @@ export const ptBR = {
   },
   plugins: {
     ...en.plugins,
+    hostTooOld: "Este plugin precisa do Minih-Agent-Desktop {{required}} ou mais recente. Atualize o app e instale novamente.",
+    hostTooOldGeneric: "Este plugin precisa de uma versão mais recente do Minih-Agent-Desktop. Atualize o app e instale novamente.",
     webhook: en.plugins.webhook,
     schedules: en.plugins.schedules,
     interruptionTitle: "O trabalho do plugin será encerrado",

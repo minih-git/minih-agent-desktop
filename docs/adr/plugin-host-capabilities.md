@@ -597,3 +597,44 @@ TUN-mode proxy on the whole machine.
   working mailbox while the password left by a route the user did not choose.
 - **Resolve the mail host locally and connect through the proxy by address.**
   Rejected: local DNS is exactly what a proxy in this position exists to bypass.
+
+## 2026-11-25 — a catalog host floor that is actually read
+
+Context: the plugin marketplace never enforced its host floor. A catalog entry
+declares `minMinihAgent: ">=1.10.0"`, the comparison understood only a bare
+version, and an unreadable constraint answered "installs fine" — which is how
+1.9.0 installed a plugin built for 1.10.0 and broke.
+
+### Decision
+
+1. The floor is read through its range prefix: `">=X.Y.Z"` and a bare `X.Y.Z`
+   both mean "at least X.Y.Z", with surrounding spaces tolerated.
+2. Every existing caller already asks the same predicate — the install/download
+   path, the update check and the `installable` flag a listing shows — so no
+   call site changes; they simply start getting the right answer.
+3. Any other range keeps the permissive answer this host has always given an
+   unreadable floor, and is logged at warn level: refusing would hide a plugin
+   from every host that cannot parse its spelling, which is a worse failure than
+   the one being fixed.
+4. The manifest-side `engines.minihAgent` is not gated by this host at all (it is
+   normalised and stored, and the manifest schema documents it), so there is
+   nothing to change there.
+
+### Consequences
+
+- A version pinned to a newer app is no longer offered, installed, or pushed as
+  an update on an older host.
+- The install dialog says "update the app" instead of showing a raw
+  `PLUGIN_HOST_TOO_OLD` failure: the refusal is mapped to a localised message
+  that names the required version when the host reports one.
+- A publisher who writes a range this host cannot parse still reaches old hosts,
+  and the warning makes the case visible instead of silent.
+
+### Alternatives
+
+- **Refuse any catalog entry whose floor cannot be parsed.** Rejected for now:
+  that would hide plugins from hosts that are perfectly capable, and the
+  permissive answer predates this fix.
+- **Support the whole range grammar.** Rejected as scope: the catalog contract is
+  "at least X.Y.Z", and a full semver-range implementation would be a bigger
+  surface than the one the field is documented to carry.

@@ -25,6 +25,7 @@ import {
 } from "./model";
 import {
   canCancelInstall,
+  hostTooOldRequired,
   isInstallCancelled,
   newInstallJob,
   nextInstallSample,
@@ -587,7 +588,16 @@ export function usePluginsPage() {
         error: null,
       }));
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      // A catalog entry pinned to a newer app is refused by the host, and the
+      // user needs to read "update the app", not an error code.
+      const hostFloor = hostTooOldRequired(e);
+      const message = hostFloor
+        ? hostFloor.required
+          ? t("plugins.hostTooOld", { required: hostFloor.required })
+          : t("plugins.hostTooOldGeneric")
+        : e instanceof Error
+          ? e.message
+          : String(e);
       if (isInstallCancelled(e)) {
         // The user stopped it: the dialog leaves quietly, without an error.
         closeInstallDialog();

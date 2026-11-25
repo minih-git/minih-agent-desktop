@@ -635,14 +635,40 @@ impl PluginManager {
     }
 }
 
+/// Whether this host can install a catalog version.
+///
+/// The catalog declares the host floor as a range, and the one spelling every
+/// producer uses is `">=X.Y.Z"`; a bare `X.Y.Z` is the older one. Both mean the
+/// same thing here. Any other range (`">=1.10 <2"`, `"^1.10"`, a caret list) is
+/// not something this host can compare, so it keeps the permissive answer an
+/// unreadable floor has always had — and says so, because that answer lets an
+/// incompatible version through.
 pub(crate) fn host_supports_version(version: &MarketVersion) -> bool {
     let Some(required) = version.min_minih_agent.as_deref().map(str::trim) else {
         return true;
     };
-    if required.is_empty() || ParsedPluginVersion::parse(required).is_none() {
+    let Some(required) = required_host_version(required) else {
         return true;
+    };
+    compare_plugin_versions(crate::state::HOST_VERSION, &required) != Ordering::Less
+}
+
+/// The minimum host version a catalog constraint names, or `None` when the
+/// constraint is empty or in a form this host cannot read.
+pub(crate) fn required_host_version(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
     }
-    compare_plugin_versions(crate::state::HOST_VERSION, required) != Ordering::Less
+    let bare = trimmed.strip_prefix(">=").map(str::trim).unwrap_or(trimmed);
+    if ParsedPluginVersion::parse(bare).is_some() {
+        return Some(bare.to_string());
+    }
+    tracing::warn!(
+        constraint = %raw,
+        "catalog host-version constraint is not a form this host understands; offering the version anyway"
+    );
+    None
 }
 
 /// Whether a catalog version carries everything an install needs.

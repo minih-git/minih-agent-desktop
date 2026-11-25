@@ -3007,6 +3007,8 @@ sklm: {
     archived: "已归档",
   },
   plugins: {
+    hostTooOld: "此插件需要 Minih-Agent-Desktop {{required}} 或更高版本。请先升级应用，再重新安装。",
+    hostTooOldGeneric: "此插件需要更高版本的 Minih-Agent-Desktop。请先升级应用，再重新安装。",
     webhook: {
       title: "Webhook",
       permissionLabel: "接收 Webhook 请求",

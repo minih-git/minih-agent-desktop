@@ -3039,6 +3039,8 @@ sklm: {
     archived: "Archived",
   },
   plugins: {
+    hostTooOld: "This plugin needs Minih-Agent-Desktop {{required}} or newer. Update the app, then install it again.",
+    hostTooOldGeneric: "This plugin needs a newer Minih-Agent-Desktop. Update the app, then install it again.",
     webhook: {
       title: "Webhooks",
       permissionLabel: "Receive webhook requests",
