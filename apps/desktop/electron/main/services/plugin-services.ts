@@ -324,6 +324,18 @@ export function createPluginServices({
     listPluginCredentialSlots: (pluginId) =>
       listPluginCredentialSlots(callPluginCredentialHost, pluginId),
     credentialDialogs,
+    // The one write a plugin may make outside its sandbox: the single file the
+    // user picked in the native "save as" dialog. Cancelling writes nothing.
+    saveFile: async ({ defaultPath }) => {
+      const window = getMainWindow();
+      // No `buttonLabel`: the system dialog already speaks the user's language.
+      const options = { defaultPath, properties: ["createDirectory" as const] };
+      const answer = window
+        ? await dialog.showSaveDialog(window, options)
+        : await dialog.showSaveDialog(options);
+      return answer.canceled || !answer.filePath ? null : answer.filePath;
+    },
+    saveAsDataDir: dataDir,
     updatePluginSettings: async (pluginId, patch) => {
       const host = getHost();
       if (!host) throw new Error("host unavailable");

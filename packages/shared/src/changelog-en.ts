@@ -7,6 +7,7 @@ export const enEntries: ChangelogEntry[] = [
     highlights: [
       "Each mailbox account can now go through its own proxy: choose HTTP (CONNECT) or SOCKS5 in the account form, with an optional proxy user name and password, and that account's connection — and only that one — uses it. The mail server's name is handed to the proxy instead of being resolved here, the certificate is still checked against the mail server, and a failing proxy fails the connection instead of quietly connecting directly. The proxy login is sent unencrypted to the proxy itself, so use it for your own or your network's proxy.",
       "Plugins that declare a minimum app version are now really held to it. A catalog entry that asks for 1.10.0 or newer is no longer installed on 1.9.0, and the install dialog says to update the app instead of showing an error code.",
+      "A plugin can now save one file where you choose: the save dialog names the file, you pick the folder, and that is the only thing written — 50 MiB at most, never inside the app's own data.",
     ],
   },
   {
