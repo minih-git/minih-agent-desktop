@@ -8,6 +8,7 @@ export * from "./plugin-skills.js";
 export * from "./plugin-skills-prompt.js";
 export * from "./plugin-session-context.js";
 export * from "./one-shot-complete.js";
+export { createSystemProxyFetch } from "./node-proxy.js";
 export * from "./prompt-templates.js";
 export * from "./provider-headers.js";
 export * from "./project-instructions.js";

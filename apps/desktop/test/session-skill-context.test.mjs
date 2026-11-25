@@ -101,6 +101,7 @@ async function fixture() {
       getSettings: async () => settings,
       logger: { app() {} },
       vendorOAuth: { resolveAuth: async () => undefined },
+      providerFetch: async () => { throw new Error("Unexpected model HTTP request"); },
       completeOneShot: async () => ({ text: "Inspect project runtime" }),
     },
     async assertProjectSkillAvailable() {

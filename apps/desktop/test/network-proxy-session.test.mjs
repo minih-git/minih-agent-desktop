@@ -69,3 +69,33 @@ test("a session created after a settings write still receives the proxy", async 
     { proxyRules: "http://proxy.example.com:8080", proxyBypassRules: "localhost" },
   ]);
 });
+
+test("provider transport is reused, retired on proxy changes and closed on shutdown", async () => {
+  const { fetchProvider, disposeSystemProxyRelay } = await import("../electron/main/network-proxy.ts");
+  const { providerTransports } = await import("@minih-agent/agent-runtime");
+  const responses = await Promise.all([
+    fetchProvider("https://provider.example/v1/chat/completions"),
+    fetchProvider("https://provider.example/v1/chat/completions"),
+  ]);
+  assert.deepEqual(await Promise.all(responses.map(response => response.text())), ["provider response", "provider response"]);
+  assert.equal(providerTransports.length, 1);
+  assert.equal(providerTransports[0].closed, false);
+  await applyNetworkProxy({ mode: "direct" });
+  assert.equal(providerTransports[0].closed, true);
+  await fetchProvider("https://provider.example/v1/chat/completions");
+  assert.equal(providerTransports.length, 2);
+  await disposeSystemProxyRelay();
+  assert.equal(providerTransports[1].closed, true);
+  await assert.rejects(fetchProvider("https://provider.example"), /provider transport is stopped/);
+  assert.equal(providerTransports.length, 2);
+});
+
+test("a cancelled provider request does not create a transport", async () => {
+  const { fetchProvider } = await import("../electron/main/network-proxy.ts");
+  const { providerTransports } = await import("@minih-agent/agent-runtime");
+  const count = providerTransports.length;
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(fetchProvider("https://provider.example", { signal: controller.signal }), { name: "AbortError" });
+  assert.equal(providerTransports.length, count);
+});

@@ -23,6 +23,7 @@ import {
 } from "@minih-agent/shared";
 import {
   startAuthenticatedProxyRelay,
+  createSystemProxyFetch,
   type AuthenticatedProxyRelay,
 } from "@minih-agent/agent-runtime";
 import { applyUserEndpointPolicyFromAppSettings } from "./endpoint-policy";
@@ -39,6 +40,20 @@ let activeRelay: AuthenticatedProxyRelay | null = null;
 let relayUpstreamHref: string | null = null;
 let systemProxyRelay: SystemProxyRelay | null = null;
 let systemProxyRelayStart: Promise<SystemProxyRelay> | null = null;
+let providerTransport: ReturnType<typeof createSystemProxyFetch> | null = null;
+let providerTransportStopped = false;
+
+/** Keep model HTTP on Node while Chromium still owns proxy/PAC decisions. */
+export const fetchProvider: typeof fetch = async (input, init) => {
+  const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+  signal?.throwIfAborted();
+  if (providerTransportStopped) throw new Error("provider transport is stopped");
+  const relayUrl = await ensureSystemProxyRelay();
+  signal?.throwIfAborted();
+  if (providerTransportStopped) throw new Error("provider transport is stopped");
+  providerTransport ??= createSystemProxyFetch(relayUrl);
+  return providerTransport.fetch(input, init);
+};
 /** Sessions registered through registerNetworkProxySession (updater traffic). */
 const registeredSessions = new Set<Session>();
 
@@ -63,6 +78,10 @@ export function currentSystemProxyRelayUrl(): string | null {
 }
 
 export async function disposeSystemProxyRelay(): Promise<void> {
+  providerTransportStopped = true;
+  const transport = providerTransport;
+  providerTransport = null;
+  await transport?.destroy();
   const pending = systemProxyRelayStart;
   const relay = systemProxyRelay ?? (pending ? await pending : null);
   systemProxyRelay = null;
@@ -108,6 +127,15 @@ export async function applyNetworkProxy(
     throw error;
   }
   if (previous && previous !== started) await previous.close();
+  const transport = providerTransport;
+  providerTransport = null;
+  if (transport) {
+    // Graceful close lets in-flight model streams finish without retaining the
+    // old proxy route for the next completion.
+    void transport.close().catch((error: unknown) => {
+      process.stderr.write(`[provider-transport] close failed: ${error instanceof Error ? error.name : "unknown error"}\n`);
+    });
+  }
   installMainFetch();
   return next;
 }

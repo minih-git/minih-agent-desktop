@@ -13,6 +13,7 @@ type Dependencies = {
   getHost: () => Host | null;
   resolveRuntimeModel: RuntimeModelResolver;
   vendorOAuth: Pick<VendorOAuth, "resolveAuth">;
+  providerFetch: typeof fetch;
   completeOneShot?: typeof completeOneShotImpl;
 };
 
@@ -42,7 +43,7 @@ export function createPluginCompletionService(deps: Dependencies) {
     const context = pluginCompleteContext({ ...input, sessionContext });
     const result = await (deps.completeOneShot ?? completeOneShotImpl)(provider, context,
       asPluginThinkingLevel(model.thinkingLevel), {
-        signal: input.signal, sessionId: launchSessionId, maxOutputTokens: input.maxOutputTokens,
+        signal: input.signal, fetch: deps.providerFetch, sessionId: launchSessionId, maxOutputTokens: input.maxOutputTokens,
         // The public API classifies empty answers as INVALID_ARGUMENT.
         emptyErrorCode: "INVALID_ARGUMENT", emptyErrorMessage: "The model returned no text.",
       });

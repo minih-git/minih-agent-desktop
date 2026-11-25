@@ -1,4 +1,5 @@
 import { createPluginCompletionService } from "../plugin-completion-service";
+import { fetchProvider } from "../network-proxy";
 import { createPluginTitleService } from "../plugin-session-titles";
 import { dialog, globalShortcut, shell, type BrowserWindow } from "electron";
 import { isAbsolute, join, resolve as resolvePath, sep } from "node:path";
@@ -552,7 +553,7 @@ export function createPluginServices({
       transcript: (pluginId, input) =>
         callPluginSessionHost("plugin.conversations.transcript", pluginId, input),
     },
-    complete: createPluginCompletionService({ getHost, resolveRuntimeModel, vendorOAuth }),
+    complete: createPluginCompletionService({ getHost, resolveRuntimeModel, vendorOAuth, providerFetch: fetchProvider }),
     // ---- embeddings -------------------------------------------------------
     // Resolving the model and making the call both happen here, in the process
     // that holds the credential; the runtime only sees the numbers back.

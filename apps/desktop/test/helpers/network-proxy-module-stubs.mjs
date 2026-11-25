@@ -24,7 +24,13 @@ export async function resolve(specifier, context, nextResolve) {
   if (specifier === "@minih-agent/agent-runtime") {
     return {
       url: `data:text/javascript,${encodeURIComponent(
-        `export const startAuthenticatedProxyRelay = ${relayStub.startAuthenticatedProxyRelay.toString()};`,
+        `export const startAuthenticatedProxyRelay = ${relayStub.startAuthenticatedProxyRelay.toString()};
+         export const providerTransports = [];
+         export const createSystemProxyFetch = () => {
+           const state = { closed: false, requests: 0 };
+           providerTransports.push(state);
+           return { fetch: async () => { state.requests++; return new Response("provider response"); }, close: async () => { state.closed = true; }, destroy: async () => { state.closed = true; } };
+         };`,
       )}`,
       shortCircuit: true,
     };

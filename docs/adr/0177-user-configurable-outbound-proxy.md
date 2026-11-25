@@ -48,7 +48,12 @@ A single Settings control should apply one proxy to app-owned traffic.
    `fetch` is `net.fetch` so SOCKS5 uses the Chromium stack; sidecar sets an
    undici dispatcher (`ProxyAgent` for HTTP(S), SOCKS5 CONNECT + the same
    undici `fetch`); host-core curl gets `--proxy` / `--noproxy` from the
-   stored settings. Default bypass is
+   stored settings. Plugin `agent.complete` uses an explicit Node/undici fetch
+   through the authenticated route-resolution relay, rather than inheriting
+   main's global Chromium fetch. Chromium still resolves proxy/PAC and bypass
+   rules; changing proxy settings retires the provider pool gracefully. Other
+   main-owned fetches, including plugin `net.fetch`, remain Chromium-owned.
+   Default bypass is
    `localhost,127.0.0.1,::1,<local>` so loopback MCP and local models stay
    direct.
 
