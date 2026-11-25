@@ -1,4 +1,7 @@
 # Unreleased changes
+- The built-in employee sidebar group is removed, including rows from existing
+  profiles. Employee sessions, task history, memories and plugin APIs are kept.
+
 - Granted plugins can receive authenticated webhooks over the local network.
   The host persists and retries events, exposes a local-only switch, and keeps
   tokens out of the main renderer by using a native system dialog.

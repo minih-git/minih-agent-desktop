@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import type { TaskView } from "@minih-agent/shared";
-import { useAppStore } from "../../stores/app-store";
 import { useBots } from "./use-bots";
 import { useTasks } from "./use-tasks";
 
@@ -46,32 +45,5 @@ export function useTaskComposer(
       agent: employee?.profile.name ?? t("bots.group.title"),
     }),
     archived: false,
-  };
-}
-
-/**
- * What clicking an employee, or one of its tasks, does.
- *
- * The sidebar is a hotspot too, so the two decisions live here: the steward is a
- * conversation (it proposes cards and reports in chat, so it opens as one),
- * every other employee opens its workbench, and a task opens its own session.
- * `reportError` is the sidebar's own toast, passed in so this module does not
- * invent a second way to report one.
- */
-export function useBotSidebarHandlers(
-  reportError: (error: unknown) => void,
-): {
-  onOpenBot: (bot: { sessionId: string; profile?: { definition?: string } }) => void;
-  onOpenTask: (task: TaskView) => void;
-} {
-  const selectSession = useAppStore((state) => state.selectSession);
-  const setWorkbenchEmployee = useAppStore((state) => state.setWorkbenchEmployee);
-  return {
-    onOpenBot: (bot) => {
-      setWorkbenchEmployee(bot.sessionId);
-    },
-    onOpenTask: (task) => {
-      void selectSession(task.sessionId).catch(reportError);
-    },
   };
 }

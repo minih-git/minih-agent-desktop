@@ -52,8 +52,8 @@ managed next to the thing that drives them.
    (`bot.create` / `bot.update` / `bot.dismiss` / `bot.forTaskSession`,
    `team.norms.*`, `task.experience.*`) are untouched. The Super Agent plugin
    decides what a turn does with the norms; until then they are inert data.
-5. **Everything else in employee mode keeps working unchanged**: the sidebar
-   group, the workbench, the task cards, the waiting channel, the relay, the
+5. **Other employee capabilities remain**: the workbench, the task cards, the
+   waiting channel, the relay, the
    plugin task interface `pi.tasks.roster/list/get/create/send/stop`, and the
    employee's profile tab, which still edits name, duty, permission ceiling,
    `mustAsk`, `observe`, project and definition through the same form.
@@ -62,13 +62,24 @@ managed next to the thing that drives them.
    `normalizeSettingsTabId`, never to an empty pane. The id is not redirected to
    another surface: the page it pointed at has no successor.
 
+### Sidebar-removal amendment (2026-11-25)
+
+The user also removed the built-in employee sidebar entry. `Sidebar` no longer
+mounts `BotSidebarGroup` or its dedicated click handlers, so old employee rows
+do not leave a heading, status dots, task rows or a waiting badge in the shell.
+The sidebar makes no roster/task reads for that entry. Employee identities stay
+excluded from ordinary conversation lists; this removes navigation, not records.
+The stored-data and plugin-interface guarantees above remain unchanged. The
+standalone employee components are retained with their existing coverage; they
+are no longer a built-in sidebar destination.
+
 ## Consequences
 
 - The app has no UI to create or dismiss an employee, and none to write team
   norms or list/delete an employee's lessons. Creating an employee is a host RPC
   (`bot.create`) and a plugin call (`pi.tasks.create` with an existing
-  `employeeId`) until phase E ships employee management; existing employees keep
-  working in every daily surface.
+  `employeeId`) until phase E ships employee management; their data and task
+  capabilities remain, without a built-in sidebar entry.
 - A task turn is shorter by the norms block, and the norms can no longer make a
   turn behave differently. That is a real behavior change for anyone who wrote
   norms; the alternative — keeping an editor for a prompt block with no reader —
@@ -109,4 +120,5 @@ managed next to the thing that drives them.
 | A task turn carries no team norms | **Yes** — no reader and no formatter left | `apps/desktop/electron/main/services/task-status.ts`, `apps/desktop/test/bot-task-briefing.test.mjs` |
 | The page-only renderer channels are gone | **Yes** — absent from `IPC.invoke` and from `api` | `packages/shared/src/protocol.ts`, `apps/desktop/src/lib/api.ts` |
 | Stored employees, tasks, lessons and norms are untouched | **Yes** — no schema change, no migration, no delete | `crates/host-core/` (unchanged) |
-| The plugin task interface and the sidebar group keep working | **Yes** — untouched modules and their tests | `apps/desktop/electron/main/plugin-tasks-api.ts`, `apps/desktop/test/plugin-tasks-api.test.mjs`, `apps/desktop/test/bot-surfaces.test.mjs` |
+| The plugin task interface keeps working | **Yes** — untouched modules and their tests | `apps/desktop/electron/main/plugin-tasks-api.ts`, `apps/desktop/test/plugin-tasks-api.test.mjs` |
+| Historical employees do not recreate a built-in sidebar entry | **Yes** — the mount and dedicated click handlers are removed | `apps/desktop/src/components/Sidebar.tsx`, `apps/desktop/test/sidebar-user-menu-user-path.test.mjs`, `apps/desktop/test/bot-ui-wiring.test.mjs` |
