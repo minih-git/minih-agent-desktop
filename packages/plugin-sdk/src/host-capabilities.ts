@@ -61,6 +61,13 @@ export const PLUGIN_USER_PROXY_FIELD_KEYS = [
   "proxyPassword",
 ] as const;
 
+/**
+ * Field keys a `userSend` slot reserves for the host. Same rule as the two above:
+ * a plugin field of one of these keys would let its own form choose where its
+ * message leaves from.
+ */
+export const PLUGIN_USER_SEND_FIELD_KEYS = ["sendServer", "sendPort", "sendSecurity"] as const;
+
 /** One option of a `select` credential field. */
 export type PluginCredentialFieldOption = {
   /** Stored verbatim as the field value. */
@@ -148,6 +155,21 @@ export type PluginCredentialContrib = {
    * dial.
    */
   userProxy?: { types: PluginProxyType[] };
+  /**
+   * Let the user name the server their mail is *sent* through, per account.
+   * Only an `imap` slot may declare it — that is the kind whose password the
+   * host can log in with, and the account that reads a mailbox is the account
+   * that sends from it.
+   *
+   * The declaration names the transports the host may offer; the server and the
+   * port are typed by the user into the host's own form and stored in the same
+   * credential instance as the password, so a plugin cannot redirect the
+   * message to a server of its choosing. The three reserved field keys
+   * (`PLUGIN_USER_SEND_FIELD_KEYS`) may not be declared as plugin fields. A host
+   * that predates this key ignores it, and the account simply keeps the path
+   * `manifest.net.tcp` presets.
+   */
+  userSend?: { security: PluginMailSecurity[] };
 };
 
 /** Largest request body a webhook receiver accepts (256 KiB). */
@@ -351,6 +373,48 @@ function credentialUserEndpointError(
  * validated at install: a slot the Settings sheet cannot render is a dead
  * permission, and a scope nobody can inject into is an authoring slip.
  */
+/**
+ * `userSend`: only an `imap` slot may let the user name an outgoing server, for
+ * the same reason as `userEndpoint` — that is the kind whose password the host
+ * can log in with. The three reserved keys are refused as declared fields too: a
+ * plugin field of one of them would let its own form decide where the message
+ * leaves from.
+ */
+function credentialUserSendError(slot: Partial<PluginCredentialContrib>): string | undefined {
+  const at = `credential "${slot.id}"`;
+  if (slot.kind !== "imap") {
+    return `${at} declares userSend with kind ${String(slot.kind)}; only an imap slot accepts an outgoing mail server`;
+  }
+  const send = slot.userSend as { security?: unknown } | undefined;
+  if (!send || typeof send !== "object" || Array.isArray(send)) {
+    return `${at} userSend must be an object`;
+  }
+  const unknown = Object.keys(send).find((key) => key !== "security");
+  if (unknown) return `${at} userSend has an unsupported key ${unknown}`;
+  const securities = send.security;
+  if (!Array.isArray(securities) || securities.length === 0) {
+    return `${at} userSend needs at least one security`;
+  }
+  const seen = new Set<string>();
+  for (const security of securities) {
+    if (
+      typeof security !== "string" ||
+      !(PLUGIN_MAIL_SECURITIES as readonly string[]).includes(security)
+    ) {
+      return `${at} userSend security must be tls or starttls`;
+    }
+    if (seen.has(security)) return `${at} userSend lists ${security} twice`;
+    seen.add(security);
+  }
+  const reserved = (slot.fields ?? []).find((field) =>
+    (PLUGIN_USER_SEND_FIELD_KEYS as readonly string[]).includes(field.key),
+  );
+  if (reserved) {
+    return `${at} field ${reserved.key} is reserved for the outgoing mail server`;
+  }
+  return undefined;
+}
+
 export function validateCredentialContributions(raw: unknown): string | undefined {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw)) return "contributes.credentials must be an array";
@@ -403,6 +467,10 @@ export function validateCredentialContributions(raw: unknown): string | undefine
     if (slot.userProxy !== undefined) {
       const proxyError = credentialUserProxyError(slot);
       if (proxyError) return proxyError;
+    }
+    if (slot.userSend !== undefined) {
+      const sendError = credentialUserSendError(slot);
+      if (sendError) return sendError;
     }
     if (slot.multiple !== undefined) {
       const multiple = slot.multiple as { max?: unknown };

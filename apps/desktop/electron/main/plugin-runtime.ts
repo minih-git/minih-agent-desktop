@@ -156,6 +156,8 @@ import type { PluginTcpEndpoint, PluginTcpEvent, PluginTcpRegistry } from "./plu
 import { resolveTcpCredential } from "./plugin-tcp-credentials";
 import { saveAsOne } from "./plugin-save-as";
 import { tcpFailureCode } from "./plugin-tcp-errors";
+import { mailMessage } from "./plugin-mail-errors";
+import { sendPluginMail } from "./plugin-mail-send";
 import type { TcpProxy } from "./plugin-tcp-proxy";
 import type { PluginTcpLogin } from "./plugin-tcp-login";
 import { declaredSlots, slotHoldsInstances } from "./plugin-credential-slots";
@@ -701,6 +703,7 @@ const HOST_API_ALLOWLIST = new Set([
   "net.tcp.connect",
   "net.tcp.send",
   "net.tcp.close",
+  "mail.send",
   "audio.getInputDevices",
   "audio.openInput",
   "audio.closeInput",
@@ -3415,6 +3418,38 @@ export class PluginRuntime {
           const code = (error as { code?: string }).code ?? "NOT_FOUND";
           this.services.audit?.({ pluginId, api: "net.tcp.close", ok: false, errorCode: code, ts: Date.now() });
           throw apiError(code, (error as Error).message);
+        }
+      }
+      case "mail.send": {
+        // Sending takes two grants: the message (`mail.send`) and the account it
+        // leaves through (`credentials.use`). Both are checked before the store is
+        // read, so a plugin without them cannot even learn whether a slot exists.
+        this.assertPermission(loaded, "mail.send");
+        this.assertPermission(loaded, "credentials.use");
+        const registry = this.services.pluginTcp;
+        if (!registry) throw apiError("UNSUPPORTED", "mail sending is unavailable in this host");
+        try {
+          // Everything the send needs is host state: the account, the server, the
+          // connection and the audit row. The module owns the bounds; this case
+          // owns the permission check and the wiring.
+          return await sendPluginMail(
+            {
+              resolve: (id, slot) => this.services.resolvePluginCredential?.(id, slot),
+              acquire: (request) => registry.acquireInternal(request),
+              audit: (entry) => this.services.audit?.(entry),
+            },
+            {
+              pluginId,
+              slots: loaded.manifest.contributes?.credentials,
+              manifestTcp: loaded.manifest.net?.tcp,
+              input: args[0] ?? {},
+            },
+          );
+        } catch (error) {
+          // The audit row is already written by the module; here the code becomes
+          // the error the plugin sees, and nothing else leaks with it.
+          const code = (error as { code?: string }).code ?? "SMTP_FAILED";
+          throw apiError(code, error instanceof Error ? error.message : mailMessage(code));
         }
       }
       case "agent.registerTool": {

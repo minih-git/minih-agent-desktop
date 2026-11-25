@@ -3276,6 +3276,85 @@ fn a_mail_proxy_is_declared_only_where_it_can_be_served() {
 }
 
 #[test]
+fn an_outgoing_server_is_declared_only_where_it_can_be_served() {
+    let dir = tempdir().unwrap();
+    let grant = json!(["credentials.use"]);
+
+    // An account that never names its own incoming server can still send through
+    // one, so `userSend` does not require `userEndpoint`.
+    let accepted = dir.path().join("user-send");
+    let mut preset = user_endpoint_slot(json!({}));
+    preset.as_object_mut().unwrap().remove("userEndpoint");
+    preset["userSend"] = json!({ "security": ["tls", "starttls"] });
+    write_plugin(
+        &accepted,
+        capability_manifest(json!({ "credentials": [preset] }), grant.clone()),
+        &[],
+    );
+    PluginManager::read_manifest(&accepted).unwrap();
+
+    let sending = |overrides: Value| {
+        // No `userEndpoint` here: each case must fail (or pass) on the outgoing
+        // rule alone, not on the mail-server rule that runs first.
+        let mut slot = user_endpoint_slot(json!({}));
+        slot.as_object_mut().unwrap().remove("userEndpoint");
+        slot["userSend"] = json!({ "security": ["tls", "starttls"] });
+        for (key, value) in overrides.as_object().unwrap().clone() {
+            slot[key] = value;
+        }
+        slot
+    };
+    for (name, overrides, expected) in [
+        (
+            "wrong-kind",
+            json!({ "kind": "basic" }),
+            "only an imap slot accepts an outgoing mail server",
+        ),
+        (
+            "no-security",
+            json!({ "userSend": { "security": [] } }),
+            "userSend needs at least one security",
+        ),
+        (
+            "duplicate-security",
+            json!({ "userSend": { "security": ["tls", "tls"] } }),
+            "userSend lists tls twice",
+        ),
+        (
+            "unknown-security",
+            json!({ "userSend": { "security": ["plain"] } }),
+            "userSend security must be tls or starttls",
+        ),
+        (
+            "unknown-key",
+            json!({ "userSend": { "security": ["tls"], "host": "smtp.example.com" } }),
+            "userSend has an unsupported key host",
+        ),
+        (
+            "reserved-field",
+            json!({ "fields": [
+                { "key": "username", "label": "User" },
+                { "key": "sendServer", "label": "Outgoing server" }
+            ] }),
+            "field sendServer is reserved for the outgoing mail server",
+        ),
+    ] {
+        let root = dir.path().join(name);
+        assert!(
+            refuse(
+                &root,
+                capability_manifest(
+                    json!({ "credentials": [sending(overrides)] }),
+                    grant.clone()
+                ),
+            )
+            .contains(expected),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn webhook_receivers_stay_inside_their_bounds() {
     let dir = tempdir().unwrap();
     let grant = json!(["inbound.webhook"]);

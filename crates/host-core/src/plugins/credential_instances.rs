@@ -32,7 +32,7 @@ use super::credentials::{
     self, slot_ref, CredentialError, DeclaredSlot, PluginIndex, StoredSlot, CREDENTIAL_INVALID,
     CREDENTIAL_LIMIT, CREDENTIAL_NOT_CONFIGURED, MAX_FIELD_BYTES,
 };
-use super::{is_contrib_id, user_endpoint, user_proxy, Utc};
+use super::{is_contrib_id, user_endpoint, user_proxy, user_send, Utc};
 use crate::db::Database;
 use crate::secrets::SecretStore;
 use serde::{Deserialize, Serialize};
@@ -156,6 +156,15 @@ fn public_fields(
     // the proxy login stays host-only.
     if !slot.user_proxy_types.is_empty() {
         for key in user_proxy::PUBLIC_KEYS {
+            if let Some(value) = values.get(key) {
+                fields.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    // And the outgoing server: an account card that already says where mail is
+    // read from can say where it is sent from too.
+    if !slot.user_send_securities.is_empty() {
+        for key in user_send::PUBLIC_KEYS {
             if let Some(value) = values.get(key) {
                 fields.insert(key.to_string(), value.clone());
             }
@@ -653,6 +662,15 @@ pub(crate) fn injected_fields(
             }
         }
     }
+    // The outgoing server travels the same way: the SMTP session reads it from
+    // this map, and no plugin-facing API ever returns the map itself.
+    if !slot.user_send_securities.is_empty() {
+        for key in user_send::RESERVED_KEYS {
+            if let Some(value) = stored.fields.get(key) {
+                fields.insert(key.to_string(), value.clone());
+            }
+        }
+    }
     Some(fields)
 }
 
@@ -730,19 +748,59 @@ pub(crate) fn validated_proxy(
     })
 }
 
+/// The outgoing server of one submission, normalized, or `None` when the form
+/// left it empty.
+///
+/// Same shape as the two above: a blank `sendServer` means the account does not
+/// send through a server of its own, and the two other keys are dropped; a
+/// named server has to come with a port and a transport the slot declares.
+pub(crate) fn validated_send(
+    slot: &DeclaredSlot,
+    fields: &Map<String, Value>,
+) -> Result<Option<user_send::UserSend>, CredentialError> {
+    let mut submitted = BTreeMap::new();
+    for key in user_send::RESERVED_KEYS {
+        let Some(raw) = fields.get(key) else {
+            continue;
+        };
+        let value = raw.as_str().ok_or_else(|| {
+            CredentialError::Invalid(format!(
+                "{CREDENTIAL_INVALID}: credential slot {} field {key} must be a string",
+                slot.id
+            ))
+        })?;
+        if value.len() > MAX_FIELD_BYTES {
+            return Err(CredentialError::Invalid(format!(
+                "{CREDENTIAL_INVALID}: credential slot {} field {key} exceeds {MAX_FIELD_BYTES} bytes",
+                slot.id
+            )));
+        }
+        submitted.insert(key.to_string(), value.to_string());
+    }
+    user_send::from_fields(&submitted, &slot.user_send_securities).map_err(|message| {
+        CredentialError::Invalid(format!(
+            "{CREDENTIAL_INVALID}: credential slot {} {message}",
+            slot.id
+        ))
+    })
+}
+
 /// The submitted map must be exactly the slot's declared fields, each a
 /// non-empty string, plus the reserved keys of a slot that declares
-/// `userEndpoint` or `userProxy`. Anything else is refused as a whole.
+/// `userEndpoint`, `userProxy` or `userSend`. Anything else is refused as a
+/// whole.
 pub(crate) fn validated_fields(
     slot: &DeclaredSlot,
     fields: Map<String, Value>,
 ) -> Result<BTreeMap<String, String>, CredentialError> {
     let takes_endpoint = !slot.user_endpoint_protocols.is_empty();
     let takes_proxy = !slot.user_proxy_types.is_empty();
+    let takes_send = !slot.user_send_securities.is_empty();
     if let Some(key) = fields.keys().find(|key| {
         !slot.field_keys().any(|declared| declared == *key)
             && !(takes_endpoint && user_endpoint::is_reserved(key))
             && !(takes_proxy && user_proxy::is_reserved(key))
+            && !(takes_send && user_send::is_reserved(key))
     }) {
         return Err(CredentialError::Invalid(format!(
             "{CREDENTIAL_INVALID}: credential slot {} does not declare field {key}",
@@ -785,6 +843,11 @@ pub(crate) fn validated_fields(
     if takes_proxy {
         if let Some(proxy) = validated_proxy(slot, &fields)? {
             values.extend(proxy.to_fields());
+        }
+    }
+    if takes_send {
+        if let Some(send) = validated_send(slot, &fields)? {
+            values.extend(send.to_fields());
         }
     }
     Ok(values)

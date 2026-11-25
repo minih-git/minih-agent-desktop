@@ -28,6 +28,7 @@
 use super::credential_instances::{self, split_ref, InstanceMeta};
 use super::user_endpoint;
 use super::user_proxy;
+use super::user_send;
 use super::{is_contrib_id, plugin_display_locale, PluginSummary};
 use crate::db::Database;
 use crate::secrets::SecretStore;
@@ -140,6 +141,11 @@ pub(crate) struct DeclaredSlot {
     /// is what makes the slot accept the five reserved proxy keys and what a
     /// stored instance's proxy type is checked against.
     pub user_proxy_types: Vec<String>,
+    /// `userSend.security`; empty when the account may not name an outgoing
+    /// server. A non-empty list is what makes the slot accept the three
+    /// reserved send keys and what a stored instance's transport is checked
+    /// against.
+    pub user_send_securities: Vec<String>,
 }
 
 impl DeclaredSlot {
@@ -335,6 +341,7 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
         let label_field = label_field_of(id, entry, &declared_fields, plugin)?;
         let user_endpoint_protocols = user_endpoint::declared_protocols(entry.get("userEndpoint"));
         let user_proxy_types = user_proxy::declared_types(entry.get("userProxy"));
+        let user_send_securities = user_send::declared_securities(entry.get("userSend"));
         let domains = entry
             .get("scope")
             .and_then(Value::as_object)
@@ -365,6 +372,7 @@ pub(crate) fn declared_slots(plugin: &PluginSummary) -> Result<Vec<DeclaredSlot>
             label_field,
             user_endpoint_protocols,
             user_proxy_types,
+            user_send_securities,
         });
     }
     Ok(slots)
@@ -711,6 +719,9 @@ pub(crate) fn status(
         }
         if !slot.user_proxy_types.is_empty() {
             entry["userProxy"] = json!({ "types": slot.user_proxy_types });
+        }
+        if !slot.user_send_securities.is_empty() {
+            entry["userSend"] = json!({ "security": slot.user_send_securities });
         }
         slots.push(entry);
     }

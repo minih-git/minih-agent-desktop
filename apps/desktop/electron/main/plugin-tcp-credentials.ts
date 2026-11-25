@@ -103,7 +103,7 @@ export async function resolveTcpCredential(
     return presetPlan(pluginId, slot, identity, request, port);
   }
 
-  const fields = await readFields(pluginId, ref.raw, port);
+  const fields = await readCredentialFields(pluginId, ref.raw, port);
   if (!hasStoredEndpoint(fields)) {
     // The user left the custom server empty: this instance keeps the plugin's
     // preset path, including its manifest and scope checks.
@@ -136,7 +136,7 @@ async function presetPlan(
   const endpoint = authorizePresetTcpEndpoint(slot, request, true);
   const fields =
     preloaded ??
-    (await readFields(
+    (await readCredentialFields(
       pluginId,
       identity.instanceId ? `${identity.slotId}#${identity.instanceId}` : identity.slotId,
       port,
@@ -205,8 +205,13 @@ function credentialsOf(fields: Record<string, unknown>): { username: string; pas
   return { username: fields.username, password: fields.password };
 }
 
-/** Read one slot through the host, with a credential-path refusal on failure. */
-async function readFields(
+/**
+ * Read one slot through the host, with a credential-path refusal on failure.
+ *
+ * Exported because the SMTP half resolves an account the same way: one store
+ * read, one refusal shape, everywhere a credential is used.
+ */
+export async function readCredentialFields(
   pluginId: string,
   rawRef: string,
   port: PluginCredentialHostPort,

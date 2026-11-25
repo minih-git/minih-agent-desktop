@@ -22,7 +22,12 @@ import { upgradeToTls } from "./plugin-tcp-starttls";
 /** Wrap one connected socket as a session transport. */
 export function socketTransport(
   socket: Socket,
-  options: { host: string; ca?: string | Buffer | Array<string | Buffer> },
+  options: {
+    host: string;
+    ca?: string | Buffer | Array<string | Buffer>;
+    /** Account bytes written, so the host's usage totals see this session too. */
+    onWrite?: (bytes: number) => void;
+  },
 ): SmtpTransport {
   let current: Socket = socket;
   let handlers: SmtpStreamHandlers | null = null;
@@ -51,6 +56,7 @@ export function socketTransport(
     },
     write(data) {
       current.write(data);
+      options.onWrite?.(data.byteLength);
     },
     async startTls() {
       detach(current);

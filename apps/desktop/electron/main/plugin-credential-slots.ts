@@ -17,6 +17,7 @@
 import {
   MAX_CREDENTIAL_INSTANCES,
   PLUGIN_MAIL_PROTOCOLS,
+  PLUGIN_MAIL_SECURITIES,
   PLUGIN_PROXY_TYPES,
   isNetHostAllowed,
   parseNetDomains,
@@ -135,6 +136,12 @@ export type DeclaredSlot = {
    * are then not reserved at all.
    */
   userProxyTypes?: string[];
+  /**
+   * `userSend.security`: the transports the user may pick for their own outgoing
+   * server. Absent means the account never names one, and the three send keys are
+   * then not reserved at all — which is exactly a 1.10.0 install.
+   */
+  userSendSecurity?: string[];
 };
 
 /**
@@ -410,6 +417,17 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
         proxyTypes.push(type);
       }
     }
+    // And for `userSend`: the transports the form may offer for an outgoing
+    // server. Absent or unreadable means the account keeps the preset path.
+    const sendSecurity: string[] = [];
+    for (const security of slot.userSend?.security ?? []) {
+      if (
+        (PLUGIN_MAIL_SECURITIES as readonly string[]).includes(security) &&
+        !sendSecurity.includes(security)
+      ) {
+        sendSecurity.push(security);
+      }
+    }
     slots.push({
       id: slot.id,
       kind: slot.kind as PluginCredentialKind,
@@ -421,6 +439,7 @@ export function declaredSlots(raw: unknown): DeclaredSlot[] {
         : {}),
       ...(declaredProtocols.length ? { userEndpointProtocols: declaredProtocols } : {}),
       ...(proxyTypes.length ? { userProxyTypes: proxyTypes } : {}),
+      ...(sendSecurity.length ? { userSendSecurity: sendSecurity } : {}),
     });
   }
   return slots;

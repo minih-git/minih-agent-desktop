@@ -32,6 +32,7 @@ mod renderer;
 pub(crate) mod settings;
 pub(crate) mod user_endpoint;
 pub(crate) mod user_proxy;
+pub(crate) mod user_send;
 mod validation;
 
 pub use manifest::PluginManifest;
