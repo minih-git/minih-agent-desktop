@@ -281,7 +281,20 @@ pi.fs.list(pathFromRoot: string): Promise<Array<{
 }>>
 pi.fs.remove(pathFromRoot: string): Promise<void>
 pi.fs.requestDirectory(): Promise<{ path: string; name: string } | null>
+pi.fs.saveAs(input: { suggestedName: string; data: Uint8Array; mimeType?: string })
+  : Promise<{ path: string; name: string } | null>
 ```
+
+**`pi.fs.saveAs`** is the one write outside the sandbox: the host opens the
+native "save as" dialog and writes exactly the path the user picks, because that
+choice *is* the authorisation — no `manifest.fs` scope applies. The permission is
+`fs.write`. The plugin suggests a file name, which the host reduces to a single
+path segment (no separators, no control characters, no leading dot, 180 bytes at
+most, `attachment` when nothing usable is left); one file per call, 50 MiB at
+most; the app's own data directory and a short list of system locations are
+refused with `SAVE_AS_FAILED`. A cancelled dialog answers `null` and writes
+nothing. The destination is not echoed to any other surface, and the audit row
+records the byte count and whether a file was written, never the path.
 
 `workspace.get` answers with the primary root — `path` and its leaf `name`,
 both unchanged — plus, when that folder belongs to a project group (ADR 0249),

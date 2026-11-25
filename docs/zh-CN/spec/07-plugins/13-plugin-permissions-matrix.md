@@ -20,7 +20,7 @@
 | `clipboard.write` | 中等 | `clipboard.writeText` | 首次使用时确认 | 防止剪贴板污染 |
 | `notify` | 低 | `ui.notify`、`ui.getNotificationPermission`、`ui.requestNotificationPermission`、`ui.showNativeNotification` | 可以默认授予 | 本机交付由操作系统控制；避免通知垃圾邮件滥用 |
 | `fs.read` | 中等 | `fs.readText` / `fs.readPreview` / `fs.openDefault` / `fs.reveal` / `fs.glob` / `fs.list` / `fs.requestDirectory` | 安装时授予，范围由 `manifest.fs.read` 限定 | `fs.readPreview`、`fs.openDefault` 和 `fs.reveal` 仅限显式选择的文件和相同的读取范围；所有文件调用仍受根目录与拒绝列表保护 |
-| `fs.write` | 高 | `fs.writeText` | 安装时授予，范围由 `manifest.fs.write` 限定 | 必须声明范围；整棵树的模式无法通过校验。范围外要问用户 |
+| `fs.write` | 高 | `fs.writeText`、`fs.saveAs`（只写用户在原生对话框里选定的那一个路径，不套用 scope） | 安装时授予，范围由 `manifest.fs.write` 限定 | 必须声明范围；整棵树的模式无法通过校验。范围外要问用户 |
 | `fs.delete` | 高 | `fs.remove` | 安装时授予，范围由 `manifest.fs.delete` 限定 | 分两档（`own` / `scope`），一律进系统回收站，不递归，并有速率刹车（§2B） |
 | `fs.read.workspace` | 中等 | — | 加载时降级为 `fs.read` + 整棵树范围 | 旧权限名，早于文件范围机制 |
 | `fs.write.workspace` | 高 | — | 加载时降级为 `fs.write` 且**没有**范围 | 旧权限名；在 manifest 声明范围之前，每次写入都要问用户 |

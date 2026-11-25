@@ -638,3 +638,48 @@ version, and an unreadable constraint answered "installs fine" — which is how
 - **Support the whole range grammar.** Rejected as scope: the catalog contract is
   "at least X.Y.Z", and a full semver-range implementation would be a bigger
   surface than the one the field is documented to carry.
+
+## 2026-11-25 — a plugin may ask the user where to save one file
+
+Context: a mailbox plugin receives an attachment as bytes and has nowhere to put
+them. `pi.fs.writeText` writes text inside the sandbox under the plugin's own
+`manifest.fs` rules, there is no binary write at all, and letting a plugin name
+an absolute path would hand it the user's whole file system.
+
+### Decision
+
+1. `pi.fs.saveAs({ suggestedName, data, mimeType? })` opens the native "save as"
+   dialog and writes exactly the one path the user picks. The permission is
+   `fs.write`; no `manifest.fs` scope applies, because the user's choice in the
+   dialog is the authorisation — the same rule as any other "pick a file" action.
+2. The suggested name is a *suggestion*: the host reduces it to one path segment
+   (separators, control characters and leading dots removed, 180 bytes at most,
+   `attachment` when nothing usable remains) and offers that to the dialog.
+3. Bounds: one file per call, 50 MiB at most, non-empty. The app's own data
+   directory and a short list of system locations (`/System`, `/bin`, `/sbin`,
+   `/usr/bin`, `/etc`, `/dev`, `/proc`, `/sys`) are refused with
+   `SAVE_AS_FAILED`, so a clever name cannot reach the host's own state.
+4. Cancelling answers `null` and writes nothing. The destination is never echoed
+   to another surface, and the audit row records the byte count and whether a
+   file was written — never the path.
+
+### Consequences
+
+- A plugin can save what the user asked it to save, and nothing else: one dialog,
+  one file, one path.
+- No new permission: `fs.write` already means "this plugin may put files on
+  disk", and the dialog narrows it to a file the user chose.
+- The write happens in Electron main, next to the dialog, so a cancelled dialog
+  costs nothing on disk and no host RPC carries the bytes twice.
+
+### Alternatives
+
+- **A new `fs.writeAbsolute` RPC with a scope.** Rejected: it would let a plugin
+  write anywhere its scope names without the user looking, which is exactly the
+  danger the dialog removes.
+- **Reuse `fs.writeText` with base64.** Rejected: it keeps the sandbox root (so
+  the user's chosen folder is unreachable), and base64 inflates a 25 MiB
+  attachment into a string the host would have to decode anyway.
+- **Save into a fixed "downloads" folder without asking.** Rejected: the user
+  asked to save an attachment somewhere specific; a silent location is worse than
+  a dialog.

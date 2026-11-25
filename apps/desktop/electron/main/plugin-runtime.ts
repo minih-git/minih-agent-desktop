@@ -154,6 +154,7 @@ import {
 } from "./plugin-websocket";
 import type { PluginTcpEndpoint, PluginTcpEvent, PluginTcpRegistry } from "./plugin-tcp";
 import { resolveTcpCredential } from "./plugin-tcp-credentials";
+import { saveAsOne } from "./plugin-save-as";
 import { tcpFailureCode } from "./plugin-tcp-errors";
 import type { TcpProxy } from "./plugin-tcp-proxy";
 import type { PluginTcpLogin } from "./plugin-tcp-login";
@@ -603,6 +604,13 @@ export type PluginHostServices = {
    */
   credentialDialogs?: PluginCredentialDialogPort;
   /**
+   * The native "save as" dialog, injected by main so a test can answer a path
+   * without a window. `null` means the user cancelled.
+   */
+  saveFile?: (options: { defaultPath: string }) => Promise<string | null>;
+  /** The app's own data directory, refused as a `saveAs` destination. */
+  saveAsDataDir?: string;
+  /**
    * Read-only conversation archive (ADR conversation-archive). The host side is
    * `plugin.conversations.*`; each method receives the calling plugin's id.
    */
@@ -659,6 +667,7 @@ const HOST_API_ALLOWLIST = new Set([
   "fs.list",
   "fs.remove",
   "fs.requestDirectory",
+  "fs.saveAs",
   "clipboard.readText",
   "clipboard.writeText",
   "clipboard.getHistory",
@@ -2735,6 +2744,61 @@ export class PluginRuntime {
       // has to be, because a "pick a folder" button is panel UI by nature.
       case "fs.requestDirectory":
         return api.fs.requestDirectory();
+      case "fs.saveAs": {
+        // The dialog is the authorisation, so this one write is not inside the
+        // sandbox root: it is the single path the user picked. Everything else
+        // (size, name, the app's own directories) is still the host's business.
+        this.assertPermission(loaded, "fs.write");
+        const input = (payload ?? {}) as {
+          suggestedName?: unknown;
+          data?: unknown;
+          mimeType?: unknown;
+        };
+        const data =
+          input.data instanceof Uint8Array
+            ? input.data
+            : input.data instanceof ArrayBuffer
+              ? new Uint8Array(input.data)
+              : null;
+        if (!data) throw apiError("INVALID_ARGUMENT", "saveAs needs the file bytes");
+        try {
+          const answer = await saveAsOne(
+            {
+              choosePath: (options) =>
+                this.services.saveFile ? this.services.saveFile(options) : Promise.resolve(null),
+              ...(this.services.saveAsDataDir ? { dataDir: this.services.saveAsDataDir } : {}),
+            },
+            {
+              suggestedName:
+                typeof input.suggestedName === "string" && input.suggestedName.trim()
+                  ? input.suggestedName
+                  : "attachment",
+              data,
+              ...(typeof input.mimeType === "string" ? { mimeType: input.mimeType } : {}),
+            },
+          );
+          // The destination is the user's own file system: the audit row
+          // records that a save happened and how much was written, not where.
+          this.services.audit?.({
+            pluginId,
+            api: "fs.saveAs",
+            ok: true,
+            ts: Date.now(),
+            bytes: data.byteLength,
+            saved: answer !== null,
+          });
+          return answer;
+        } catch (error) {
+          this.services.audit?.({
+            pluginId,
+            api: "fs.saveAs",
+            ok: false,
+            ts: Date.now(),
+            errorCode: "SAVE_AS_FAILED",
+          });
+          throw apiError("SAVE_AS_FAILED", (error as Error).message);
+        }
+      }
       case "clipboard.readText":
         return api.clipboard.readText();
       case "clipboard.writeText":
