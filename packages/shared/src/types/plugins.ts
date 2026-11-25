@@ -396,6 +396,12 @@ export type PluginCredentialStatus = {
    * `proxyPassword` for it.
    */
   userProxy?: { types: Array<"http" | "socks5"> };
+  /**
+   * Present only for a slot whose manifest declares `userSend`: each account may
+   * name the server its mail is sent through, and the host reserves the field
+   * keys `sendServer`, `sendPort` and `sendSecurity` for it.
+   */
+  userSend?: { security: Array<"tls" | "starttls"> };
   /** Field whose value names an instance. */
   labelField?: string;
 };

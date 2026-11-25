@@ -23,3 +23,17 @@ export function defaultMailPort(protocol: string, security: string): string {
   const transport = (security === "starttls" ? "starttls" : "tls") as MailSecurity;
   return String(DEFAULT_MAIL_PORTS[mail][transport]);
 }
+
+/**
+ * The submission ports a mail client assumes: 465 for implicit TLS, 587 for an
+ * upgrade. Both are conventions rather than protocol constants, which is why the
+ * user can overwrite them — but guessing the wrong one is how a working account
+ * looks broken.
+ */
+export const DEFAULT_SEND_PORTS: Record<MailSecurity, number> = { tls: 465, starttls: 587 };
+
+/** The submission port to prefill for one transport, as the field's string. */
+export function defaultSendPort(security: string): string {
+  const transport = (security === "starttls" ? "starttls" : "tls") as MailSecurity;
+  return String(DEFAULT_SEND_PORTS[transport]);
+}
