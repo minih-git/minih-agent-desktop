@@ -678,8 +678,11 @@ export class PluginTcpRegistry {
       );
       return;
     }
+    // The reader and the close hook go: every byte from here on belongs to the
+    // handshake. The `error` listener stays — a plaintext write that was in
+    // flight when the server agreed fails after the swap, and an unhandled
+    // `error` event would take the host process down rather than the connection.
     socket.removeAllListeners("data");
-    socket.removeAllListeners("error");
     socket.removeAllListeners("close");
     void upgradeToTls(socket, {
       host: entry.endpoint.host,

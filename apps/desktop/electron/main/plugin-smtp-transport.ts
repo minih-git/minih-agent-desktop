@@ -34,8 +34,17 @@ export function socketTransport(
   let closed = false;
 
   const onData = (chunk: Buffer): void => handlers?.data(chunk);
-  const onFailure = (error: unknown): void => handlers?.failure(error);
-  const onClose = (): void => handlers?.close();
+  const onFailure = (error: unknown): void => {
+    // A session that is already over has nothing to report. A write that was in
+    // flight when it ended fails with EPIPE *after* the teardown, and with no
+    // listener left that error would reach the process as an uncaughtException.
+    if (closed) return;
+    handlers?.failure(error);
+  };
+  const onClose = (): void => {
+    if (closed) return;
+    handlers?.close();
+  };
 
   const attach = (target: Socket): void => {
     target.setNoDelay(true);
@@ -43,9 +52,16 @@ export function socketTransport(
     target.on("error", onFailure);
     target.on("close", onClose);
   };
+  /**
+   * Stop reading, keep listening for errors.
+   *
+   * The error listener stays attached for the socket's whole life — through the
+   * STARTTLS swap and after `destroy` — because that is the only way a late
+   * EPIPE from a half-written message has somewhere to go. A stream is not
+   * "finished" until the kernel says so, which is one tick after this call.
+   */
   const detach = (target: Socket): void => {
     target.removeListener("data", onData);
-    target.removeListener("error", onFailure);
     target.removeListener("close", onClose);
   };
 
@@ -55,6 +71,9 @@ export function socketTransport(
       attach(current);
     },
     write(data) {
+      // Nothing is written to a session that is over: the socket is destroyed,
+      // and a queued write would only fail later, somewhere without a listener.
+      if (closed) return;
       current.write(data);
       options.onWrite?.(data.byteLength);
     },
