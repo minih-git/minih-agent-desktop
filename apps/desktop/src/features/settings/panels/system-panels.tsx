@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import type { AppSettings, AppVersionInfo } from "@minih-agent/shared";
 import { Button } from "../../../components/ui";
 import { NetworkProxySection } from "../../../components/settings/NetworkProxySection";
+import { BrowserProxyRoutingSection } from "../../../components/settings/BrowserProxyRoutingSection";
 import { api } from "../../../lib/api";
 import { UpdatesRow } from "../agent-sections";
 import { DeveloperSection } from "../developer-sections";
@@ -27,6 +28,7 @@ export function NetworkPanel({
   return (
     <div className="settings-stack">
       <NetworkProxySection settings={settings} saveSettings={saveSettings} />
+      <BrowserProxyRoutingSection settings={settings} saveSettings={saveSettings} />
     </div>
   );
 }

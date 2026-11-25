@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { BrowserState } from "@minih-agent/shared";
 import { isAllowedHttpUrl, parseAllowedExternalUrl } from "./safe-open-external";
 import { BrowserBackingHost } from "./browser-backing-host";
+import { WORK_BROWSER_PARTITION } from "./browser-proxy-routing";
 
 /**
  * Work panel embedded preview browser (D100, ADR 0019).
@@ -20,7 +21,6 @@ import { BrowserBackingHost } from "./browser-backing-host";
  * sibling assets refresh the preview.
  */
 
-const PARTITION = "persist:work-browser";
 const LIVE_RELOAD_DEBOUNCE_MS = 250;
 
 export function normalizeUrl(raw: string): string | null {
@@ -488,7 +488,7 @@ export class BrowserPane {
         contextIsolation: true,
         nodeIntegration: false,
         backgroundThrottling: true,
-        partition: PARTITION,
+        partition: WORK_BROWSER_PARTITION,
       },
     });
     const surface = new View();

@@ -409,6 +409,7 @@ Each ADR includes:
 | 0339 | [Session Cache Keep-Warm](0339-session-cache-keep-warm.md) | Accepted (2026-10-31; host-side silent warm request, plugin schedules it) |
 | 0340 | [Generated plugin settings localize their own labels](0340-plugin-setting-labels-localize.md) | Accepted (2026-11-23; supersedes ADR 0280 decision 3 for `contributes.settings` only) |
 | 0341 | [The employee settings section is removed](0341-remove-employee-settings-section.md) | Accepted (2026-11-24; D692; data, host RPCs and plugin task interface kept) |
+| 0342 | [Per-address proxy routing for the built-in browser](0342-browser-proxy-routing.md) | Accepted (2026-11-25; `persist:work-browser` only, PAC data URL, no `global` target) |
 
 | provider-metadata-client-certificate-retry | [Retry optional client-certificate failures only for provider metadata](provider-metadata-client-certificate-retry.md) | Accepted for implementation |
 | macos-window-translucency-preference | [Preserve macOS glass with a restart-bound opaque preference](macos-window-translucency-preference.md) | Accepted for implementation |

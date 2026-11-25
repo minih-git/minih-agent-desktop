@@ -31,7 +31,10 @@ A single Settings control should apply one proxy to app-owned traffic.
    Custom. Custom accepts `http`, `https`, `socks`, `socks5`, and `socks5h`
    URLs plus a bypass list. Persistence is optional
    `AppSettings.networkProxy` in the existing host settings blob. No protocol
-   or storage schema version bump.
+   or storage schema version bump. One proxy for every Chromium session is the
+   default, not the only choice: ADR 0342 later let the built-in browser
+   (`persist:work-browser`) follow a per-address rule list instead, leaving
+   every other surface described here unchanged.
 
 2. **System** (default): Chromium uses
    `session.setProxy({ mode: "system" })`. Electron main owns a loopback-only,

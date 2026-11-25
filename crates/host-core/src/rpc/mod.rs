@@ -1327,6 +1327,9 @@ fn validate_settings_value(value: &Value) -> Result<(), JsonRpcError> {
     if let Err(message) = crate::network_proxy::validate_network_proxy(value) {
         return Err(rpc_err(1002, message, "INVALID_PARAMS"));
     }
+    if let Err(message) = crate::browser_proxy_routing::validate_browser_proxy_routing(value) {
+        return Err(rpc_err(1002, message, "INVALID_PARAMS"));
+    }
     if let Err(message) = crate::easytier_net::validate_easytier_settings(value) {
         return Err(rpc_err(1002, message, "INVALID_PARAMS"));
     }

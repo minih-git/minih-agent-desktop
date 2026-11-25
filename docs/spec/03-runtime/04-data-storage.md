@@ -465,7 +465,7 @@ CREATE TABLE kv (
 
 | ns | contents |
 |---|---|
-| `app` | the settings blob (`settings.get/set`), `currentProjectId`. Optional `networkProxy` (`mode`/`url`/`bypass`) is a JSON field in that blob: `url`/`bypass` survive a switch to System or Direct and are applied only in Custom mode (issue #1541); no schema version bump (D340) |
+| `app` | the settings blob (`settings.get/set`), `currentProjectId`. Optional `networkProxy` (`mode`/`url`/`bypass`) is a JSON field in that blob: `url`/`bypass` survive a switch to System or Direct and are applied only in Custom mode (issue #1541); no schema version bump (D340). Optional `browserProxyRouting` (`enabled`/`profiles`/`rules`/`defaultTarget`) is the same: the built-in browser's per-address table, applied only while `enabled` is true, validated by `browser_proxy_routing.rs` on write, and absent for every user who never opened it — so no migration (ADR 0342) |
 | `ui` | non-critical UI state the renderer asks the host to keep |
 | `cache` | model-refresh stamps, recent model refs (spec 13 §3) |
 | `plugin:<id>` | per-plugin settings; uninstall = `DELETE WHERE ns = ?` |

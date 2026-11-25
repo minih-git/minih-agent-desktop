@@ -5684,6 +5684,45 @@ window; opening a normal panel afterward must still work.
 - **Milestone**: M5
 - **Status**: Partial automation: `scripts/e2e-browser-local-file-access.mjs` covers native local-file navigation; the address-bar and overlay workflow remains manual.
 
+#### E2E-BROWSER-proxy-routing-follows-rules: The built-in browser takes its own route, and nothing else does
+
+- **Preconditions**: Isolated desktop profile; a Host storage directory with no
+  `browserProxyRouting` key (an existing install); two reachable proxy
+  endpoints — an HTTP proxy and, for the credentialed case, a SOCKS5 endpoint
+  that requires a username/password — plus one host reachable directly. No
+  paid provider traffic and no real customer proxy.
+- **Steps**: 1) With routing absent, set Settings → System → Network → Proxy to
+  a custom proxy and confirm the work-panel browser and the Agent `Browser`
+  tool both take it. 2) Open the routing card and enable it with two proxies:
+  one plain HTTP proxy for `*.corp.example` plus an IP range, one SOCKS5 proxy
+  with credentials as the default exit; add a rule pointing at a deleted proxy
+  and confirm it is refused with that rule named. 3) Load a page on a rule
+  host, a page on the default exit, and a page on `127.0.0.1`, then reorder two
+  rules and reload. 4) Change the global Proxy selection and reload the
+  built-in browser. 5) Clear the SOCKS5 password while keeping the profile and
+  confirm the row reports the invalid URL instead of saving. 6) Disable the
+  switch and reload. 7) Restart the app with routing enabled.
+- **Expected**: While off, `persist:work-browser` resolves exactly like every
+  other Chromium session. While on, the rule hosts reach the mapped proxy, the
+  default exit takes everything else, and loopback/private hosts stay direct;
+  the first match wins after reordering. A global Proxy change updates the
+  model, marketplace, updater, and plugin sessions and leaves the built-in
+  browser on its rules. An invalid table is refused with the offending rule or
+  proxy index and never partially applied; the previously applied table stays
+  in force. Disabling restores the global proxy on that session and closes the
+  loopback relay the credentialed profile held. The stored table survives a
+  restart and takes effect without changing any other setting.
+- **Specs linked**: `04-ux/06-settings-ia.md`, `03-runtime/04-data-storage.md`, ADR 0342, ADR 0177
+- **Acceptance**: Quality, Security
+- **Milestone**: M5
+- **Status**: Partial automation: `packages/shared/src/browser-proxy-routing.test.ts`
+  covers the match semantics and the compiled PAC (evaluated against the same
+  cases as the TypeScript matcher), `crates/host-core/src/browser_proxy_routing.rs`
+  covers write-time validation, and a real Electron 43 probe verified
+  `resolveProxy` for the routing-off, routing-on, global-change, disable, and
+  credentialed-relay states plus relay reuse/close. No driver script exists in
+  `scripts/` yet, so the Settings card interactions are manual.
+
 #### E2E-CHAT-html-artifacts: Open generated pages from ordinary and project conversations
 
 - **Preconditions**: Isolated Electron profile, real Host storage and loopback

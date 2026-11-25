@@ -2939,6 +2939,57 @@
 }
 
 /*
+  Built-in browser routing (ADR 0342): a proxy list and an ordered rule list,
+  each row a single line of controls so the order stays readable.
+*/
+.settings-routing-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.settings-routing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--text-sm);
+  color: var(--ds-text-secondary);
+}
+
+.settings-routing-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ds-text-muted);
+}
+
+.settings-routing-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-routing-row .field-input {
+  flex: 1 1 160px;
+  min-width: 120px;
+}
+
+.settings-routing-row .field-select {
+  flex: 0 1 auto;
+  min-width: 120px;
+}
+
+.settings-routing-error {
+  margin: 0;
+  padding: 8px 0;
+  font-size: var(--text-xs);
+  color: var(--ds-error);
+}
+
+/*
   Plaintext opt-in for endpoints the user typed themselves: the checkbox sits in
   the row's control column, and the risk copy arrives only while it is on.
 */
