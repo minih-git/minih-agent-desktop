@@ -133,6 +133,30 @@ async function presetPlan(
   port: PluginCredentialHostPort,
   preloaded?: Record<string, unknown>,
 ): Promise<TcpCredentialPlan> {
+  const endpoint = authorizePresetTcpEndpoint(slot, request, true);
+  const fields =
+    preloaded ??
+    (await readFields(
+      pluginId,
+      identity.instanceId ? `${identity.slotId}#${identity.instanceId}` : identity.slotId,
+      port,
+    ));
+  return {
+    ...identity,
+    origin: "preset",
+    endpoint,
+    login: { ...credentialsOf(fields), protocol: "imap", security: "tls" },
+    scheme: "imaps",
+    proxy: readTcpProxy(fields, slot.userProxyTypes ?? []),
+  };
+}
+
+/** Authorize a literal manifest endpoint against the credential's scope. */
+export function authorizePresetTcpEndpoint(
+  slot: DeclaredSlot,
+  request: TcpCredentialRequest,
+  requireImplicitTls: boolean,
+): PluginTcpEndpoint {
   const host = request.endpoint?.host;
   const requestedPort = request.endpoint?.port;
   if (typeof host !== "string" || !Number.isInteger(requestedPort)) {
@@ -150,7 +174,7 @@ async function presetPlan(
       "TCP endpoint is not declared in manifest.net.tcp",
     );
   }
-  if (!endpoint.tls) {
+  if (requireImplicitTls && !endpoint.tls) {
     throw new PluginCredentialError("PERMISSION_DENIED", "IMAP authentication requires TLS");
   }
   const scope = parseNetDomains(slot.scope.domains);
@@ -160,21 +184,7 @@ async function presetPlan(
       "the credential slot does not admit this endpoint",
     );
   }
-  const fields =
-    preloaded ??
-    (await readFields(
-      pluginId,
-      identity.instanceId ? `${identity.slotId}#${identity.instanceId}` : identity.slotId,
-      port,
-    ));
-  return {
-    ...identity,
-    origin: "preset",
-    endpoint,
-    login: { ...credentialsOf(fields), protocol: "imap", security: "tls" },
-    scheme: "imaps",
-    proxy: readTcpProxy(fields, slot.userProxyTypes ?? []),
-  };
+  return endpoint;
 }
 
 /** Whether one stored instance carries its own mail server. */
