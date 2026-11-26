@@ -54,8 +54,8 @@ test("a chosen type shows the address, and a stored login is not prefilled", asy
   assert.match(html, /7897/);
   assert.match(html, /Proxy user name/);
   assert.match(html, /Proxy password/);
-  // The hint says the saved proxy login has to be typed again.
-  assert.match(html, /type it when you save/);
+  // The hint says an empty pair keeps the login that is already saved.
+  assert.match(html, /Leave both empty to keep a saved proxy login/);
   // Empty inputs, not a value: nothing of a stored proxy login is echoed.
   assert.ok(!/<input[^>]*proxyUsername[^>]*value="[^"]+"/.test(html), html);
   assert.ok(!/<input[^>]*proxyPassword[^>]*value="[^"]+"/.test(html), html);

@@ -787,6 +787,17 @@ many instances exist, and learns both from `credentials.list`
   of the same slot already uses, and announces the change like an add does. The
   Settings sheet edits through this path — removing and re-adding would mint a new
   id, and whatever the plugin stored for the account would be lost.
+- **An empty secret on an edit keeps the saved one.** A stored secret never goes
+  back to any surface, so the edit form shows an empty box for it, and the host
+  reads that empty box as "keep" rather than "clear"; a value the user does type
+  replaces it. Only declared `secret` fields and the proxy login are merged —
+  every other value is authoritative in the submission, so the servers a save
+  records are the ones the user just typed, and a saved password follows the
+  account to a server the user names in the host's own form. A new account has
+  nothing to keep and still requires every secret. The merge happens in the host,
+  between the submission and validation: no stored value travels over IPC, none
+  reaches the plugin, and `publicFields` still carries no secret
+  ([ADR plugin-host-capabilities](../../adr/plugin-host-capabilities.md), "an edit keeps the secret it did not ask for").
 
 ### 5.5.2 A user-typed mail server (`userEndpoint`)
 
@@ -1050,8 +1061,9 @@ The values are validated by the host at save time, not by the form:
   refused by the same list the custom mail server uses;
 * `proxyUsername` and `proxyPassword` are both set or both empty, carry no CR,
   LF or NUL, and are each at most 255 bytes (RFC 1929);
-* the proxy is stored inside the account, so editing an account re-enters the
-  proxy login exactly like the mail password.
+* the proxy is stored inside the account: an edit that leaves **both** credential
+  boxes empty keeps the saved login, one that fills them replaces it, and
+  choosing no type clears the login together with the address (§5.5.1, §5.5.3).
 
 `credentials.status` reports the declaration as `userProxy: { types }`, and an
 account saved before the proxy existed keeps working with no proxy at all.

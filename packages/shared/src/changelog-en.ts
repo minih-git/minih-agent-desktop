@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.11.2",
+    highlights: [
+      "Fixed having to type a saved password again just to change something else about a mailbox account: an app password from Gmail or QQ is shown once, and the edit form could not be saved without it. Leaving a password — or a saved proxy login — empty now keeps the one already saved, and when the change also moves the account to another server the form says which server the saved password will be sent to.",
+    ],
+  },
+  {
     version: "1.11.1",
     date: "2026-11-25",
     highlights: [

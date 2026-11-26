@@ -6,6 +6,7 @@ import { Button, Input, PasswordInput, Select } from "../ui";
 import { CustomMailServerFields } from "./PluginCredentialEndpoint";
 import { CustomMailProxyFields } from "./PluginCredentialProxy";
 import { CustomMailSendFields } from "./PluginCredentialSend";
+import { savedSecretLoginTarget } from "./credential-edit-hint";
 
 type CredentialField = PluginCredentialStatus["fields"][number];
 
@@ -34,6 +35,7 @@ export function CredentialFieldsForm({
   onChange,
   locale,
   disabled,
+  keepingSecrets,
   userEndpoint,
   userProxy,
   userSend,
@@ -43,6 +45,11 @@ export function CredentialFieldsForm({
   onChange: (key: string, value: string) => void;
   locale: string;
   disabled?: boolean;
+  /**
+   * Editing an account that already has stored secrets: an empty secret box
+   * keeps the saved value, so the box says so and a save no longer needs it.
+   */
+  keepingSecrets?: boolean;
   /** Present when the user may name their own mail server for this slot. */
   userEndpoint?: { protocols: readonly string[] };
   /** Present when the user may reach this account through their own proxy. */
@@ -83,6 +90,11 @@ export function CredentialFieldsForm({
             ) : control === "password" ? (
               <PasswordInput
                 {...common}
+                // An edit shows an empty box for a secret the host keeps, and
+                // says so rather than implying the value was lost.
+                {...(keepingSecrets
+                  ? { placeholder: t("pluginCredentials.keepSavedSecret", { field: label }) }
+                  : {})}
                 showLabel={t("pluginCredentials.show")}
                 hideLabel={t("pluginCredentials.hide")}
               />
@@ -120,9 +132,23 @@ export function CredentialFieldsForm({
   );
 }
 
-/** Whether every declared field has a value, so a save button can stay disabled. */
-export function valuesComplete(fields: CredentialField[], values: CredentialValues): boolean {
-  return fields.every((field) => Boolean((values[field.key] ?? "").trim()));
+/**
+ * Whether every field a save still needs has a value.
+ *
+ * `requireSecrets` is false while editing an account that already stores them:
+ * the host keeps a saved secret when its box is empty, so an empty box is a
+ * valid answer there and only there. A new account has nothing to keep, and its
+ * secrets are still required.
+ */
+export function valuesComplete(
+  fields: CredentialField[],
+  values: CredentialValues,
+  requireSecrets = true,
+): boolean {
+  return fields.every((field) => {
+    if (!requireSecrets && field.secret) return true;
+    return Boolean((values[field.key] ?? "").trim());
+  });
 }
 
 /**
@@ -246,12 +272,15 @@ function SingleValueSlot({
         userEndpoint={slot.userEndpoint}
         userProxy={slot.userProxy}
         userSend={slot.userSend}
+        // A configured slot on this path is being edited: its secrets are kept
+        // when their boxes are empty.
+        keepingSecrets={Boolean(slot.configured)}
       />
       {error ? <p role="alert" className="plugins-settings-error">{error}</p> : null}
       <div className="plugin-credential-actions">
         <Button
           variant="primary"
-          disabled={busy || !valuesComplete(slot.fields, values)}
+          disabled={busy || !valuesComplete(slot.fields, values, !slot.configured)}
           onClick={() => void save()}
         >
           {t("pluginCredentials.save")}
@@ -282,6 +311,9 @@ function MultiValueSlot({
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [values, setValues] = useState<CredentialValues>({});
+  // What the account looked like when the edit started, so a change of server
+  // can be named before it is saved. Cleared with the form.
+  const [baseline, setBaseline] = useState<CredentialValues>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const locale = i18n.resolvedLanguage ?? "en";
@@ -292,6 +324,9 @@ function MultiValueSlot({
   const limit = slot.limit ?? declaredMax;
   const full = limit !== undefined && instances.length >= limit;
 
+  // A save keeps a secret the user left empty; when the form also moves the
+  // account to another server, name that server before it happens.
+  const savedTarget = editing ? savedSecretLoginTarget(slot, baseline, values) : null;
   const add = async () => {
     setBusy(true);
     setError(null);
@@ -303,6 +338,7 @@ function MultiValueSlot({
       setValues({});
       setAdding(false);
       setEditing(null);
+      setBaseline({});
       try {
         await refresh();
       } catch {
@@ -346,9 +382,11 @@ function MultiValueSlot({
         busy={busy}
         onEdit={(instance) => {
           // Only the non-secret values are prefilled: a stored secret is never
-          // handed back to any surface, so it has to be typed again.
+          // handed back to any surface, and leaving its box empty keeps it.
           setValues({ ...instance.publicFields });
           setEditing(instance.instanceId);
+          // The saved values are the baseline a server change is compared to.
+          setBaseline({ ...instance.publicFields });
           setAdding(true);
         }}
         onRemove={(instanceId) => void remove(instanceId)}
@@ -366,11 +404,18 @@ function MultiValueSlot({
             userEndpoint={slot.userEndpoint}
             userProxy={slot.userProxy}
             userSend={slot.userSend}
+            // Editing an account: an empty secret box keeps the saved one.
+            keepingSecrets={Boolean(editing)}
           />
+          {savedTarget ? (
+            <p className="plugin-credential-keep-hint">
+              {t("pluginCredentials.keepSavedSecretLogin", { target: savedTarget })}
+            </p>
+          ) : null}
           <div className="plugin-credential-actions">
             <Button
               variant="primary"
-              disabled={busy || !valuesComplete(slot.fields, values)}
+              disabled={busy || !valuesComplete(slot.fields, values, !editing)}
               onClick={() => void add()}
             >
               {t("pluginCredentials.save")}
@@ -382,6 +427,7 @@ function MultiValueSlot({
                 setAdding(false);
                 setEditing(null);
                 setValues({});
+                setBaseline({});
               }}
             >
               {t("pluginCredentials.cancel")}
@@ -397,6 +443,7 @@ function MultiValueSlot({
               setValues({});
               setEditing(null);
               setAdding(true);
+              setBaseline({});
             }}
           >
             {t("pluginCredentials.add")}

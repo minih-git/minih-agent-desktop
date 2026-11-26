@@ -11,7 +11,8 @@ import type { CredentialValues } from "./PluginCredentials";
  * offer it. Choosing no type keeps the account on a direct connection.
  *
  * A stored proxy login is never prefilled — the user name is host-only, exactly
- * like the password — so the hint says it has to be typed again.
+ * like the password — so the two boxes are filled in only to replace it: left
+ * empty, a save keeps the login the account already has.
  */
 export function CustomMailProxyFields({
   types,
@@ -35,7 +36,18 @@ export function CustomMailProxyFields({
         <span>{t("pluginCredentials.proxyType")}</span>
         <Select
           value={type}
-          onChange={(event) => onChange("proxyType", event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            onChange("proxyType", next);
+            // "No proxy" is a statement about the whole section, so the address
+            // and the login go with it: an empty type plus a leftover address
+            // would be refused as a half-filled proxy.
+            if (!next) {
+              for (const key of ["proxyHost", "proxyPort", "proxyUsername", "proxyPassword"]) {
+                onChange(key, "");
+              }
+            }
+          }}
           aria-label={t("pluginCredentials.proxyType")}
           disabled={disabled}
         >

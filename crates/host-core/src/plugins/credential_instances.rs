@@ -785,6 +785,23 @@ pub(crate) fn validated_send(
     })
 }
 
+/// The stored values of one instance, for the edit merge.
+///
+/// `None` when this slot holds no such instance: the caller then validates the
+/// submission as it stands, and the update itself refuses an unknown id.
+pub(crate) fn stored_values(
+    secrets: &SecretStore,
+    plugin_id: &str,
+    slot: &DeclaredSlot,
+    instance_id: &str,
+) -> Result<Option<BTreeMap<String, String>>, CredentialError> {
+    if !valid_instance_id(instance_id) {
+        return Ok(None);
+    }
+    let reference = format!("{}#{instance_id}", slot.id);
+    Ok(credentials::read_slot(secrets, plugin_id, &reference)?.map(|stored| stored.fields))
+}
+
 /// The submitted map must be exactly the slot's declared fields, each a
 /// non-empty string, plus the reserved keys of a slot that declares
 /// `userEndpoint`, `userProxy` or `userSend`. Anything else is refused as a

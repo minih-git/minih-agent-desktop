@@ -176,3 +176,52 @@ test("a slot that declares no proxy and no outgoing server carries neither key",
   assert.equal("userSend" in result.slots[0], false);
   assert.equal("userEndpoint" in result.slots[0], false);
 });
+
+test("an edit that leaves a secret empty reaches the host as an empty box", async () => {
+  const requests = [];
+  const call = harness({
+    call: async (method, params) => {
+      requests.push({ method, params });
+      return { instanceId: "acc_00000001" };
+    },
+  });
+  const input = {
+    pluginId: "demo.mailbox",
+    slotId: "mailbox",
+    instanceId: "acc_00000001",
+    fields: {
+      username: "alice@example.test",
+      // The box was left empty: the sheet never saw the stored value, and the
+      // host is the only place that can put the two together.
+      password: "",
+      proxyType: "http",
+      proxyHost: "127.0.0.1",
+      proxyPort: "7897",
+    },
+  };
+  assert.deepEqual(await call(IPC.invoke.pluginCredentialsSet, input), {
+    instanceId: "acc_00000001",
+  });
+  assert.deepEqual(requests[0].params.fields, input.fields);
+  assert.equal(requests[0].params.instanceId, "acc_00000001");
+});
+
+test("a refused save says what failed without repeating what was typed", async () => {
+  const secret = "synthetic-app-password-for-ipc-test";
+  const call = harness({
+    call: async () => {
+      throw new Error(`storage refused: ${secret}`);
+    },
+  });
+  await assert.rejects(
+    call(IPC.invoke.pluginCredentialsSet, {
+      pluginId: "demo.mailbox",
+      slotId: "mailbox",
+      instanceId: "acc_00000001",
+      fields: { username: "alice@example.test", password: secret },
+    }),
+    (error) =>
+      error.message.includes(secret) === false &&
+      /cannot save plugin credentials/i.test(error.message),
+  );
+});
