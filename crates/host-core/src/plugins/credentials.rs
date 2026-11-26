@@ -793,10 +793,6 @@ pub(crate) fn set(
         previous.as_ref().map(|stored| &stored.fields),
     );
     let values = credential_instances::validated_fields(&slot, fields)?;
-    if slot.multiple_max.is_some() {
-        credential_instances::instances(secrets, &plugin.id, &slot, db)?;
-        return credential_instances::add(secrets, &plugin.id, &slot, &values, db).map(Some);
-    }
     let mut index = read_index(secrets, &plugin.id)?;
     if index.insert(slot_id) {
         write_index(secrets, &plugin.id, &index)?;
