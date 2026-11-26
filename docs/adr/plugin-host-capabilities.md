@@ -820,3 +820,44 @@ sends anything.
 - **Persist the counter.** Rejected for now: it would need a schema version for a
   bound that protects an account from a runaway plugin loop, not from its owner,
   and the ADR states the reset behaviour instead of hiding it.
+
+## 2026-11-26 — an edit keeps the secret it did not ask for
+
+**Context.** An app password from Gmail, QQ or any provider that shows a one-time
+code is displayed once, when it is generated. The host never hands a stored
+secret back to a form, so the edit sheet shows an empty box for it — and saving
+used to require every declared field to be non-empty. A user who only wanted to
+add a proxy had to go and mint a new app password first.
+
+**Decision.** An empty secret box on an edit means "keep the saved value".
+
+- The merge happens in the host — in `credentials.set` for a single-value slot
+  and `credentials.update` for one instance of a multi-instance slot — between
+  the submission and validation. The renderer sends the empty box, the host reads
+  the stored blob, and only declared `secret` fields and the proxy login are
+  carried over. No stored value travels over IPC, and the plugin still never sees
+  one.
+- Every non-secret value stays authoritative in the submission. A user who
+  changes the server, the provider or the outgoing server and leaves the password
+  empty keeps that password and logs in where they just pointed the account. The
+  form makes that visible rather than silent: it prints "Saving will sign in to
+  `<target>` with the saved password" above the save button, naming the provider
+  when that is what changed. The alternative — refuse the save until the password
+  is typed again — is the behaviour that made the feature unusable with a
+  one-time code.
+- The invariant that a plugin cannot redirect a password is untouched: the server
+  is chosen by the user in the host's own form, the instance records exactly that
+  endpoint, a manifest still cannot declare the reserved keys, and `net.tcp`
+  still resolves only through the instance.
+- The proxy is a switch plus a pair: choosing no type clears the saved login
+  together with the address, two empty credential boxes keep the login, one box
+  filled is still refused as half a login.
+- A new account has nothing to keep, so every secret is still required there; the
+  renderer makes the same distinction, and the host refuses a first save with an
+  empty secret.
+
+**Consequences.** Editing an account works again with a one-time code in hand, and
+a password the user cannot reproduce is never something they must reproduce. An
+edit also can no longer clear a secret by accident — removing one means clearing
+the account. The cost is one extra secret-store read per save, on an action the
+user just took.

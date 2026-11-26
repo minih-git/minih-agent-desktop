@@ -18,6 +18,7 @@ pub(crate) const MAX_PACKAGE_BYTES: u64 = 50 * 1024 * 1024;
 pub(crate) const MAX_PACKAGE_FILES: usize = 2000;
 
 pub(crate) mod credential_instances;
+pub(crate) mod credential_merge;
 pub(crate) mod credentials;
 mod install;
 mod manifest;

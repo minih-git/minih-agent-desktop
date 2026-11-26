@@ -9,6 +9,8 @@ import { repositoryRoot, resolveElectronBinary, scaledTimeout } from "../../../s
 
 const root = repositoryRoot();
 const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
+
+/** The first frame, the save, and the clear of one credential slot. */
 const fixture = String.raw`
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -60,13 +62,82 @@ window.probe = async () => {
   return true;
 };`;
 
-test("credential settings accept a masked value, clear it after save, and clear the slot", {
-  skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false,
-}, async () => {
+/**
+ * Editing a saved mailbox account: the password box is empty because the host
+ * never hands a stored secret back, and only the proxy is filled in. Saving has
+ * to be possible, and it has to submit that empty box with the account's own id
+ * — the merge that keeps the saved password happens in the host.
+ */
+const editFixture = String.raw`
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import { catalogs, flattenCatalog } from "@minih-agent/i18n";
+import { IPC } from "@minih-agent/shared";
+import { PluginCredentials } from "../../apps/desktop/src/components/plugins/PluginCredentials";
+await i18n.use(initReactI18next).init({ lng: "zh-CN", fallbackLng: "en", keySeparator: false,
+  resources: { "zh-CN": { translation: flattenCatalog(catalogs["zh-CN"]) }, en: { translation: flattenCatalog(catalogs.en) } },
+  interpolation: { escapeValue: false } });
+const instances = [{ instanceId: "acc_00000001", label: "alice@example.com", configured: true, publicFields: { username: "alice@example.com" } }];
+let submitted = null;
+window.minihAgent = { platform: "darwin", on() { return () => {}; }, async invoke(channel, input) {
+  if (channel === IPC.invoke.pluginCredentialsStatus) return { ok: true, data: { slots: [{
+    id: "mailbox", title: "邮箱", kind: "imap",
+    fields: [{ key: "username", label: "邮箱地址", secret: false }, { key: "password", label: "授权码", secret: true }],
+    configured: true, lastUsedAt: null, multiple: true, max: 3, instances,
+    userProxy: { types: ["http", "socks5"] },
+  }] } };
+  if (channel === IPC.invoke.pluginCredentialsSet) { submitted = input; return { ok: true, data: {} }; }
+  throw new Error("unexpected IPC");
+} };
+const root = createRoot(document.getElementById("root"));
+flushSync(() => root.render(<PluginCredentials pluginId="demo.mailbox" />));
+const until = async (condition, message, budget = 5000) => { const deadline = performance.now() + budget; while (!condition()) { if (performance.now() > deadline) throw new Error(message); await new Promise(requestAnimationFrame); } };
+const button = (label) => [...document.querySelectorAll("button")].find((entry) => entry.textContent === label);
+const type = (element, value) => {
+  const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), "value");
+  flushSync(() => { descriptor.set.call(element, value); element.dispatchEvent(new Event("input", { bubbles: true })); });
+};
+window.probe = async () => {
+  await until(() => document.body.textContent.includes("已配置"), "missing configured account", 15000);
+  flushSync(() => button("编辑").click());
+  // The saved address comes back; the password never does.
+  await until(() => document.querySelector('input[aria-label="邮箱地址"]')?.value === "alice@example.com", "edit form was not prefilled", 15000);
+  const password = document.querySelector('input[aria-label="授权码"]');
+  if (password.value) throw new Error("a stored secret was rendered back");
+  if (!password.placeholder.includes("留空则保留已保存的")) throw new Error("the secret box does not say what empty means: " + password.placeholder);
+  const save = button("保存凭据");
+  // Nothing else to type: an empty secret keeps the saved one.
+  if (save.disabled) throw new Error("save must be enabled with only the saved password missing");
+  const type_ = document.querySelector('select[aria-label="代理类型"]');
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  flushSync(() => { descriptor.set.call(type_, "http"); type_.dispatchEvent(new Event("change", { bubbles: true })); });
+  await until(() => document.querySelector('input[aria-label="代理服务器"]'), "the proxy address did not appear", 15000);
+  type(document.querySelector('input[aria-label="代理服务器"]'), "127.0.0.1");
+  type(document.querySelector('input[aria-label="代理端口"]'), "7897");
+  // The password box is still empty: this is the whole point of the change.
+  if (password.value) throw new Error("the proxy fill typed into the password box");
+  if (save.disabled) throw new Error("save must stay enabled with the password left empty");
+  flushSync(() => button("保存凭据").click());
+  await until(() => submitted, "the save never reached the host", 15000);
+  if (submitted.instanceId !== "acc_00000001") throw new Error("the edit lost the account id: " + JSON.stringify(submitted));
+  // Absent and empty mean the same thing to the host: keep the saved one.
+  if ((submitted.fields.password ?? "") !== "") throw new Error("the renderer must submit the empty box as it is: " + JSON.stringify(submitted));
+  if (submitted.fields.proxyType !== "http" || submitted.fields.proxyHost !== "127.0.0.1" || submitted.fields.proxyPort !== "7897") throw new Error("the proxy did not reach the host: " + JSON.stringify(submitted));
+  if (submitted.fields.username !== "alice@example.com") throw new Error("the saved address did not travel with the edit");
+  await until(() => document.body.textContent.includes("已配置"), "the sheet did not come back to the account list", 15000);
+  document.getAnimations().forEach((animation) => animation.finish());
+  return true;
+};`;
+
+/** Bundle one fixture, boot it in Electron, and return what the probe printed. */
+async function runInElectron(contents, marker) {
   const temp = await mkdtemp(join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "plugin-credentials-ui-"));
   try {
     await build({
-      stdin: { contents: fixture, resolveDir: join(root, "scripts/e2e"), loader: "tsx" },
+      stdin: { contents, resolveDir: join(root, "scripts/e2e"), loader: "tsx" },
       outfile: join(temp, "renderer.js"), bundle: true, platform: "browser", format: "esm", jsx: "automatic",
       define: { "process.env.NODE_ENV": '"production"', "import.meta.env.DEV": "true" },
       alias: {
@@ -89,7 +160,7 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(path.join(__dirname, "index.html"));
     await win.webContents.executeJavaScript("window.probe()");
-    console.log("PASS credential settings"); process.exit(0);
+    console.log("PASS ${marker}"); process.exit(0);
   } catch (error) { console.error(error.stack || error); process.exit(1); }
 });`);
     const env = { ...process.env, MINIH_AGENT_DATA_DIR: join(temp, "data") };
@@ -102,6 +173,18 @@ app.whenReady().then(async () => {
     try { code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("close", resolve); }); }
     finally { clearTimeout(timer); }
     assert.equal(code, 0, output.slice(-6000));
-    assert.match(output, /PASS credential settings/);
+    assert.match(output, new RegExp(`PASS ${marker}`));
   } finally { await rm(temp, { recursive: true, force: true }); }
+}
+
+const skipWithoutDisplay = {
+  skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false,
+};
+
+test("credential settings accept a masked value, clear it after save, and clear the slot", skipWithoutDisplay, async () => {
+  await runInElectron(fixture, "credential settings");
+});
+
+test("editing a saved account needs only the proxy, never the password again", skipWithoutDisplay, async () => {
+  await runInElectron(editFixture, "credential edit");
 });

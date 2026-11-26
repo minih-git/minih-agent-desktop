@@ -2,6 +2,12 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.11.2",
+    highlights: [
+      "修复只改邮箱账号的其他设置也必须重新输入密码的问题：Gmail、QQ 这类授权码只显示一次，编辑表单不重新填就没法保存。现在密码（或已保存的代理登录）留空即保留原值；如果这次改动还把账号换了服务器，表单会写明已保存的密码将发往哪台服务器。",
+    ],
+  },
+  {
     version: "1.11.1",
     date: "2026-11-25",
     highlights: [

@@ -26,6 +26,7 @@
 //! credentials, and it needs no database migration.
 
 use super::credential_instances::{self, split_ref, InstanceMeta};
+use super::credential_merge;
 use super::user_endpoint;
 use super::user_proxy;
 use super::user_send;
@@ -772,6 +773,15 @@ pub(crate) fn set(
     db: Option<&Database>,
 ) -> Result<Option<String>, CredentialError> {
     let slot = declared_slot(plugin, slot_id)?;
+    // A save over a value that already exists keeps the secrets the user left
+    // empty: an app password is shown once, and it never comes back here.
+    let previous = read_slot(secrets, &plugin.id, slot_id)?;
+    let mut fields = fields;
+    credential_merge::keep_saved_secrets(
+        &slot,
+        &mut fields,
+        previous.as_ref().map(|stored| &stored.fields),
+    );
     let values = credential_instances::validated_fields(&slot, fields)?;
     if slot.multiple_max.is_some() {
         credential_instances::instances(secrets, &plugin.id, &slot, db)?;
@@ -810,6 +820,12 @@ pub(crate) fn update(
             "{CREDENTIAL_INVALID}: credential slot {slot_id} holds a single value"
         )));
     }
+    // The id names the account being edited, so what is already stored under it
+    // is what an empty box keeps. An unknown id keeps nothing, and the update
+    // then reports it as not configured.
+    let previous = credential_instances::stored_values(secrets, &plugin.id, &slot, instance_id)?;
+    let mut fields = fields;
+    credential_merge::keep_saved_secrets(&slot, &mut fields, previous.as_ref());
     let values = credential_instances::validated_fields(&slot, fields)?;
     credential_instances::update(secrets, &plugin.id, &slot, instance_id, &values, db)
 }
@@ -931,3 +947,7 @@ mod instance_tests;
 #[cfg(test)]
 #[path = "credential_proxy_tests.rs"]
 mod proxy_tests;
+
+#[cfg(test)]
+#[path = "credential_edit_merge_tests.rs"]
+mod edit_merge_tests;
