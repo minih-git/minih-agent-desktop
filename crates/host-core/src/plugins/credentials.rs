@@ -773,8 +773,18 @@ pub(crate) fn set(
     db: Option<&Database>,
 ) -> Result<Option<String>, CredentialError> {
     let slot = declared_slot(plugin, slot_id)?;
-    // A save over a value that already exists keeps the secrets the user left
-    // empty: an app password is shown once, and it never comes back here.
+    // A multi-instance slot takes a new account on this path, so there is no
+    // value of its own to keep. A bare blob that still exists here — a slot that
+    // became `multiple` and whose migration has not run, or one whose legacy
+    // delete failed — belongs to the account saved before `multiple`, and must
+    // never be copied into the account being added now.
+    if slot.multiple_max.is_some() {
+        let values = credential_instances::validated_fields(&slot, fields)?;
+        credential_instances::instances(secrets, &plugin.id, &slot, db)?;
+        return credential_instances::add(secrets, &plugin.id, &slot, &values, db).map(Some);
+    }
+    // A single-value slot is saved over: the secrets the user left empty are the
+    // ones already stored under that slot.
     let previous = read_slot(secrets, &plugin.id, slot_id)?;
     let mut fields = fields;
     credential_merge::keep_saved_secrets(

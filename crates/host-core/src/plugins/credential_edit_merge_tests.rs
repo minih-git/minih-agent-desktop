@@ -405,3 +405,101 @@ fn a_single_value_slot_keeps_its_saved_secret_when_it_is_saved_again() {
     assert_eq!(fields.get("username").map(String::as_str), Some("bob"));
     assert_eq!(fields.get("password").map(String::as_str), Some("hunter2"));
 }
+
+/// A pre-`multiple` value, still sitting under the bare slot reference.
+///
+/// Writing it directly is how both halves of a half-finished migration look: a
+/// slot that became multi-instance but whose first read has not run yet, and one
+/// whose legacy delete failed (the migration tolerates that leftover).
+fn write_legacy_value(secrets: &SecretStore, plugin_id: &str, slot_id: &str, password: &str) {
+    let stored = StoredSlot {
+        fields: [
+            ("username".to_string(), "old@example.com".to_string()),
+            ("password".to_string(), password.to_string()),
+        ]
+        .into_iter()
+        .collect(),
+    };
+    let payload = serde_json::to_string(&stored).unwrap();
+    secrets
+        .set(&slot_ref(plugin_id, slot_id), &payload)
+        .unwrap();
+}
+
+fn no_account_labelled(secrets: &SecretStore, plugin: &PluginSummary, label: &str) -> bool {
+    let listed = list(secrets, plugin, None).unwrap();
+    let instances = listed["slots"][0]["instances"].as_array();
+    !instances
+        .map(|metas| metas.iter().any(|meta| meta["label"] == json!(label)))
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_legacy_value_a_migration_has_not_moved_yet_is_not_kept_by_a_new_account() {
+    let dir = tempdir().unwrap();
+    let (plugin, secrets) = fixture(&dir, "demo.legacy-unmigrated", multi_mailbox_slot());
+    write_legacy_value(&secrets, &plugin.id, "mailbox", "old-app-password");
+
+    // A new mailbox on a slot that never read its legacy value: there is nothing
+    // this account could keep, so an empty secret is refused exactly as it is
+    // for any other new account.
+    let error = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        account("new@example.com", ""),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("field password is empty"),
+        "{error}"
+    );
+    assert!(
+        no_account_labelled(&secrets, &plugin, "new@example.com"),
+        "a refused add must not create an account"
+    );
+}
+
+#[test]
+fn a_legacy_value_left_behind_by_a_failed_delete_is_not_kept_by_a_new_account() {
+    let dir = tempdir().unwrap();
+    let (plugin, secrets) = fixture(&dir, "demo.legacy-leftover", multi_mailbox_slot());
+    let id = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        account("old@example.com", "first-password"),
+        None,
+    )
+    .unwrap()
+    .expect("a multi-instance slot answers the id it created");
+    // The migration ran; its delete of the bare blob did not land.
+    write_legacy_value(&secrets, &plugin.id, "mailbox", "stale-password");
+
+    let error = set(
+        &secrets,
+        &plugin,
+        "mailbox",
+        account("second@example.com", ""),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("field password is empty"),
+        "{error}"
+    );
+    // The account that was already there is untouched, and no second one
+    // appeared with the leftover secret.
+    let fields = resolve(&secrets, &plugin, &format!("mailbox#{id}"), None).unwrap();
+    assert_eq!(
+        fields.get("password").map(String::as_str),
+        Some("first-password")
+    );
+    let listed = list(&secrets, &plugin, None).unwrap();
+    let metas = listed["slots"][0]["instances"]
+        .as_array()
+        .expect("an instance list");
+    assert_eq!(metas.len(), 1, "{listed}");
+    assert_eq!(metas[0]["label"], json!("old@example.com"));
+}
