@@ -1142,7 +1142,7 @@ export const en = {
     learnedMemory: "Learned memory",
     learnedMemoryRead: "Use learned memory",
     learnedMemoryReadDesc:
-      "Let the agent start sessions with a short index of what earlier conversations taught it, and look the rest up when it needs to. Turning this off hides those notes from the agent without deleting anything.",
+      "Let the agent start sessions with a short index of what earlier conversations taught it, and look the rest up when it needs to. Turning this off hides those notes from the agent without deleting anything. Related notes are also recalled for each request, within 1.5 KiB.",
     learnedMemoryExtraction: "Learn automatically",
     learnedMemoryManager: "Review learned memory",
     learnedMemoryManagerDesc: "See, edit, archive, or delete the notes that apply to you everywhere.",

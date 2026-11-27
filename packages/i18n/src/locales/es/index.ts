@@ -1110,7 +1110,7 @@ export const es = {
     learnedMemory: "Memoria aprendida",
     learnedMemoryRead: "Usar la memoria aprendida",
     learnedMemoryReadDesc:
-      "Permite que el agente empiece las sesiones con un índice breve de lo que enseñaron conversaciones anteriores y consulte el resto cuando lo necesite. Al desactivarlo, el agente no ve esas notas y no se borra nada.",
+      "Permite que el agente empiece las sesiones con un índice breve de lo que enseñaron conversaciones anteriores y consulte el resto cuando lo necesite. Al desactivarlo, el agente no ve esas notas y no se borra nada. En cada solicitud también se recuperan notas relacionadas, hasta 1,5 KiB.",
     learnedMemoryExtraction: "Aprender automáticamente",
     learnedMemoryManager: "Revisar la memoria aprendida",
     learnedMemoryManagerDesc:
