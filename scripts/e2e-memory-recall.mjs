@@ -197,7 +197,78 @@ try {
     recall(later.id, "SessionHistorySearch", { query: "  " }),
     "INVALID_ARGUMENT",
   );
+
   assert.match(missing.error, /query required/);
+
+  // 6. E2E-MEMORY-recall-finds-note-outside-index: the session-start index is
+  //    capped at 40 notes, so a project with 45 leaves five out. A per-turn
+  //    recall reads the same scopes by the words of the prompt and finds the
+  //    one the prompt is about, without repeating anything the prompt already
+  //    carries (ADR learned-memory-recall).
+  // The note the prompt is about is the OLDEST of the seeded set, so the index
+  // ordering cannot be what surfaces it: only term matching can. The project
+  // already holds the gateway note created above, so 45 more make 46 and the
+  // 40-line budget leaves six out.
+  const overflowNote = (
+    await host.call("memory.create", {
+      path: firstProject,
+      kind: "fact",
+      content: "The zebra protocol handshake retries three times.",
+      origin: "user_ui",
+    })
+  ).entry.id;
+  for (let index = 0; index < 44; index += 1) {
+    await host.call("memory.create", {
+      path: firstProject,
+      kind: "fact",
+      content: `Filler note number ${index} about the release checklist.`,
+      origin: "user_ui",
+    });
+  }
+  const indexAll = await host.call("memory.index", { sessionId: later.id });
+  const indexIds = indexAll.index.ids;
+  assert.equal(indexAll.index.entries.length, 40);
+  assert.equal(indexAll.index.omittedCount, 6);
+  assert.equal(indexIds.length, 40);
+  assert.equal(
+    indexIds.includes(overflowNote),
+    false,
+    "the overflow note must not be in the frozen index",
+  );
+
+  // The prompt names the overflow note's own words; recall runs host-side, so
+  // what this scenario proves is that those words reach it and that it answers
+  // with the note the index left out.
+  const recalled = await host.call("memory.recall", {
+    sessionId: later.id,
+    query: "tell me about the zebra protocol",
+    excludeIds: indexIds,
+    limit: 6,
+  });
+  const recalledIds = recalled.entries.map((entry) => entry.id);
+  assert.deepEqual(recalledIds, [overflowNote], JSON.stringify(recalled.entries));
+  // The two words that make the note the answer to this prompt are among the
+  // matched terms; a short word that happens to sit inside another one does not
+  // change which note wins.
+  assert.ok(recalled.entries[0].matchedTerms.includes("zebra"));
+  assert.ok(recalled.entries[0].matchedTerms.includes("protocol"));
+  assert.match(recalled.entries[0].content, /zebra protocol/);
+
+  // The notes the prompt already carries are never repeated, and a recall is
+  // not a use: it is a view the model did not ask for.
+  const repeated = await host.call("memory.recall", {
+    sessionId: later.id,
+    query: "tell me about the zebra protocol",
+  });
+  assert.ok(
+    repeated.entries.length >= 1,
+    "without the index ids the same note is still found",
+  );
+  const listed = await host.call("memory.list", { path: firstProject, limit: 200 });
+  const untouched = listed.entries.find((entry) => entry.id === overflowNote);
+  assert.equal(untouched.useCount, 0);
+  assert.equal(untouched.lastUsedAt ?? null, null);
+  summary.recallOutsideIndex = "found-without-index-or-use";
 
   console.log(JSON.stringify({ passed: true, ...summary }, null, 2));
 } finally {

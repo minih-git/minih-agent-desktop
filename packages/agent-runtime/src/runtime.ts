@@ -136,6 +136,7 @@ import type {
   SessionMessageOrigin,
   PlanExecution,
   LearnedMemoryIndex,
+  LearnedMemoryRecallEntry,
   PlanProposal,
   PlanningState,
   Risk,
@@ -328,6 +329,17 @@ import { projectInstructionsPrompt } from "./project-instructions-prompt.js";
 import type { CustomSystemPrompt } from "./custom-system-prompt.js";
 import { projectMemoryPrompt } from "./project-memory-prompt.js";
 import { learnedMemoryPrompt } from "./learned-memory-prompt.js";
+import {
+  attachRecallBlocks,
+  RecallLedger,
+  RECALL_ENTRY_LIMIT,
+  RECALL_TIMEOUT_MS,
+  recallBlockTokens,
+  recallMessageKey,
+  recallQueryFromUserMessage,
+  renderRecallBlock,
+  reportRecallUnavailable,
+} from "./learned-memory-recall.js";
 import {
   pluginSkillsPrompt,
   pluginSkillsPromptSections,
@@ -2149,6 +2161,24 @@ export class DesktopAgentRuntime {
   /** Frozen at launch: learned-memory writes never touch a running prompt. */
   private learnedMemoryIndex?: LearnedMemoryIndex;
   private learnedMemoryRead = true;
+  /**
+   * The per-turn recall blocks this session has sent, keyed by user-message
+   * identity (ADR learned-memory-recall §2). In memory only: a restart or a
+   * session reopen starts empty, and the historical blocks drop out once.
+   */
+  private readonly recallLedger = new RecallLedger();
+  /**
+   * The block this turn recalled, waiting for the message it belongs to.
+   *
+   * The identity of the newest user message is not known when the recall runs:
+   * pi builds that message from the prompt and stamps its own timestamp, so only
+   * the request sees the object that will carry the block forever. The first
+   * `convertToLlm` of the turn is therefore where the block meets its message
+   * and where the ledger gets its key (ADR learned-memory-recall §2).
+   */
+  private pendingRecallBlock?: string;
+  /** Tokens the newest turn's recall block is charged in the context estimate. */
+  private recallBlockEstimateTokens = 0;
   /** Per-prompt claims prevent repeated path-resolution RPCs for one directory. */
   private pathInstructionClaims = new Map<
     string,
@@ -2648,7 +2678,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             sessionId: this.sessionId, turnId: this.turnId, message,
           });
         });
-        return this.wireMessages(messages);
+        // The recall block rides the wire copy only: `messages` is what the
+        // journal and the host just saw, and it must never carry a note the
+        // user did not write (ADR learned-memory-recall §2).
+        return this.wireMessagesWithRecall(messages);
       },
       prepareRequest: ({ context }) => this.prepareToolDeclarations(context),
       prepareNextTurnWithContext: (context, signal) =>
@@ -2932,8 +2965,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    */
   private keepWarmContext(): TranscriptContext {
     const messages = this.agent.state.messages as unknown as AgentMessage[];
+    // The recorded prefix is what a real request sent, recall blocks included,
+    // so a warm request replays those bytes instead of a shorter prefix that
+    // would miss the cache it is trying to keep warm.
     return {
-      messages: this.wireMessages(messages) as unknown as TranscriptContext["messages"],
+      messages: this.wireMessagesWithRecall(messages) as unknown as TranscriptContext["messages"],
     } as TranscriptContext;
   }
 
@@ -7250,6 +7286,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           anchored: measured.anchored,
           compactionEnabled: this.compactionEnabled,
           compactionQueued: this.pendingModelCompaction,
+          ...(this.recallBlockEstimateTokens
+            ? { learnedMemoryRecallTokens: this.recallBlockEstimateTokens }
+            : {}),
         });
         return {
           content: [{ type: "text", text: formatContextUsageReport(report) }],
@@ -7872,14 +7911,20 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       captured: this.lastConversationRequest,
       sessionId: this.sessionId,
       project: () =>
-        this.wireMessages(
-          this.agent.state.messages as unknown as AgentMessage[],
-          binding,
-          {
-            api: apiBindingForProviderModel(target.provider).api,
-            provider: target.provider.vendorKey ?? target.provider.id,
-            model: target.modelId,
-          },
+        // The same projection a real request sent, recall blocks included: the
+        // summary replays this prefix to hit the cache of the model that
+        // produced it, so a shorter transcript would miss by construction.
+        attachRecallBlocks(
+          this.wireMessages(
+            this.agent.state.messages as unknown as AgentMessage[],
+            binding,
+            {
+              api: apiBindingForProviderModel(target.provider).api,
+              provider: target.provider.vendorKey ?? target.provider.id,
+              model: target.modelId,
+            },
+          ),
+          this.recallLedger,
         ),
       inputLimit: this.summaryInputLimit(),
       estimate: (messages) =>
@@ -10097,6 +10142,108 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.currentAssistant = undefined;
   }
 
+  /**
+   * Ask the host which learned notes this user turn should carry, and record
+   * the answer in the ledger so `convertToLlm` attaches it to the wire copy of
+   * this message and to every later request unchanged (ADR
+   * learned-memory-recall §2).
+   *
+   * The call is model-free by design (ADR 0323): it is one indexed database
+   * read on the host, capped at 300 ms. Everything that can go wrong — the read
+   * switch off, no index, a subagent, a short prompt, a timeout, a host error,
+   * an empty result — ends the same way: no block, and the turn goes out
+   * exactly as it would have without this feature. A failure is reported once
+   * with the stable error code and never with note text.
+   */
+  private async recallForTurn(incomingUserMessage: AgentMessage): Promise<void> {
+    // A recalled block is a second view of the same notes the index already
+    // carries, so it follows the same switch and needs the same frozen snapshot
+    // to know what is already there. A delegate is out of scope structurally
+    // rather than by a check here: `SubagentRun` holds no host reference of its
+    // own, so a subagent has no path to `memory.recall` at all (D668 §5).
+    this.pendingRecallBlock = undefined;
+    this.recallBlockEstimateTokens = 0;
+    if (!this.learnedMemoryRead || !this.learnedMemoryIndex) return;
+    const query = recallQueryFromUserMessage(
+      (incomingUserMessage as { content?: unknown }).content,
+    );
+    if (!query) return;
+    const block = await this.requestRecallBlock(query);
+    // Parked, not recorded: the message this belongs to does not exist yet.
+    this.pendingRecallBlock = block;
+    this.recallBlockEstimateTokens = block ? recallBlockTokens(block) : 0;
+  }
+
+  /**
+   * The transcript as one provider request carries it: the block recalled for
+   * this turn is bound to the newest user message once, and every user message
+   * the ledger knows replays its own block byte-identically.
+   *
+   * Binding here rather than in `promptTurn` is what makes the identity exact:
+   * the key is computed from the very object `convertToLlm` will see on every
+   * later request of the session.
+   */
+  private wireMessagesWithRecall(messages: AgentMessage[]): Message[] {
+    if (this.pendingRecallBlock !== undefined) {
+      const pending = this.pendingRecallBlock;
+      this.pendingRecallBlock = undefined;
+      this.bindRecallBlock(messages, pending);
+    }
+    return attachRecallBlocks(this.wireMessages(messages), this.recallLedger);
+  }
+
+  /** Record `block` against this turn's newest user message, if there is one. */
+  private bindRecallBlock(messages: readonly AgentMessage[], block: string): void {
+    if (!block) return;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index] as unknown as Message;
+      if (message.role !== "user") continue;
+      const key = recallMessageKey(message);
+      if (key) this.recallLedger.record(key, block);
+      return;
+    }
+  }
+
+  /**
+   * One bounded `memory.recall` call. `undefined` means "no block this turn",
+   * which is recorded so the message never picks one up retroactively.
+   */
+  private async requestRecallBlock(query: string): Promise<string | undefined> {
+    const sessionId = this.sessionId;
+    const excluded = this.learnedMemoryIndex?.ids ?? [];
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const deadline = new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("memory.recall timeout")),
+          RECALL_TIMEOUT_MS,
+        );
+      });
+      const result = await Promise.race([
+        this.host.call<{ entries?: LearnedMemoryRecallEntry[] }>("memory.recall", {
+          sessionId,
+          query,
+          excludeIds: excluded,
+          limit: RECALL_ENTRY_LIMIT,
+        }),
+        deadline,
+      ]);
+      return renderRecallBlock(result?.entries ?? []);
+    } catch (error) {
+      // Stable code only: a recall never puts note text or host internals into
+      // the log, and a failure is not worth a warning the user cannot act on.
+      const code =
+        (error as { data?: { errorCode?: string }; errorCode?: string } | null)?.data
+          ?.errorCode ??
+        (error as { errorCode?: string } | null)?.errorCode ??
+        "UNAVAILABLE";
+      reportRecallUnavailable(sessionId, code);
+      return undefined;
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  }
+
   /** Keep a pre-flight user message in context so a reused runtime and the
    * next turn both see it, even though no provider request was made. */
   private keepPreflightUserMessage(incomingUserMessage: AgentMessage): void {
@@ -10347,6 +10494,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         content,
         timestamp: Date.now(),
       };
+      // One recall per user turn, before the turn's first provider request: the
+      // notes the frozen index does not carry, ranked by the words of this
+      // prompt (ADR learned-memory-recall §2). It runs before the pre-flight
+      // compactions, so a turn that compacts still gets it, and it never blocks
+      // the turn: a timeout is recorded as "no block".
+      await this.recallForTurn(incomingUserMessage);
       // A switched model compacts its older context before the first request:
       // the new binding re-reads whatever is sent, so this is the cheapest
       // moment to reduce it. The decision is false once the automatic

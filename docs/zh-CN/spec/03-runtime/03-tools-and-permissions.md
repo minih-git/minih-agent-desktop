@@ -755,7 +755,9 @@ host-core 通过与其他桌面自持工具相同的 `tools.execute` 闸门授�
   （`search.sessions` / `search.context`）。`scope` 为 `project`（默认）或 `all`；
   项目作用域是调用会话自己的项目，或拥有它的项目组的全部根目录。
 - `MemorySearch({ query, kind?, limit? })` 读取调用会话的项目作用域与用户作用域的
-  学习条目，并像其他读取一样刷新 `lastUsedAt` / `useCount`。
+  学习条目，并像其他读取一样刷新 `lastUsedAt` / `useCount`。查询按它的词匹配而非
+  整条字面子串，结果按笔记命中了其中多少个词排序，并在 `matchedTerms` 里列出这些
+  词（ADR learned-memory-recall §1）：几个词或一句短问都可以。
 
 两个工具都不接受项目路径或会话 ID。传入这类参数会被忽略而非采纳，因此构造的调用无法
 触达其他项目的历史；只有显式的 `scope: "all"` 才会放宽检索范围。结果被标注为历史数据

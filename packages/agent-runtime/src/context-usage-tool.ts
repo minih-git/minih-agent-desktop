@@ -42,6 +42,11 @@ export type ContextUsageReport = {
   compactionEnabled: boolean;
   /** `new_context` was called and compaction runs at the next turn boundary. */
   compactionQueued: boolean;
+  /**
+   * The share of this request spent on notes recalled for this turn. Present
+   * only when a recall block went out, so a turn without one reports nothing.
+   */
+  learnedMemoryRecallTokens?: number;
 };
 
 function percent(part: number, whole: number): number {
@@ -54,6 +59,13 @@ export function contextUsageReport(input: {
   anchored: boolean;
   compactionEnabled: boolean;
   compactionQueued: boolean;
+  /**
+   * Tokens of the newest user turn's learned-memory recall block (ADR
+   * learned-memory-recall §3). The block is part of the request, so it is
+   * already inside `usedTokens`; naming it here is what makes its share of the
+   * context visible instead of anonymous.
+   */
+  learnedMemoryRecallTokens?: number;
 }): ContextUsageReport {
   const { budget } = input;
   const contextWindow = contextWindowFor(input.model);
@@ -73,6 +85,9 @@ export function contextUsageReport(input: {
     anchored: input.anchored,
     compactionEnabled: input.compactionEnabled,
     compactionQueued: input.compactionQueued,
+    ...(input.learnedMemoryRecallTokens
+      ? { learnedMemoryRecallTokens: input.learnedMemoryRecallTokens }
+      : {}),
   };
 }
 
@@ -99,6 +114,11 @@ export function formatContextUsageReport(report: ContextUsageReport): string {
   );
   if (report.compactionQueued) {
     lines.push("new_context was requested: a new context window starts at the next turn boundary.");
+  }
+  if (report.learnedMemoryRecallTokens !== undefined) {
+    lines.push(
+      `Of that, ~${count(report.learnedMemoryRecallTokens)} tokens are learned notes recalled for this request.`,
+    );
   }
   return lines.join("\n");
 }

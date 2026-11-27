@@ -12,6 +12,11 @@ use super::model::*;
 use super::tombstones;
 use super::validation::{self, MemoryWrite, WriteOutcome, WritePath};
 
+/// The search request and its hit type travel with the search module; the
+/// storage module re-exports them so every existing `repository::*` importer
+/// keeps one path to them.
+pub(crate) use super::search::{MemorySearchHit, SearchMemoryRequest};
+
 const ENTRY_COLUMNS: &str = "id, scope_kind, scope_key, kind, content, rationale, status, origin, \
      evidence, source_session_id, source_message_ids, fingerprint, revision, superseded_by, \
      created_at, updated_at, last_used_at, use_count";
@@ -50,7 +55,7 @@ const NO_SCOPE: MemoryScope = MemoryScope {
 
 /// The same column list with a table alias, so a query that joins nothing else
 /// still reads unambiguously.
-fn qualified_columns(alias: &str) -> String {
+pub(crate) fn qualified_columns(alias: &str) -> String {
     ENTRY_COLUMNS
         .split(", ")
         .map(|column| format!("{alias}{column}"))
@@ -62,7 +67,7 @@ pub(crate) fn entry_from_row_for_sync(row: &Row<'_>) -> rusqlite::Result<MemoryE
     entry_from_row(row)
 }
 
-fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<MemoryEntryRecord> {
+pub(crate) fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<MemoryEntryRecord> {
     let raw_ids: String = row.get(10)?;
     Ok(MemoryEntryRecord {
         id: row.get(0)?,
@@ -145,7 +150,7 @@ fn insert_entry(conn: &Connection, entry: &MemoryEntryRecord) -> Result<()> {
 
 /// Three scope slots for one statement: an employee's own lessons (or none),
 /// the session's project scope (or none), and the user scope.
-fn scope_slots(scopes: &[MemoryScope]) -> (MemoryScope, MemoryScope, MemoryScope) {
+pub(crate) fn scope_slots(scopes: &[MemoryScope]) -> (MemoryScope, MemoryScope, MemoryScope) {
     let mut bot = NO_SCOPE;
     let mut project = NO_SCOPE;
     let mut user = NO_SCOPE;
@@ -211,14 +216,6 @@ pub(crate) enum SuggestionOutcome {
     Rejected,
     /// No such entry, or it is no longer a suggestion.
     NotFound,
-}
-
-pub(crate) struct SearchMemoryRequest<'a> {
-    pub scopes: &'a [MemoryScope],
-    pub query: &'a str,
-    pub kinds: &'a [String],
-    pub limit: i64,
-    pub record_use: bool,
 }
 
 impl Database {
@@ -723,10 +720,16 @@ impl Database {
             bytes += cost;
             entries.push(MemoryIndexEntry::from(&entry));
         }
+        let ids = entries
+            .iter()
+            .chain(lessons.iter())
+            .map(|entry| entry.id.clone())
+            .collect();
         Ok(MemoryIndex {
             entries,
             omitted_count: omitted,
             bytes,
+            ids,
             lessons,
             omitted_lessons,
         })
@@ -756,86 +759,6 @@ impl Database {
             None => vec![MemoryScope::user()],
         };
         self.learned_memory_index(&scopes)
-    }
-
-    /// Search active entries of the given scopes. Hits refresh `last_used_at`
-    /// and `use_count`; the session-start index alone does not.
-    pub fn search_memory_entries(
-        &self,
-        request: SearchMemoryRequest<'_>,
-    ) -> Result<Vec<MemoryEntryRecord>> {
-        let query = request.query.trim();
-        if query.is_empty() {
-            return Ok(Vec::new());
-        }
-        crate::session_search::register_contains(self)?;
-        let (bot_slot, project_slot, user_slot) = scope_slots(request.scopes);
-        let kinds = if request.kinds.is_empty() {
-            None
-        } else {
-            Some(tombstones::encode_ids(request.kinds))
-        };
-        // Trigram FTS is a prefilter for ASCII and uncased text such as CJK, the
-        // same rule the session search uses; the literal scan stays the
-        // authority so no case mapping is lost.
-        let fts = if query.chars().count() >= 3
-            && !query.contains('\u{0307}')
-            && query
-                .chars()
-                .all(|ch| ch.is_ascii() || (!ch.is_lowercase() && !ch.is_uppercase()))
-        {
-            "AND m.rowid IN (SELECT rowid FROM memory_entries_fts WHERE memory_entries_fts MATCH ?7)"
-        } else {
-            // The bound value is never NULL, so this arm filters nothing.
-            "AND ?7 IS NOT NULL"
-        };
-        let sql = format!(
-            "SELECT {} FROM memory_entries m
-             WHERE m.status = ?1
-               AND ((m.scope_kind = ?2 AND IFNULL(m.scope_key, '') = ?3)
-                 OR (m.scope_kind = ?4 AND IFNULL(m.scope_key, '') = ?5)
-                 OR (m.scope_kind = ?10 AND IFNULL(m.scope_key, '') = ?11))
-               AND (?6 IS NULL OR m.kind IN (SELECT value FROM json_each(?6)))
-               AND (pi_search_contains(m.content, ?8)
-                    OR pi_search_contains(COALESCE(m.rationale, ''), ?8)) {fts}
-             ORDER BY m.updated_at DESC, m.id ASC
-             LIMIT ?9",
-            qualified_columns("m.")
-        );
-        let quoted = format!("\"{}\"", query.replace('"', "\"\""));
-        let limit = request.limit.clamp(1, MAX_SEARCH_LIMIT);
-        let mut statement = self.conn().prepare_cached(&sql)?;
-        let rows = statement.query_map(
-            params![
-                STATUS_ACTIVE,
-                project_slot.kind,
-                project_slot.stored_key(),
-                user_slot.kind,
-                user_slot.stored_key(),
-                kinds,
-                quoted,
-                query,
-                limit,
-                bot_slot.kind,
-                bot_slot.stored_key()
-            ],
-            entry_from_row,
-        )?;
-        let mut entries = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        if request.record_use && !entries.is_empty() {
-            let now = now_ms();
-            for entry in &mut entries {
-                self.conn().execute(
-                    "UPDATE memory_entries
-                     SET last_used_at = ?1, use_count = use_count + 1
-                     WHERE id = ?2",
-                    params![now, entry.id],
-                )?;
-                entry.last_used_at = Some(now);
-                entry.use_count += 1;
-            }
-        }
-        Ok(entries)
     }
 
     /// Delete every learned entry, tombstone, and session state row of one

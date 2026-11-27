@@ -226,6 +226,12 @@ opt-in.
   definition prompt, and guidance, never project memory.
 - Search hits update `last_used_at` and `use_count`; index injection alone
   does not.
+- **Amendment (D693, ADR learned-memory-recall).** The read path gains a second
+  view: `MemorySearch` matches by terms and ranks by how many a note answers,
+  and the runtime recalls once per user turn — a model-free `memory.recall` over
+  the session's scopes — attaching the result to the wire copy of the newest
+  user message only. The frozen index and the system prompt above are unchanged,
+  and a recall never counts as a use.
 
 ### 6. Forgetting is a host guarantee
 

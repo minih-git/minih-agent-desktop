@@ -1110,7 +1110,7 @@ export const de = {
     learnedMemory: "Gelerntes Gedächtnis",
     learnedMemoryRead: "Gelerntes Gedächtnis verwenden",
     learnedMemoryReadDesc:
-      "Der Agent startet Sitzungen mit einem kurzen Index dessen, was frühere Unterhaltungen gelehrt haben, und schlägt den Rest bei Bedarf nach. Ausgeschaltet sieht der Agent diese Notizen nicht, gelöscht wird nichts.",
+      "Der Agent startet Sitzungen mit einem kurzen Index dessen, was frühere Unterhaltungen gelehrt haben, und schlägt den Rest bei Bedarf nach. Ausgeschaltet sieht der Agent diese Notizen nicht, gelöscht wird nichts. Zu jeder Anfrage werden außerdem passende Notizen abgerufen, bis zu 1,5 KiB.",
     learnedMemoryExtraction: "Automatisch lernen",
     learnedMemoryManager: "Gelerntes Gedächtnis prüfen",
     learnedMemoryManagerDesc:

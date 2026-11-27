@@ -31,7 +31,7 @@ function index(
   entries: LearnedMemoryIndex["entries"],
   omittedCount = 0,
 ): LearnedMemoryIndex {
-  return { entries, omittedCount, bytes: 0 };
+  return { entries, omittedCount, bytes: 0, ids: entries.map((entry) => entry.id) };
 }
 
 function entry(overrides: Partial<LearnedMemoryIndex["entries"][number]> = {}) {
@@ -160,7 +160,7 @@ describe("learnedMemoryPrompt", () => {
     );
     // Lessons can be the only content: a task in a project with no notes of its
     // own still starts with what the employee learned.
-    expect(learnedMemoryPrompt({ entries: [], omittedCount: 0, bytes: 0, lessons: [entry()] }))
+    expect(learnedMemoryPrompt({ entries: [], omittedCount: 0, bytes: 0, ids: [], lessons: [entry()] }))
       .toContain("# Learned memory");
   });
 });

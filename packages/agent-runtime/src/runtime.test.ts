@@ -14123,6 +14123,7 @@ describe("DesktopAgentRuntime keep-warm (ADR 0339)", () => {
         entries: [{ id: "new-memory", kind: "fact", scopeKind: "user", content: "Added while idle", createdAt: NOW_MS, updatedAt: NOW_MS }],
         omittedCount: 0,
         bytes: 16,
+        ids: ["new-memory"],
       },
     });
     const sent: unknown[][] = [];
@@ -14600,5 +14601,358 @@ describe("the delegate role a session acts in (ADR session-create-model-and-role
     expect(task).toContain(DELEGATE_DECISION_RULE);
     expect(create).toContain(DELEGATE_DECISION_RULE);
     await runtime.dispose();
+  });
+});
+
+/**
+ * Per-turn learned-memory recall through the real turn path (ADR
+ * learned-memory-recall §2).
+ *
+ * These tests drive `prompt()` against a fake provider, so what they observe is
+ * what the provider request really carried and what the host was really asked
+ * to persist — not the shape of a helper. The invariants are the ones the ADR
+ * promises: a note reaches the model, never the transcript, the block never
+ * changes between requests of the same session, and nothing is recalled when
+ * the user turned reading off or when the runtime is a delegate.
+ */
+describe("DesktopAgentRuntime learned-memory recall (ADR learned-memory-recall)", () => {
+  /** One fixed clock for every note in these fixtures. */
+  const NOTE_AT = Date.UTC(2026, 10, 27, 9, 0, 0);
+
+  type Internals = {
+    agent: { state: { model: unknown; messages: unknown[]; tools: unknown[] } };
+    models: {
+      streamSimple?: (model: unknown, context: { messages: unknown[] }) => unknown;
+    };
+  };
+
+  /** A provider response that completes one turn. */
+  function messageStream(message: unknown) {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      stream.push({ type: "start", partial: message } as never);
+      stream.push({ type: "done", reason: "stop", message } as never);
+      stream.end(message as never);
+    });
+    return stream;
+  }
+
+  /** Minimal assistant message in the shape the runtime journals. */
+  function assistantMessage(overrides: { content: unknown[] }) {
+    return {
+      role: "assistant",
+      api: "openai-completions",
+      provider: "local",
+      model: "local-model",
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2,
+      content: overrides.content,
+    };
+  }
+  const RECALLED_NOTE = "The gateway deploy runs on Fridays after the migration.";
+  const firstTurnText = "why did the gateway deploy fail last week?";
+  const secondTurnText = "what else changed about the gateway deploy?";
+
+  function recallIndex(ids: string[]) {
+    return {
+      entries: ids.map((id) => ({
+        id,
+        kind: "fact" as const,
+        scopeKind: "project" as const,
+        content: `Indexed note ${id}.`,
+        createdAt: NOTE_AT,
+        updatedAt: NOTE_AT,
+      })),
+      omittedCount: 0,
+      bytes: 16,
+      ids,
+    };
+  }
+
+  function recallEntry(id = "overflow-note") {
+    return {
+      id,
+      kind: "fact" as const,
+      scopeKind: "project" as const,
+      content: RECALLED_NOTE,
+      createdAt: NOTE_AT,
+      updatedAt: NOTE_AT,
+      matchedTerms: ["gateway", "deploy"],
+    };
+  }
+
+  /**
+   * A host that answers `memory.recall` and records every call and every
+   * `session.appendMessage` payload, which is what the transcript rule is
+   * about.
+   */
+  function recallHost(
+    recall: (params: { sessionId: string; query: string; excludeIds: string[] }) =>
+      | { query: string; entries: unknown[] }
+      | Promise<{ query: string; entries: unknown[] }>,
+  ) {
+    const messages: unknown[] = [];
+    const recalls: Array<{ sessionId: string; query: string; excludeIds: string[] }> = [];
+    const call = vi.fn(async (method: string, params: unknown) => {
+      if (method === "session.appendMessage") {
+        const message = (params as { message?: unknown })?.message;
+        if (message) messages.push(message);
+        return undefined;
+      }
+      if (method === "memory.recall") {
+        const typed = params as { sessionId: string; query: string; excludeIds?: string[] };
+        const recorded = {
+          sessionId: typed.sessionId,
+          query: typed.query,
+          excludeIds: typed.excludeIds ?? [],
+        };
+        recalls.push(recorded);
+        return await recall(recorded);
+      }
+      return undefined;
+    });
+    return { host: { call, onNotification: vi.fn(() => () => {}) }, messages, recalls };
+  }
+
+  /** Every text block of a provider message, concatenated. */
+  function messageText(content: unknown): string {
+    if (typeof content === "string") return content;
+    if (!Array.isArray(content)) return "";
+    return content
+      .filter((block) => (block as { type?: string }).type === "text")
+      .map((block) => String((block as { text?: string }).text ?? ""))
+      .join("");
+  }
+
+  /** The trailing recall block of a request message, if it carries one. */
+  function recallBlockOf(content: unknown): string | undefined {
+    if (!Array.isArray(content)) return undefined;
+    const text = (content.at(-1) as { text?: string } | undefined)?.text;
+    return typeof text === "string" && text.startsWith("<learned-memory-recall>")
+      ? text
+      : undefined;
+  }
+
+  /** Run one turn and return every provider request it made, in order. */
+  async function runTurn(
+    runtime: DesktopAgentRuntime,
+    internals: Internals,
+    text: string,
+    turnId: string,
+  ): Promise<Array<{ messages: unknown[] }>> {
+    const sent: Array<{ messages: unknown[] }> = [];
+    internals.models.streamSimple = (
+      _model: unknown,
+      context: { messages: unknown[] },
+    ) => {
+      sent.push({ messages: context.messages });
+      return messageStream(
+        assistantMessage({ content: [{ type: "text", text: "All set." }] }),
+      );
+    };
+    await runtime.prompt(text, `user-${turnId}`, turnId);
+    return sent;
+  }
+
+  it("attaches the block to the request, never to the transcript", async () => {
+    const { host, messages, recalls } = recallHost(() => ({
+      query: firstTurnText,
+      entries: [recallEntry()],
+    }));
+    const runtime = createRuntime({
+      host,
+      learnedMemoryIndex: recallIndex(["indexed-note"]),
+    });
+    const internals = runtime as unknown as Internals;
+    try {
+      const sent = await runTurn(runtime, internals, firstTurnText, "turn-1");
+      expect(sent).toHaveLength(1);
+      // Every user message of the request, in order: the newest carries the
+      // fresh block, and a historical one would carry its own.
+      const requestUsers = sent[0]!.messages
+        .filter((message) => (message as { role?: string }).role === "user")
+        .map((message) => message as { content?: unknown });
+      expect(requestUsers.length).toBeGreaterThan(0);
+      const block = recallBlockOf(requestUsers.at(-1)!.content);
+      expect(block).toBeDefined();
+      expect(block).toContain(RECALLED_NOTE);
+
+      // The query is the user's own words, and the frozen index's ids are what
+      // recall must not repeat.
+      expect(recalls).toHaveLength(1);
+      expect(recalls[0]!.query).toBe(firstTurnText);
+      expect(recalls[0]!.excludeIds).toEqual(["indexed-note"]);
+
+      // Every row the host was asked to persist is the user's message as typed:
+      // no block anywhere in the transcript.
+      expect(messages.length).toBeGreaterThan(0);
+      for (const message of messages) {
+        expect(JSON.stringify(message)).not.toContain("<learned-memory-recall>");
+      }
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("replays turn one's block byte-identically on turn two and adds turn two's own", async () => {
+    const { host, messages, recalls } = recallHost((params) => ({
+      query: params.query,
+      entries: [
+        recallEntry(params.query === firstTurnText ? "first-note" : "second-note"),
+      ],
+    }));
+    const runtime = createRuntime({
+      host,
+      learnedMemoryIndex: recallIndex([]),
+    });
+    const internals = runtime as unknown as Internals;
+    try {
+      const firstSent = await runTurn(runtime, internals, firstTurnText, "turn-1");
+      const firstBlock = recallBlockOf(
+        (firstSent[0]!.messages.at(-1) as { content?: unknown }).content,
+      )!;
+      expect(firstBlock).toContain(RECALLED_NOTE);
+
+      const secondSent = await runTurn(runtime, internals, secondTurnText, "turn-2");
+      expect(recalls.map((call) => call.query)).toEqual([firstTurnText, secondTurnText]);
+      const secondRequest = secondSent[0]!.messages;
+      const userMessages = secondRequest.filter(
+        (message) => (message as { role?: string }).role === "user",
+      ) as Array<{ content?: unknown }>;
+      // The historical block is the same bytes, and the newest message carries
+      // its own: the prefix the provider cached is unchanged.
+      expect(recallBlockOf(userMessages[0]!.content)).toBe(firstBlock);
+      const secondBlock = recallBlockOf(userMessages.at(-1)!.content)!;
+      expect(secondBlock).toBeDefined();
+      expect(secondBlock).toContain(RECALLED_NOTE);
+      // And neither block reached the transcript.
+      for (const message of messages) {
+        expect(JSON.stringify(message)).not.toContain("<learned-memory-recall>");
+      }
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("keeps the summary input free of recalled notes", async () => {
+    const { host } = recallHost(() => ({
+      query: firstTurnText,
+      entries: [recallEntry()],
+    }));
+    const runtime = createRuntime({
+      host,
+      learnedMemoryIndex: recallIndex([]),
+    });
+    const internals = runtime as unknown as {
+      agent: { state: { messages: AgentMessage[] } };
+      composeSummaryInput?: unknown;
+    };
+    const sent = await runTurn(runtime, internals as unknown as Internals, firstTurnText, "turn-1");
+    const block = recallBlockOf(
+      (sent[0]!.messages.at(-1) as { content?: unknown }).content,
+    )!;
+    expect(block).toBeDefined();
+    // The summary reads stored messages, which never carried the block: that is
+    // why a checkpoint cannot quote a recalled note as the user's words.
+    const stored = JSON.stringify(internals.agent.state.messages);
+    expect(stored).not.toContain("<learned-memory-recall>");
+    expect(stored).not.toContain(RECALLED_NOTE);
+    await runtime.dispose();
+  });
+
+  it("recalls nothing when the read switch is off", async () => {
+    const { host, recalls } = recallHost(() => ({
+      query: firstTurnText,
+      entries: [recallEntry()],
+    }));
+    const runtime = new DesktopAgentRuntime({
+      host: host as never,
+      sessionId: "session-1",
+      mode: "agent",
+      provider,
+      commandShell,
+      thinkingLevel: "off",
+      learnedMemoryIndex: recallIndex([]),
+      learnedMemoryRead: false,
+      onEvent: vi.fn(),
+    });
+    const internals = runtime as unknown as Internals;
+    try {
+      const sent = await runTurn(runtime, internals, firstTurnText, "turn-1");
+      expect(recalls).toHaveLength(0);
+      for (const message of sent[0]!.messages) {
+        expect(JSON.stringify(message)).not.toContain("<learned-memory-recall>");
+      }
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("recalls nothing without a frozen index", async () => {
+    const { host, recalls } = recallHost(() => ({
+      query: firstTurnText,
+      entries: [recallEntry()],
+    }));
+    const runtime = createRuntime({ host });
+    const internals = runtime as unknown as Internals;
+    try {
+      await runTurn(runtime, internals, firstTurnText, "turn-1");
+      expect(recalls).toHaveLength(0);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("sends the turn unchanged when the host misses the deadline or fails", async () => {
+    const timedOut = recallHost(
+      () => new Promise(() => {
+        // Never settles: the deadline is the only way out.
+      }),
+    );
+    const runtime = createRuntime({
+      host: timedOut.host,
+      learnedMemoryIndex: recallIndex([]),
+    });
+    const internals = runtime as unknown as Internals;
+    try {
+      const sent = await runTurn(runtime, internals, firstTurnText, "turn-1");
+      expect(timedOut.recalls).toHaveLength(1);
+      for (const message of sent[0]!.messages) {
+        expect(JSON.stringify(message)).not.toContain("<learned-memory-recall>");
+      }
+    } finally {
+      await runtime.dispose();
+    }
+
+    const failing = recallHost(() => {
+      throw Object.assign(new Error("host unavailable"), {
+        data: { errorCode: "INTERNAL" },
+      });
+    });
+    const failingRuntime = createRuntime({
+      host: failing.host,
+      learnedMemoryIndex: recallIndex([]),
+    });
+    try {
+      const sent = await runTurn(
+        failingRuntime,
+        failingRuntime as unknown as Internals,
+        firstTurnText,
+        "turn-1",
+      );
+      for (const message of sent[0]!.messages) {
+        expect(JSON.stringify(message)).not.toContain("<learned-memory-recall>");
+      }
+    } finally {
+      await failingRuntime.dispose();
+    }
   });
 });

@@ -1110,7 +1110,7 @@ export const fr = {
     learnedMemory: "Mémoire apprise",
     learnedMemoryRead: "Utiliser la mémoire apprise",
     learnedMemoryReadDesc:
-      "L'agent démarre les sessions avec un court index de ce que les conversations précédentes lui ont appris et consulte le reste au besoin. Désactivé, il ne voit pas ces notes et rien n'est supprimé.",
+      "L'agent démarre les sessions avec un court index de ce que les conversations précédentes lui ont appris et consulte le reste au besoin. Désactivé, il ne voit pas ces notes et rien n'est supprimé. Des notes pertinentes sont aussi rappelées à chaque requête, dans la limite de 1,5 Kio.",
     learnedMemoryExtraction: "Apprendre automatiquement",
     learnedMemoryManager: "Examiner la mémoire apprise",
     learnedMemoryManagerDesc:

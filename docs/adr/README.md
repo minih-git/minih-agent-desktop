@@ -396,6 +396,7 @@ Each ADR includes:
 | plugin-fetch-redirect-policy | [Host-enforced plugin fetch redirect policy](plugin-fetch-redirect-policy.md) | Accepted (implementation candidate for #1475) |
 | agent-long-term-memory | [Layered, provenance-tracked long-term memory](agent-long-term-memory.md) | Accepted for implementation (D668; amends ADR 0234) |
 | learned-memory-consolidation | [Automatic curation of learned memory](learned-memory-consolidation.md) | Accepted for implementation (2026-11-09, D688; amends ADR agent-long-term-memory §4 and §8) |
+| learned-memory-recall | [Term-ranked search and per-turn recall of learned memory](learned-memory-recall.md) | Accepted (2026-11-27, D693; amends ADR agent-long-term-memory §5 and ADR learned-memory-consolidation §5) |
 | plugin-learned-memory-read | [Read-only learned-memory listing for plugins](plugin-learned-memory-read.md) | Accepted (2026-10-24, decision D682; amends ADR agent-long-term-memory §8) |
 
 | local-agent-remote-workspace-tools | [Local Agent and model requests for remote workspaces](local-agent-remote-workspace-tools.md) | Accepted for implementation |

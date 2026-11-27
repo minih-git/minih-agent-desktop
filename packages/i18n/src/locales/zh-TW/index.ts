@@ -1111,7 +1111,7 @@ export const zhTW = {
     learnedMemory: "學習記憶",
     learnedMemoryRead: "使用學習記憶",
     learnedMemoryReadDesc:
-      "讓代理在工作階段啟動時帶上「更早對話學到什麼」的簡短索引，並在需要時檢索其餘部分。關閉後代理看不到這些記錄，但不會刪除任何內容。",
+      "讓代理在工作階段啟動時帶上「更早對話學到什麼」的簡短索引，並在需要時檢索其餘部分。關閉後代理看不到這些記錄，但不會刪除任何內容。每次請求還會額外召回相關記錄，上限 1.5 KiB。",
     learnedMemoryExtraction: "自動學習",
     learnedMemoryManager: "檢視學習記憶",
     learnedMemoryManagerDesc: "檢視、編輯、封存或刪除作用於你所有專案的記錄。",

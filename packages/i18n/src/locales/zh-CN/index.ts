@@ -1133,7 +1133,7 @@ export const zhCN = {
     learnedMemory: "学习记忆",
     learnedMemoryRead: "使用学习记忆",
     learnedMemoryReadDesc:
-      "让代理在会话启动时带上「更早对话学到什么」的简短索引，并在需要时检索其余部分。关闭后代理看不到这些记录，但不会删除任何内容。",
+      "让代理在会话启动时带上「更早对话学到什么」的简短索引，并在需要时检索其余部分。关闭后代理看不到这些记录，但不会删除任何内容。每次请求还会额外召回相关记录，上限 1.5 KiB。",
     learnedMemoryExtraction: "自动学习",
     learnedMemoryManager: "查看学习记忆",
     learnedMemoryManagerDesc: "查看、编辑、归档或删除作用于你所有项目的记录。",

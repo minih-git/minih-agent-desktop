@@ -10551,6 +10551,30 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **里程碑**：M3。
 - **状态**：已自动化——`pnpm test:e2e:memory`。
 
+### E2E-MEMORY-recall-finds-note-outside-index
+
+- **前置条件**：真实的 host-core 二进制、临时数据目录、一个已登记项目，且没有模型、
+  provider 或网络调用（`scripts/e2e-memory-recall.mjs`）。
+- **步骤**：
+  1. 在该项目里创建 45 条学习笔记，其中最旧的一条带有一个独特词（`zebra protocol`），
+     使 40 行的启动预算装不下全部。
+  2. 读取该会话的 `memory.index` 并取其 `ids`。
+  3. 以关于那条最旧笔记的提示词词语为查询、以上面的 id 作为 `excludeIds` 调用
+     `memory.recall`。
+  4. 去掉 `excludeIds` 再召回一次，然后用 `memory.list` 把该笔记读回。
+- **预期**：步骤 2 返回 40 条、`omittedCount` 为 6，且 40 个 id 不含那条最旧的笔记。
+  步骤 3 恰好返回它，并列出命中的词项；提示里已携带的笔记绝不重复。步骤 4 不带 id 也
+  能找到它，且读取它不会改变 `useCount` 与 `lastUsedAt`：召回是视图，不是使用。
+- **关联规格**：`03-runtime/06-host-rpc-protocol.md`（学习记忆）、
+  `03-runtime/03-tools-and-permissions.md`、ADR learned-memory-recall §1–§2。
+- **验收标准**：被冻结索引漏掉的笔记，仍能进入以它为话题的回合，且不会被记为已使用。
+- **里程碑**：M3。
+- **状态**：自动化 —— `pnpm test:e2e:memory`（`scripts/e2e-memory-recall.mjs`）。
+  provider 请求的形状——块只到达线上副本、在同一回合的多次请求间逐字节不变、且不在
+  任何已持久化消息里——由运行时层测试覆盖：
+  `packages/agent-runtime/src/runtime.test.ts`（"DesktopAgentRuntime
+  learned-memory recall"，用假 provider 捕获请求）。
+
 ### E2E-MEMORY-suggestion-requires-confirmation：建议必须经用户确认
 
 - **前提条件**：真实 host 二进制、Electron main 的抽取服务，以及监听 `127.0.0.1` 的本地

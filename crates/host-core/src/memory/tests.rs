@@ -617,6 +617,8 @@ fn rejecting_a_suggestion_keeps_it_from_coming_back() {
             kinds: &[],
             limit: 8,
             record_use: false,
+            exclude_ids: &[],
+            min_match_terms: 1,
         })
         .unwrap()
         .is_empty());
@@ -680,6 +682,8 @@ fn delete_erases_the_row_and_keeps_a_content_free_tombstone() {
             kinds: &[],
             limit: 8,
             record_use: false,
+            exclude_ids: &[],
+            min_match_terms: 1,
         })
         .unwrap()
         .is_empty());

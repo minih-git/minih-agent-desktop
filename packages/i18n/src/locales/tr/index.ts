@@ -1115,7 +1115,7 @@ export const tr = {
     learnedMemory: "Öğrenilen bellek",
     learnedMemoryRead: "Öğrenilen belleği kullan",
     learnedMemoryReadDesc:
-      "Aracın oturumlara önceki konuşmalardan öğrendiklerinin kısa bir dizini ile başlamasını ve gerektiğinde gerisini aramasını sağlar. Kapatıldığında arac bu notları görmez ve hiçbir şey silinmez.",
+      "Aracın oturumlara önceki konuşmalardan öğrendiklerinin kısa bir dizini ile başlamasını ve gerektiğinde gerisini aramasını sağlar. Kapatıldığında arac bu notları görmez ve hiçbir şey silinmez. Her istek için ilgili notlar da 1,5 KiB sınırıyla geri çağrılır.",
     learnedMemoryExtraction: "Otomatik öğren",
     learnedMemoryManager: "Öğrenilen belleği gözden geçir",
     learnedMemoryManagerDesc: "Her yerde sizin için geçerli notları görün, düzenleyin, arşivleyin veya silin.",

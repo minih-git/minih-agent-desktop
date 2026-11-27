@@ -109,7 +109,12 @@ const OUTPUT_SAFETY_WINDOW_RATIO = 0.01;
 const CHARS_PER_TOKEN = 4;
 const ESTIMATED_CHARS_PER_IMAGE = 4800;
 
-function countCjkChars(text: string): number {
+/**
+ * CJK characters, which cost about one token each rather than the four per
+ * character the `chars / 4` baseline assumes. Shared with the per-turn recall
+ * budget so both size Han text the same way.
+ */
+export function countCjkChars(text: string): number {
   let count = 0;
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;

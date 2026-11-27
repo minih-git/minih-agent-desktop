@@ -14,8 +14,12 @@ use serde::Serialize;
 #[path = "plugin_memory_rpc_tests.rs"]
 mod plugin_tests;
 #[cfg(test)]
+#[path = "memory_recall_rpc_tests.rs"]
+mod recall_tests;
+#[cfg(test)]
 #[path = "memory_rpc_tests.rs"]
 mod tests;
+use crate::memory::search_terms;
 use crate::memory::{
     is_known, CreateMemoryOutcome, CreateMemoryRequest, CurationInputOutcome, CurationOpRequest,
     CurationUndoReport, MemoryEntryRecord, MemoryScope, SearchMemoryRequest, StatusMemoryOutcome,
@@ -25,10 +29,17 @@ use crate::memory::{
     STATUS_ARCHIVED,
 };
 
+/// Per-turn recall: the notes one user turn may pull in. Six is about what a
+/// 1.5 KiB block holds once each line carries its date and kind.
+const DEFAULT_RECALL_LIMIT: i64 = 6;
+/// A recall block is a hint, not a second index; ten entries is the ceiling the
+/// runtime's byte budget enforces anyway.
+const MAX_RECALL_LIMIT: i64 = 10;
 pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value, JsonRpcError> {
     match method {
         "memory.list" => list(&st.db, &params),
         "memory.search" => search(&st.db, &params),
+        "memory.recall" => recall(&st.db, &params),
         "memory.index" => index(&st.db, &params),
         "memory.stats" => local_stats(&st.db),
         "memory.create" => create(&st.db, &params),
@@ -190,6 +201,9 @@ pub(super) fn plugin_list_page(db: &Database, params: &Value) -> Result<Value, J
     serde_json::to_value(page).map_err(internal)
 }
 
+/// Search the learned memory by the terms of a query (ADR learned-memory-recall
+/// §1). Each hit carries the terms it matched, so a caller can tell an exact
+/// phrase from a one-word overlap.
 fn search(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
     let query = required_str(params, "query")?;
     let kinds = string_array(params, "kinds")?;
@@ -202,17 +216,80 @@ fn search(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
         .unwrap_or(8)
         .clamp(1, MAX_SEARCH_LIMIT);
     let record_use = optional_bool(params, "recordUse")?.unwrap_or(false);
+    let exclude_ids = string_array(params, "excludeIds")?;
     let scopes = readable_scopes(db, params)?;
-    let entries = db
+    let hits = db
         .search_memory_entries(SearchMemoryRequest {
             scopes: &scopes,
             query,
             kinds: &kinds,
             limit,
             record_use,
+            exclude_ids: &exclude_ids,
+            min_match_terms: 1,
         })
         .map_err(internal)?;
+    let entries = hits
+        .iter()
+        .map(|hit| {
+            let mut value = json!(hit.entry);
+            if let Some(object) = value.as_object_mut() {
+                object.insert("matchedTerms".to_string(), json!(hit.matched_terms));
+            }
+            value
+        })
+        .collect::<Vec<_>>();
     Ok(json!({ "entries": entries }))
+}
+
+/// The per-turn recall the runtime asks for before the first provider request
+/// of a user turn (ADR learned-memory-recall §2).
+///
+/// It is `memory.search` with the rules a machine-driven read needs: the scopes
+/// come from the session, ids the caller already carries are dropped, a hit must
+/// overlap by at least two terms (one when the query itself has one), and it
+/// never records a use — the model did not ask for this read, so it must not
+/// look like one. It is read-only and internal: no permission prompt, no tool.
+fn recall(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let session_id = required_str(params, "sessionId")?;
+    let query = required_str(params, "query")?;
+    let exclude_ids = string_array(params, "excludeIds")?;
+    let limit = optional_i64(params, "limit")?
+        .unwrap_or(DEFAULT_RECALL_LIMIT)
+        .clamp(1, MAX_RECALL_LIMIT);
+    let scopes = session_scopes(db, session_id)?;
+    let min_match_terms = if search_terms::split_terms(query).len() > 1 {
+        2
+    } else {
+        1
+    };
+    let hits = db
+        .search_memory_entries(SearchMemoryRequest {
+            scopes: &scopes,
+            query,
+            kinds: &[],
+            limit,
+            record_use: false,
+            exclude_ids: &exclude_ids,
+            min_match_terms,
+        })
+        .map_err(internal)?;
+    let entries = hits
+        .iter()
+        .map(|hit| {
+            json!({
+                "id": hit.entry.id,
+                "kind": hit.entry.kind,
+                "scopeKind": hit.entry.scope_kind,
+                "content": hit.entry.content,
+                "rationale": hit.entry.rationale,
+                "createdAt": hit.entry.created_at,
+                "updatedAt": hit.entry.updated_at,
+                "matchedTerms": hit.matched_terms,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({ "query": query, "entries": entries }))
 }
 
 /// The session-start snapshot.

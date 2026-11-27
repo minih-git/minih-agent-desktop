@@ -1105,7 +1105,7 @@ export const ptBR = {
     learnedMemory: "Memória aprendida",
     learnedMemoryRead: "Usar a memória aprendida",
     learnedMemoryReadDesc:
-      "Permite que o agente comece as sessões com um índice curto do que conversas anteriores ensinaram e consulte o resto quando precisar. Desligado, o agente não vê essas notas e nada é apagado.",
+      "Permite que o agente comece as sessões com um índice curto do que conversas anteriores ensinaram e consulte o resto quando precisar. Desligado, o agente não vê essas notas e nada é apagado. Notas relacionadas também são recuperadas a cada solicitação, dentro de 1,5 KiB.",
     learnedMemoryExtraction: "Aprender automaticamente",
     learnedMemoryManager: "Revisar a memória aprendida",
     learnedMemoryManagerDesc:

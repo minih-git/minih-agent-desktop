@@ -1370,6 +1370,31 @@ runtime，也不会改变正在运行的会话的系统提示——下一个会�
 `SUBAGENT_INHERIT_DENY_TOOLS`，所以 `tools: inherit` 也无法把它们借给委托——见
 `03-tools-and-permissions.md` §10.2。
 
+### 7.4a 只在线上消息上的每轮召回（ADR learned-memory-recall §2）
+
+会话启动索引是冻结且有上限的，因此它漏掉的笔记——或会话期间新写的笔记——原先只能
+通过 `MemorySearch` 才可能被读到。自 ADR learned-memory-recall 起，每个用户回合还会
+得到一次召回：在用户消息构造完成之后、该回合第一次 provider 请求之前，运行时以用户
+自己的文字为查询调用 `memory.recall({ sessionId, query, excludeIds, limit })`（只取
+文本块，去掉引用与附件，至多 2000 字符，至少 8 字符），并把冻结索引的 `ids` 作为
+`excludeIds`。该调用有 300 ms 截止，且仅在 `learnedMemoryRead` 开启、启动时带了
+`learnedMemoryIndex`、且运行时不是委派者时进行；超时、宿主报错或结果为空都表示没有
+块、也不重试，只以稳定错误码报告一次 `learned memory recall unavailable`，不带笔记
+原文。
+
+结果渲染为一个块——`<learned-memory-recall>`，含一句约定和每条笔记一行带日期的记录
+——上限 1.5 KiB，只整条计入，并按 `output-cap.ts` 的 CJK 感知规则计算 token。该块在
+`convertToLlm` 中附加到最新用户消息的**线上副本**末尾，作为尾部文本块：存储的消息、
+journal 以及宿主的 `session.appendMessage` 载荷都不携带它，因此压缩无法把召回的笔记
+当成用户自己说的话。该回合的 `ContextUsage` 报告会说明这个块的占比
+（`learnedMemoryRecallTokens`）；渲染层不新增元素（ADR §3）。
+
+字节稳定由账本保证。回合的第一次 `convertToLlm` 把新块按从该消息本身派生的键（角色、
+时间戳与文本哈希）绑定到最新用户消息，之后每个请求都逐字节重放已知的块，因此 provider
+的缓存前缀不会移动。账本只在内存中：运行时重启或重新打开会话时为空，历史块一次性消失。
+召回是模型没有主动请求的视图，因此从不触碰 `lastUsedAt` / `useCount`；之后一次
+`MemorySearch` 命中仍会记录使用。
+
 ### 7.5 关键路径之外的自动抽取（D668，ADR agent-long-term-memory §4）
 
 自动学习是 Electron main 的一个独立模块（`apps/desktop/electron/main/memory/memory-extraction-service.ts`

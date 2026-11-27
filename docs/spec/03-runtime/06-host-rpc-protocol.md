@@ -312,11 +312,27 @@ recall tools.
   entries of one scope, newest first. `scope` is `project` (default) or `user`; a
   project scope resolves from `path` (the desktop manager) or from the session the
   caller names. Returns `{ entries, scope }`.
-- `memory.search({ query, path?, sessionId?, kinds?, limit?, recordUse? })` —
-  literal search over the active entries of the session's project scope plus the
-  user scope, with the trigram FTS index as a prefilter. `limit` defaults to 8 and
-  is capped at 20. Hits refresh `lastUsedAt` and `useCount` only with
-  `recordUse: true`; the session-start index never does.
+- `memory.search({ query, path?, sessionId?, kinds?, limit?, recordUse?,
+  excludeIds? })` — term-ranked search over the active entries of the session's
+  project scope plus the user scope (ADR learned-memory-recall §1). The query is
+  split into terms — ASCII runs and CJK runs, one-character terms and a short
+  English stopword list dropped — and an entry matches when any term is contained
+  in its content or rationale; the trigram FTS index is an `OR` prefilter over
+  the terms of three characters or more. Results are ranked by distinct terms
+  matched, then the whole query as a verbatim phrase, then `lastUsedAt`, then
+  `updatedAt`; each entry carries `matchedTerms`. `limit` defaults to 8 and is
+  capped at 20. `excludeIds` drops entries the caller already holds. Hits refresh
+  `lastUsedAt` and `useCount` only with `recordUse: true`; the session-start
+  index never does.
+- `memory.recall({ sessionId, query, excludeIds?, limit? })` — the per-turn read
+  the runtime makes before a turn's first provider request (ADR
+  learned-memory-recall §2). Same search and scopes as `memory.search` resolved
+  from the session, with three differences a machine-driven read needs: a hit
+  must match two distinct terms (one when the query has one), `excludeIds` is
+  honored, and it never records a use. `limit` defaults to 6 and is capped at 10.
+  Returns `{ query, entries: [{ id, kind, scopeKind, content, rationale?,
+  createdAt, updatedAt, matchedTerms }] }`. A session that does not exist is
+  `NOT_FOUND`.
 - `memory.index({ sessionId?, path? })` — the session-start index. With
   `sessionId` the host resolves the scopes itself: the session's project scope
   (when it has one), the user scope, and — for a `role = 'task'` session — the
@@ -325,8 +341,10 @@ recall tools.
   the older project-only shape for a caller without a session. Explicit entries
   come first, then by recency of use, bounded to 40 entries and 6 KiB; without a
   session or path the snapshot is the user scope alone. Returns
-  `{ index: { entries, omittedCount, bytes, lessons?, omittedLessons? } }`. A
-  launch that cannot read it continues without an index.
+  `{ index: { entries, omittedCount, bytes, ids, lessons?, omittedLessons? } }`,
+  where `ids` names every entry the snapshot carries (`entries` then `lessons`)
+  so a per-turn recall never repeats what the prompt already holds. A launch
+  that cannot read it continues without an index.
 - `memory.stats()` — the device-local counters the memory manager shows:
   `{ stats: { index: { entries, bytes, omitted, capturedAt }, suggestions:
   { accepted, rejected }, tombstones: { fromExtraction, fromCreate },

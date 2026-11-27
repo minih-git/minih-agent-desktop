@@ -1115,7 +1115,7 @@ export const ko = {
     learnedMemory: "학습된 기억",
     learnedMemoryRead: "학습된 기억 사용",
     learnedMemoryReadDesc:
-      "에이전트가 이전 대화에서 배운 내용의 짧은 색인과 함께 세션을 시작하고 필요할 때 나머지를 조회합니다. 끄면 에이전트가 이 기록을 보지 못하며 삭제되는 것은 없습니다.",
+      "에이전트가 이전 대화에서 배운 내용의 짧은 색인과 함께 세션을 시작하고 필요할 때 나머지를 조회합니다. 끄면 에이전트가 이 기록을 보지 못하며 삭제되는 것은 없습니다. 요청마다 관련 기록도 최대 1.5 KiB까지 함께 불러옵니다.",
     learnedMemoryExtraction: "자동으로 학습",
     learnedMemoryManager: "학습된 기억 검토",
     learnedMemoryManagerDesc: "모든 프로젝트에 적용되는 기록을 보고, 편집하고, 보관하거나 삭제합니다.",

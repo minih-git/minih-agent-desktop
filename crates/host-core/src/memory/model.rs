@@ -198,6 +198,11 @@ pub struct MemoryIndex {
     pub omitted_count: i64,
     /// Bytes the returned entries spend in the budget.
     pub bytes: usize,
+    /// Ids of every entry this snapshot carries, in the same order: `entries`
+    /// then `lessons`. The runtime keeps them so a per-turn recall never repeats
+    /// a note the system prompt already holds (ADR learned-memory-recall §2).
+    #[serde(default)]
+    pub ids: Vec<String>,
     /// One employee's earlier tasks, rendered as their own section and never
     /// mixed into the dated notes above: they are not the person's words, they
     /// are what an employee learned, and the section says so (employee mode 0.5

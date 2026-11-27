@@ -1272,3 +1272,49 @@ describe("SubagentRun retries before fallback", () => {
     }
   });
 });
+
+describe("SubagentRun and learned-memory recall (ADR learned-memory-recall §2)", () => {
+  it("has no host reference, so a delegate cannot ask for a recall", () => {
+    // The rule "subagents receive no learned memory" (D668 §5) holds
+    // structurally: the only way this runtime reaches the host is the tools the
+    // parent built for it, so there is no `memory.recall` path to guard against.
+    // This is a compile-time assertion: the option does not exist.
+    const options: SubagentRunOptions = {
+      definition: definition(),
+      sessionId: "session-1",
+      parentToolCallId: "task-1",
+      task: "why did the gateway deploy fail last week?",
+      provider,
+      thinkingLevel: "off",
+      systemPrompt: "system",
+      tools: [],
+      onEvent: () => {},
+      // @ts-expect-error a delegate holds no host of its own
+      host: { call: async () => undefined },
+    };
+    expect(options.task).toContain("gateway deploy");
+  });
+
+  it("sends its task brief as the user wrote it, with no recall block", async () => {
+    const { run } = createRun();
+    const requests: Message[][] = [];
+    run.agent.streamFunction = (_model: unknown, context: { messages: Message[] }) => {
+      requests.push(context.messages);
+      const message = assistantMessage({
+        content: [{ type: "text", text: "Finished the review." }],
+        stopReason: "stop",
+      });
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: message } as never);
+        stream.push({ type: "done", reason: "stop", message } as never);
+        stream.end(message as never);
+      });
+      return stream;
+    };
+    const result = await run.run();
+    expect(result.status).toBe("completed");
+    // Nothing a per-turn recall would attach ever reaches a delegate's request.
+    expect(JSON.stringify(requests)).not.toContain("<learned-memory-recall>");
+  });
+});
