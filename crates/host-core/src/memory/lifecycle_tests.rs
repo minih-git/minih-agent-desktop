@@ -85,9 +85,11 @@ fn scopes_are_isolated_between_projects_and_the_user() {
             kinds: &[],
             limit: 8,
             record_use: false,
+            exclude_ids: &[],
+            min_match_terms: 1,
         })
         .unwrap();
-    let contents: Vec<&str> = hits.iter().map(|entry| entry.content.as_str()).collect();
+    let contents: Vec<&str> = hits.iter().map(|hit| hit.entry.content.as_str()).collect();
     assert!(contents.contains(&"First project fact."));
     assert!(contents.contains(&"User wide fact."));
     assert!(!contents.contains(&"Second project fact."));
@@ -184,12 +186,14 @@ fn search_can_filter_by_kind_and_records_use_only_when_asked() {
             kinds: &[],
             limit: 8,
             record_use: false,
+            exclude_ids: &[],
+            min_match_terms: 1,
         })
         .unwrap();
     assert_eq!(all.len(), 2);
     assert!(all
         .iter()
-        .all(|entry| entry.use_count == 0 && entry.last_used_at.is_none()));
+        .all(|hit| hit.entry.use_count == 0 && hit.entry.last_used_at.is_none()));
 
     let facts = db
         .search_memory_entries(SearchMemoryRequest {
@@ -198,12 +202,14 @@ fn search_can_filter_by_kind_and_records_use_only_when_asked() {
             kinds: &[KIND_FACT.to_string()],
             limit: 8,
             record_use: true,
+            exclude_ids: &[],
+            min_match_terms: 1,
         })
         .unwrap();
     assert_eq!(facts.len(), 1);
-    assert_eq!(facts[0].kind, KIND_FACT);
-    assert_eq!(facts[0].use_count, 1);
-    assert!(facts[0].last_used_at.is_some());
+    assert_eq!(facts[0].entry.kind, KIND_FACT);
+    assert_eq!(facts[0].entry.use_count, 1);
+    assert!(facts[0].entry.last_used_at.is_some());
     let untouched = db
         .list_memory_entries(&scope, None, Some(KIND_REFERENCE), 10, 0)
         .unwrap();

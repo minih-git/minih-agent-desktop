@@ -358,6 +358,63 @@ fn memory_search_reads_the_session_scopes_and_records_use() {
     assert!(entry.last_used_at.is_some());
 }
 
+/// A query of several words ranks by how many of them a note answers, and the
+/// result says which ones (ADR learned-memory-recall §1). Before this, a note
+/// that contained the whole phrase ranked only by recency, and one that shared
+/// a single word could not be found at all unless the phrase matched literally.
+#[test]
+fn memory_search_ranks_by_matched_terms_and_reports_them() {
+    let (dir, state) = open();
+    let project_path = project(&dir, "app");
+    let session_id = session(&state.db, &project_path, "App");
+    let scope = state
+        .db
+        .learned_memory_scope_for_path(&project_path)
+        .unwrap();
+    let mut written = Vec::new();
+    for content in [
+        "The gateway listens on 8787.",
+        "The gateway deploy reports to the release channel.",
+    ] {
+        match state
+            .db
+            .create_memory_entry(crate::memory::CreateMemoryRequest {
+                scope: scope.clone(),
+                kind: "fact".to_string(),
+                content: content.to_string(),
+                rationale: None,
+                origin: "user_ui".to_string(),
+                evidence: "user_stated".to_string(),
+                status: "active".to_string(),
+                source_session_id: None,
+                source_message_ids: Vec::new(),
+                override_tombstone: false,
+            })
+            .unwrap()
+        {
+            crate::memory::CreateMemoryOutcome::Created(entry) => written.push(*entry),
+            _ => panic!("expected a stored entry for {content}"),
+        }
+    }
+    let weak = &written[0];
+    let strong = &written[1];
+
+    let found = call(
+        &state,
+        &session_id,
+        "MemorySearch",
+        json!({ "query": "gateway deploy release" }),
+    );
+    assert_eq!(found["count"], json!(2));
+    assert_eq!(found["results"][0]["id"], json!(strong.id));
+    assert_eq!(
+        found["results"][0]["matchedTerms"],
+        json!(["gateway", "deploy", "release"])
+    );
+    assert_eq!(found["results"][1]["id"], json!(weak.id));
+    assert_eq!(found["results"][1]["matchedTerms"], json!(["gateway"]));
+}
+
 #[test]
 fn recall_tools_follow_the_read_switch() {
     let (dir, state) = open();

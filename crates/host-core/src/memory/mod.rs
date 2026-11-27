@@ -17,6 +17,9 @@ mod model;
 /// tombstone rules, and credential detector every other writer uses, so those
 /// modules are visible to it.
 pub(crate) mod repository;
+/// The term rules of `memory.search` and `memory.recall`
+/// (ADR learned-memory-recall §1); the repository applies them.
+pub(crate) mod search_terms;
 pub(crate) mod secrets;
 pub(crate) mod tombstones;
 mod validation;
@@ -46,6 +49,9 @@ mod local_stats_tests;
 #[path = "provenance_tests.rs"]
 mod provenance_tests;
 #[cfg(test)]
+#[path = "search_rank_tests.rs"]
+mod search_rank_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use curation::{
@@ -64,8 +70,8 @@ pub(crate) use model::{
 };
 pub(crate) use repository::{
     delete_learned_scope_tx, rekey_learned_memory_to_group, CreateMemoryOutcome,
-    CreateMemoryRequest, SearchMemoryRequest, StatusMemoryOutcome, SuggestionOutcome,
-    UpdateMemoryOutcome, UpdateMemoryRequest, MAX_SUGGESTION_QUOTE_CHARS,
+    CreateMemoryRequest, MemorySearchHit, SearchMemoryRequest, StatusMemoryOutcome,
+    SuggestionOutcome, UpdateMemoryOutcome, UpdateMemoryRequest, MAX_SUGGESTION_QUOTE_CHARS,
 };
 /// The same `verified` rule the write path enforces, so the tool refuses it
 /// before the write instead of after.

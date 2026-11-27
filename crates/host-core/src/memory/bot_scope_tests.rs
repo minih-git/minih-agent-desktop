@@ -191,10 +191,12 @@ fn the_session_index_keeps_lessons_out_of_the_dated_notes() {
             kinds: &[],
             limit: 10,
             record_use: false,
+            exclude_ids: &[],
+            min_match_terms: 1,
         })
         .unwrap();
     assert_eq!(task_hits.len(), 1);
-    assert_eq!(task_hits[0].scope_kind, SCOPE_BOT);
+    assert_eq!(task_hits[0].entry.scope_kind, SCOPE_BOT);
     let plain_hits = db
         .search_memory_entries(SearchMemoryRequest {
             scopes: &db
@@ -205,6 +207,8 @@ fn the_session_index_keeps_lessons_out_of_the_dated_notes() {
             kinds: &[],
             limit: 10,
             record_use: false,
+            exclude_ids: &[],
+            min_match_terms: 1,
         })
         .unwrap();
     assert!(plain_hits.is_empty());

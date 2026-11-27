@@ -260,7 +260,7 @@ fn memory_search(st: &AppState, session_id: &str, args: &Value) -> Result<Value,
         .map_err(internal)?
         .ok_or_else(|| rpc_err(1007, "session not found", "SESSION_NOT_FOUND"))?;
     let kinds = kind.into_iter().collect::<Vec<_>>();
-    let entries = st
+    let hits = st
         .db
         .search_memory_entries(SearchMemoryRequest {
             scopes: &scopes,
@@ -268,9 +268,22 @@ fn memory_search(st: &AppState, session_id: &str, args: &Value) -> Result<Value,
             kinds: &kinds,
             limit,
             record_use: true,
+            exclude_ids: &[],
+            min_match_terms: 1,
         })
         .map_err(internal)?;
-    let results = entries.iter().map(entry_value).collect::<Vec<_>>();
+    // Each hit names the query words it matched, so the model can tell a note
+    // that answered three of its words from one that shares a single word.
+    let results = hits
+        .iter()
+        .map(|hit| {
+            let mut value = entry_value(&hit.entry);
+            if let Some(object) = value.as_object_mut() {
+                object.insert("matchedTerms".to_string(), json!(hit.matched_terms));
+            }
+            value
+        })
+        .collect::<Vec<_>>();
     Ok(json!({
         "query": query,
         "count": results.len(),
