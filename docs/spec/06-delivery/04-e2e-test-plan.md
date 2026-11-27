@@ -21005,6 +21005,38 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Milestone**: M3.
 - **Status**: Automated — `pnpm test:e2e:memory`.
 
+### E2E-MEMORY-recall-finds-note-outside-index
+
+- **Preconditions**: A real host-core binary, a temporary data directory, one
+  registered project, and no model, provider, or network call
+  (`scripts/e2e-memory-recall.mjs`).
+- **Steps**:
+  1. Create 45 learned notes in the project, the oldest of which carries a
+     distinctive word (`zebra protocol`), so the 40-line session-start budget
+     cannot hold them all.
+  2. Read `memory.index` for the session and take its `ids`.
+  3. Call `memory.recall` with the words of a prompt about that oldest note and
+     the index's ids as `excludeIds`.
+  4. Repeat the recall without `excludeIds`, then read the note back through
+     `memory.list`.
+- **Expected**: Step 2 returns 40 entries, an `omittedCount` of 6, and 40 ids
+  that do not contain the oldest note. Step 3 returns exactly that note, naming
+  the terms it matched, and a note the prompt already carries is never
+  repeated. Step 4 finds it again without the ids, and reading it leaves
+  `useCount` and `lastUsedAt` untouched: a recall is a view, not a use.
+- **Specs linked**: `03-runtime/06-host-rpc-protocol.md` (learned memory),
+  `03-runtime/03-tools-and-permissions.md`, ADR learned-memory-recall §1–§2.
+- **Acceptance criterion**: A note the frozen index left out still reaches a
+  turn whose prompt is about it, without the note being recorded as used.
+- **Milestone**: M3.
+- **Status**: Automated — `pnpm test:e2e:memory`
+  (`scripts/e2e-memory-recall.mjs`). The provider-request shape — the block
+  reaching only the wire copy, byte-identical across a turn's requests, and
+  absent from every persisted message — is covered at the runtime level by
+  `packages/agent-runtime/src/runtime.test.ts`
+  ("DesktopAgentRuntime learned-memory recall"), where a fake provider captures
+  the request.
+
 ### E2E-MEMORY-suggestion-requires-confirmation
 
 - **Preconditions**: A real host binary, the Electron-main extraction service,

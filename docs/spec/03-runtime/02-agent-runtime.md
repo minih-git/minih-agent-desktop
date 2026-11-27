@@ -2221,6 +2221,40 @@ composing only the framing, the definition prompt, and guidance, and
 `SUBAGENT_INHERIT_DENY_TOOLS`, so `tools: inherit` cannot lend them either — see
 §10.2 of [03. Tools and permissions](03-tools-and-permissions.md).
 
+### 7.4a Per-turn recall on the wire only (ADR learned-memory-recall §2)
+
+The session-start index is frozen and bounded, so a note it left out — or one
+written during the session — used to be reachable only through `MemorySearch`.
+Since ADR learned-memory-recall each user turn also gets one recall: after the
+user message is built and before the turn's first provider request, the runtime
+calls `memory.recall({ sessionId, query, excludeIds, limit })` with the user's
+own text as the query (text blocks only, references and attachments stripped,
+2,000 characters at most, at least 8 characters) and the frozen index's `ids` as
+`excludeIds`. The call has a 300 ms deadline and runs only when
+`learnedMemoryRead` is on, the launch carried a `learnedMemoryIndex`, and the
+runtime is not a delegate; a timeout, a host error, or an empty result means no
+block and no retry, reported once as `learned memory recall unavailable` with a
+stable code and no note text.
+
+The result renders into one block — `<learned-memory-recall>` with a
+one-sentence contract and one dated line per note — capped at 1.5 KiB, spending
+whole entries only, and charged tokens with the CJK-aware rule of
+`output-cap.ts`. The block is attached in `convertToLlm`, on the **wire copy** of
+the newest user message, as a trailing text block: the stored message, the
+journal, and the host's `session.appendMessage` payloads never carry it, so
+compaction cannot quote a recalled note as the user's words. The turn's
+`ContextUsage` report names the block's share
+(`learnedMemoryRecallTokens`); the renderer shows no new element (ADR §3).
+
+Byte stability comes from a ledger. The first `convertToLlm` of a turn binds the
+fresh block to the newest user message under a key derived from that message —
+role, timestamp, and a hash of its text — and every later request replays each
+known block unchanged, so the provider's cached prefix does not move. The ledger
+is in memory only: a runtime restart or a session reopen starts empty and the
+historical blocks drop out once. A recall is a view the model did not ask for,
+so it never touches `lastUsedAt` / `useCount`; a later `MemorySearch` hit still
+does.
+
 ### 7.5 Optional extraction off the critical path (D668, ADR
 agent-long-term-memory §4)
 

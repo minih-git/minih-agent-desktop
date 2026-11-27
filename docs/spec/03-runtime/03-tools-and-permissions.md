@@ -941,7 +941,10 @@ identity that decides what the caller may read:
   every root of the project group that owns it.
 - `MemorySearch({ query, kind?, limit? })` reads the learned entries of the
   calling session's project scope plus the user scope, and refreshes
-  `lastUsedAt` / `useCount` like any other read.
+  `lastUsedAt` / `useCount` like any other read. The query is matched by its
+  words rather than as one literal substring, and the result is ranked by how
+  many of them a note answers, naming them in `matchedTerms` (ADR
+  learned-memory-recall §1): a few words or a short question both work.
 
 Neither tool accepts a project path or a session id. Arguments that name one are
 ignored rather than honoured, so a crafted call cannot reach another project's
