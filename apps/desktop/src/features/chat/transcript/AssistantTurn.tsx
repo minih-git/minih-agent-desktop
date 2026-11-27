@@ -342,7 +342,6 @@ export const AssistantTurn = memo(function AssistantTurn({
   const tools = reuseReferences(toolsRef.current, summary.tools);
   toolsRef.current = tools;
   const generatedImages = useMemo(() => tools
-    .filter((message) => message.toolName === "GenerateImages")
     .map((message) => <GeneratedImages key={message.id} message={message} />), [tools]);
   // Delegation status/timing depends on actual tool messages, never on thinking
   // or text and never on a Task's attached child transcript identity.

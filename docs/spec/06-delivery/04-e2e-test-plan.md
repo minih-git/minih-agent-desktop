@@ -5,6 +5,27 @@ from the request worktree after building its Desktop bundle; the isolated
 Electron journey uses a local synthetic provider and saves the native model
 picker screenshot in its reported scratch directory.
 
+## E2E-CHAT-tool-images-inline
+
+- **Preconditions:** Request worktree, reused dependencies, isolated Electron
+  profile and synthetic PNG image bytes. No real provider or user profile.
+- **Steps:** Render a completed turn containing Read images and mirrored MCP
+  image blocks. Expand/collapse the process, select thumbnails, open the viewer,
+  zoom, navigate with arrow keys and close. Remount JSON-restored history and
+  render an active turn. Repeat in English and Simplified Chinese. Render a
+  standalone plugin image resource and a local image reference.
+- **Expected:** Images stay visible outside folded process details without
+  duplicates. Selection and download target agree; viewer selection survives
+  closing. Restored and active turns keep images. Inline-only images expose no
+  local-file actions or native file reads; explicit references use the contained
+  host reader. Unsupported/oversized data and text-only paths create no image.
+- **Specs / acceptance:** Image generation §Other tool images; preserve existing
+  transcript storage and file permission contracts. Post-MVP.
+- **Automation / status:** `node scripts/e2e-tool-images.mjs` runs
+  `scripts/e2e/tool-images.tsx` with production AssistantTurn/ToolRow. Projection
+  boundaries use `apps/desktop/test/chat-tool-images.test.mjs`. This is isolated
+  renderer/native-boundary validation, not installed-release acceptance.
+
 ## E2E-SIDEBAR-legacy-employees-have-no-built-in-entry
 
 - **Preconditions:** Request worktree with reused dependencies and an isolated
@@ -11541,6 +11562,7 @@ selection already in place shows it without waiting for another event.
 
 | Acceptance | Scenarios |
 |---|---|
+| C / E / Quality / Security / Accessibility — Inline tool images and viewer | E2E-CHAT-tool-images-inline |
 | C / E / Quality / Accessibility — Agent-created session effort | E2E-SESSION-create-thinking-setting |
 | C / E / F / Quality — Agent-created session model, role and sidebar role tooltip | E2E-SESSION-create-picks-model-and-role |
 | B / C / E / F / Quality / Accessibility — Selected capabilities 2026-10-28 | E2E-UPSTREAM-20261028-selected-capabilities |

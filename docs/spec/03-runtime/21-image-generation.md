@@ -133,6 +133,31 @@ Markdown image references to generated absolute paths, including Windows drive
 paths, use the existing bounded host image reader. URL sanitization stays enabled;
 the host still rejects files outside its permitted workspace/scratch/attachment roots.
 
+### Other tool images in the conversation
+
+Read, MCP, plugin and other tool results also project structured image content
+into the conversation's existing image gallery, outside collapsed process
+details. Opening details does not duplicate the gallery. This includes canonical
+`content` image blocks, Host Read `images`, MCP embedded image resources, and
+explicit local `path`/`ref` image references. Mirrored content/details images are
+deduplicated in first-seen order. Arbitrary text is not scanned for image paths;
+remote URLs are not fetched by this projection.
+
+Inline PNG, JPEG, WebP and GIF payloads are MIME-allowlisted and bounded to
+16 MiB per image. The shared viewer provides thumbnail selection, keyboard
+navigation, zoom and a download target for the selected image. Inline-only
+results have no open-file or reveal action. Local references retain the existing
+host reader and containment checks; unavailable local files use the existing
+preview-unavailable state. Text results and tool failures remain unchanged.
+Existing persisted structured results restore the same galleries after reload;
+no new storage, protocol, permission or model-context format is introduced.
+
+Validation: `apps/desktop/test/chat-tool-images.test.mjs` covers projection,
+deduplication, unsafe input and saved-record parity. The `tool-images.tsx` probe
+in `node scripts/e2e-tool-images.mjs` exercises production AssistantTurn
+and ToolRow interactions in English and Simplified Chinese with fixture image
+bytes and a native-file API fixture only.
+
 Validation: `node scripts/e2e-image-generation.mjs` covers host/stdio/HTTP/storage;
 `node scripts/e2e-image-generation-ui.mjs` covers real React/Chromium interactions
 with an API-boundary fixture. Unit/service tests cover limits, cancellation,

@@ -56,6 +56,24 @@
 
 生成文件绝对路径（包括 Windows 盘符路径）的 Markdown 图片引用通过现有受限宿主图片读取接口解析。URL 清理仍启用，宿主继续拒绝允许的工作区、scratch 和附件根目录之外的文件。
 
+### 对话中的其他工具图片
+
+Read、MCP、插件及其他工具的结构化图片结果同样显示在对话的现有图片卡片中，
+位于可折叠过程详情之外；展开详情不会重复展示。支持标准 `content` 图片块、
+Host Read 的 `images`、MCP 内嵌图片资源以及明确的本地 `path`／`ref` 图片引用。
+重复出现在 content/details 中的图片按首次出现顺序去重。不从任意工具文本猜测路径，
+也不自动抓取远程图片 URL。
+
+内嵌 PNG、JPEG、WebP、GIF 使用 MIME 白名单，每张限制为 16 MiB。共享预览支持
+缩略图选择、方向键导航、缩放以及下载当前选中图片。只有内嵌数据而无文件路径时，
+不提供打开文件和在文件夹中显示操作。本地引用继续使用现有宿主读取与路径包含校验；
+缺失或不可读图片使用无法预览状态。文字结果与工具错误保持原行为。
+已有结构化工具结果在会话重载后恢复同样的卡片；不改变存储、协议、权限或模型上下文格式。
+
+验证：`apps/desktop/test/chat-tool-images.test.mjs` 覆盖投影、去重、不安全输入及
+保存记录的一致性。`node scripts/e2e-tool-images.mjs` 通过 `tool-images.tsx`
+以合成图片与原生文件接口夹具，在英文和简体中文下验证生产 AssistantTurn/ToolRow 交互。
+
 验证：`node scripts/e2e-image-generation.mjs` 覆盖宿主、stdio、HTTP 和存储；`node scripts/e2e-image-generation-ui.mjs` 使用 API 边界夹具覆盖真实 React/Chromium 交互。单元及服务测试覆盖限制、取消、部分失败、认证、超时、不安全路径和受限下载。
 
 `node scripts/e2e-image-chat.mjs` 在隔离桌面中使用本地模型/图片 HTTP 夹具，覆盖相邻默认设置、Composer 提交、批量结果、引用生成文件编辑、收起详情和配置跳转。真实接口验证通过 `scripts/test-image-generation-live.mjs` 显式启用，仅限一次生成和一次编辑，不属于默认测试命令。
