@@ -2069,6 +2069,11 @@ export const ptBR = {
     browserProxyRouting: "Roteamento do navegador integrado",
     browserProxyRoutingDesc:
       "O navegador da área de trabalho e o do agente escolhem a saída por endereço; chamadas de modelo, marketplace, atualizações e painéis de plugins continuam usando o proxy acima. Enquanto isto está ativo, o navegador integrado deixa de segui-lo.",
+    browserProxyConfigure: "Configurar",
+    browserProxySummary: "{{profiles}} proxies, {{rules}} regras",
+    browserProxyAutoSave: "Alterações válidas são salvas automaticamente. Linhas incompletas não são salvas.",
+    browserProxyEmptyRules: "Adicione uma regra para escolher um proxy para um endereço. Os demais usam a saída padrão.",
+    browserProxyEmptyProfiles: "Adicione um proxy e escolha-o como saída de uma regra ou saída padrão.",
     browserProxyProfiles: "Proxies",
     browserProxyAddProfile: "Adicionar proxy",
     browserProxyProfileName: "Nome",

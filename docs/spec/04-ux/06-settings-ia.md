@@ -193,7 +193,17 @@ to appearance.
   - **Built-in browser routing**: one switch persisting as
     `AppSettings.browserProxyRouting.enabled` (**off** when absent) with a
     proxy list (name + URL), an ordered rule list (match type, pattern, exit),
-    and a default exit. On, the work-panel and Agent browser pick an exit per
+    and a default exit. The Settings page keeps only the switch, saved proxy/rule
+    counts, and a **Configure** action, available even while routing is off.
+    Configure opens a bounded modal with **Rules** and **Proxies** count tabs,
+    an independently scrolling list, and a persistent default-exit selector and
+    address test. Rules show their evaluation order and use themed Settings
+    menus. Adding an entry scrolls to and focuses its first input. Valid edits
+    still auto-save; incomplete rows stay local and are not
+    saved. Closing discards only unsaved drafts, not valid persisted edits.
+    Escape, the close button, or a backdrop press dismisses the modal; focus
+    returns to Configure. An in-flight write blocks editing and dismissal.
+    On, the work-panel and Agent browser pick an exit per
     address — company proxy for the intranet, personal proxy for the rest,
     straight out for local services — and no longer follow the Proxy control
     above; model calls, the marketplace, updates, and plugin panels keep

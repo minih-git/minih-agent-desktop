@@ -2092,6 +2092,11 @@ sklm: {
     browserProxyRouting: "內建瀏覽器分流",
     browserProxyRoutingDesc:
       "工作區瀏覽器與 Agent 瀏覽器依位址選擇出口；模型呼叫、擴充市集、更新與外掛面板仍使用上方的代理設定。開啟後，內建瀏覽器不再跟隨上方設定。",
+    browserProxyConfigure: "設定",
+    browserProxySummary: "{{profiles}} 個代理，{{rules}} 條規則",
+    browserProxyAutoSave: "有效變更自動儲存，未填寫完整的列不會儲存。",
+    browserProxyEmptyRules: "新增規則，為指定網址選擇代理。未命中的網址使用預設出口。",
+    browserProxyEmptyProfiles: "新增代理後，可將其設為規則出口或預設出口。",
     browserProxyProfiles: "代理設定",
     browserProxyAddProfile: "新增代理",
     browserProxyProfileName: "名稱",

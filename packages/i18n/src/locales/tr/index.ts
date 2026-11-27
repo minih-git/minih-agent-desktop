@@ -2102,6 +2102,11 @@ sklm: {
     browserProxyRouting: "Yerleşik tarayıcı yönlendirmesi",
     browserProxyRoutingDesc:
       "Çalışma alanı ve ajan tarayıcısı adrese göre çıkış seçer; model çağrıları, market, güncellemeler ve eklenti panelleri yukarıdaki proxy'yi kullanmaya devam eder. Bu açıkken yerleşik tarayıcı artık onu izlemez.",
+    browserProxyConfigure: "Yapılandır",
+    browserProxySummary: "{{profiles}} proxy, {{rules}} kural",
+    browserProxyAutoSave: "Geçerli değişiklikler otomatik kaydedilir. Eksik satırlar kaydedilmez.",
+    browserProxyEmptyRules: "Bir adres için proxy seçmek üzere kural ekleyin. Eşleşmeyen adresler varsayılan çıkışı kullanır.",
+    browserProxyEmptyProfiles: "Bir proxy ekleyip kural çıkışı veya varsayılan çıkış olarak seçin.",
     browserProxyProfiles: "Proxy'ler",
     browserProxyAddProfile: "Proxy ekle",
     browserProxyProfileName: "Ad",

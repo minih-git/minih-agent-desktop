@@ -2096,6 +2096,11 @@ sklm: {
     "browserProxyRouting": "Enrutado del navegador integrado",
     "browserProxyRoutingDesc":
       "El navegador del área de trabajo y el del agente eligen salida por dirección; las llamadas al modelo, el mercado, las actualizaciones y los paneles de plugins siguen usando el proxy de arriba. Mientras esto esté activo, el navegador integrado deja de seguirlo.",
+    browserProxyConfigure: "Configurar",
+    browserProxySummary: "{{profiles}} proxies, {{rules}} reglas",
+    browserProxyAutoSave: "Los cambios válidos se guardan automáticamente. Las filas incompletas no se guardan.",
+    browserProxyEmptyRules: "Añade una regla para elegir un proxy para una dirección. Las demás usan la salida predeterminada.",
+    browserProxyEmptyProfiles: "Añade un proxy y elígelo como salida de una regla o salida predeterminada.",
     "browserProxyProfiles": "Proxies",
     "browserProxyAddProfile": "Añadir proxy",
     "browserProxyProfileName": "Nombre",

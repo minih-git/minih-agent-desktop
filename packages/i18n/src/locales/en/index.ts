@@ -2141,6 +2141,11 @@ sklm: {
     browserProxyRouting: "Built-in browser routing",
     browserProxyRoutingDesc:
       "The workspace browser and the Agent browser pick an exit per address; model calls, the marketplace, updates, and plugin panels keep using the proxy above. While this is on, the built-in browser no longer follows it.",
+    browserProxyConfigure: "Configure",
+    browserProxySummary: "{{profiles}} proxies, {{rules}} rules",
+    browserProxyAutoSave: "Valid changes are saved automatically. Incomplete rows are not saved.",
+    browserProxyEmptyRules: "Add a rule to route an address through a specific proxy. Unmatched addresses use the default exit.",
+    browserProxyEmptyProfiles: "Add a proxy, then choose it as a rule's exit or the default exit.",
     browserProxyProfiles: "Proxies",
     browserProxyAddProfile: "Add proxy",
     browserProxyProfileName: "Name",
