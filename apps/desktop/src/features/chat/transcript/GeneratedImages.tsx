@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UiMessage } from "@minih-agent/shared";
-import { useReferencedImageDataUrl } from "../../../lib/use-referenced-image-data-url";
+import { useToolImageDataUrl } from "./use-tool-image-data-url";
+import { toolResultImages } from "./tool-result-images";
 import { toolResultPayload } from "../../../lib/tool-presentation";
 import { useAppStore } from "../../../stores/app-store";
 import { Button, TooltipButton } from "../../../components/ui";
@@ -11,29 +12,28 @@ import { GeneratedImageThumbnail, type GeneratedImageRef } from "./GeneratedImag
 import { generatedImageDownloadName } from "./generated-image-download";
 
 function ImageResult({
-  path,
-  index,
-  mimeType,
+  image,
   onOpen,
 }: {
-  path: string;
-  index: number;
-  mimeType?: string;
+  image: GeneratedImageRef;
   onOpen: (trigger: HTMLButtonElement) => void;
 }) {
   const { t } = useTranslation();
-  const dataUrl = useReferencedImageDataUrl(path, mimeType);
-  const downloadName = generatedImageDownloadName(dataUrl, index);
+  const source = useToolImageDataUrl(image);
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  const dataUrl = source !== failedSource ? source : null;
+  const downloadName = generatedImageDownloadName(dataUrl, image.index);
+  const label = image.label ?? t("settings.generatedImage", { index: image.index + 1 });
   return (
     <figure className="generated-image-card">
       <TooltipButton
         type="button"
         className="generated-image-preview"
         onClick={(event) => onOpen(event.currentTarget)}
-        tooltip={t("settings.generatedImage", { index: index + 1 })}
+        tooltip={label}
       >
         {dataUrl ? (
-          <img src={dataUrl} alt={t("settings.generatedImage", { index: index + 1 })} />
+          <img src={dataUrl} alt={label} onError={() => setFailedSource(dataUrl)} />
         ) : (
           <span>{t("settings.imagePreviewUnavailable")}</span>
         )}
@@ -54,19 +54,14 @@ export function GeneratedImages({ message }: { message: UiMessage }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const focusReturnRef = useRef<HTMLElement | null>(null);
-  if (message.toolName !== "GenerateImages") return null;
+  const imageRefs = useMemo(() => toolResultImages(message), [message.toolName, message.toolResult]);
   const payload = toolResultPayload(message);
   const record =
     payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
   const results =
     record?.kind === "generated-images" && Array.isArray(record.results) ? record.results : [];
-  const images: GeneratedImageRef[] = results.flatMap((raw, index) => {
-    if (!raw || typeof raw !== "object") return [];
-    const item = raw as Record<string, unknown>;
-    return item.status === "succeeded" && typeof item.path === "string"
-      ? [{ path: item.path, index, mimeType: typeof item.mimeType === "string" ? item.mimeType : undefined }]
-      : [];
-  });
+  const images: GeneratedImageRef[] = imageRefs.map((image) => message.toolName === "GenerateImages"
+    ? image : { ...image, label: `${t("chat.imagePreview.title")} ${image.index + 1}` });
   const selectedPosition = Math.min(selectedImageIndex, Math.max(0, images.length - 1));
   const selectedImage = images[selectedPosition];
   const needsSetup =
@@ -77,8 +72,9 @@ export function GeneratedImages({ message }: { message: UiMessage }) {
       "IMAGE_AUTH_FAILED",
       "IMAGE_AUTH_UNSUPPORTED",
     ].includes(String(record.errorCode));
+  if (!images.length && !results.length && !needsSetup) return null;
   return (
-    <div className="generated-images" aria-label={t("settings.imageModel")}>
+    <div className="generated-images" aria-label={t(message.toolName === "GenerateImages" ? "settings.imageModel" : "chat.imagePreview.title")}>
       {needsSetup ? (
         <div>
           <p>{t("settings.imageModelSetupHint")}</p>
@@ -98,9 +94,7 @@ export function GeneratedImages({ message }: { message: UiMessage }) {
       {selectedImage ? (
         <div className={`generated-image-set${images.length > 1 ? " is-multiple" : ""}`}>
           <ImageResult
-            path={selectedImage.path}
-            index={selectedImage.index}
-            mimeType={selectedImage.mimeType}
+            image={selectedImage}
             onOpen={(trigger) => {
               focusReturnRef.current = trigger;
               setViewerIndex(selectedPosition);
@@ -110,7 +104,7 @@ export function GeneratedImages({ message }: { message: UiMessage }) {
             <nav className="generated-image-thumbnails" aria-label={t("chat.imagePreview.title")}>
               {images.map((image, position) => (
                 <GeneratedImageThumbnail
-                  key={`${image.index}:${image.path}`}
+                  key={image.index}
                   image={image}
                   selected={position === selectedPosition}
                   onSelect={() => setSelectedImageIndex(position)}

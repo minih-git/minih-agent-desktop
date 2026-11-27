@@ -7,6 +7,8 @@ export function generatedImageDownloadName(dataUrl: string | null, index: number
       ? "jpg"
       : dataUrl.startsWith("data:image/webp;base64,")
         ? "webp"
-        : null;
+        : dataUrl.startsWith("data:image/gif;base64,")
+          ? "gif"
+          : null;
   return extension ? `generated-image-${index + 1}.${extension}` : null;
 }
