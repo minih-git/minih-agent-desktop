@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.12.0",
+    date: "2026-11-27",
+    highlights: [
+      "工具返回的图片现在直接显示在聊天中，收起工具详情也能看见。点击缩略图可放大或切换图片；重新打开历史会话后仍可查看，同一张图片不会因工具结果镜像而重复显示。",
+      "内置浏览器分流改为独立弹窗设置：设置页只保留开关和已保存的代理、规则数量，弹窗分开管理规则与代理，长列表独立滚动，默认出口和地址测试始终可见。有效修改仍然自动保存。",
+    ],
+  },
+  {
     version: "1.11.2",
     date: "2026-11-26",
     highlights: [
