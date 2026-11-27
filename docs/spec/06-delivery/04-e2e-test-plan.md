@@ -26,6 +26,27 @@ picker screenshot in its reported scratch directory.
   boundaries use `apps/desktop/test/chat-tool-images.test.mjs`. This is isolated
   renderer/native-boundary validation, not installed-release acceptance.
 
+## E2E-SETTINGS-browser-routing-dialog
+
+- **Preconditions:** Request worktree, reused host dependencies, isolated
+  Electron profile and synthetic proxy table; no real provider or user data.
+- **Steps:** Open Configure from the compact saved-count row, switch Rules and
+  Proxies tabs, add/edit/delete entries, reorder rules, select an exit, and test
+  an address. Reject an incomplete/invalid edit; report a failed save. Close
+  with Escape, the close button and backdrop; reopen. Repeat with routing off,
+  a 99-rule table, English/light, Chinese/dark and a narrow viewport.
+- **Expected:** No inline editor on the Settings page; saved counts stay correct.
+  The modal list scrolls without moving header/footer or overflowing the window.
+  Valid changes preserve the existing auto-save contract; invalid rows never
+  reach persistence. Deleting a referenced proxy removes its rules and resets
+  its default exit. Focus stays in the modal and returns to Configure on close;
+  Escape in a selector closes the selector first. Pending saves block duplicate
+  mutations and dismissal. The test previews the saved table, not invalid drafts.
+- **Automation:** `node --test apps/desktop/test/browser-proxy-routing-dialog.test.mjs`
+  mounts production components and captures isolated Electron screenshots.
+- **Scope:** Renderer user-path validation; no claim of proxy/PAC application
+  or installed-release acceptance. Storage and routing contracts remain ADR 0342.
+
 ## E2E-SIDEBAR-legacy-employees-have-no-built-in-entry
 
 - **Preconditions:** Request worktree with reused dependencies and an isolated
@@ -5770,8 +5791,10 @@ window; opening a normal panel afterward must still work.
   cases as the TypeScript matcher), `crates/host-core/src/browser_proxy_routing.rs`
   covers write-time validation, and a real Electron 43 probe verified
   `resolveProxy` for the routing-off, routing-on, global-change, disable, and
-  credentialed-relay states plus relay reuse/close. No driver script exists in
-  `scripts/` yet, so the Settings card interactions are manual.
+  credentialed-relay states plus relay reuse/close. Settings modal interactions
+  are automated by `apps/desktop/test/browser-proxy-routing-dialog.test.mjs`
+  (see E2E-SETTINGS-browser-routing-dialog); the full proxy-network journey
+  above remains a separate manual probe.
 
 #### E2E-CHAT-html-artifacts: Open generated pages from ordinary and project conversations
 

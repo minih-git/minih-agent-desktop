@@ -2108,6 +2108,11 @@ sklm: {
     browserProxyRouting: "내장 브라우저 라우팅",
     browserProxyRoutingDesc:
       "작업 영역 브라우저와 에이전트 브라우저가 주소별로 출구를 고릅니다. 모델 호출, 마켓플레이스, 업데이트, 플러그인 패널은 위의 프록시 설정을 그대로 씁니다. 이 기능을 켜면 내장 브라우저는 위 설정을 따르지 않습니다.",
+    browserProxyConfigure: "설정",
+    browserProxySummary: "프록시 {{profiles}}개, 규칙 {{rules}}개",
+    browserProxyAutoSave: "유효한 변경 사항은 자동 저장됩니다. 미완성 행은 저장되지 않습니다.",
+    browserProxyEmptyRules: "규칙을 추가하여 주소에 사용할 프록시를 선택하세요. 일치하지 않는 주소는 기본 출구를 사용합니다.",
+    browserProxyEmptyProfiles: "프록시를 추가한 후 규칙 출구 또는 기본 출구로 선택하세요.",
     browserProxyProfiles: "프록시",
     browserProxyAddProfile: "프록시 추가",
     browserProxyProfileName: "이름",

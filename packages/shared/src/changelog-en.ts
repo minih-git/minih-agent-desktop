@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.12.0",
+    date: "2026-11-27",
+    highlights: [
+      "Images returned by tools now appear directly in the conversation, even when the tool details are collapsed. Open a thumbnail to zoom or browse the images; restored conversations keep them without duplicating mirrored image blocks.",
+      "Built-in browser routing now opens in a dedicated dialog. Settings keeps the switch and saved proxy/rule counts, while the dialog separates rules and proxies, scrolls long lists independently, and keeps the default exit and address test visible. Valid edits still save automatically.",
+    ],
+  },
+  {
     version: "1.11.2",
     date: "2026-11-26",
     highlights: [

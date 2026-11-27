@@ -24,8 +24,8 @@ describe("changelog catalog", () => {
 
   it("lists stable releases from 0.1.1 newest-first without pre-releases", () => {
     const versions = CHANGELOG.en.map((e) => e.version);
-    // 1.11.2 and 1.11.1 are shipped patch releases above 1.11.0, newest-first.
-    expect(versions[0]).toBe("1.11.2");
+    // Product releases are newest-first, including the 1.12.0 UI updates.
+    expect(versions[0]).toBe("1.12.0");
     expect(versions.at(-1)).toBe(STABLE_FROM);
     // 0.11.1 is intentionally absent: that tag was pushed before the release
     // branch was complete, and 0.11.2 is the tag that actually ships its
@@ -33,6 +33,7 @@ describe("changelog catalog", () => {
     // 0.20.0 has a tag but no published Release; its highlights are carried by
     // 0.20.1, the first published release on the 0.20 line.
     expect(versions).toEqual([
+      "1.12.0",
       "1.11.2",
       "1.11.1",
       "1.11.0",

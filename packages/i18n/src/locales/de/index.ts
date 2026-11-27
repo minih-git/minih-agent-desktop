@@ -2097,6 +2097,11 @@ sklm: {
     "browserProxyRouting": "Routing des integrierten Browsers",
     "browserProxyRoutingDesc":
       "Arbeitsbereich- und Agent-Browser wählen je Adresse einen Ausgang; Modellaufrufe, Marktplatz, Updates und Plugin-Panels nutzen weiter den Proxy oben. Solange dies aktiv ist, folgt der integrierte Browser ihm nicht mehr.",
+    browserProxyConfigure: "Konfigurieren",
+    browserProxySummary: "{{profiles}} Proxys, {{rules}} Regeln",
+    browserProxyAutoSave: "Gültige Änderungen werden automatisch gespeichert. Unvollständige Zeilen werden nicht gespeichert.",
+    browserProxyEmptyRules: "Fügen Sie eine Regel hinzu, um einen Proxy für eine Adresse zu wählen. Andere Adressen verwenden den Standardausgang.",
+    browserProxyEmptyProfiles: "Fügen Sie einen Proxy hinzu und wählen Sie ihn als Regel- oder Standardausgang.",
     "browserProxyProfiles": "Proxys",
     "browserProxyAddProfile": "Proxy hinzufügen",
     "browserProxyProfileName": "Name",
