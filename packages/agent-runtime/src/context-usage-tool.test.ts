@@ -67,3 +67,35 @@ describe("contextUsageReport", () => {
     expect(formatContextUsageReport(report)).toContain("new_context was requested");
   });
 });
+
+describe("contextUsageReport learned-memory recall attribution", () => {
+  it("names the recall block's share of the request", () => {
+    const report = contextUsageReport({
+      model,
+      budget: { ...limits, tokens: 120_000 },
+      anchored: true,
+      compactionEnabled: true,
+      compactionQueued: false,
+      learnedMemoryRecallTokens: 380,
+    });
+    // The block is part of the request, so it is inside `usedTokens`: this is
+    // the attribution, not an addition (ADR learned-memory-recall §3).
+    expect(report.usedTokens).toBe(120_000);
+    expect(report.learnedMemoryRecallTokens).toBe(380);
+    expect(formatContextUsageReport(report)).toContain(
+      "~380 tokens are learned notes recalled for this request",
+    );
+  });
+
+  it("reports nothing for a turn that recalled nothing", () => {
+    const report = contextUsageReport({
+      model,
+      budget: { ...limits, tokens: 120_000 },
+      anchored: true,
+      compactionEnabled: true,
+      compactionQueued: false,
+    });
+    expect(report.learnedMemoryRecallTokens).toBeUndefined();
+    expect(formatContextUsageReport(report)).not.toContain("recalled for this request");
+  });
+});

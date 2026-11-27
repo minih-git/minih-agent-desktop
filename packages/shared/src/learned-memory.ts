@@ -50,6 +50,12 @@ export type LearnedMemoryIndex = {
   /** Bytes the returned entries spend in the host's budget. */
   bytes: number;
   /**
+   * Ids of every entry the snapshot carries, `entries` then `lessons`. The
+   * runtime keeps them so a per-turn recall never repeats a note the system
+   * prompt already holds (ADR learned-memory-recall §2).
+   */
+  ids: string[];
+  /**
    * The employee's lessons from its earlier tasks, when this session is one of
    * that employee's tasks (0.5 slice 5). They spend their own budget and are
    * rendered as their own section: they are what the employee learned, not what
@@ -59,6 +65,31 @@ export type LearnedMemoryIndex = {
   /** Lessons the host's smaller lesson budget left out. */
   omittedLessons?: number;
 };
+
+/**
+ * One entry of a per-turn recall, as `memory.recall` returns it (ADR
+ * learned-memory-recall §2). It is a read-only view: the block it renders into
+ * is attached to the wire copy of the newest user message and never stored.
+ */
+export type LearnedMemoryRecallEntry = {
+  id: string;
+  kind: LearnedMemoryKind;
+  scopeKind: LearnedMemoryScopeKind;
+  content: string;
+  rationale?: string;
+  /** Epoch milliseconds, formatted for the block by the runtime. */
+  createdAt: number;
+  updatedAt: number;
+  /** The query words this entry matched; the host ranks by their count. */
+  matchedTerms: string[];
+};
+
+/** What one `memory.recall` call returns. */
+export type LearnedMemoryRecallResult = {
+  query: string;
+  entries: LearnedMemoryRecallEntry[];
+};
+
 /** Where an entry sits in its lifecycle: proposed, active, or archived. */
 export type LearnedMemoryStatus = "suggested" | "active" | "archived";
 export type LearnedMemoryOrigin = "explicit" | "user_ui" | "extracted";
