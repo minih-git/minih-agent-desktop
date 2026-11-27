@@ -5,13 +5,13 @@ import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
+import { repositoryRoot, resolveElectronBinary, scaledTimeout } from "../../../scripts/e2e/boot.mjs";
 
 const root = repositoryRoot();
 const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
 
 test("browser routing compact entry and modal preserve editing contracts", {
-  timeout: 90_000,
+  timeout: scaledTimeout(90_000),
   skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false,
 }, async () => {
   const output = await mkdtemp(join(process.env.PI_SCRATCH_DIR || tmpdir(), "routing-dialog-"));
@@ -39,15 +39,22 @@ const { app, BrowserWindow } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 app.setPath("userData", path.join(__dirname, "profile"));
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-background-timer-throttling");
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false, width: 1180, height: 820,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+  win.webContents.on("console-message", (event) => console.error(event.message));
+  console.log("routing-main: loading");
   try {
     await win.loadFile(path.join(__dirname, "index.html"));
+    console.log("routing-main: loaded");
     const result = await win.webContents.executeJavaScript("window.routingProbe()");
+    console.log("routing-main: interaction complete");
     const visuals = [];
     for (const [language, theme, width, height] of [["en", "light", 1180, 820], ["zh-CN", "dark", 1180, 820], ["zh-CN", "light", 430, 760]]) {
       win.setContentSize(width, height);
+      console.log("routing-main: visual " + language + " " + theme + " " + width);
       visuals.push(await win.webContents.executeJavaScript("window.routingVisual(" + JSON.stringify(language) + "," + JSON.stringify(theme) + ")"));
       fs.writeFileSync(path.join(__dirname, language + "-" + theme + "-" + width + ".png"), (await win.webContents.capturePage()).toPNG());
       await win.webContents.executeJavaScript("window.routingProfiles()");
@@ -70,7 +77,7 @@ app.whenReady().then(async () => {
   const child = spawn(resolveElectronBinary(root).electronBinary, [join(output, "main.cjs")], { env, stdio: ["ignore", "pipe", "pipe"] });
   let logs = "";
   for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => { logs += chunk; });
-  const timer = setTimeout(() => child.kill("SIGKILL"), 60_000);
+  const timer = setTimeout(() => child.kill("SIGKILL"), scaledTimeout(60_000));
   let code;
   try { code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("close", resolve); }); }
   finally { clearTimeout(timer); }

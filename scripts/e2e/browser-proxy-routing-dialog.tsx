@@ -79,6 +79,7 @@ function assertFits() {
 
 Object.assign(window, {
   async routingProbe() {
+    console.info("routing-probe: start");
     check(!document.querySelector('[role="dialog"]') && !document.querySelector("input"), "Editor must be collapsed");
     check(document.body.textContent?.includes("2 proxies, 2 rules"), "Saved summary missing");
     await click(button("Configure"));
@@ -94,6 +95,7 @@ Object.assign(window, {
     await key(document.activeElement as HTMLElement, "Escape");
     check(document.querySelector('[role="dialog"]') && !document.querySelector('[role="listbox"]'), "Escape closes menu first");
     await choose("Default exit", "Personal"); check(saved.defaultTarget === "personal", "Default not saved");
+    console.info("routing-probe: menus complete");
     const test = document.querySelector<HTMLInputElement>('.settings-routing-test input')!;
     await fill(test, "https://app.corp.example/path");
     check(document.querySelector('.settings-routing-result')?.textContent?.includes("Office"), "Saved table preview missing");
@@ -125,6 +127,7 @@ Object.assign(window, {
     await click(nodes<HTMLButtonElement>('button[aria-label="Delete"]')[2]); check(saved.profiles.length === 2, "Proxy delete failed");
     await click(nodes<HTMLButtonElement>('button[aria-label="Delete"]')[1]);
     check(saved.profiles.length === 1 && saved.rules.every((rule) => rule.target !== "personal") && saved.defaultTarget === "direct", "Referenced delete contract changed");
+    console.info("routing-probe: edits complete");
     fail = true;
     await fill(input("Name"), "Failing"); await blur(input("Name"));
     check(errors().at(-1)?.includes("Synthetic save failure"), "Save error not visible"); fail = false;
@@ -136,6 +139,7 @@ Object.assign(window, {
     hold = false; release!(); await settle();
     await click(nodes<HTMLButtonElement>('button[aria-label="Close"]')[0]);
     check(!isBlockingOverlayActive() && document.activeElement?.textContent?.trim() === "Configure", "Close must release overlay and restore focus");
+    console.info("routing-probe: failure and pending-save complete");
     await click(nodes<HTMLButtonElement>('[role="switch"]')[0]); check(!saved.enabled, "Switch failed");
     const disabledSaved = structuredClone(saved);
     await click(button("Configure")); await click(button("Add rule"));
@@ -154,6 +158,7 @@ Object.assign(window, {
     await click(button("Configure")); check(document.querySelector('.settings-routing-empty'), "Empty rules guidance missing");
     await click(button("Proxies (0)")); check(document.querySelector('.settings-routing-empty'), "Empty proxies guidance missing");
     await click(nodes<HTMLButtonElement>('button[aria-label="Close"]')[0]);
+    console.info("routing-probe: dismissal and empty states complete");
     const errorsReported = errors().length;
     for (const toastClose of nodes<HTMLButtonElement>(".toast button")) await click(toastClose);
     await Promise.all(document.getAnimations().map((animation) => animation.finished));
@@ -164,6 +169,7 @@ Object.assign(window, {
       id: `rule-${i}`, kind: "host-wildcard" as const, pattern: i < 2 ? fixture.rules[i].pattern : `*.service-${i}.example`, target: i % 2 ? "personal" : "office",
     })) };
     replace(long); await i18n.changeLanguage(language); document.documentElement.dataset.theme = theme; await settle();
+    console.info("routing-visual: prepared " + language + " " + theme);
     const configure = button(i18n.t("settings.browserProxyConfigure"));
     await click(configure);
     await Promise.all(document.getAnimations().map((animation) => animation.finished));
