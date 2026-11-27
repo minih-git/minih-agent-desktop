@@ -2,6 +2,22 @@
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/06-delivery/04-e2e-test-plan) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
+## E2E-CHAT-tool-images-inline
+
+- **前提：** 请求 worktree 复用现有依赖，使用隔离 Electron profile 和合成 PNG；
+  不使用真实服务商或用户配置。
+- **步骤：** 展示包含 Read 图片与 MCP 镜像图片块的已完成回合；展开和收起过程详情，
+  切换缩略图，打开全屏预览、缩放、方向键切换并关闭。重新挂载 JSON 恢复的历史，
+  再展示运行中的回合。分别以英文和简体中文执行，并检查独立插件图片资源和本地引用。
+- **预期：** 图片在过程详情收起后仍可见，展开时不重复；选中项与下载目标一致，
+  关闭预览后保留选择。历史恢复与运行中的回合均保留图片。仅含内嵌数据的图片不提供
+  本地文件操作，也不读取本地文件；明确的文件引用通过受限宿主接口读取。
+  不支持或超限的数据、仅出现在文本中的路径不生成图片。
+- **规格／验收：** 图片生成规格“对话中的其他工具图片”；保留会话存储与文件权限契约。
+- **自动化／状态：** `node scripts/e2e-tool-images.mjs` 使用生产 AssistantTurn/ToolRow
+  执行 `scripts/e2e/tool-images.tsx`；`apps/desktop/test/chat-tool-images.test.mjs`
+  覆盖图片投影边界。属于隔离渲染器与原生接口边界验证，不代表安装发行版验收。
+
 ## E2E-PLUGIN-notification-inbox
 
 - **前提：** 隔离 profile、具备 `notify.center` 的合成插件及其声明的视图和命令，
@@ -6074,6 +6090,7 @@ eleven-tool-round desktop paths are verified by
 
 | 验收 | 应用场景 |
 |---|---|
+| C / E / 品质 / 安全性 / 无障碍 — 工具图片内嵌与预览 | E2E-CHAT-tool-images-inline |
 | C / E / 品质 / 无障碍 — Agent 新建会话思考强度 | E2E-SESSION-create-thinking-setting |
 | C / E / F / 品质 — Agent 新建会话的模型、角色与侧栏角色气泡 | E2E-SESSION-create-picks-model-and-role |
 | B / C / E / F / 品质 / 无障碍 — 2026-10-28 选择性能力迁移 | E2E-UPSTREAM-20261028-selected-capabilities |
