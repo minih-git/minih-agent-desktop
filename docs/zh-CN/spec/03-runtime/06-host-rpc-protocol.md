@@ -228,14 +228,27 @@ type ToolBudgetHealth = {
 - `memory.list({ scope?, path?, sessionId?, status?, kind?, limit?, offset? })` ——
   某个作用域的条目，最新的在前。`scope` 为 `project`（默认）或 `user`；项目作用域
   由 `path`（桌面管理器）或调用方指定的会话解析。返回 `{ entries, scope }`。
-- `memory.search({ query, path?, sessionId?, kinds?, limit?, recordUse? })` ——
-  在会话项目作用域加用户作用域的存活条目上做字面搜索，以 trigram FTS 索引作为
-  预过滤。`limit` 默认 8，上限 20。仅在 `recordUse: true` 时命中会刷新
-  `lastUsedAt` 与 `useCount`；启动索引从不刷新。
+- `memory.search({ query, path?, sessionId?, kinds?, limit?, recordUse?,
+  excludeIds? })` —— 在会话项目作用域加用户作用域的存活条目上按词项排序检索
+  （ADR learned-memory-recall §1）。查询被切成词项——ASCII 连续串与 CJK 连续串，
+  单字词与一小份英文停用词表被丢弃——任一词项出现在笔记内容或理由中即命中；
+  trigram FTS 索引作为三个字符及以上词项的 `OR` 预过滤。结果依次按命中词项数、
+  整句逐字短语、`lastUsedAt`、`updatedAt` 排序，每条带回 `matchedTerms`。
+  `limit` 默认 8，上限 20。`excludeIds` 丢弃调用方已持有的条目。仅在
+  `recordUse: true` 时命中会刷新 `lastUsedAt` 与 `useCount`；启动索引从不刷新。
+- `memory.recall({ sessionId, query, excludeIds?, limit? })` —— 运行时在一个回合
+  首次模型请求前发起的每轮读取（ADR learned-memory-recall §2）。检索与作用域同
+  `memory.search`，由会话解析，但有三处不同，正是机器发起的读取需要的：命中必须
+  覆盖两个不同词项（查询本身只有一个词时为一个）、遵守 `excludeIds`、且从不记录
+  使用。`limit` 默认 6，上限 10。返回 `{ query, entries: [{ id, kind, scopeKind,
+  content, rationale?, createdAt, updatedAt, matchedTerms }] }`。会话不存在时返回
+  `NOT_FOUND`。
 - `memory.index({ path? })` —— 启动索引：`path` 指向某个项目时包含该项目作用域，加上用户
   作用域的存活条目，显式条目优先，其次按最近使用时间，上限为 40 条、6 KiB。不传 `path` 时
   快照只包含用户作用域，因此没有项目的会话也能带着用户自己的笔记启动。返回
-  `{ index: { entries, omittedCount, bytes } }`。读取失败时启动会在没有索引的情况下继续。
+  `{ index: { entries, omittedCount, bytes, ids } }`：`ids` 列出快照携带的每一条
+  （先 `entries` 后 `lessons`），使每轮召回不会重复提示里已有的笔记。读取失败时
+  启动会在没有索引的情况下继续。
 - `memory.stats()` —— 管理界面展示的仅本设备计数：`{ stats: { index: { entries, bytes,
   omitted, capturedAt }, suggestions: { accepted, rejected }, tombstones:
   { fromExtraction, fromCreate }, extraction: { day, tokens, runs } } }`。启动路径会记录

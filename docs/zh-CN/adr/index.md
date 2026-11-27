@@ -325,6 +325,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | 0331 | [自托管网关、可连接的桌面 Host 与移动客户端](/adr/0331-self-hosted-gateway-and-mobile-client) | 已接受待实现（MVP 之后；D665） |
 | agent-long-term-memory | [分层、可溯源的长期记忆](/adr/agent-long-term-memory) | 已接受待实现（D668；修订 ADR 0234） |
 | learned-memory-consolidation | [学习记忆的自动整理](/adr/learned-memory-consolidation) | 已接受待实现（D688；修订 ADR agent-long-term-memory §4 与 §8） |
+| learned-memory-recall | [学习记忆的词项排序检索与每轮召回](/adr/learned-memory-recall) | 已接受（2026-11-27，D693；修订 ADR agent-long-term-memory §5 与 ADR learned-memory-consolidation §5） |
 | plugin-learned-memory-read | [插件只读列出长期记忆](/adr/plugin-learned-memory-read) | 已接受（D682；修订 ADR agent-long-term-memory §8，仅读取） |
 | bot-sessions-and-steward | [bot 会话、管家与任务授权](/adr/bot-sessions-and-steward) | 已接受待实现（D687；新增会话角色、bot profile 与冻结的 Mandate，跨机派活是后续决策）。**部分已被取代**（2026-11，D689）：内置 Super Agent 层在 1.7.0 移除，保留边界与后续插件方向见该 ADR 最后一节 |
 | conversation-archive | [会话分层归档给插件读取](/adr/conversation-archive) | 已接受待实现（D685；仅沿用 plugin-learned-memory-read 的接线方式） |
