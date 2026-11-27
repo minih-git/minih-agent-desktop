@@ -2134,13 +2134,11 @@ test("the bundled Kilo Flash output limits stay publishable", async () => {
     const limit = snapshot.kilo.models[id].limit;
     assert.ok(limit.output > 0 && limit.output <= limit.context, id);
   }
-  // Both resellers publish the model, so an import must not raise one limit and
-  // leave the other behind: whatever models.dev states, the two rows agree and
-  // stay inside the context they belong to. The number itself is upstream's
-  // and moves with the snapshot refresh (131072 until 2026-11-09, 943718 after).
-  const kilo = snapshot.kilo.models["reflection/beam-1.0-501b-a23b"].limit;
-  const openrouter = snapshot.openrouter.models["reflection/beam-1.0-501b-a23b"].limit;
-  assert.equal(kilo.output, openrouter.output);
-  assert.ok(kilo.output > 0 && kilo.output <= kilo.context);
-  assert.ok(openrouter.output > 0 && openrouter.output <= openrouter.context);
+  // Resellers may publish different limits for the same model. Each exact
+  // provider row is authoritative; a refresh must not require one reseller's
+  // output ceiling to equal another's (ADR models-dev-catalog-authority).
+  for (const provider of ["kilo", "openrouter"]) {
+    const limit = snapshot[provider].models["reflection/beam-1.0-501b-a23b"].limit;
+    assert.ok(limit.output > 0 && limit.output <= limit.context, provider);
+  }
 });
