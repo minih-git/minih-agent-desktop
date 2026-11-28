@@ -415,6 +415,7 @@ export const ptBR = {
     tableCopied: "Tabela copiada",
     tableCopyFailed: "Não foi possível copiar a tabela",
     tableExportFailed: "Não foi possível baixar a tabela",
+    toolImages: "Imagens de ferramentas",
     imagePreview: {
       title: "Visualização de imagem",
       download: "Baixar imagem",

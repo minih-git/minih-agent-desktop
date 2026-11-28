@@ -10,6 +10,8 @@ import { IconDownload } from "../../../components/icons";
 import { GeneratedImageViewer } from "./GeneratedImageViewer";
 import { GeneratedImageThumbnail, type GeneratedImageRef } from "./GeneratedImageThumbnail";
 import { generatedImageDownloadName } from "./generated-image-download";
+import { ToolImageStrip } from "./ToolImageStrip";
+import { turnToolImages } from "./turn-tool-images";
 
 function ImageResult({
   image,
@@ -49,7 +51,22 @@ function ImageResult({
   );
 }
 
+/**
+ * A tool call's images in the conversation.
+ *
+ * A generated batch is the turn's answer, so it keeps the large gallery with
+ * its own thumbnails. Every other tool's images are evidence the reader
+ * glances at, so they take one row of small tiles instead — see
+ * `ToolImageStrip` for the row itself.
+ */
 export function GeneratedImages({ message }: { message: UiMessage }) {
+  if (message.toolName !== "GenerateImages") {
+    return <ToolImageStrip images={turnToolImages([message])} />;
+  }
+  return <GeneratedImageGallery message={message} />;
+}
+
+function GeneratedImageGallery({ message }: { message: UiMessage }) {
   const { t } = useTranslation();
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -60,8 +77,7 @@ export function GeneratedImages({ message }: { message: UiMessage }) {
     payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
   const results =
     record?.kind === "generated-images" && Array.isArray(record.results) ? record.results : [];
-  const images: GeneratedImageRef[] = imageRefs.map((image) => message.toolName === "GenerateImages"
-    ? image : { ...image, label: `${t("chat.imagePreview.title")} ${image.index + 1}` });
+  const images: GeneratedImageRef[] = imageRefs;
   const selectedPosition = Math.min(selectedImageIndex, Math.max(0, images.length - 1));
   const selectedImage = images[selectedPosition];
   const needsSetup =
@@ -74,7 +90,7 @@ export function GeneratedImages({ message }: { message: UiMessage }) {
     ].includes(String(record.errorCode));
   if (!images.length && !results.length && !needsSetup) return null;
   return (
-    <div className="generated-images" aria-label={t(message.toolName === "GenerateImages" ? "settings.imageModel" : "chat.imagePreview.title")}>
+    <div className="generated-images" aria-label={t("settings.imageModel")}>
       {needsSetup ? (
         <div>
           <p>{t("settings.imageModelSetupHint")}</p>

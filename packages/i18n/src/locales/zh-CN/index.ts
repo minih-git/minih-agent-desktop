@@ -440,6 +440,7 @@ export const zhCN = {
     tableCopied: "表格已复制",
     tableCopyFailed: "无法复制表格",
     tableExportFailed: "无法下载表格",
+    toolImages: "工具图片",
     imagePreview: {
       title: "图片预览",
       download: "下载图片",

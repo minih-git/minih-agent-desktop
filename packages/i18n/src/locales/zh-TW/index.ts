@@ -418,6 +418,7 @@ export const zhTW = {
     tableCopied: "已複製表格",
     tableCopyFailed: "無法複製表格",
     tableExportFailed: "無法下載表格",
+    toolImages: "工具圖片",
     imagePreview: {
       title: "圖片預覽",
       download: "下載圖片",

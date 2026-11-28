@@ -46,6 +46,8 @@ import {
 } from "./shared";
 import { activityItemsEqual } from "./ActivityGroup";
 import { GeneratedImages } from "./GeneratedImages";
+import { ToolImageStrip } from "./ToolImageStrip";
+import { turnToolImages } from "./turn-tool-images";
 import { MessageRow } from "./MessageRow";
 import { ReviewChangeCard } from "../../../components/ReviewChangeCard";
 import { ToolRow } from "./ToolRow";
@@ -341,8 +343,12 @@ export const AssistantTurn = memo(function AssistantTurn({
   const toolsRef = useRef(summary.tools);
   const tools = reuseReferences(toolsRef.current, summary.tools);
   toolsRef.current = tools;
+  // A generated batch is the turn's answer and keeps its own gallery per call;
+  // every other tool's images merge into one strip of small tiles for the turn.
   const generatedImages = useMemo(() => tools
+    .filter((message) => message.toolName === "GenerateImages")
     .map((message) => <GeneratedImages key={message.id} message={message} />), [tools]);
+  const toolImages = useMemo(() => turnToolImages(tools), [tools]);
   // Delegation status/timing depends on actual tool messages, never on thinking
   // or text and never on a Task's attached child transcript identity.
   const delegationItems = useMemo(() => tools.map((message) => ({ kind: "tool" as const, message })), [tools]);
@@ -442,6 +448,7 @@ export const AssistantTurn = memo(function AssistantTurn({
         )}
         <AssistantTurnParts parts={responses} {...partContext} />
         {generatedImages}
+        <ToolImageStrip images={toolImages} />
         {slotReply ? <TurnChangesCard tools={tools} /> : null}
         {!isActive && metaMessage ? (
           <MessageMeta

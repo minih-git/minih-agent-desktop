@@ -416,6 +416,7 @@ export const de = {
     "tableCopied": "Tabelle kopiert",
     "tableCopyFailed": "Tabelle konnte nicht kopiert werden",
     "tableExportFailed": "Tabelle konnte nicht heruntergeladen werden",
+    toolImages: "Werkzeugbilder",
     imagePreview: {
       title: "Bildvorschau",
       download: "Bild herunterladen",

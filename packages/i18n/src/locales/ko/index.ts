@@ -425,6 +425,7 @@ export const ko = {
     tableCopied: "표가 복사되었습니다",
     tableCopyFailed: "표를 복사할 수 없습니다",
     tableExportFailed: "표를 다운로드할 수 없습니다",
+    toolImages: "도구 이미지",
     imagePreview: {
       title: "이미지 미리보기",
       download: "이미지 다운로드",
