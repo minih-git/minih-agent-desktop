@@ -445,6 +445,7 @@ export const en = {
     tableCopied: "Table copied",
     tableCopyFailed: "Could not copy the table",
     tableExportFailed: "Could not download the table",
+    toolImages: "Tool images",
     imagePreview: {
       title: "Image preview",
       download: "Download image",

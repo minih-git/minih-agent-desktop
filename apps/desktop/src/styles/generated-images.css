@@ -91,6 +91,65 @@
 .generated-image-actions a:hover { background: var(--ds-bg-primary); }
 .generated-image-actions a:focus-visible,
 .generated-image-preview:focus-visible { outline: 2px solid var(--ds-text-primary); outline-offset: -4px; }
+/* Tool images: one row of small tiles, not a card each. The row scrolls
+ * sideways by wheel, trackpad or press-and-drag; the tiles never grow. */
+.tool-images {
+  max-width: 100%;
+}
+.tool-image-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  padding-bottom: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  cursor: grab;
+}
+.tool-image-strip.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+.tool-image-strip-item {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 96px;
+  height: 80px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-secondary);
+  cursor: zoom-in;
+}
+.tool-image-strip-item img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The tile, not the raw bitmap, owns the pointer: a native image drag would
+   * swallow the row's press-and-drag. */
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.tool-image-strip-item.is-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ds-text-secondary);
+}
+.tool-image-strip-item:focus-visible {
+  outline: 2px solid var(--ds-text-primary);
+  outline-offset: 2px;
+}
+.tool-image-strip-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 
 .generated-image-viewer {
   box-sizing: border-box;

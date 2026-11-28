@@ -10,20 +10,33 @@ picker screenshot in its reported scratch directory.
 - **Preconditions:** Request worktree, reused dependencies, isolated Electron
   profile and synthetic PNG image bytes. No real provider or user profile.
 - **Steps:** Render a completed turn containing Read images and mirrored MCP
-  image blocks. Expand/collapse the process, select thumbnails, open the viewer,
-  zoom, navigate with arrow keys and close. Remount JSON-restored history and
-  render an active turn. Repeat in English and Simplified Chinese. Render a
-  standalone plugin image resource and a local image reference.
-- **Expected:** Images stay visible outside folded process details without
-  duplicates. Selection and download target agree; viewer selection survives
-  closing. Restored and active turns keep images. Inline-only images expose no
-  local-file actions or native file reads; explicit references use the contained
-  host reader. Unsupported/oversized data and text-only paths create no image.
+  image blocks. Confirm the turn shows one strip of small tiles and no large
+  card, expand/collapse the process, open a tile in the viewer, zoom, navigate
+  with arrow keys, close and check focus returns to that tile. Render a wide
+  row, press and drag it sideways, then click a tile once. Remount
+  JSON-restored history and render an active turn. Repeat in English and
+  Simplified Chinese. Render an image whose bytes do not decode, a missing
+  local reference, a standalone plugin image resource, a local image
+  reference, and a GenerateImages batch.
+- **Expected:** The turn's non-generating tool images merge into one horizontal
+  row of equally small tiles that stays visible outside folded process details
+  without duplicates; tiles sit on one row, keep one size and stay on the
+  window's height budget. A tile opens the shared viewer on its own image and
+  the viewer walks the whole row; closing returns focus to the tile. Dragging
+  scrolls the row and the click that ends the gesture opens nothing; a plain
+  click still opens the viewer. A failed or missing image keeps a placeholder
+  tile with accessible text instead of collapsing the row. Tiles expose no
+  download or file actions; inline-only images cause no native file reads, and
+  explicit references use the contained host reader. A GenerateImages batch
+  keeps the large gallery with its own thumbnails, download target and partial
+  failure text. Restored and active turns keep the strip. Unsupported/oversized
+  data and text-only paths create no tile.
 - **Specs / acceptance:** Image generation §Other tool images; preserve existing
   transcript storage and file permission contracts. Post-MVP.
 - **Automation / status:** `node scripts/e2e-tool-images.mjs` runs
-  `scripts/e2e/tool-images.tsx` with production AssistantTurn/ToolRow. Projection
-  boundaries use `apps/desktop/test/chat-tool-images.test.mjs`. This is isolated
+  `scripts/e2e/tool-images.tsx` with production AssistantTurn/ToolRow. Projection,
+  merging, drag threshold and rendered-strip boundaries use
+  `apps/desktop/test/chat-tool-images.test.mjs`. This is isolated
   renderer/native-boundary validation, not installed-release acceptance.
 
 ## E2E-SETTINGS-browser-routing-dialog

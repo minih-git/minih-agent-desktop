@@ -425,6 +425,7 @@ export const tr = {
     tableCopied: "Tablo kopyalandı",
     tableCopyFailed: "Tablo kopyalanamadı",
     tableExportFailed: "Tablo indirilemedi",
+    toolImages: "Araç görselleri",
     imagePreview: {
       title: "Görsel önizlemesi",
       download: "Görseli indir",
