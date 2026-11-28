@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "1.12.1",
+    date: "2026-11-28",
+    highlights: [
+      "Images a tool returns now share one row of small thumbnails: the images read, screenshots, and images from MCP and plugin results in the same turn form one horizontal strip you can scroll sideways or drag. Open any thumbnail to view it, switch between the images in that row, zoom, and download. Generated images still display at full size as before.",
+    ],
+  },
+  {
     version: "1.12.0",
     date: "2026-11-27",
     highlights: [
