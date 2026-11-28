@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "1.12.1",
+    date: "2026-11-28",
+    highlights: [
+      "工具返回的图片改为一行小图：同一轮读图、截图、MCP 和插件返回的图片合成一条横排缩略图，可横向滚动或按住拖动；点击任意一张进入查看器，可在这一行之间切换、缩放和下载。生成图片仍按原来的大图显示。",
+    ],
+  },
+  {
     version: "1.12.0",
     date: "2026-11-27",
     highlights: [
